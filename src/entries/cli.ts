@@ -24,6 +24,12 @@ function parseJsonArg(raw: string, flagName: string): unknown {
   }
 }
 
+/** Resolve output format from root options, applying --pretty override. */
+function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
+  if (rootOpts.pretty === true) return "table";
+  return (rootOpts.format ?? "json") as "json" | "table";
+}
+
 /** Run dispatch, format, and exit with the appropriate code. */
 async function runAndExit(
   toolName: string,
@@ -64,6 +70,7 @@ export function createCliProgram(): Command {
         .choices(["json", "table"])
         .default("json"),
     )
+    .option("--pretty", "Alias for --format table", false)
     .option("--quiet", "Suppress non-data output", false);
 
   // -- Temporal tools (6) ----------------------------------------------------
@@ -74,7 +81,7 @@ export function createCliProgram(): Command {
     .option("--timezone <tz>", 'IANA timezone identifier (default "UTC")', "UTC")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "get_current_time",
@@ -91,7 +98,7 @@ export function createCliProgram(): Command {
     .requiredOption("--target-timezone <tz>", "Target IANA timezone identifier")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "convert_timezone",
@@ -110,7 +117,7 @@ export function createCliProgram(): Command {
     .requiredOption("--duration <string>", "Duration string to parse")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "parse_duration",
@@ -127,7 +134,7 @@ export function createCliProgram(): Command {
     .requiredOption("--operands <json>", "Key-value operands as JSON object")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const operands = parseJsonArg(opts.operands, "operands");
       await runAndExit(
@@ -149,7 +156,7 @@ export function createCliProgram(): Command {
     .option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "add_business_days",
@@ -171,7 +178,7 @@ export function createCliProgram(): Command {
     .option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "count_business_days",
@@ -196,7 +203,7 @@ export function createCliProgram(): Command {
     .option("--unit <unit>", "Time unit (hours|days|weeks|months)", "days")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "pert_estimate",
@@ -222,7 +229,7 @@ export function createCliProgram(): Command {
     .option("--human-oversight <n>", "Human review overhead multiplier (0.5-2.0)", parseFloat)
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const input: Record<string, unknown> = { kloc: opts.kloc };
       if (opts.reasoningComplexity !== undefined) {
@@ -252,7 +259,7 @@ export function createCliProgram(): Command {
     .option("--hours-per-sprint <n>", "Productive engineering hours per sprint", parseFloat)
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const velocityHistory = opts.velocityHistory
         .split(",")
@@ -285,7 +292,7 @@ export function createCliProgram(): Command {
     .requiredOption("--tasks <json>", "Task array as JSON")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const tasks = parseJsonArg(opts.tasks, "tasks");
       await runAndExit(
@@ -303,7 +310,7 @@ export function createCliProgram(): Command {
     .option("--iterations <n>", "Number of simulation iterations", parseFloat)
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const tasks = parseJsonArg(opts.tasks, "tasks");
       const input: Record<string, unknown> = { tasks };
@@ -322,7 +329,7 @@ export function createCliProgram(): Command {
     .requiredOption("--complexity <n>", "Complexity 1-5", parseFloat)
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "reference_class_estimate",
@@ -342,7 +349,7 @@ export function createCliProgram(): Command {
     .option("--period-days <n>", "Lookback window in calendar days", parseFloat)
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const input: Record<string, unknown> = { team_id: opts.teamId };
       if (opts.periodDays !== undefined) {
@@ -360,7 +367,7 @@ export function createCliProgram(): Command {
     .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
-      const format = (root.opts().format ?? "json") as "json" | "table";
+      const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
       const input: Record<string, unknown> = {
         tokens: opts.tokens,
@@ -373,6 +380,18 @@ export function createCliProgram(): Command {
         input.reasoning_depth = opts.reasoningDepth;
       }
       await runAndExit("token_time_bridge", input, format, quiet);
+    });
+
+  // ---- Utility commands -------------------------------------------------------
+
+  program
+    .command("list-tools")
+    .description("List all available tools and their descriptions")
+    .action(async () => {
+      const { listTools } = await import("../dispatcher/index.js");
+      const tools = listTools();
+      process.stdout.write(JSON.stringify(tools, null, 2) + "\n");
+      process.exit(0);
     });
 
   return program;
