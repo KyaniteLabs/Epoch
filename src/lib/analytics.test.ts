@@ -23,7 +23,7 @@ describe("MODEL_CALIBRATIONS", () => {
     ];
     for (const model of expected) {
       expect(MODEL_CALIBRATIONS[model]).toBeDefined();
-      expect(MODEL_CALIBRATIONS[model].tokensPerSecond).toBeGreaterThan(0);
+      expect(MODEL_CALIBRATIONS[model]!.tokensPerSecond).toBeGreaterThan(0);
     }
   });
 });

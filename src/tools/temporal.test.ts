@@ -6,16 +6,18 @@ import { registerTemporalTools } from "./temporal.js";
 // Tool Registration Tests — Layer 1 & 2 (Temporal + Calendar)
 // ---------------------------------------------------------------------------
 
+type MockHandler = (args: Record<string, unknown>) => Promise<unknown>;
+
 function createMockServer(): {
   server: McpServer;
-  tools: Array<{ name: string; handler: (...args: unknown[]) => Promise<unknown> }>;
+  tools: Array<{ name: string; handler: MockHandler }>;
 } {
-  const tools: Array<{ name: string; handler: (...args: unknown[]) => Promise<unknown> }> = [];
+  const tools: Array<{ name: string; handler: MockHandler }> = [];
 
   const server = {
     tool: vi.fn((name: string, _desc: string, _schema: unknown, handlerOrAnn: unknown, maybeHandler?: unknown) => {
-      const handler = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
-      tools.push({ name, handler: handler ?? handlerOrAnn });
+      const fn = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
+      tools.push({ name, handler: (fn ?? handlerOrAnn) as MockHandler });
     }),
   } as unknown as McpServer;
 
@@ -46,7 +48,7 @@ describe("registerTemporalTools", () => {
 
     const result = await getTime!.handler({ timezone: "UTC" });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.timezone).toBe("UTC");
     expect(data.iso).toBeDefined();
   });
@@ -71,7 +73,7 @@ describe("registerTemporalTools", () => {
       target_tz: "America/Los_Angeles",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.timezone).toBe("America/Los_Angeles");
   });
 
@@ -82,7 +84,7 @@ describe("registerTemporalTools", () => {
     const parse = tools.find(t => t.name === "parse_duration")!;
     const result = await parse.handler({ duration_string: "2h30m" });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.totalSeconds).toBe(9000);
   });
 
@@ -96,7 +98,7 @@ describe("registerTemporalTools", () => {
       operands: { date: "2026-05-01", days: 5 },
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.date).toBe("2026-05-06");
   });
 
@@ -110,7 +112,7 @@ describe("registerTemporalTools", () => {
       operands: { date: "2026-05-01T00:00:00Z", end_date: "2026-05-03T00:00:00Z" },
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.total_seconds).toBe(172800);
   });
 
@@ -124,7 +126,7 @@ describe("registerTemporalTools", () => {
       operands: { milliseconds: 3600000 },
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.formatted).toBe("1h");
   });
 
@@ -152,7 +154,7 @@ describe("registerTemporalTools", () => {
       country: "US",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.endDate ?? data.result).toBeDefined();
   });
 
@@ -167,7 +169,7 @@ describe("registerTemporalTools", () => {
       country: "US",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.businessDays).toBeDefined();
   });
 });

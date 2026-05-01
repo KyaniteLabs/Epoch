@@ -6,16 +6,18 @@ import { registerAnalyticsTools } from "./analytics.js";
 // Tool Registration Tests — Layer 4-5 (Analytics)
 // ---------------------------------------------------------------------------
 
+type MockHandler = (args: Record<string, unknown>) => Promise<unknown>;
+
 function createMockServer(): {
   server: McpServer;
-  tools: Array<{ name: string; handler: (...args: unknown[]) => Promise<unknown> }>;
+  tools: Array<{ name: string; handler: MockHandler }>;
 } {
-  const tools: Array<{ name: string; handler: (...args: unknown[]) => Promise<unknown> }> = [];
+  const tools: Array<{ name: string; handler: MockHandler }> = [];
 
   const server = {
     tool: vi.fn((name: string, _desc: string, _schema: unknown, handlerOrAnn: unknown, maybeHandler?: unknown) => {
-      const handler = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
-      tools.push({ name, handler: handler ?? handlerOrAnn });
+      const fn = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
+      tools.push({ name, handler: (fn ?? handlerOrAnn) as MockHandler });
     }),
   } as unknown as McpServer;
 
@@ -44,7 +46,8 @@ describe("registerAnalyticsTools", () => {
       complexity: 3,
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const content = response.content[0]!;
+    const data = JSON.parse(content.text);
     expect(data.rawEstimate).toBeGreaterThan(0);
     expect(data.correctedEstimate).toBeGreaterThan(0);
     expect(data.correctionFactor).toBeGreaterThan(1);
@@ -61,7 +64,7 @@ describe("registerAnalyticsTools", () => {
       team_id: "team-alpha",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.note).toMatch(/team|historical/i);
   });
 
@@ -76,7 +79,7 @@ describe("registerAnalyticsTools", () => {
       minimum_samples: 10,
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.correction_factor).toBe(1.5);
     expect(data.recommendations.length).toBeGreaterThan(0);
   });
@@ -93,7 +96,7 @@ describe("registerAnalyticsTools", () => {
       reasoning_depth: "deep",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.estimatedSeconds).toBeGreaterThan(0);
     expect(data.estimatedMinutes).toBeGreaterThan(0);
     expect(data.confidence).toBe("likely");
@@ -112,7 +115,7 @@ describe("registerAnalyticsTools", () => {
       reasoning_depth: "shallow",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.estimatedSeconds).toBeGreaterThan(0);
   });
 });

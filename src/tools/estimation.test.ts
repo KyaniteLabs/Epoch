@@ -6,16 +6,18 @@ import { registerEstimationTools } from "./estimation.js";
 // Tool Registration Tests — Layer 3 (Estimation)
 // ---------------------------------------------------------------------------
 
+type MockHandler = (args: Record<string, unknown>) => Promise<unknown>;
+
 function createMockServer(): {
   server: McpServer;
-  tools: Array<{ name: string; handler: (...args: unknown[]) => Promise<unknown> }>;
+  tools: Array<{ name: string; handler: MockHandler }>;
 } {
-  const tools: Array<{ name: string; handler: (...args: unknown[]) => Promise<unknown> }> = [];
+  const tools: Array<{ name: string; handler: MockHandler }> = [];
 
   const server = {
     tool: vi.fn((name: string, _desc: string, _schema: unknown, handlerOrAnn: unknown, maybeHandler?: unknown) => {
-      const handler = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
-      tools.push({ name, handler: handler ?? handlerOrAnn });
+      const fn = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
+      tools.push({ name, handler: (fn ?? handlerOrAnn) as MockHandler });
     }),
   } as unknown as McpServer;
 
@@ -48,7 +50,7 @@ describe("registerEstimationTools", () => {
       unit: "hours",
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.expected).toBe(5);
     expect(data.unit).toBe("hours");
   });
@@ -82,7 +84,7 @@ describe("registerEstimationTools", () => {
       human_oversight: 1.0,
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.personMonthsNominal).toBeGreaterThan(0);
     expect(data.personMonthsLlmAdjusted).toBeGreaterThan(0);
     expect(data.effortMultipliers).toBeDefined();
@@ -100,7 +102,7 @@ describe("registerEstimationTools", () => {
       hours_per_sprint: 300,
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.averageVelocity).toBeDefined();
     expect(data.requiredSprints).toBeGreaterThan(0);
     expect(data.completionDays).toBeGreaterThan(0);
@@ -118,7 +120,7 @@ describe("registerEstimationTools", () => {
       ],
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.total_duration).toBe(8);
     expect(data.critical_path).toEqual(["A", "B"]);
   });
@@ -136,7 +138,7 @@ describe("registerEstimationTools", () => {
       seed: 42,
     });
     const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0].text);
+    const data = JSON.parse(response.content[0]!.text);
     expect(data.p10).toBeDefined();
     expect(data.p50).toBeDefined();
     expect(data.p95).toBeDefined();
