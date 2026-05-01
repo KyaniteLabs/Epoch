@@ -391,12 +391,45 @@
       </div>
     </section>
 
+    <!-- Three Surfaces -->
+    <section class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">Three Surfaces, One API</h2>
+        <p class="text-foreground/70 max-w-3xl mb-8 leading-relaxed">
+          All 14 tools are accessible through MCP, CLI, and REST API.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="metric-card rounded-xl p-6">
+            <h3 class="font-semibold mb-2 text-accent">MCP Server</h3>
+            <p class="text-foreground/60 text-sm mb-3">Stdio transport for Claude Code, Cursor, VS Code</p>
+            <div class="code-block rounded-lg p-3 font-mono text-xs">claude mcp add epoch -- npx @kyanitelabs/epoch</div>
+          </div>
+          <div class="metric-card rounded-xl p-6">
+            <h3 class="font-semibold mb-2 text-accent">CLI</h3>
+            <p class="text-foreground/60 text-sm mb-3">Scriptable subcommands with JSON or table output</p>
+            <div class="code-block rounded-lg p-3 font-mono text-xs">epoch pert-estimate -o 2 -m 4 -p 12</div>
+          </div>
+          <div class="metric-card rounded-xl p-6">
+            <h3 class="font-semibold mb-2 text-accent">REST API</h3>
+            <p class="text-foreground/60 text-sm mb-3">HTTP server with OpenAPI spec and AI discoverability</p>
+            <div class="code-block rounded-lg p-3 font-mono text-xs">epoch serve --port 3000</div>
+          </div>
+        </div>
+        <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3 text-center text-sm">
+          <div class="rounded-lg bg-primary/50 p-3"><div class="font-mono text-accent">/.well-known/ai-plugin.json</div><div class="text-foreground/50 mt-1">AI manifest</div></div>
+          <div class="rounded-lg bg-primary/50 p-3"><div class="font-mono text-accent">/llms.txt</div><div class="text-foreground/50 mt-1">LLM docs</div></div>
+          <div class="rounded-lg bg-primary/50 p-3"><div class="font-mono text-accent">/openapi.json</div><div class="text-foreground/50 mt-1">OpenAPI 3.1</div></div>
+          <div class="rounded-lg bg-primary/50 p-3"><div class="font-mono text-accent">/health</div><div class="text-foreground/50 mt-1">Status</div></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Installation -->
     <section id="install" class="py-20 px-6 border-t border-border">
       <div class="max-w-6xl mx-auto">
         <h2 class="text-3xl font-bold mb-4">Installation</h2>
         <p class="text-foreground/70 max-w-3xl mb-8 leading-relaxed">
-          Runs via stdio transport — integrates with Claude Code, Cursor, VS Code, Windsurf, and any MCP-compatible client.
+          Default mode starts the MCP stdio server. Add CLI args for subcommands or <code class="font-mono text-accent">epoch serve</code> for REST API.
         </p>
 
         <div class="space-y-6">
@@ -461,7 +494,7 @@
           </div>
           <div class="metric-card rounded-xl p-4 text-center">
             <div class="font-mono font-semibold text-foreground">Vitest 3.x</div>
-            <div class="text-xs text-foreground/50 mt-1">129 tests, v8 coverage</div>
+            <div class="text-xs text-foreground/50 mt-1">139 tests, v8 coverage</div>
           </div>
         </div>
       </div>
