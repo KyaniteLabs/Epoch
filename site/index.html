@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Epoch — Time Estimation MCP Server for LLMs</title>
+  <meta name="description" content="Give LLMs accurate temporal reasoning. An MCP server with 14 tools for time calculation, calendar math, and software estimation.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwindcss.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            background: '#0F172A',
+            foreground: '#F8FAFC',
+            primary: '#1E293B',
+            secondary: '#334155',
+            muted: '#272F42',
+            accent: '#22C55E',
+            border: '#475569',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --color-background: #0F172A;
+      --color-foreground: #F8FAFC;
+      --color-primary: #1E293B;
+      --color-secondary: #334155;
+      --color-accent: #22C55E;
+      --color-muted: #272F42;
+      --color-border: #475569;
+    }
+
+    body {
+      background-color: var(--color-background);
+      color: var(--color-foreground);
+      font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    }
+
+    .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+    .glow-accent {
+      text-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+    }
+
+    .layer-card {
+      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+      border: 1px solid var(--color-border);
+      transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+    }
+    .layer-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(34, 197, 94, 0.1);
+    }
+
+    .tool-row {
+      border-bottom: 1px solid var(--color-border);
+      transition: background-color 150ms ease-out;
+    }
+    .tool-row:hover {
+      background-color: var(--color-muted);
+    }
+
+    .code-block {
+      background: var(--color-primary);
+      border: 1px solid var(--color-border);
+    }
+
+    .metric-card {
+      background: var(--color-primary);
+      border: 1px solid var(--color-border);
+    }
+
+    .nav-link {
+      transition: color 150ms ease-out;
+    }
+    .nav-link:hover {
+      color: var(--color-accent);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .layer-card:hover { transform: none; }
+      * { transition-duration: 0ms !important; }
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 0;
+      z-index: 100;
+      padding: 0.5rem 1rem;
+      background: var(--color-accent);
+      color: var(--color-background);
+      font-weight: 600;
+    }
+    .skip-link:focus {
+      top: 0;
+    }
+  </style>
+</head>
+<body class="antialiased">
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <!-- Navigation -->
+  <nav class="fixed top-0 w-full z-50 border-b border-border" style="background: rgba(15,23,42,0.9); backdrop-filter: blur(12px);">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" role="img" aria-label="Epoch clock icon">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span class="font-mono font-bold text-lg text-foreground">epoch</span>
+      </div>
+      <div class="hidden md:flex items-center gap-8 text-sm">
+        <a href="#problem" class="nav-link text-foreground/70">Problem</a>
+        <a href="#architecture" class="nav-link text-foreground/70">Architecture</a>
+        <a href="#tools" class="nav-link text-foreground/70">Tools</a>
+        <a href="#install" class="nav-link text-foreground/70">Install</a>
+        <a href="https://github.com/KyaniteLabs/Epoch" class="inline-flex items-center gap-2 px-4 py-2 bg-accent/10 border border-accent/30 rounded-lg text-accent text-sm font-medium hover:bg-accent/20 transition-colors">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" role="img" aria-label="GitHub">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="pt-32 pb-20 px-6">
+      <div class="max-w-4xl mx-auto text-center">
+        <div class="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full border border-accent/30 bg-accent/10 text-accent text-sm font-mono">
+          <span class="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
+          MCP Server v0.1.0
+        </div>
+        <h1 class="text-4xl md:text-6xl font-bold tracking-tight leading-tight mb-6">
+          LLMs can't tell time.<br>
+          <span class="text-accent glow-accent">Epoch fixes that.</span>
+        </h1>
+        <p class="text-lg md:text-xl text-foreground/70 max-w-2xl mx-auto mb-10 leading-relaxed">
+          A Model Context Protocol server with 14 tools that give LLMs accurate temporal reasoning —
+          from timezone conversion to Monte Carlo schedule simulation.
+        </p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a href="#install" class="px-6 py-3 bg-accent text-background font-semibold rounded-lg hover:bg-accent/90 transition-colors cursor-pointer">
+            Get Started
+          </a>
+          <a href="#architecture" class="px-6 py-3 border border-border text-foreground/80 font-medium rounded-lg hover:border-foreground/30 transition-colors cursor-pointer">
+            View Architecture
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Problem -->
+    <section id="problem" class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">The Problem</h2>
+        <p class="text-foreground/70 max-w-3xl mb-12 leading-relaxed">
+          Large language models have no persistent hidden state. Positional encodings represent token sequence position, not real-world time.
+          Self-attention provably cannot model counting behaviors. This creates systematic failures in duration prediction, temporal ordering, and time estimation.
+        </p>
+        <div class="grid md:grid-cols-3 gap-6">
+          <div class="layer-card rounded-xl p-6">
+            <div class="text-accent font-mono text-sm mb-3">01</div>
+            <h3 class="text-lg font-semibold mb-2">Temporal Blindness</h3>
+            <p class="text-foreground/60 text-sm leading-relaxed">
+              LLMs treat tokens as discrete temporal units. Events 10 tokens apart have identical encodings whether separated by 1 second or 1 hour.
+            </p>
+          </div>
+          <div class="layer-card rounded-xl p-6">
+            <div class="text-accent font-mono text-sm mb-3">02</div>
+            <h3 class="text-lg font-semibold mb-2">Duration Prediction Failure</h3>
+            <p class="text-foreground/60 text-sm leading-relaxed">
+              Coding agents estimate in token budgets, not minutes. A 200K-token session can take 5 minutes or 5 hours — agents can't tell the difference.
+            </p>
+          </div>
+          <div class="layer-card rounded-xl p-6">
+            <div class="text-accent font-mono text-sm mb-3">03</div>
+            <h3 class="text-lg font-semibold mb-2">Planning Fallacy Amplified</h3>
+            <p class="text-foreground/60 text-sm leading-relaxed">
+              GPT-5.2 predicts 73% task success at a 35% true rate. LLMs replicate and amplify human optimism bias through agentic overconfidence.
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-12 p-6 rounded-xl border border-border bg-primary">
+          <p class="text-foreground/70 text-sm leading-relaxed">
+            <span class="text-accent font-semibold">Research finding:</span>
+            A UPenn negotiation study showed 4% deal closure under wall-clock time limits vs 99% under turn-based limits.
+            Injecting explicit time state into prompts produced an 8x improvement in negotiation outcomes.
+            Epoch makes time legible to LLMs through structured external tools — not prompt hacks.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture -->
+    <section id="architecture" class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">5-Layer Architecture</h2>
+        <p class="text-foreground/70 max-w-3xl mb-12 leading-relaxed">
+          Make time legible to LLMs, not make LLMs better at time. Each layer provides structured external representations
+          that LLMs can request rather than calculate.
+        </p>
+        <div class="space-y-4">
+          <!-- Layer 5 -->
+          <div class="layer-card rounded-xl p-6 flex flex-col md:flex-row md:items-center gap-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-mono font-bold">L5</div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-lg">Advanced Analytics</h3>
+              <p class="text-foreground/60 text-sm">Monte Carlo simulation, token-to-time bridge, planning fallacy correction, team velocity calibration</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">token_time_bridge</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">monte_carlo_schedule</span>
+            </div>
+          </div>
+          <!-- Layer 4 -->
+          <div class="layer-card rounded-xl p-6 flex flex-col md:flex-row md:items-center gap-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-mono font-bold">L4</div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-lg">Data Integration</h3>
+              <p class="text-foreground/60 text-sm">Reference class forecasting, estimation accuracy tracking, historical data calibration</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">reference_class_estimate</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">calibrate_estimates</span>
+            </div>
+          </div>
+          <!-- Layer 3 -->
+          <div class="layer-card rounded-xl p-6 flex flex-col md:flex-row md:items-center gap-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-mono font-bold">L3</div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-lg">Software Estimation</h3>
+              <p class="text-foreground/60 text-sm">PERT, COCOMO II (LLM-adapted), sprint velocity, critical path method</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">pert_estimate</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">cocomo_estimate</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">sprint_forecast</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">critical_path</span>
+            </div>
+          </div>
+          <!-- Layer 2 -->
+          <div class="layer-card rounded-xl p-6 flex flex-col md:flex-row md:items-center gap-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-mono font-bold">L2</div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-lg">Calendar Math</h3>
+              <p class="text-foreground/60 text-sm">Business days, holiday awareness (US, UK, FR, DE, JP), working hours, urgency classification</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">add_business_days</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">count_business_days</span>
+            </div>
+          </div>
+          <!-- Layer 1 -->
+          <div class="layer-card rounded-xl p-6 flex flex-col md:flex-row md:items-center gap-4">
+            <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-mono font-bold">L1</div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-lg">Core Temporal</h3>
+              <p class="text-foreground/60 text-sm">Time retrieval, timezone conversion, duration parsing, date arithmetic</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">get_current_time</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">convert_timezone</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">parse_duration</span>
+              <span class="px-2 py-1 rounded text-xs font-mono bg-accent/10 text-accent border border-accent/20">time_math</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tools Reference -->
+    <section id="tools" class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">Tool Reference</h2>
+        <p class="text-foreground/70 max-w-3xl mb-8 leading-relaxed">
+          14 MCP tools with Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, and <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations.
+        </p>
+        <div class="rounded-xl border border-border overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-primary text-left">
+                <th class="px-4 py-3 font-mono font-semibold text-accent">Tool</th>
+                <th class="px-4 py-3 font-semibold text-foreground/80">Description</th>
+                <th class="px-4 py-3 font-semibold text-foreground/80 hidden md:table-cell">Layer</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">get_current_time</td><td class="px-4 py-3 text-foreground/70">Current time in any IANA timezone</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L1</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">convert_timezone</td><td class="px-4 py-3 text-foreground/70">Convert ISO-8601 between timezones</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L1</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">parse_duration</td><td class="px-4 py-3 text-foreground/70">Parse "2h30m" into structured seconds</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L1</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">time_math</td><td class="px-4 py-3 text-foreground/70">6 operations: add_days, diff, format_duration, add_hours, add_minutes, add_weeks</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L1</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">add_business_days</td><td class="px-4 py-3 text-foreground/70">Add N working days, skipping weekends and holidays (5 countries)</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L2</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">count_business_days</td><td class="px-4 py-3 text-foreground/70">Count working days between two dates</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L2</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">pert_estimate</td><td class="px-4 py-3 text-foreground/70">Three-point PERT Beta distribution: E = (O+4M+P)/6</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L3</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">cocomo_estimate</td><td class="px-4 py-3 text-foreground/70">COCOMO II with 5 LLM-adapted cost drivers</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L3</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">sprint_forecast</td><td class="px-4 py-3 text-foreground/70">Sprint velocity forecasting with variance-based pessimistic estimate</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L3</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">critical_path</td><td class="px-4 py-3 text-foreground/70">CPM with forward/backward pass and merge bias</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L3</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-4 py-3 text-foreground/70">Monte Carlo simulation with seeded PRNG, P10-P95 percentiles</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">reference_class_estimate</td><td class="px-4 py-3 text-foreground/70">Reference class forecasting with industry correction factors</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L4</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">calibrate_estimates</td><td class="px-4 py-3 text-foreground/70">Team-specific correction factor calibration from historical data</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L4</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-4 py-3 text-foreground/70">Map token budgets to wall-clock time for 12 LLM models</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Example -->
+    <section class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">Example: Token-to-Time Bridge</h2>
+        <p class="text-foreground/70 max-w-3xl mb-8 leading-relaxed">
+          A coding agent plans to use 50,000 tokens with 10 tool calls on Claude Sonnet. How long will it actually take?
+        </p>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <div class="text-xs font-mono text-accent mb-2 uppercase tracking-wider">Input</div>
+            <div class="code-block rounded-xl p-5 font-mono text-sm leading-relaxed overflow-x-auto">
+              <pre class="text-foreground/80"><span class="text-accent">token_time_bridge</span>({
+  <span class="text-foreground/50">tokens:</span> <span class="text-yellow-400">50000</span>,
+  <span class="text-foreground/50">model:</span> <span class="text-green-400">"claude-sonnet-4-20250514"</span>,
+  <span class="text-foreground/50">tool_calls:</span> <span class="text-yellow-400">10</span>,
+  <span class="text-foreground/50">reasoning_depth:</span> <span class="text-green-400">"deep"</span>
+})</pre>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-mono text-accent mb-2 uppercase tracking-wider">Output</div>
+            <div class="code-block rounded-xl p-5 font-mono text-sm leading-relaxed overflow-x-auto">
+              <pre class="text-foreground/80">{
+  <span class="text-foreground/50">estimatedSeconds:</span> <span class="text-yellow-400">835</span>,
+  <span class="text-foreground/50">estimatedMinutes:</span> <span class="text-yellow-400">13.9</span>,
+  <span class="text-foreground/50">confidence:</span> <span class="text-green-400">"likely"</span>,
+  <span class="text-foreground/50">category:</span> <span class="text-green-400">"medium"</span>,
+  <span class="text-foreground/50">model:</span> <span class="text-green-400">"claude-sonnet-4-20250514"</span>
+}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Metrics -->
+    <section class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">Quality Metrics</h2>
+        <p class="text-foreground/70 max-w-3xl mb-10 leading-relaxed">
+          Built with Matt Pocock TypeScript patterns — strict mode, noUncheckedIndexedAccess, verbatimModuleSyntax.
+          Every field validated with Zod schemas.
+        </p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="metric-card rounded-xl p-5 text-center">
+            <div class="text-3xl font-bold text-accent font-mono">129</div>
+            <div class="text-sm text-foreground/60 mt-1">Tests Passing</div>
+          </div>
+          <div class="metric-card rounded-xl p-5 text-center">
+            <div class="text-3xl font-bold text-accent font-mono">87%</div>
+            <div class="text-sm text-foreground/60 mt-1">Statement Coverage</div>
+          </div>
+          <div class="metric-card rounded-xl p-5 text-center">
+            <div class="text-3xl font-bold text-accent font-mono">14</div>
+            <div class="text-sm text-foreground/60 mt-1">MCP Tools</div>
+          </div>
+          <div class="metric-card rounded-xl p-5 text-center">
+            <div class="text-3xl font-bold text-accent font-mono">12</div>
+            <div class="text-sm text-foreground/60 mt-1">Model Calibrations</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation -->
+    <section id="install" class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-4">Installation</h2>
+        <p class="text-foreground/70 max-w-3xl mb-8 leading-relaxed">
+          Runs via stdio transport — integrates with Claude Code, Cursor, VS Code, Windsurf, and any MCP-compatible client.
+        </p>
+
+        <div class="space-y-6">
+          <div>
+            <h3 class="font-semibold mb-2 flex items-center gap-2">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              Claude Code
+            </h3>
+            <div class="code-block rounded-xl p-4 font-mono text-sm overflow-x-auto">
+              <span class="text-foreground/50">$</span> <span class="text-accent">claude mcp add epoch</span> -- npx @kyanitelabs/epoch
+            </div>
+          </div>
+
+          <div>
+            <h3 class="font-semibold mb-2 flex items-center gap-2">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              .mcp.json (Cursor / VS Code / Windsurf)
+            </h3>
+            <div class="code-block rounded-xl p-4 font-mono text-sm overflow-x-auto">
+<pre class="text-foreground/80">{
+  <span class="text-foreground/50">"mcpServers"</span>: {
+    <span class="text-green-400">"epoch"</span>: {
+      <span class="text-foreground/50">"command"</span>: <span class="text-green-400">"npx"</span>,
+      <span class="text-foreground/50">"args"</span>: [<span class="text-green-400">"@kyanitelabs/epoch"</span>]
+    }
+  }
+}</pre>
+            </div>
+          </div>
+
+          <div>
+            <h3 class="font-semibold mb-2 flex items-center gap-2">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              From Source
+            </h3>
+            <div class="code-block rounded-xl p-4 font-mono text-sm overflow-x-auto">
+              <span class="text-foreground/50">$</span> <span class="text-accent">git clone</span> https://github.com/KyaniteLabs/Epoch.git<br>
+              <span class="text-foreground/50">$</span> <span class="text-accent">cd</span> Epoch && npm install && npm run build<br>
+              <span class="text-foreground/50">$</span> <span class="text-accent">node</span> dist/index.js
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section class="py-20 px-6 border-t border-border">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="text-3xl font-bold mb-8">Tech Stack</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="metric-card rounded-xl p-4 text-center">
+            <div class="font-mono font-semibold text-foreground">TypeScript 5.8</div>
+            <div class="text-xs text-foreground/50 mt-1">Strict + noUncheckedIndexedAccess</div>
+          </div>
+          <div class="metric-card rounded-xl p-4 text-center">
+            <div class="font-mono font-semibold text-foreground">Zod 3.24</div>
+            <div class="text-xs text-foreground/50 mt-1">Schema validation with .describe()</div>
+          </div>
+          <div class="metric-card rounded-xl p-4 text-center">
+            <div class="font-mono font-semibold text-foreground">MCP SDK 1.12</div>
+            <div class="text-xs text-foreground/50 mt-1">Model Context Protocol</div>
+          </div>
+          <div class="metric-card rounded-xl p-4 text-center">
+            <div class="font-mono font-semibold text-foreground">Vitest 3.x</div>
+            <div class="text-xs text-foreground/50 mt-1">129 tests, v8 coverage</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="py-10 px-6 border-t border-border">
+    <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-foreground/50">
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" role="img" aria-label="Epoch clock icon">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span class="font-mono">Epoch</span>
+        <span class="text-foreground/30">by Kyanite Labs</span>
+      </div>
+      <div class="flex items-center gap-6">
+        <a href="https://github.com/KyaniteLabs/Epoch" class="nav-link text-foreground/50 hover:text-accent">GitHub</a>
+        <span>MIT License</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
