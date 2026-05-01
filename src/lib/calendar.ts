@@ -92,25 +92,6 @@ function lastWeekdayOfMonth(
 function usHolidays(year: number): readonly Date[] {
   const easter = easterSunday(year);
   return [
-    new Date(year, 0, 1),                                  // New Year's Day
-    nthWeekdayOfMonth(year, 0, 1, 3),                      // MLK Day (3rd Mon Jan)
-    nthWeekdayOfMonth(year, 1, 1, 3),                      // Presidents' Day (3rd Mon Feb)
-    new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() - 2), // Good Friday
-    nthWeekdayOfMonth(year, 4, 1, -1 + 5),                 // Memorial Day (last Mon May) — computed below
-    new Date(year, 5, 19),                                  // Juneteenth
-    new Date(year, 6, 4),                                   // Independence Day
-    nthWeekdayOfMonth(year, 8, 1, 1),                       // Labor Day (1st Mon Sep)
-    nthWeekdayOfMonth(year, 9, 1, 2),                       // Columbus Day (2nd Mon Oct)
-    new Date(year, 10, 11),                                 // Veterans Day
-    nthWeekdayOfMonth(year, 10, 3, 4),                      // Thanksgiving (4th Thu Nov)
-    new Date(year, 11, 25),                                 // Christmas Day
-  ].map(normaliseHolidayDate);
-}
-
-// Fix Memorial Day — use lastWeekdayOfMonth
-function usHolidaysFixed(year: number): readonly Date[] {
-  const easter = easterSunday(year);
-  return [
     new Date(year, 0, 1),                                   // New Year's Day
     nthWeekdayOfMonth(year, 0, 1, 3),                       // MLK Day
     nthWeekdayOfMonth(year, 1, 1, 3),                       // Presidents' Day
@@ -132,27 +113,13 @@ function ukHolidays(year: number): readonly Date[] {
   const easter = easterSunday(year);
   return [
     new Date(year, 0, 1),                                   // New Year's Day
-    nthWeekdayOfMonth(year, 3, 5, 1 - 1 + 1),              // Good Friday — computed below
-    normaliseHolidayDate(new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + 1)), // Easter Monday
-    nthWeekdayOfMonth(year, 4, 1, 1),                       // Early May Bank Holiday (1st Mon May)
-    nthWeekdayOfMonth(year, 4, 1, -1 + 5),                  // Spring Bank Holiday (last Mon May) — fixed below
-    nthWeekdayOfMonth(year, 7, 1, -1 + 5),                  // Summer Bank Holiday (last Mon Aug) — fixed below
-    new Date(year, 11, 25),                                 // Christmas Day
-    new Date(year, 11, 26),                                 // Boxing Day
-  ].map(normaliseHolidayDate);
-}
-
-function ukHolidaysFixed(year: number): readonly Date[] {
-  const easter = easterSunday(year);
-  return [
-    new Date(year, 0, 1),
     normaliseHolidayDate(new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() - 2)), // Good Friday
     normaliseHolidayDate(new Date(easter.getFullYear(), easter.getMonth(), easter.getDate() + 1)), // Easter Monday
-    nthWeekdayOfMonth(year, 4, 1, 1),                       // Early May
-    lastWeekdayOfMonth(year, 4, 1),                         // Spring Bank
-    lastWeekdayOfMonth(year, 7, 1),                         // Summer Bank
-    new Date(year, 11, 25),
-    new Date(year, 11, 26),
+    nthWeekdayOfMonth(year, 4, 1, 1),                       // Early May Bank Holiday
+    lastWeekdayOfMonth(year, 4, 1),                         // Spring Bank Holiday
+    lastWeekdayOfMonth(year, 7, 1),                         // Summer Bank Holiday
+    new Date(year, 11, 25),                                 // Christmas Day
+    new Date(year, 11, 26),                                 // Boxing Day
   ].map(normaliseHolidayDate);
 }
 
@@ -241,8 +208,8 @@ export class HolidayRegistry {
   private readonly registry = new Map<string, HolidayFn>();
 
   constructor() {
-    this.registry.set("US", (year: number) => usHolidaysFixed(year));
-    this.registry.set("UK", (year: number) => ukHolidaysFixed(year));
+    this.registry.set("US", (year: number) => usHolidays(year));
+    this.registry.set("UK", (year: number) => ukHolidays(year));
     this.registry.set("FR", (year: number) => frHolidays(year));
     this.registry.set("DE", (year: number) => deHolidays(year));
     this.registry.set("JP", (year: number) => jpHolidays(year));

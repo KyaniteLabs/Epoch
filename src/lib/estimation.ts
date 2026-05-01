@@ -150,6 +150,23 @@ export function cocomoEstimate(params: {
 }): CocomoResult {
   const { kloc, reasoningComplexity, contextCompleteness, transformationImpact, iterativeCycles, humanOversight } = params;
 
+  if (kloc <= 0) {
+    return {
+      kloc: 0,
+      personMonthsNominal: 0,
+      personMonthsLlmAdjusted: 0,
+      effortMultipliers: {
+        reasoning_complexity: reasoningComplexity,
+        context_completeness: contextCompleteness,
+        transformation_impact: transformationImpact,
+        iterative_cycles: iterativeCycles,
+        human_oversight: humanOversight,
+        product: 0,
+      },
+      assumptions: ["kloc must be > 0. Estimate is zero."],
+    };
+  }
+
   const A = 2.94;
   const B = 1.10;
   const emProduct = reasoningComplexity * contextCompleteness * transformationImpact * iterativeCycles * humanOversight;
