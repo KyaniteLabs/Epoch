@@ -1,7 +1,7 @@
 # Epoch
 
 [![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml)
-[![License: BSL-1.1](https://img.shields.io/badge/License-BSL--1.1-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io)
 
 A Time Estimation MCP Server — giving LLMs accurate temporal reasoning through external tools. **14 structured tools** across **5 layers**, accessible via MCP, CLI, and REST API.
@@ -213,4 +213,4 @@ npm run inspector # Open MCP Inspector for interactive testing
 
 ## License
 
-Business Source License 1.1 (BSL-1.1). Non-production use is permitted freely. See [LICENSE](./LICENSE) for full terms. Converts to MIT on 2029-01-01.
+MIT License. See [LICENSE](./LICENSE) for full terms.
