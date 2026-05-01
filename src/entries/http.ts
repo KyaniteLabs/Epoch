@@ -130,6 +130,21 @@ export function createApiApp(): Hono {
   app.post("/v1/tools/:toolName", async (c) => {
     const toolName = c.req.param("toolName");
 
+    const contentLength = c.req.header("content-length");
+    if (contentLength && Number.parseInt(contentLength, 10) > 1_048_576) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            isError: true,
+            message: "Request body too large (max 1 MB).",
+            retryHint: "Reduce the number of tasks or use smaller payloads.",
+          },
+        },
+        413,
+      );
+    }
+
     let body: Record<string, unknown>;
     try {
       body = await c.req.json();

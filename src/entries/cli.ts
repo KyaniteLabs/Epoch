@@ -95,7 +95,7 @@ export function createCliProgram(): Command {
     .command("convert-timezone")
     .description("Converts a timestamp from its embedded timezone to a target timezone.")
     .requiredOption("--timestamp <ts>", "ISO-8601 timestamp to convert")
-    .requiredOption("--target-timezone <tz>", "Target IANA timezone identifier")
+    .requiredOption("--target-tz <tz>", "Target IANA timezone identifier")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
       const format = resolveFormat(root.opts() as Record<string, unknown>);
@@ -104,7 +104,7 @@ export function createCliProgram(): Command {
         "convert_timezone",
         {
           timestamp: opts.timestamp,
-          target_timezone: opts.targetTimezone,
+          target_tz: opts.targetTz,
         },
         format,
         quiet,
@@ -121,7 +121,7 @@ export function createCliProgram(): Command {
       const quiet = root.opts().quiet === true;
       await runAndExit(
         "parse_duration",
-        { duration: opts.duration },
+        { duration_string: opts.duration },
         format,
         quiet,
       );
@@ -163,7 +163,7 @@ export function createCliProgram(): Command {
         {
           start_date: opts.startDate,
           days: opts.days,
-          country_code: opts.country,
+          country: opts.country,
         },
         format,
         quiet,
@@ -185,7 +185,7 @@ export function createCliProgram(): Command {
         {
           start_date: opts.startDate,
           end_date: opts.endDate,
-          country_code: opts.country,
+          country: opts.country,
         },
         format,
         quiet,

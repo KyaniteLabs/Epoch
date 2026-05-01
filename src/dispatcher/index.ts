@@ -46,7 +46,20 @@ export async function dispatch(
     };
   }
 
-  return definition.handler(parsed.data as Record<string, unknown>);
+  try {
+    return definition.handler(parsed.data as Record<string, unknown>);
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Unexpected handler error.";
+    return {
+      ok: false,
+      error: {
+        isError: true,
+        message,
+        retryHint: `Tool "${toolName}" encountered an internal error. Check inputs and try again.`,
+      },
+    };
+  }
 }
 
 // ---- Helpers ----------------------------------------------------------------

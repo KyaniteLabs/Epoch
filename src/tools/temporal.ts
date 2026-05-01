@@ -16,10 +16,6 @@ import {
 import {
   addBusinessDays,
   countBusinessDays,
-  isBusinessDay,
-  isWithinWorkingHours,
-  getUrgencyCategory,
-  holidayRegistry,
 } from "../lib/calendar.js";
 
 // ---- Annotation constant --------------------------------------------------

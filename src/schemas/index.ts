@@ -345,9 +345,6 @@ export const monteCarloSchema = z.object({
           .number()
           .positive()
           .describe("Worst-case duration in days."),
-        predecessors: z
-          .array(z.string())
-          .describe("Names of tasks this one depends on."),
       })
     )
     .min(1)

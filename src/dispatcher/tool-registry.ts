@@ -72,13 +72,13 @@ const convertTimezoneSchema = z.object({
   timestamp: z
     .string()
     .describe("ISO-8601 timestamp to convert."),
-  target_timezone: z
+  target_tz: z
     .string()
     .describe("Target IANA timezone identifier."),
 });
 
 const parseDurationSchema = z.object({
-  duration: z
+  duration_string: z
     .string()
     .describe('Duration string like "2h30m", "1d6h", "45m".'),
 });
@@ -91,7 +91,7 @@ const addBusinessDaysSchema = z.object({
     .number()
     .int()
     .describe("Number of business days to add (negative to subtract)."),
-  country_code: z
+  country: z
     .string()
     .describe("ISO-3166-1-alpha-2 country code for holiday calendar.")
     .default("US"),
@@ -104,7 +104,7 @@ const countBusinessDaysSchema = z.object({
   end_date: z
     .string()
     .describe("ISO date string for the end date."),
-  country_code: z
+  country: z
     .string()
     .describe("ISO-3166-1-alpha-2 country code for holiday calendar.")
     .default("US"),
@@ -129,7 +129,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     (input) =>
       convertTimezone(
         input.timestamp as string,
-        input.target_timezone as string,
+        input.target_tz as string,
       ),
   ),
 
@@ -137,7 +137,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "parse_duration",
     'Parses a duration string such as "2h30m", "1d6h", "45m" into seconds and a human-readable form.',
     parseDurationSchema,
-    (input) => parseDuration(input.duration as string),
+    (input) => parseDuration(input.duration_string as string),
   ),
 
   tool(
@@ -156,7 +156,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
         case "convert_tz":
           return convertTimezone(
             ops.timestamp as string,
-            ops.target_timezone as string,
+            ops.target_tz as string,
           );
         case "parse_nl":
           return parseDuration(ops.duration as string);
@@ -166,7 +166,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
           return addBusinessDays(
             ops.start_date as string,
             ops.days as number,
-            (ops.country_code as string) ?? "US",
+            (ops.country as string) ?? "US",
           );
         default:
           return {
@@ -190,7 +190,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
       addBusinessDays(
         input.start_date as string,
         input.days as number,
-        input.country_code as string,
+        input.country as string,
       ),
   ),
 
@@ -202,7 +202,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
       countBusinessDays(
         input.start_date as string,
         input.end_date as string,
-        input.country_code as string,
+        input.country as string,
       ),
   ),
 
