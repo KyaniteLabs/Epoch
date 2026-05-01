@@ -147,10 +147,15 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
     return { mape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
   }
 
-  const errors = records.map(r => Math.abs(r.actualHours - r.estimatedHours) / r.actualHours);
+  const validRecords = records.filter(r => r.actualHours > 0);
+  if (validRecords.length === 0) {
+    return { mape: 0, bias: 0, variance: 0, sample_size: records.length, trend: "stable" };
+  }
+
+  const errors = validRecords.map(r => Math.abs(r.actualHours - r.estimatedHours) / r.actualHours);
   const mape = (errors.reduce((a, b) => a + b, 0) / errors.length) * 100;
 
-  const biases = records.map(r => r.actualHours - r.estimatedHours);
+  const biases = validRecords.map(r => r.actualHours - r.estimatedHours);
   const bias = biases.reduce((a, b) => a + b, 0) / biases.length;
 
   const meanBias = bias;

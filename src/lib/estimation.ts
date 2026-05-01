@@ -57,11 +57,11 @@ export function pertEstimate(
       variance: Math.round(variance * 100) / 100,
       stdDeviation: Math.round(stdDev * 100) / 100,
       confidence95: [
-        Math.round((expected - 2 * stdDev) * 100) / 100,
+        Math.max(0, Math.round((expected - 2 * stdDev) * 100) / 100),
         Math.round((expected + 2 * stdDev) * 100) / 100,
       ],
       confidence99: [
-        Math.round((expected - 3 * stdDev) * 100) / 100,
+        Math.max(0, Math.round((expected - 3 * stdDev) * 100) / 100),
         Math.round((expected + 3 * stdDev) * 100) / 100,
       ],
       unit,
@@ -182,6 +182,16 @@ export function cocomoEstimate(params: {
 export function criticalPath(tasks: CpmTask[]): ToolResult<CpmResult> {
   const taskMap = new Map<string, CpmTask>();
   for (const t of tasks) {
+    if (taskMap.has(t.name)) {
+      return {
+        ok: false,
+        error: {
+          isError: true,
+          message: `Duplicate task name: "${t.name}".`,
+          retryHint: "Each task must have a unique name.",
+        },
+      };
+    }
     taskMap.set(t.name, t);
   }
 
@@ -200,11 +210,22 @@ export function criticalPath(tasks: CpmTask[]): ToolResult<CpmResult> {
     }
   }
 
+  const sorted = topologicalSort(tasks);
+  if (sorted.length !== tasks.length) {
+    return {
+      ok: false,
+      error: {
+        isError: true,
+        message: "Circular dependency detected in task graph.",
+        retryHint: "Remove cycles from task predecessor chains.",
+      },
+    };
+  }
+
   // Forward pass
   const es = new Map<string, number>();
   const ef = new Map<string, number>();
 
-  const sorted = topologicalSort(tasks);
   for (const name of sorted) {
     const task = taskMap.get(name);
     if (!task) continue;
@@ -331,7 +352,10 @@ export function monteCarloSim(
 
   durations.sort((a, b) => a - b);
 
-  const p = (percentile: number): number => durations[Math.floor(iterations * percentile)] ?? 0;
+  const p = (percentile: number): number => {
+    const idx = Math.min(Math.floor(iterations * percentile), durations.length - 1);
+    return durations[idx] ?? 0;
+  };
 
   const riskEvents = [...taskOverruns.entries()]
     .sort((a, b) => b[1] - a[1])

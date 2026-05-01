@@ -243,6 +243,26 @@ describe("criticalPath", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("returns error for duplicate task names", () => {
+    const result = criticalPath([
+      { name: "A", duration: 3, predecessors: [] },
+      { name: "A", duration: 5, predecessors: [] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("Duplicate");
+  });
+
+  it("returns error for circular dependencies", () => {
+    const result = criticalPath([
+      { name: "A", duration: 3, predecessors: ["B"] },
+      { name: "B", duration: 5, predecessors: ["A"] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("Circular");
+  });
+
   it("handles single task", () => {
     const result = criticalPath([
       { name: "Solo", duration: 7, predecessors: [] },

@@ -7,12 +7,9 @@
 import {
   parseISO,
   format,
-  addBusinessDays as dateFnsAddBusinessDays,
-  differenceInCalendarDays,
   isWeekend,
   getDay,
   getHours,
-  getMinutes,
 } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import type {
@@ -309,40 +306,32 @@ export function addBusinessDays(
     };
   }
 
-  const result = dateFnsAddBusinessDays(parsed, days);
-  const calendarDaysSpanned = Math.abs(differenceInCalendarDays(result, parsed));
-
-  // Identify holidays that were skipped along the way
-  const startYear = parsed.getFullYear();
-  const endYear = result.getFullYear();
+  // Walk day-by-day to properly skip both weekends AND holidays
+  const direction = days >= 0 ? 1 : -1;
+  const targetCount = Math.abs(days);
+  let added = 0;
+  const current = new Date(parsed);
   const holidaysSkipped: string[] = [];
-  const holidayNames = new Map<string, string>();
 
-  for (let y = startYear; y <= endYear; y++) {
-    const hols = holidayRegistry.holidays(code, y);
-    for (const h of hols) {
-      const key = dateToKey(h);
-      holidayNames.set(key, format(h, "yyyy-MM-dd"));
-      // Check if the holiday falls between start (exclusive) and end (inclusive)
-      const hTime = h.getTime();
-      const startTime = parsed.getTime();
-      const endTime = result.getTime();
-      if (hTime > startTime && hTime <= endTime) {
-        if (!isWeekend(h)) {
-          holidaysSkipped.push(key);
-        }
-      }
+  while (added < targetCount) {
+    current.setDate(current.getDate() + direction);
+    const year = current.getFullYear();
+    const holidayKeys = holidayRegistry.holidayDateKeys(code, year);
+
+    if (isWeekend(current)) continue;
+    if (holidayKeys.has(dateToKey(current))) {
+      holidaysSkipped.push(dateToKey(current));
+      continue;
     }
+    added++;
   }
-
-  const businessDayCount = Math.abs(days);
 
   return {
     ok: true,
     data: {
       startDate: format(parsed, "yyyy-MM-dd"),
-      endDate: format(result, "yyyy-MM-dd"),
-      businessDays: businessDayCount,
+      endDate: format(current, "yyyy-MM-dd"),
+      businessDays: targetCount,
       countryCode: code,
     },
   };
@@ -446,21 +435,14 @@ export function isWithinWorkingHours(
   }
 
   const hour = getHours(zoned);
-  const minute = getMinutes(zoned);
 
   if (startHour <= endHour) {
-    // Normal range, e.g. 9-17
     if (hour < startHour || hour >= endHour) return false;
   } else {
-    // Overnight range, e.g. 22-6
     if (hour < startHour && hour >= endHour) return false;
   }
 
-  // If it's the last hour, check minutes
-  if (hour === endHour - 1 || (endHour <= startHour && hour === 23)) {
-    return true; // Any minute in the final hour is acceptable
-  }
-
+  // Hour-granularity check: any time within the range is valid.
   return true;
 }
 
