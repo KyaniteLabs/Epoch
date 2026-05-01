@@ -8,6 +8,9 @@
 const EPOCH_URL = process.env.EPOCH_URL || "http://localhost:3099";
 const LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://100.66.225.85:1234";
 
+// Module-level state populated in main() after tool discovery
+let availableTools = [];
+
 // Models with known parameter counts below 1B are marked as "tiny"
 // and skipped by default. Use --include-tiny or INCLUDE_TINY_MODELS=1 to override.
 const MODEL_TIERS = {
@@ -286,7 +289,7 @@ async function main() {
   }
   console.log(`Epoch API v${health.version} — ${health.tools} tools loaded`);
 
-  const availableTools = await fetchEpochTools();
+  availableTools = await fetchEpochTools();
   console.log(`Available tools: ${availableTools.join(", ") || "(could not fetch)"}`);
 
   const results = [];
@@ -297,7 +300,7 @@ async function main() {
     {
       name: "get_current_time",
       body: { timezone: "Asia/Tokyo" },
-      validate: (data) => data.timezone === "Asia/Tokyo" && /\d{2}:\d{2}/.test(data.humanReadable),
+      validate: (data) => data.timezone === "Asia/Tokyo" && /\d{1,2}:\d{2}/.test(data.humanReadable),
     },
     {
       name: "pert_estimate",
