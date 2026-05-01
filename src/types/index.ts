@@ -49,6 +49,8 @@ export interface BusinessDayResult {
   readonly businessDays: number;
   /** ISO-3166-1-alpha-2 country code used for holiday calculation. */
   readonly countryCode: string;
+  /** Human-readable summary (e.g. "19 business days between May 1, 2026 and May 31, 2026 (US)"). */
+  readonly humanReadable: string;
 }
 
 // ---- PERT Estimation Layer ------------------------------------------------
@@ -66,6 +68,8 @@ export interface PertResult {
   readonly confidence99: readonly [number, number];
   readonly unit: TimeUnit;
   readonly urgencyCategory: UrgencyCategory;
+  /** Human-readable summary (e.g. "Expected: 7 hours. 95% confidence: 1 to 13 hours."). */
+  readonly humanReadable: string;
 }
 
 // ---- COCOMO Estimation Layer ----------------------------------------------
@@ -127,6 +131,8 @@ export interface TokenTimeMapping {
   readonly urgency: UrgencyCategory;
   /** Breakdown of where time is spent. */
   readonly breakdown: TokenTimeBreakdown;
+  /** Human-readable summary (e.g. "Approximately 21 minutes for 100,000 tokens with claude-sonnet-4."). */
+  readonly humanReadable: string;
 }
 
 // ---- Monte Carlo Layer ----------------------------------------------------
@@ -153,6 +159,8 @@ export interface MonteCarloResult {
   readonly criticalPathProbability: number;
   /** Identified risk events and their characteristics. */
   readonly riskEvents: readonly RiskEvent[];
+  /** Human-readable summary (e.g. "Median (p50): 7.99 days. Conservative (p95): 12.81 days."). */
+  readonly humanReadable: string;
 }
 
 // ---- Error Handling -------------------------------------------------------

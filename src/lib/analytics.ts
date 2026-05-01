@@ -65,19 +65,25 @@ export function tokenTimeBridge(params: {
   const reasoningSeconds = (cal.reasoningOverheadMs / 1000) * REASONING_DEPTH_MULTIPLIER[params.reasoningDepth];
 
   const totalSeconds = generationTimeSeconds + toolOverheadSeconds + reasoningSeconds;
+  const estMin = Math.round(totalSeconds / 60 * 10) / 10;
+  const timeStr = estMin >= 60
+    ? `${Math.round(estMin / 60 * 10) / 10} hours`
+    : `${estMin} minutes`;
+  const confidence = getConfidence(params.model);
 
   return {
     tokens: params.tokens,
     model: params.model,
     estimatedSeconds: Math.round(totalSeconds),
-    estimatedMinutes: Math.round(totalSeconds / 60 * 10) / 10,
-    confidence: getConfidence(params.model),
+    estimatedMinutes: estMin,
+    confidence,
     urgency: getUrgency(totalSeconds),
     breakdown: {
       promptTokens: Math.round(params.tokens * 0.3),
       completionTokens: Math.round(params.tokens * 0.7),
       toolOverheadSeconds: Math.round(toolOverheadSeconds * 100) / 100,
     },
+    humanReadable: `Approximately ${timeStr} for ${params.tokens.toLocaleString()} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls). Confidence: ${confidence}.`,
   };
 }
 

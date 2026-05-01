@@ -46,6 +46,7 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: z.ZodType;
+  outputSchema: Record<string, unknown>;
   handler: (input: Record<string, unknown>) => ToolResult<unknown>;
 }
 
@@ -55,9 +56,10 @@ function tool(
   name: string,
   description: string,
   inputSchema: z.ZodType,
+  outputSchema: Record<string, unknown>,
   handler: (input: Record<string, unknown>) => ToolResult<unknown>,
 ): [string, ToolDefinition] {
-  return [name, { name, description, inputSchema, handler }];
+  return [name, { name, description, inputSchema, outputSchema, handler }];
 }
 
 // ---- Simple schemas for tools without dedicated schemas ---------------------
@@ -111,6 +113,163 @@ const countBusinessDaysSchema = z.object({
     .default("US"),
 });
 
+// ---- Output schemas (JSON Schema for OpenAPI response docs) -----------------
+
+const temporalOutput = {
+  type: "object",
+  properties: {
+    iso: { type: "string", description: "ISO-8601 timestamp" },
+    humanReadable: { type: "string", description: "Human-readable date/time" },
+    timezone: { type: "string", description: "IANA timezone identifier" },
+    utcOffset: { type: "string", description: "UTC offset string" },
+  },
+};
+
+const durationOutput = {
+  type: "object",
+  properties: {
+    input: { type: "string" },
+    totalSeconds: { type: "number" },
+    humanReadable: { type: "string" },
+  },
+};
+
+const businessDayOutput = {
+  type: "object",
+  properties: {
+    startDate: { type: "string", description: "Start date (ISO)" },
+    endDate: { type: "string", description: "End date (ISO)" },
+    businessDays: { type: "number", description: "Number of business days" },
+    countryCode: { type: "string", description: "ISO-3166 country code" },
+    humanReadable: { type: "string", description: "Human-readable summary" },
+  },
+};
+
+const pertOutput = {
+  type: "object",
+  properties: {
+    optimistic: { type: "number" },
+    mostLikely: { type: "number" },
+    pessimistic: { type: "number" },
+    expected: { type: "number", description: "PERT expected value" },
+    variance: { type: "number" },
+    stdDeviation: { type: "number" },
+    confidence95: { type: "array", items: { type: "number" }, description: "95% confidence interval [lower, upper]" },
+    confidence99: { type: "array", items: { type: "number" }, description: "99% confidence interval [lower, upper]" },
+    unit: { type: "string", enum: ["hours", "days", "weeks", "months"] },
+    urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
+    humanReadable: { type: "string", description: "Human-readable summary" },
+  },
+};
+
+const cocomoOutput = {
+  type: "object",
+  properties: {
+    kloc: { type: "number" },
+    personMonthsNominal: { type: "number" },
+    personMonthsLlmAdjusted: { type: "number" },
+    effortMultipliers: { type: "object", additionalProperties: { type: "number" } },
+    assumptions: { type: "array", items: { type: "string" } },
+  },
+};
+
+const sprintOutput = {
+  type: "object",
+  properties: {
+    backlogPoints: { type: "number" },
+    averageVelocity: { type: "number" },
+    requiredSprints: { type: "number" },
+    pessimisticSprints: { type: "number" },
+    hoursPerPoint: { type: "number" },
+    totalHours: { type: "number" },
+    completionDays: { type: "number" },
+    sprintLengthDays: { type: "number" },
+  },
+};
+
+const criticalPathOutput = {
+  type: "object",
+  properties: {
+    critical_path: { type: "array", items: { type: "string" } },
+    slack_per_task: { type: "object", additionalProperties: { type: "number" } },
+    total_duration: { type: "number" },
+    merge_bias_adjustment: { type: "number" },
+  },
+};
+
+const monteCarloOutput = {
+  type: "object",
+  properties: {
+    p10: { type: "string", description: "10th percentile (optimistic)" },
+    p50: { type: "string", description: "50th percentile (median)" },
+    p80: { type: "string", description: "80th percentile" },
+    p95: { type: "string", description: "95th percentile (conservative)" },
+    criticalPathProbability: { type: "number" },
+    riskEvents: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          description: { type: "string" },
+          probability: { type: "number" },
+          impactDays: { type: "number" },
+        },
+      },
+    },
+    humanReadable: { type: "string", description: "Human-readable summary" },
+  },
+};
+
+const tokenTimeOutput = {
+  type: "object",
+  properties: {
+    tokens: { type: "number" },
+    model: { type: "string" },
+    estimatedSeconds: { type: "number" },
+    estimatedMinutes: { type: "number" },
+    confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
+    urgency: { type: "string", enum: ["short", "medium", "long"] },
+    breakdown: {
+      type: "object",
+      properties: {
+        promptTokens: { type: "number" },
+        completionTokens: { type: "number" },
+        toolOverheadSeconds: { type: "number" },
+      },
+    },
+    humanReadable: { type: "string", description: "Human-readable summary" },
+  },
+};
+
+const referenceClassOutput = {
+  type: "object",
+  properties: {
+    rawEstimate: { type: "number" },
+    correctedEstimate: { type: "number" },
+    correctionFactor: { type: "number" },
+    sampleSize: { type: "number" },
+    confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
+  },
+};
+
+const calibrateOutput = {
+  type: "object",
+  properties: {
+    mape: { type: "number", description: "Mean Absolute Percentage Error" },
+    bias: { type: "number", description: "Mean bias (positive = underestimation)" },
+    variance: { type: "number" },
+    sample_size: { type: "number" },
+    trend: { type: "string", enum: ["improving", "degrading", "stable"] },
+  },
+};
+
+const timeMathOutput = {
+  type: "object",
+  description: "Varies by operation. Returns temporal, duration, or date diff data.",
+};
+
+const stringOutput = { type: "string" };
+
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
 
 const handlers: Record<string, ToolDefinition> = Object.fromEntries([
@@ -120,6 +279,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "get_current_time",
     "Returns the current time in the specified IANA timezone.",
     getCurrentTimeSchema,
+    temporalOutput,
     (input) => getCurrentTime(input.timezone as string),
   ),
 
@@ -127,6 +287,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "convert_timezone",
     "Converts a timestamp from its embedded timezone to a target timezone.",
     convertTimezoneSchema,
+    temporalOutput,
     (input) =>
       convertTimezone(
         input.timestamp as string,
@@ -138,6 +299,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "parse_duration",
     'Parses a duration string such as "2h30m", "1d6h", "45m" into seconds and a human-readable form.',
     parseDurationSchema,
+    durationOutput,
     (input) => parseDuration(input.duration_string as string),
   ),
 
@@ -145,6 +307,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "time_math",
     "Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.",
     timeMathSchema,
+    timeMathOutput,
     (input) => {
       const operation = input.operation as string;
       const ops = input.operands as Record<string, unknown>;
@@ -187,6 +350,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "add_business_days",
     "Adds N business days to a start date, skipping weekends and holidays.",
     addBusinessDaysSchema,
+    businessDayOutput,
     (input) =>
       addBusinessDays(
         input.start_date as string,
@@ -199,6 +363,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "count_business_days",
     "Counts business days between two dates, skipping weekends and holidays.",
     countBusinessDaysSchema,
+    businessDayOutput,
     (input) =>
       countBusinessDays(
         input.start_date as string,
@@ -213,6 +378,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "pert_estimate",
     "Computes a PERT three-point estimate with expected value, standard deviation, and confidence intervals.",
     pertEstimateSchema,
+    pertOutput,
     (input) =>
       pertEstimate(
         input.optimistic as number,
@@ -226,6 +392,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "cocomo_estimate",
     "Estimates effort using a COCOMO II model adjusted for LLM-assisted workflows.",
     cocomoEstimateSchema,
+    cocomoOutput,
     (input) => ({
       ok: true as const,
       data: cocomoEstimate({
@@ -243,6 +410,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "sprint_forecast",
     "Forecasts sprints needed to clear a backlog based on historical velocity.",
     sprintForecastSchema,
+    sprintOutput,
     (input) =>
       sprintForecast({
         backlogPoints: input.backlog_points as number,
@@ -256,6 +424,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "critical_path",
     "Computes the critical path through a task graph with merge-bias adjustment.",
     criticalPathSchema,
+    criticalPathOutput,
     (input) => {
       const tasks = input.tasks as Array<{
         name: string;
@@ -270,6 +439,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "monte_carlo_schedule",
     "Runs a Monte Carlo simulation on a task list with three-point estimates.",
     monteCarloSchema,
+    monteCarloOutput,
     (input) => {
       const rawTasks = input.tasks as Array<{
         name: string;
@@ -295,6 +465,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "reference_class_estimate",
     "Estimates effort using reference-class forecasting from historical data.",
     referenceClassEstimateSchema,
+    referenceClassOutput,
     (input) => ({
       ok: true as const,
       data: referenceClassEstimate(
@@ -317,6 +488,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "calibrate_estimates",
     "Calibrates estimation accuracy using historical team data.",
     calibrateEstimatesSchema,
+    calibrateOutput,
     (input) => ({
       ok: true as const,
       data: calibrateEstimates(
@@ -331,6 +503,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "token_time_bridge",
     "Estimates wall-clock time from token count and LLM model parameters.",
     tokenTimeBridgeSchema,
+    tokenTimeOutput,
     (input) => ({
       ok: true as const,
       data: tokenTimeBridge({

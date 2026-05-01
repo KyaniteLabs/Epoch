@@ -66,6 +66,7 @@ export function pertEstimate(
       ],
       unit,
       urgencyCategory: getUrgencyCategory(expectedHours),
+      humanReadable: `Expected: ${Math.round(expected * 100) / 100} ${unit}. 95% confidence: ${Math.max(0, Math.round((expected - 2 * stdDev) * 100) / 100)} to ${Math.round((expected + 2 * stdDev) * 100) / 100} ${unit}. 99% confidence: ${Math.max(0, Math.round((expected - 3 * stdDev) * 100) / 100)} to ${Math.round((expected + 3 * stdDev) * 100) / 100} ${unit}.`,
     },
   };
 }
@@ -393,6 +394,7 @@ export function monteCarloSim(
     p95: String(Math.round(p(0.95) * 100) / 100),
     criticalPathProbability: Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100) / 100,
     riskEvents,
+    humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days. Probability of meeting p80 target: ${Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100)}%.`,
   };
 }
 

@@ -300,6 +300,7 @@ export function addBusinessDays(
       endDate: format(current, "yyyy-MM-dd"),
       businessDays: targetCount,
       countryCode: code,
+      humanReadable: `${targetCount} business days from ${format(parsed, "yyyy-MM-dd")} to ${format(current, "yyyy-MM-dd")} (${code}).`,
     },
   };
 }
@@ -363,6 +364,7 @@ export function countBusinessDays(
       endDate: format(endParsed, "yyyy-MM-dd"),
       businessDays,
       countryCode: code,
+      humanReadable: `${businessDays} business days between ${format(startParsed, "yyyy-MM-dd")} and ${format(endParsed, "yyyy-MM-dd")} (${code}).`,
     },
   };
 }
