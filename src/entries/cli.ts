@@ -131,12 +131,29 @@ export function createCliProgram(): Command {
     .command("time-math")
     .description("Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.")
     .requiredOption("--operation <op>", "Time math operation to perform")
-    .requiredOption("--operands <json>", "Key-value operands as JSON object")
+    .option("--date <d>", "ISO date string (add_days, diff)")
+    .option("--days <n>", "Number of days (add_days, add_business_days)", parseFloat)
+    .option("--start-date <d>", "ISO date string for start date (add_business_days)")
+    .option("--country <code>", "ISO-3166-1-alpha-2 country code (add_business_days, default US)")
+    .option("--end-date <d>", "ISO date string for end date (diff)")
+    .option("--timestamp <ts>", "ISO timestamp string (convert_tz)")
+    .option("--target-tz <tz>", "IANA timezone string (convert_tz)")
+    .option("--duration-string <s>", "Natural language duration string (parse_nl)")
+    .option("--milliseconds <n>", "Duration in milliseconds (format_duration)", parseFloat)
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
       const format = resolveFormat(root.opts() as Record<string, unknown>);
       const quiet = root.opts().quiet === true;
-      const operands = parseJsonArg(opts.operands, "operands");
+      const operands: Record<string, unknown> = {};
+      if (opts.date !== undefined) operands.date = opts.date;
+      if (opts.days !== undefined) operands.days = opts.days;
+      if (opts.startDate !== undefined) operands.start_date = opts.startDate;
+      if (opts.country !== undefined) operands.country = opts.country;
+      if (opts.endDate !== undefined) operands.end_date = opts.endDate;
+      if (opts.timestamp !== undefined) operands.timestamp = opts.timestamp;
+      if (opts.targetTz !== undefined) operands.target_tz = opts.targetTz;
+      if (opts.durationString !== undefined) operands.duration_string = opts.durationString;
+      if (opts.milliseconds !== undefined) operands.milliseconds = opts.milliseconds;
       await runAndExit(
         "time_math",
         {
@@ -200,7 +217,7 @@ export function createCliProgram(): Command {
     .requiredOption("--optimistic <n>", "Best-case duration", parseFloat)
     .requiredOption("--most-likely <n>", "Most probable duration", parseFloat)
     .requiredOption("--pessimistic <n>", "Worst-case duration", parseFloat)
-    .option("--unit <unit>", "Time unit (hours|days|weeks|months)", "days")
+    .option("--unit <unit>", "Time unit (hours|days|weeks|months)", "hours")
     .action(async (opts, cmd) => {
       const root = cmd.parent!;
       const format = resolveFormat(root.opts() as Record<string, unknown>);

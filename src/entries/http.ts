@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
-import { dispatch, listTools, TOOL_NAMES } from "../dispatcher/index.js";
+import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
 import type { ToolResult } from "../types/index.js";
+import type { z } from "zod";
 
 const VERSION = "0.1.0";
 
@@ -45,11 +46,150 @@ curl -X POST http://localhost:3000/v1/tools/pert_estimate \\
   -d '{"optimistic": 2, "most_likely": 4, "pessimistic": 12, "unit": "hours"}'
 `;
 
+// ---- Zod → JSON Schema converter -------------------------------------------
+
+interface JsonSchema {
+  [key: string]: unknown;
+}
+
+function zodToJsonSchema(schema: z.ZodType): JsonSchema {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const def = (schema as any)._def;
+
+  if (!def) return {};
+
+  switch (def.typeName) {
+    case "ZodObject": {
+      const shape = def.shape();
+      const properties: Record<string, JsonSchema> = {};
+      const required: string[] = [];
+
+      for (const [key, fieldSchema] of Object.entries(shape)) {
+        const resolved = resolveField(fieldSchema as z.ZodType);
+        properties[key] = resolved.schema;
+        if (!resolved.isOptional) {
+          required.push(key);
+        }
+      }
+
+      const result: JsonSchema = { type: "object", properties };
+      if (required.length > 0) {
+        result.required = required;
+      }
+      return result;
+    }
+
+    case "ZodString":
+      return withDescription({ type: "string" }, def);
+
+    case "ZodNumber": {
+      const result: JsonSchema = { type: "number" };
+      if (def.checks) {
+        for (const check of def.checks as Array<{ kind: string; value?: unknown }>) {
+          if (check.kind === "int") (result as Record<string, unknown>).format = "integer";
+          if (check.kind === "min") result.minimum = check.value;
+          if (check.kind === "max") result.maximum = check.value;
+        }
+      }
+      return withDescription(result, def);
+    }
+
+    case "ZodBoolean":
+      return withDescription({ type: "boolean" }, def);
+
+    case "ZodEnum":
+      return withDescription({ type: "string", enum: def.values }, def);
+
+    case "ZodNativeEnum": {
+      const values = Object.values(def.values as Record<string, string>);
+      return withDescription({ type: "string", enum: values }, def);
+    }
+
+    case "ZodArray": {
+      const items = zodToJsonSchema(def.type);
+      return withDescription({ type: "array", items }, def);
+    }
+
+    case "ZodTuple": {
+      const items = (def.items as z.ZodType[]).map((t: z.ZodType) => zodToJsonSchema(t));
+      return withDescription({ type: "array", items }, def);
+    }
+
+    case "ZodRecord":
+      return withDescription(
+        { type: "object", additionalProperties: zodToJsonSchema(def.valueType) },
+        def,
+      );
+
+    case "ZodDefault": {
+      const inner = zodToJsonSchema(def.innerType);
+      inner.default = def.defaultValue();
+      return inner;
+    }
+
+    case "ZodOptional":
+      return zodToJsonSchema(def.innerType);
+
+    case "ZodNullable": {
+      const inner = zodToJsonSchema(def.innerType);
+      return { anyOf: [inner, { type: "null" }] };
+    }
+
+    case "ZodEffects":
+      return zodToJsonSchema(def.innerType || def.schema);
+
+    case "ZodBranded":
+      return zodToJsonSchema(def.type);
+
+    case "ZodLiteral":
+      return { const: def.value };
+
+    case "ZodUnion":
+      return { anyOf: (def.options as z.ZodType[]).map((o: z.ZodType) => zodToJsonSchema(o)) };
+
+    case "ZodDiscriminatedUnion":
+      return { anyOf: (def.options as z.ZodType[]).map((o: z.ZodType) => zodToJsonSchema(o)) };
+
+    default:
+      return {};
+  }
+}
+
+/** Resolve a field, tracking whether it is optional (via ZodOptional or ZodDefault). */
+function resolveField(schema: z.ZodType): { schema: JsonSchema; isOptional: boolean } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const def = (schema as any)._def;
+  if (!def) return { schema: {}, isOptional: false };
+
+  if (def.typeName === "ZodOptional") {
+    return { schema: zodToJsonSchema(schema), isOptional: true };
+  }
+  if (def.typeName === "ZodDefault") {
+    return { schema: zodToJsonSchema(schema), isOptional: true };
+  }
+  return { schema: zodToJsonSchema(schema), isOptional: false };
+}
+
+/** Attach description from a Zod def's description field, if present. */
+function withDescription(schema: JsonSchema, def: { description?: string }): JsonSchema {
+  if (def.description) {
+    schema.description = def.description;
+  }
+  return schema;
+}
+
+// ---- OpenAPI spec builder ---------------------------------------------------
+
 function buildOpenApiSpec(): Record<string, unknown> {
   const tools = listTools();
   const paths: Record<string, unknown> = {};
 
   for (const tool of tools) {
+    const definition = TOOL_REGISTRY.get(tool.name);
+    const requestSchema = definition
+      ? zodToJsonSchema(definition.inputSchema)
+      : { type: "object" };
+
     paths[`/v1/tools/${tool.name}`] = {
       post: {
         operationId: tool.name,
@@ -57,7 +197,7 @@ function buildOpenApiSpec(): Record<string, unknown> {
         requestBody: {
           required: true,
           content: {
-            "application/json": { schema: { type: "object" } },
+            "application/json": { schema: requestSchema },
           },
         },
         responses: {

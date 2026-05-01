@@ -164,7 +164,7 @@ export const pertEstimateSchema = z.object({
     .describe(
       "Worst-case duration accounting for known risks and unknown unknowns."
     ),
-  unit: timeUnitEnum.default("days").describe("Time unit for all three PERT estimates."),
+  unit: timeUnitEnum.default("hours").describe("Time unit for all three PERT estimates."),
 });
 
 export type PertEstimateInput = z.infer<typeof pertEstimateSchema>;

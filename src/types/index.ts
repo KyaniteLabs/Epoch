@@ -302,6 +302,6 @@ export interface AccuracyMetrics {
 
 export type SupportedCountry = "US" | "UK" | "FR" | "DE" | "JP";
 
-// ---- Re-exports from module implementations for barrel convenience ---------
+// ---- Re-exports from lib ---------------------------------------------------
 
 export type { HistoricalRecord } from "../lib/analytics.js";
