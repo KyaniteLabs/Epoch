@@ -137,4 +137,4 @@ npm run inspector # Open MCP Inspector for interactive testing
 
 ## License
 
-MIT
+Business Source License 1.1 (BSL-1.1). Non-production use is permitted freely. See [LICENSE](./LICENSE) for full terms. Converts to MIT on 2029-01-01.

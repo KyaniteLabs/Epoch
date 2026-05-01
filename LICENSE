@@ -1,21 +1,57 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2026 Kyanite Labs
+License text copyright (c) 2024 MariaDB Corporation Ab.
+Original BSL 1.1 text: https://mariadb.com/bsl11/
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Parameters
+----------
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Licensor:               Kyanite Labs
+Licensed Work:          Epoch — Time Estimation MCP Server
+                        The Licensed Work is (c) 2026 Kyanite Labs.
+Additional Use Grant:   You may use the Licensed Work for non-production
+                        purposes, including development, testing, and
+                        personal use, provided that you do not offer the
+                        Licensed Work as a commercial service or product
+                        to third parties without a separate commercial
+                        license from the Licensor.
+Change Date:            2029-01-01
+Change License:         MIT License
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Conditions
+
+The Licensor hereby grants you a nonexclusive, world-wide, non-sublicensable,
+non-transferable license to use the Licensed Work, conditioned upon and subject
+to the following terms:
+
+1. You may use the Licensed Work only in accordance with the Additional Use
+   Grant and the following conditions.
+
+2. You may not use the Licensed Work in a production environment to offer
+   the Licensed Work as a time estimation or temporal reasoning service to
+   third parties on a commercial basis without first obtaining a commercial
+   license from the Licensor.
+
+3. The Licensor grants you the right to modify and create derivative works of
+   the Licensed Work, provided that any derivative work is also subject to
+   this License.
+
+4. If you distribute the Licensed Work or any derivative works, you must
+   include a copy of this License and retain all copyright notices.
+
+5. The Licensed Work is provided "AS IS", without warranty of any kind,
+   express or implied, including but not limited to the warranties of
+   merchantability, fitness for a particular purpose, and noninfringement.
+   In no event shall the Licensor be liable for any claim, damages, or other
+   liability, whether in an action of contract, tort, or otherwise, arising
+   from, out of, or in connection with the Licensed Work or the use or other
+   dealings in the Licensed Work.
+
+6. This License does not grant you any trademark or brand rights.
+
+7. On the Change Date, this License will automatically change to the
+   Change License, at which point you may use the Licensed Work under
+   the terms of the Change License.
+
+8. If you use the Licensed Work in violation of this License, the Licensor
+   may terminate your license immediately.
