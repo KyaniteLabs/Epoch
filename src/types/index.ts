@@ -1,0 +1,303 @@
+// ---------------------------------------------------------------------------
+// Epoch MCP Server — Core Type Definitions
+// KyaniteLabs | Time Estimation for LLMs
+// ---------------------------------------------------------------------------
+
+// ---- Primitives & Enums ---------------------------------------------------
+
+/** How urgent the estimate window is, used for PERT output categorization. */
+export type UrgencyCategory = "short" | "medium" | "long";
+
+/** Confidence qualifier attached to estimates and forecasts. */
+export type ConfidenceLevel = "likely" | "optimistic" | "pessimistic";
+
+/** Time units understood across all estimation tools. */
+export type TimeUnit = "hours" | "days" | "weeks" | "months";
+
+// ---- Temporal Layer -------------------------------------------------------
+
+export interface TemporalResult {
+  /** ISO-8601 timestamp (e.g. "2025-07-12T14:30:00.000Z"). */
+  readonly iso: string;
+  /** Human-readable representation (e.g. "Saturday, July 12, 2025 at 2:30 PM"). */
+  readonly humanReadable: string;
+  /** IANA timezone identifier (e.g. "America/New_York"). */
+  readonly timezone: string;
+  /** UTC offset string (e.g. "-04:00"). */
+  readonly utcOffset: string;
+}
+
+// ---- Duration Layer -------------------------------------------------------
+
+export interface DurationResult {
+  /** The original input string that was parsed. */
+  readonly input: string;
+  /** Total duration expressed in seconds. */
+  readonly totalSeconds: number;
+  /** Human-readable form (e.g. "2 hours 30 minutes"). */
+  readonly humanReadable: string;
+}
+
+// ---- Business Day Layer ---------------------------------------------------
+
+export interface BusinessDayResult {
+  /** Start date in ISO format. */
+  readonly startDate: string;
+  /** End date in ISO format. */
+  readonly endDate: string;
+  /** Number of business days between start and end (inclusive). */
+  readonly businessDays: number;
+  /** ISO-3166-1-alpha-2 country code used for holiday calculation. */
+  readonly countryCode: string;
+}
+
+// ---- PERT Estimation Layer ------------------------------------------------
+
+export interface PertResult {
+  readonly optimistic: number;
+  readonly mostLikely: number;
+  readonly pessimistic: number;
+  readonly expected: number;
+  readonly variance: number;
+  readonly stdDeviation: number;
+  /** 95 % confidence interval as [lower, upper]. */
+  readonly confidence95: readonly [number, number];
+  /** 99 % confidence interval as [lower, upper]. */
+  readonly confidence99: readonly [number, number];
+  readonly unit: TimeUnit;
+  readonly urgencyCategory: UrgencyCategory;
+}
+
+// ---- COCOMO Estimation Layer ----------------------------------------------
+
+export interface CocomoResult {
+  /** Thousands of lines of code. */
+  readonly kloc: number;
+  /** Nominal effort in person-months (classic COCOMO). */
+  readonly personMonthsNominal: number;
+  /** Effort adjusted for LLM-assisted workflows. */
+  readonly personMonthsLlmAdjusted: number;
+  /** Multiplier details that were applied. */
+  readonly effortMultipliers: Readonly<Record<string, number>>;
+  /** Documented assumptions behind the estimate. */
+  readonly assumptions: readonly string[];
+}
+
+// ---- Sprint Forecast Layer ------------------------------------------------
+
+export interface SprintForecastResult {
+  /** Total story/effort points in the backlog. */
+  readonly backlogPoints: number;
+  /** Rolling average velocity from historical data. */
+  readonly averageVelocity: number;
+  /** Number of sprints required at average velocity. */
+  readonly requiredSprints: number;
+  /** Upper-bound sprint count (pessimistic velocity). */
+  readonly pessimisticSprints: number;
+  /** Estimated hours per story point. */
+  readonly hoursPerPoint: number;
+  /** Total estimated hours to clear the backlog. */
+  readonly totalHours: number;
+  /** Calendar days to completion assuming no gaps. */
+  readonly completionDays: number;
+  /** Length of a single sprint in calendar days. */
+  readonly sprintLengthDays: number;
+}
+
+// ---- Token-Time Bridge Layer ----------------------------------------------
+
+export interface TokenTimeBreakdown {
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly toolOverheadSeconds: number;
+}
+
+export interface TokenTimeMapping {
+  /** Number of tokens in the request. */
+  readonly tokens: number;
+  /** Model identifier used for the estimate. */
+  readonly model: string;
+  /** Estimated wall-clock seconds. */
+  readonly estimatedSeconds: number;
+  /** Estimated wall-clock minutes (derived). */
+  readonly estimatedMinutes: number;
+  /** Confidence level of the estimate. */
+  readonly confidence: ConfidenceLevel;
+  /** Urgency bucket derived from estimated wall-clock time. */
+  readonly urgency: UrgencyCategory;
+  /** Breakdown of where time is spent. */
+  readonly breakdown: TokenTimeBreakdown;
+}
+
+// ---- Monte Carlo Layer ----------------------------------------------------
+
+export interface RiskEvent {
+  /** Human-readable risk description. */
+  readonly description: string;
+  /** Probability of occurrence (0-1). */
+  readonly probability: number;
+  /** Expected schedule impact in days. */
+  readonly impactDays: number;
+}
+
+export interface MonteCarloResult {
+  /** 10th-percentile completion date (optimistic). */
+  readonly p10: string;
+  /** 50th-percentile completion date (median). */
+  readonly p50: string;
+  /** 80th-percentile completion date. */
+  readonly p80: string;
+  /** 95th-percentile completion date (conservative). */
+  readonly p95: string;
+  /** Probability the critical path will be met (0-1). */
+  readonly criticalPathProbability: number;
+  /** Identified risk events and their characteristics. */
+  readonly riskEvents: readonly RiskEvent[];
+}
+
+// ---- Error Handling -------------------------------------------------------
+
+/** Structured error returned when a tool invocation fails. */
+export interface ToolError {
+  readonly isError: true;
+  readonly message: string;
+  readonly retryHint?: string;
+}
+
+/** Discriminated-union result wrapper — every tool returns this shape. */
+export type ToolResult<T> =
+  | { readonly ok: true; readonly data: T }
+  | { readonly ok: false; readonly error: ToolError };
+
+// ---- Estimation Input (Registry Dispatch) ---------------------------------
+
+/** All operations the estimation registry can dispatch. */
+export type EstimationOperation =
+  | "temporal_status"
+  | "time_math"
+  | "pert_estimate"
+  | "cocomo_estimate"
+  | "sprint_forecast"
+  | "critical_path"
+  | "fetch_historical"
+  | "reference_class"
+  | "monte_carlo"
+  | "calibrate"
+  | "token_time_bridge";
+
+/** Generic envelope used by the tool registry to route calls. */
+export interface EstimationInput {
+  /** Which estimation operation to perform. */
+  readonly operation: EstimationOperation;
+  /** Named operands forwarded to the handler. */
+  readonly operands: Readonly<Record<string, unknown>>;
+}
+
+// ---- Critical Path Task ---------------------------------------------------
+
+export interface CriticalPathTask {
+  readonly name: string;
+  readonly duration: number;
+  readonly predecessors: readonly string[];
+}
+
+// ---- Fetch Historical Data ------------------------------------------------
+
+export type HistoricalDataSource =
+  | "jira"
+  | "asana"
+  | "toggl"
+  | "git"
+  | "calendar";
+
+// ---- Reference Class Estimation -------------------------------------------
+
+export type TaskType =
+  | "feature"
+  | "bugfix"
+  | "refactor"
+  | "migration"
+  | "infrastructure"
+  | "documentation"
+  | "testing"
+  | "design";
+
+// ---- LLM Model Identifiers -----------------------------------------------
+
+export type LLMModel =
+  | "gpt-4o"
+  | "gpt-4o-mini"
+  | "gpt-4-turbo"
+  | "claude-sonnet-4-20250514"
+  | "claude-opus-4-20250514"
+  | "claude-3.5-haiku-20241022"
+  | "gemini-2.0-flash"
+  | "gemini-2.5-pro"
+  | "llama-3.1-70b"
+  | "llama-3.1-405b"
+  | "mistral-large"
+  | "deepseek-v3";
+
+// ---- Token Time Reasoning Depth -------------------------------------------
+
+export type ReasoningDepth = "shallow" | "moderate" | "deep";
+
+// ---- Additional Temporal Types ---------------------------------------------
+
+export interface DateDiffResult {
+  readonly days: number;
+  readonly hours: number;
+  readonly minutes: number;
+  readonly total_seconds: number;
+}
+
+// ---- Critical Path Method (CPM) ------------------------------------------
+
+/** Task node used in critical-path calculations. */
+export interface CpmTask {
+  readonly name: string;
+  readonly duration: number;
+  readonly predecessors: readonly string[];
+}
+
+/** Result of a critical-path analysis. */
+export interface CpmResult {
+  /** Ordered list of task names on the critical path. */
+  readonly critical_path: readonly string[];
+  /** Slack (float) per task in the same unit as duration. */
+  readonly slack_per_task: Readonly<Record<string, number>>;
+  /** Total project duration. */
+  readonly total_duration: number;
+  /** Cumulative merge-bias adjustment applied. */
+  readonly merge_bias_adjustment: number;
+}
+
+// ---- Monte Carlo Task Input -----------------------------------------------
+
+/** Task with three-point estimate for Monte Carlo simulation. */
+export interface MonteCarloTask {
+  readonly name: string;
+  readonly optimistic: number;
+  readonly mostLikely: number;
+  readonly pessimistic: number;
+}
+
+// ---- Accuracy Metrics -----------------------------------------------------
+
+/** Calibration metrics computed from historical estimation data. */
+export interface AccuracyMetrics {
+  /** Mean Absolute Percentage Error across all samples. */
+  readonly mape: number;
+  /** Mean bias (positive = underestimation, negative = overestimation). */
+  readonly bias: number;
+  /** Variance of the bias distribution. */
+  readonly variance: number;
+  /** Number of samples used in the calculation. */
+  readonly sample_size: number;
+  /** Whether accuracy is improving, degrading, or stable over time. */
+  readonly trend: "improving" | "degrading" | "stable";
+}
+
+// ---- Supported Countries --------------------------------------------------
+
+export type SupportedCountry = "US" | "UK" | "FR" | "DE" | "JP";
