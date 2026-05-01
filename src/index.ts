@@ -33,11 +33,14 @@ function main(): void {
   const firstArg = args[0];
 
   if (firstArg === "serve" || firstArg === "--http") {
-    startHttpServer();
+    const portIdx = args.indexOf("--port");
+    const portStr = portIdx !== -1 ? args[portIdx + 1] : undefined;
+    const port = portStr ? parseInt(portStr, 10) : undefined;
+    startHttpServer(port !== undefined && !isNaN(port) ? port : undefined);
     return;
   }
 
-  if (firstArg && (CLI_SUBCOMMANDS.has(firstArg) || firstArg === "--format" || firstArg === "--quiet" || firstArg === "-q" || firstArg === "-h" || firstArg === "--help" || firstArg === "-V" || firstArg === "--version")) {
+  if (firstArg && firstArg !== "serve" && firstArg !== "--http" && transport !== "http") {
     runCli();
     return;
   }

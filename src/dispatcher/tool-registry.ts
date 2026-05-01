@@ -10,6 +10,7 @@ import {
   getCurrentTime,
   convertTimezone,
   parseDuration,
+  formatElapsed,
   diffDates,
   addDays,
 } from "../lib/temporal.js";
@@ -152,19 +153,19 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
         case "add_days":
           return { ok: true as const, data: addDays(ops.date as string, ops.days as number) };
         case "diff":
-          return { ok: true as const, data: diffDates(ops.start as string, ops.end as string) };
+          return { ok: true as const, data: diffDates(ops.date as string, ops.end_date as string) };
         case "convert_tz":
           return convertTimezone(
             ops.timestamp as string,
             ops.target_tz as string,
           );
         case "parse_nl":
-          return parseDuration(ops.duration as string);
+          return parseDuration(ops.duration_string as string);
         case "format_duration":
-          return parseDuration(ops.duration as string);
+          return { ok: true as const, data: formatElapsed(ops.milliseconds as number) };
         case "add_business_days":
           return addBusinessDays(
-            ops.start_date as string,
+            (ops.start_date as string) ?? (ops.date as string),
             ops.days as number,
             (ops.country as string) ?? "US",
           );

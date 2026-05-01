@@ -164,7 +164,7 @@ export const pertEstimateSchema = z.object({
     .describe(
       "Worst-case duration accounting for known risks and unknown unknowns."
     ),
-  unit: timeUnitEnum.describe("Time unit for all three PERT estimates."),
+  unit: timeUnitEnum.default("days").describe("Time unit for all three PERT estimates."),
 });
 
 export type PertEstimateInput = z.infer<typeof pertEstimateSchema>;
@@ -345,7 +345,10 @@ export const monteCarloSchema = z.object({
           .number()
           .positive()
           .describe("Worst-case duration in days."),
-      })
+      }).refine(
+        (t) => t.optimistic <= t.most_likely && t.most_likely <= t.pessimistic,
+        { message: "Estimates must satisfy optimistic <= most_likely <= pessimistic." },
+      )
     )
     .min(1)
     .describe(

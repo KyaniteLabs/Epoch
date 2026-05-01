@@ -178,7 +178,8 @@ export function createApiApp(): Hono {
     }
 
     const result = await dispatch(toolName, body);
-    return c.json(result);
+    const status = result.ok ? 200 : 422;
+    return c.json(result, status);
   });
 
   app.get("/.well-known/ai-plugin.json", (c) => {

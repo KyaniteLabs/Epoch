@@ -20,9 +20,10 @@ function makeError(message: string, retryHint?: string): ToolError {
 }
 
 function isValidTimezone(tz: string): boolean {
+  if (!tz || tz.length < 2) return false;
   try {
     const now = new Date();
-    formatInTimeZone(now, tz, "yyyy-MM-dd");
+    formatInTimeZone(now, tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
     return true;
   } catch {
     return false;
