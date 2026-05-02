@@ -194,8 +194,7 @@ Input:  {
   optimistic: 2,
   most_likely: 4,
   pessimistic: 12,
-  unit: "hours",
-  ai_native: true
+  unit: "hours"
 }
 Output: {
   expected: 5,
@@ -203,8 +202,8 @@ Output: {
   confidence95: [1.67, 8.33],
   confidence99: [0, 10],
   urgencyCategory: "medium",
-  aiNative: true,
-  correctionFactor: 1.8
+  developerProfile: { mode: "ai_native", correctionFactor: 1.45 },
+  adjustedEstimate: 7.25
 }
 ```
 
@@ -217,17 +216,21 @@ Input:  {
   context_completeness: 1.0,
   transformation_impact: 0.8,
   iterative_cycles: 1.5,
-  human_oversight: 1.2,
-  ai_native: true
+  human_oversight: 1.2
 }
 Output: {
   kloc: 15,
-  personMonthsNominal: 35.8,
-  personMonthsLlmAdjusted: 23.9,
-  scheduleMonths: 8.3,
-  teamSize: 2.9,
-  ratingAdjustments: { ... },
-  correctionFactor: 1.8
+  personMonthsNominal: 99.9,
+  personMonthsLlmAdjusted: 35.8,
+  effortMultipliers: {
+    reasoning_complexity: 1.2,
+    context_completeness: 1.0,
+    transformation_impact: 0.8,
+    iterative_cycles: 1.5,
+    human_oversight: 1.2,
+    product: 1.728
+  },
+  developerProfile: { mode: "ai_native", correctionFactor: 1.45 }
 }
 ```
 
@@ -240,15 +243,18 @@ Input:  {
   backlog_points: 100,
   velocity_history: [20, 25, 22, 23],
   sprint_length_days: 14,
-  ai_native: true
+  hours_per_sprint: 80
 }
 Output: {
-  requiredSprints: 4,
-  pessimisticSprints: 6,
-  completionDays: 56,
-  hoursPerPoint: 2.5,
-  velocityTrend: "stable",
-  aiNative: true
+  backlogPoints: 100,
+  averageVelocity: 22.5,
+  requiredSprints: 4.4,
+  pessimisticSprints: 4.9,
+  hoursPerPoint: 3.56,
+  totalHours: 355.6,
+  completionDays: 62,
+  sprintLengthDays: 14,
+  developerProfile: { mode: "ai_native", sprintVelocityPoints: 80, correctionFactor: 1.45 }
 }
 ```
 
@@ -263,10 +269,10 @@ Input:  {
   ]
 }
 Output: {
-  criticalPath: ["A", "C"],
-  totalDuration: 9,
-  slack: { B: 2, C: 0 },
-  mergeBiasAdjustment: 0.85
+  critical_path: ["A", "C"],
+  total_duration: 9,
+  slack_per_task: { A: 0, B: 1, C: 0 },
+  merge_bias_adjustment: 0
 }
 ```
 
@@ -281,12 +287,12 @@ Input:  {
   iterations: 10000
 }
 Output: {
-  p10: 3.2,
-  p50: 6.1,
-  p80: 8.4,
-  p95: 11.2,
-  riskEvents: 2,
-  criticalPathProbability: { A: 0.72, B: 0.28 }
+  p10: "5.9",
+  p50: "7.91",
+  p80: "9.39",
+  p95: "10.75",
+  riskEvents: [{ description: "Task \"A\" exceeded 1.5x PERT expected in 5% of simulations", probability: 0.05, impactDays: 3 }],
+  criticalPathProbability: 0.8
 }
 ```
 
@@ -297,18 +303,19 @@ Output: {
 ```
 Input:  {
   task_type: "feature",
-  complexity: 3,
-  ai_native: true
+  complexity: 3
 }
 Output: {
   rawEstimate: 10,
   correctedEstimate: 16.7,
   correctionFactor: 1.67,
-  developerProfile: { mode: "ai_native", correctionFactor: 1.8 },
+  developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1.45 },
   adjustedEstimate: 24.2,
-  confidence: "medium"
+  confidence: "likely"
 }
 ```
+
+Valid `task_type` values: `feature`, `bugfix`, `refactor`, `migration`, `infrastructure`, `documentation`, `testing`, `design`.
 
 **`calibrate_estimates`** -- Team-specific accuracy calibration from historical estimated vs actual data
 
@@ -318,11 +325,13 @@ Input:  {
   team_id: "backend"
 }
 Output: {
-  correctionFactor: 1.38,
-  mape: 33.3,
-  calibration: "under-estimating",
-  recommendation: "Apply 1.38x multiplier to future estimates",
-  samplesUsed: 12
+  correctionFactor: 1.45,
+  accuracyTrend: "stable",
+  velocityTrend: "stable",
+  recommendations: [
+    "Using reference database correction factor (1.45x) — 3 samples, need 10.",
+    "Submit actuals via POST /v1/feedback/record-actual to enable data-driven calibration."
+  ]
 }
 ```
 
@@ -336,13 +345,14 @@ Input:  {
   reasoning_depth: "deep"
 }
 Output: {
-  estimatedSeconds: 142,
-  estimatedMinutes: 2.37,
-  confidence: 0.82,
+  estimatedSeconds: 697,
+  estimatedMinutes: 11.6,
+  confidence: "likely",
+  urgency: "short",
   breakdown: {
-    tokenGeneration: 95,
-    toolCallOverhead: 35,
-    reasoningOverhead: 12
+    promptTokens: 15000,
+    completionTokens: 35000,
+    toolOverheadSeconds: 2
   }
 }
 ```
@@ -359,9 +369,11 @@ Input:  {
 Output: {
   tokens: 50000,
   model: "claude-sonnet-4-6",
-  inputCost: 0.15,
-  outputCost: 0.30,
-  totalCost: 0.45
+  estimatedSeconds: 36,
+  estimatedMinutes: 0.6,
+  estimatedCost: 0.57,
+  costBreakdown: { inputCost: 0.045, outputCost: 0.525, toolCallOverheadCost: 0 },
+  confidence: "likely"
 }
 ```
 
@@ -375,30 +387,25 @@ Input:  {
 Output: {
   tokens: 50000,
   models: [
-    { model: "gemini-2.0-flash", totalCost: 0.19, speed: "fast" },
-    { model: "claude-sonnet-4-6", totalCost: 0.45, speed: "fast" },
-    { model: "gpt-4o", totalCost: 0.55, speed: "fast" }
+    { model: "gemini-2.0-flash", estimatedCost: 0.0155, qualityTier: "fast", tokensPerSecond: 230 },
+    { model: "deepseek-v3", estimatedCost: 0.0189, qualityTier: "fast", tokensPerSecond: 150 },
+    { model: "claude-sonnet-4-6", estimatedCost: 0.57, qualityTier: "fast", tokensPerSecond: 140 }
   ],
   sortBy: "cost"
 }
 ```
 
-**`accuracy_trend`** -- Track estimation accuracy over time from historical data
+**`accuracy_trend`** -- Track estimation accuracy over time from recorded feedback data
 
 ```
-Input:  {
-  history: [
-    { date: "2026-04-01", estimated: 8, actual: 10 },
-    { date: "2026-04-15", estimated: 5, actual: 6 },
-    { date: "2026-05-01", estimated: 12, actual: 13 }
-  ]
-}
+Input:  { team_id: "backend", window_size: 50 }
 Output: {
-  trendDirection: "improving",
-  averageError: 18.5,
-  mape: 16.7,
-  dataPoints: 3,
-  recommendation: "Correction factor converging -- estimates improving"
+  overallTrend: "improving",
+  currentMape: 26.5,
+  industryBaselineMape: 25,
+  totalEstimates: 1049,
+  totalWithActuals: 1049,
+  windows: [{ period: "Window 1 (estimates 1-50)", mape: 32, bias: 5.3, sampleSize: 50 }]
 }
 ```
 
@@ -411,9 +418,10 @@ Input:  {
 }
 Output: {
   estimatedHours: 40,
-  riskLevel: "medium",
-  confidenceIntervals: { p50: 52, p80: 65, p95: 78 },
-  recommendation: "Add 30% buffer for feature work with limited historical data."
+  riskLevel: "critical",
+  confidenceIntervals: { p50: 40, p80: 84.7, p95: 127.3 },
+  historicalAccuracy: { mape: 132.6, sampleSize: 356 },
+  recommendation: "Critical risk. Break down the task and re-estimate each component."
 }
 ```
 
@@ -423,10 +431,14 @@ Output: {
 Input:  {}
 Output: {
   projectsEvaluated: 182,
-  overallMape: 85.5,
-  overallBias: 53.5,
-  byType: { organic: { mape: 72 }, semi: { mape: 88 }, embedded: { mape: 95 } },
-  recommendation: "COCOMO estimates need significant correction for AI-assisted development."
+  mape: 85.55,
+  bias: 53.5,
+  byProjectType: {
+    organic: { mape: 86.57, count: 22 },
+    semidetached: { mape: 84.75, count: 106 },
+    embedded: { mape: 86.71, count: 54 }
+  },
+  recommendedAdjustments: []
 }
 ```
 
