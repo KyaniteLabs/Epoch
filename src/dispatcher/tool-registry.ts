@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Tool Registry
-// Maps all 19 tool names to handler functions and Zod input schemas.
+// Maps all 21 tool names to handler functions and Zod input schemas.
 // Translates between snake_case schema fields and camelCase lib params.
 // ---------------------------------------------------------------------------
 
@@ -470,7 +470,8 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
         pessimistic: t.pessimistic,
       }));
       const iterations = (input.iterations as number) ?? 10000;
-      return { ok: true as const, data: monteCarloSim(tasks, iterations) };
+      const seed = input.seed as number | undefined;
+      return { ok: true as const, data: monteCarloSim(tasks, iterations, seed) };
     },
   ),
 

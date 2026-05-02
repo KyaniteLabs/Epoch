@@ -150,7 +150,7 @@ Validates COCOMO estimation model against historical projects.
 ---
 
 ## Quick Start
-curl -X POST http://localhost:3099/v1/tools/pert_estimate \\
+curl -X POST http://localhost:3000/v1/tools/pert_estimate \\
   -H "Content-Type: application/json" \\
   -d '{"optimistic": 2, "most_likely": 4, "pessimistic": 12, "unit": "hours"}'
 `;

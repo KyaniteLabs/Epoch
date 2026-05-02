@@ -322,6 +322,7 @@ export const monteCarloSchema = z.object({
     .max(100000)
     .describe("Number of Monte Carlo simulation iterations (1–100,000). Higher = more stable percentiles.")
     .default(10000),
+  seed: z.number().int().optional().describe("Optional seed for reproducible results."),
 });
 
 export type MonteCarloInput = z.infer<typeof monteCarloSchema>;

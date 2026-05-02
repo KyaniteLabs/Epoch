@@ -52,6 +52,7 @@ describe("tokenTimeBridge", () => {
     });
     expect(result.model).toBe("unknown-model");
     expect(result.estimatedSeconds).toBeGreaterThan(0);
+    expect(["likely", "optimistic"]).toContain(result.confidence);
   });
 
   it("deep reasoning takes longer than shallow", () => {
