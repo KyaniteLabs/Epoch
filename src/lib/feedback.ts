@@ -163,7 +163,7 @@ function extractEstimatedHours(outputs: Record<string, unknown>): number | null 
     if (unit === "days") return outputs["expected"] * 8;
     if (unit === "weeks") return outputs["expected"] * 40;
     if (unit === "months") return outputs["expected"] * 160;
-    return outputs["expected"];
+    return outputs["expected"] as number; // assume hours when unit is missing or unrecognized
   }
   if (typeof outputs["personMonthsLlmAdjusted"] === "number") {
     return outputs["personMonthsLlmAdjusted"] * 160;
