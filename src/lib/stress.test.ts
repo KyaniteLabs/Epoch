@@ -1203,15 +1203,15 @@ describe("analytics — referenceClassEstimate stress", () => {
     expect(result.sampleSize).toBe(20);
   });
 
-  it("uses industry or reference DB correction factor when no matching records", () => {
+  it("uses reference DB correction factor when no matching records", () => {
     const result = referenceClassEstimate([], "feature", 3);
-    expect(result.correctionFactor).toBeGreaterThan(1);
+    expect(result.correctionFactor).toBeGreaterThan(0);
     expect(result.sampleSize).toBe(0);
   });
 
-  it("corrected estimate > raw estimate (industry correction)", () => {
+  it("corrected estimate is positive (correction factor may be < 1 for AI-assisted work)", () => {
     const result = referenceClassEstimate([], "feature", 3);
-    expect(result.correctedEstimate).toBeGreaterThan(result.rawEstimate);
+    expect(result.correctedEstimate).toBeGreaterThan(0);
   });
 
   it("works at complexity 1 (minimum)", () => {

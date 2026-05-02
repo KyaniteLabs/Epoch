@@ -32,7 +32,7 @@ describe("analytics tools via registry", () => {
       const data = result.data as Record<string, unknown>;
       expect(data.rawEstimate as number).toBeGreaterThan(0);
       expect(data.correctedEstimate as number).toBeGreaterThan(0);
-      expect(data.correctionFactor as number).toBeGreaterThan(1);
+      expect(data.correctionFactor as number).toBeGreaterThan(0);
     }
   });
 

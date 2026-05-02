@@ -7,6 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 import { TOOL_REGISTRY, type ToolDefinition } from "./tool-registry.js";
+import { dispatch } from "./index.js";
 
 const READ_ONLY_ANNOTATIONS = {
   readOnlyHint: true,
@@ -38,8 +39,8 @@ export function registerAllMcpTools(server: McpServer): void {
       def.description,
       shape,
       annotations,
-      (input: Record<string, unknown>) => {
-        const result = def.handler(input);
+      async (input: Record<string, unknown>) => {
+        const result = await dispatch(name, input);
 
         if (result.ok) {
           return {
