@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   publish:
-    name: Build and publish to npm
+    name: Build and publish
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
