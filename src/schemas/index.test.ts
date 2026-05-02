@@ -205,7 +205,13 @@ describe("referenceClassEstimateSchema", () => {
   });
 
   it("rejects missing required fields", () => {
-    expect(referenceClassEstimateSchema.safeParse({ task_type: "feature" }).success).toBe(false);
+    expect(referenceClassEstimateSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("applies defaults for scope and complexity", () => {
+    const result = referenceClassEstimateSchema.parse({ task_type: "feature" });
+    expect(result.scope).toBe("medium");
+    expect(result.complexity).toBe(3);
   });
 });
 

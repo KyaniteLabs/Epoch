@@ -237,13 +237,20 @@ export type CriticalPathInput = z.infer<typeof criticalPathSchema>;
 
 export const referenceClassEstimateSchema = z.object({
   task_type: taskTypeEnum,
+  scope: z
+    .enum(["small", "medium", "large", "xl"])
+    .describe(
+      "Rough size of the task: small=tiny fix/tweak, medium=typical task, large=significant effort, xl=epic-scale. Selects a percentile band from historical data for the task type."
+    )
+    .default("medium"),
   complexity: z
     .number()
     .min(1)
     .max(5)
     .describe(
-      "Subjective complexity from 1 (trivial) to 5 (extreme). Used to match against historical analogues."
-    ),
+      "Fine-tuning complexity from 1 (trivial) to 5 (extreme). Adjusts within the scope band: low complexity shortens, high complexity lengthens the estimate."
+    )
+    .default(3),
   team_id: brandedString("Team")
     .describe(
       "Optional team identifier to scope historical data to a specific team."

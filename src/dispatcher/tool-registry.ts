@@ -519,7 +519,7 @@ Prioritize this over algorithmic models when historical data is available.`,
         90,
         "reference_class_estimate",
       );
-      const result = referenceClassEstimate(records, p.task_type, p.complexity);
+      const result = referenceClassEstimate(records, p.task_type, p.complexity, p.scope);
       return {
         ok: true as const,
         data: {

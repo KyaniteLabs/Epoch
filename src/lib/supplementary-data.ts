@@ -73,6 +73,15 @@ export interface CocomoDerivedFactors {
   readonly productivityKlocPerPersonMonth: { median: number; p25: number; p75: number };
 }
 
+export type ScopeSignal = "small" | "medium" | "large" | "xl";
+
+export interface ScopeBaseline {
+  readonly small: number;
+  readonly medium: number;
+  readonly large: number;
+  readonly xl: number;
+}
+
 // ---- Supplementary Database -----------------------------------------------
 
 interface SupplementaryDatabase {
@@ -81,6 +90,7 @@ interface SupplementaryDatabase {
   readonly humanDeveloperBaselines?: HumanDeveloperBaselines;
   readonly estimationAccuracyResearch?: EstimationAccuracyResearch;
   readonly referenceClassBaselines?: ReferenceClassBaselines;
+  readonly scopeBaselines?: Record<string, ScopeBaseline>;
   readonly developerProfileContrast?: {
     readonly humanDeveloper: Record<string, number>;
     readonly aiNativeDeveloper: Record<string, number>;
@@ -174,6 +184,10 @@ export function getReferenceClassBaselines(): ReferenceClassBaselines | null {
 export function getReferenceClassForCategory(category: string): ReferenceClassCategory | null {
   const baselines = getReferenceClassBaselines();
   return baselines?.categories?.[category] ?? null;
+}
+
+export function getScopeBaseline(category: string): ScopeBaseline | null {
+  return loadSupplementaryData()?.scopeBaselines?.[category] ?? null;
 }
 
 export function getEstimationResearch(): EstimationAccuracyResearch {

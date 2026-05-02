@@ -8,7 +8,15 @@ import type {
 } from "../types/index.js";
 import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
-import { getReferenceClassForCategory } from "./supplementary-data.js";
+import { getReferenceClassForCategory, getScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
+
+const COMPLEXITY_MULTIPLIER: Record<number, number> = {
+  1: 0.7,
+  2: 0.85,
+  3: 1.0,
+  4: 1.2,
+  5: 1.5,
+};
 
 interface ModelCalibration {
   readonly tokensPerSecond: number;
@@ -163,12 +171,14 @@ export function referenceClassEstimate(
   records: HistoricalRecord[],
   taskType: TaskType,
   complexity: number,
+  scope?: ScopeSignal,
 ): {
   rawEstimate: number;
   correctedEstimate: number;
   correctionFactor: number;
   sampleSize: number;
   baselineSource: string;
+  scopeUsed: string;
   confidence: ConfidenceLevel;
 } {
   const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
@@ -189,19 +199,30 @@ export function referenceClassEstimate(
     sampleSize = filtered.length;
   }
 
-  // Use real session data when available, otherwise fall back to traditional 8h baseline
-  const realBaseline = getReferenceClassForCategory(taskType);
+  const effectiveScope = scope ?? "medium";
   let rawEstimate: number;
   let baselineSource: string;
-  if (realBaseline && realBaseline.total_samples >= 5) {
-    const clampedComplexity = Math.max(1, Math.min(5, complexity));
-    const complexityNorm = (clampedComplexity - 1) / 4; // 0..1 for complexity 1..5
-    rawEstimate = realBaseline.p25_hours + (realBaseline.p75_hours - realBaseline.p25_hours) * complexityNorm;
-    baselineSource = `real_tasks_${realBaseline.total_samples}`;
+
+  // Scope band: use scope baselines when available
+  const scopeBaseline = getScopeBaseline(taskType);
+  if (scopeBaseline) {
+    const scopeHours = scopeBaseline[effectiveScope];
+    const cMul = COMPLEXITY_MULTIPLIER[Math.max(1, Math.min(5, complexity))] ?? 1.0;
+    rawEstimate = scopeHours * cMul;
+    baselineSource = `scope_${effectiveScope}_real_tasks`;
   } else {
-    const complexityMultiplier = 0.5 + (complexity - 1) * 0.375;
-    rawEstimate = 8 * complexityMultiplier;
-    baselineSource = "industry_8h";
+    // Fallback to legacy reference class baselines
+    const realBaseline = getReferenceClassForCategory(taskType);
+    if (realBaseline && realBaseline.total_samples >= 5) {
+      const clampedComplexity = Math.max(1, Math.min(5, complexity));
+      const complexityNorm = (clampedComplexity - 1) / 4;
+      rawEstimate = realBaseline.p25_hours + (realBaseline.p75_hours - realBaseline.p25_hours) * complexityNorm;
+      baselineSource = `real_tasks_${realBaseline.total_samples}`;
+    } else {
+      const complexityMultiplier = 0.5 + (complexity - 1) * 0.375;
+      rawEstimate = 8 * complexityMultiplier;
+      baselineSource = "industry_8h";
+    }
   }
 
   const correctedEstimate = Math.round(rawEstimate * correctionFactor * 10) / 10;
@@ -212,6 +233,7 @@ export function referenceClassEstimate(
     correctionFactor: Math.round(correctionFactor * 100) / 100,
     sampleSize,
     baselineSource,
+    scopeUsed: effectiveScope,
     confidence: sampleSize >= 10 ? "likely" : sampleSize >= 5 ? "optimistic" : "pessimistic",
   };
 }
