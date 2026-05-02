@@ -27,11 +27,12 @@ import {
   tokenTimeBridge,
   getScopeGuide,
 } from "../lib/analytics.js";
-import { getCalibrationData, recordActual, getPendingEstimates } from "../lib/feedback.js";
+import { getCalibrationData, recordActual, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
 import { cocomoValidate } from "../lib/cocomo-validate.js";
+import { cocomoValidateGroundTruth } from "../lib/cocomo-ground-truth.js";
 import { getDeveloperProfileGradient } from "../lib/profiles.js";
 import {
   timeMathSchema,
@@ -48,6 +49,9 @@ import {
   accuracyTrendSchema,
   scheduleRiskSchema,
   cocomoValidateSchema,
+  cocomoGroundTruthSchema,
+  batchRecordActualsSchema,
+  feedbackHealthSchema,
 } from "../schemas/index.js";
 
 // ---- Tool Definition --------------------------------------------------------
@@ -701,6 +705,22 @@ Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjus
     },
   ),
 
+  tool(
+    "cocomo_ground_truth",
+    `Validate all COCOMO estimation models against 240 real historical projects with known effort.
+
+Runs 6 models in parallel: COCOMO Basic, COCOMO II Nominal, COCOMO II + AI 12x speedup, and AI + developer profile at human/hybrid/ai_native gradients.
+Reports MAPE, MMRE, PRED(25), PRED(50), bias per model, with breakdowns by dataset and project type.`,
+    cocomoGroundTruthSchema,
+    { type: "object", properties: { projectsEvaluated: { type: "number" }, models: { type: "array" }, winner: { type: "string" }, conclusion: { type: "string" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
+    (input) => {
+      const p = cocomoGroundTruthSchema.parse(input);
+      return cocomoValidateGroundTruth({
+        datasetFilter: p.dataset_filter,
+      });
+    },
+  ),
+
   // -- Feedback tools (2) ----------------------------------------------------
 
   tool(
@@ -756,6 +776,38 @@ Use this to close the estimation feedback loop and improve accuracy over time.`,
           })),
         },
       };
+    },
+  ),
+
+  tool(
+    "batch_record_actuals",
+    `Record actual hours for multiple estimates in a single call.
+
+Efficient for bulk feedback submission — accepts 1 to 500 entries at once.
+Each entry pairs an estimate ID with the actual hours spent.`,
+    batchRecordActualsSchema,
+    { type: "object", properties: { total: { type: "number" }, succeeded: { type: "number" }, failed: { type: "number" }, errors: { type: "array" } } } satisfies Record<string, unknown>,
+    (input) => {
+      const p = batchRecordActualsSchema.parse(input);
+      const result = batchRecordActuals(p.entries.map((e) => ({
+        estimateId: e.estimate_id,
+        actualHours: e.actual_hours,
+        notes: e.notes,
+      })));
+      return { ok: true as const, data: result };
+    },
+  ),
+
+  tool(
+    "feedback_health",
+    `Get a health report on the estimation feedback loop.
+
+Shows total estimates, actuals, match rate, MAPE by tool and task type,
+and self-improvement readiness (which types have enough data for auto-calibration).`,
+    feedbackHealthSchema,
+    { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" } } } satisfies Record<string, unknown>,
+    () => {
+      return { ok: true as const, data: getFeedbackHealthReport() };
     },
   ),
 ]);

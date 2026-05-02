@@ -111,9 +111,9 @@ describe("dispatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("listTools", () => {
-  it("returns 21 tools", () => {
+  it("returns 24 tools", () => {
     const tools = listTools();
-    expect(tools).toHaveLength(21);
+    expect(tools).toHaveLength(24);
   });
 
   it("each tool has name and description", () => {
@@ -137,5 +137,8 @@ describe("TOOL_NAMES", () => {
     expect(TOOL_NAMES.has("add_business_days")).toBe(true);
     expect(TOOL_NAMES.has("token_time_bridge")).toBe(true);
     expect(TOOL_NAMES.has("calibrate_estimates")).toBe(true);
+    expect(TOOL_NAMES.has("cocomo_ground_truth")).toBe(true);
+    expect(TOOL_NAMES.has("batch_record_actuals")).toBe(true);
+    expect(TOOL_NAMES.has("feedback_health")).toBe(true);
   });
 });

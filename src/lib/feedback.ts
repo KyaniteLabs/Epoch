@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
+import { computeAccuracyMetrics } from "./analytics.js";
 
 export interface EstimateRecord {
   id: string;
@@ -179,4 +180,116 @@ function inferTaskType(tool: string): string {
   if (tool.includes("token")) return "infrastructure";
   if (tool.includes("calibrate") || tool.includes("reference")) return "testing";
   return "feature";
+}
+
+// ---- Batch Operations -------------------------------------------------------
+
+export interface BatchActualEntry {
+  estimateId: string;
+  actualHours: number;
+  notes?: string;
+}
+
+export interface BatchResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  errors: string[];
+}
+
+export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
+  const errors: string[] = [];
+  let succeeded = 0;
+
+  for (const entry of entries) {
+    const ok = recordActual(entry.estimateId, entry.actualHours, entry.notes);
+    if (ok) {
+      succeeded++;
+    } else {
+      errors.push(`Failed to record actual for estimate ${entry.estimateId}`);
+    }
+  }
+
+  return { total: entries.length, succeeded, failed: errors.length, errors };
+}
+
+// ---- Feedback Health Report -------------------------------------------------
+
+export interface FeedbackHealthReport {
+  totalEstimates: number;
+  totalActuals: number;
+  matchRate: number;
+  byTool: Record<string, { estimates: number; actuals: number; mape: number | null }>;
+  byTaskType: Record<string, { estimates: number; actuals: number; mape: number | null }>;
+  selfImprovement: {
+    readyTypes: string[];
+    callsUntilUpdate: number;
+  };
+}
+
+export function getFeedbackHealthReport(): FeedbackHealthReport {
+  const estimates = readLines<EstimateRecord>(ESTIMATES_FILE);
+  const actuals = readLines<ActualRecord>(ACTUALS_FILE);
+  const actualIds = new Set(actuals.map((a) => a.estimateId));
+
+  const totalEstimates = estimates.length;
+  const totalActuals = actuals.length;
+  const matchRate = totalEstimates > 0
+    ? Math.round((actualIds.size / totalEstimates) * 1000) / 10
+    : 0;
+
+  // By tool
+  const toolEstimates = new Map<string, number>();
+  const toolActuals = new Map<string, number>();
+  for (const e of estimates) {
+    toolEstimates.set(e.tool, (toolEstimates.get(e.tool) ?? 0) + 1);
+    if (actualIds.has(e.id)) {
+      toolActuals.set(e.tool, (toolActuals.get(e.tool) ?? 0) + 1);
+    }
+  }
+
+  const byTool: FeedbackHealthReport["byTool"] = {};
+  for (const [tool, count] of toolEstimates) {
+    const matched = getCalibrationData(undefined, undefined, undefined, tool);
+    const mape = matched.length >= 2 ? computeAccuracyMetrics(matched).mape : null;
+    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, mape };
+  }
+
+  // By task type
+  const typeGroups = new Map<string, HistoricalRecord[]>();
+  const allMatched = getCalibrationData();
+  for (const r of allMatched) {
+    if (!typeGroups.has(r.taskType)) typeGroups.set(r.taskType, []);
+    typeGroups.get(r.taskType)!.push(r);
+  }
+
+  const typeEstimateCounts = new Map<string, number>();
+  for (const e of estimates) {
+    const type = (e.inputs["task_type"] as string) ?? inferTaskType(e.tool);
+    typeEstimateCounts.set(type, (typeEstimateCounts.get(type) ?? 0) + 1);
+  }
+
+  const byTaskType: FeedbackHealthReport["byTaskType"] = {};
+  for (const [type, count] of typeEstimateCounts) {
+    const records = typeGroups.get(type) ?? [];
+    const mape = records.length >= 2 ? computeAccuracyMetrics(records).mape : null;
+    byTaskType[type] = { estimates: count, actuals: records.length, mape };
+  }
+
+  // Self-improvement readiness: types with 5+ matched records
+  const readyTypes: string[] = [];
+  for (const [type, records] of typeGroups) {
+    if (records.length >= 5) readyTypes.push(type);
+  }
+
+  const callsUntilUpdate = Math.max(0, 100 - totalEstimates);
+
+  return {
+    totalEstimates,
+    totalActuals,
+    matchRate,
+    byTool,
+    byTaskType,
+    selfImprovement: { readyTypes, callsUntilUpdate },
+  };
 }

@@ -1,0 +1,88 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { batchRecordActuals, getFeedbackHealthReport } from "./feedback.js";
+
+// ---------------------------------------------------------------------------
+// Feedback Batch + Health Report — Tests
+// ---------------------------------------------------------------------------
+
+describe("batchRecordActuals", () => {
+  it("records all entries successfully", () => {
+    const result = batchRecordActuals([
+      { estimateId: "batch-test-001", actualHours: 4.0, notes: "Quick fix" },
+      { estimateId: "batch-test-002", actualHours: 12.5, notes: "Took longer" },
+      { estimateId: "batch-test-003", actualHours: 8.0 },
+    ]);
+    expect(result.total).toBe(3);
+    expect(result.succeeded).toBe(3);
+    expect(result.failed).toBe(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("handles single entry", () => {
+    const result = batchRecordActuals([
+      { estimateId: "batch-single-001", actualHours: 6.0 },
+    ]);
+    expect(result.total).toBe(1);
+    expect(result.succeeded).toBe(1);
+  });
+
+  it("respects max 500 entries (caller responsibility)", () => {
+    // The schema enforces max 500, but the function itself accepts any array
+    const entries = Array.from({ length: 3 }, (_, i) => ({
+      estimateId: `batch-max-${i}`,
+      actualHours: i + 1,
+    }));
+    const result = batchRecordActuals(entries);
+    expect(result.total).toBe(3);
+    expect(result.succeeded).toBe(3);
+  });
+});
+
+describe("getFeedbackHealthReport", () => {
+  it("returns valid report structure", () => {
+    const report = getFeedbackHealthReport();
+    expect(typeof report.totalEstimates).toBe("number");
+    expect(typeof report.totalActuals).toBe("number");
+    expect(typeof report.matchRate).toBe("number");
+    expect(report.matchRate).toBeGreaterThanOrEqual(0);
+    expect(report.matchRate).toBeLessThanOrEqual(100);
+    expect(report.byTool).toBeDefined();
+    expect(report.byTaskType).toBeDefined();
+    expect(report.selfImprovement).toBeDefined();
+    expect(Array.isArray(report.selfImprovement.readyTypes)).toBe(true);
+    expect(typeof report.selfImprovement.callsUntilUpdate).toBe("number");
+  });
+
+  it("byTool has entries for tools with estimates", () => {
+    const report = getFeedbackHealthReport();
+    // Previous test runs will have recorded estimates
+    if (report.totalEstimates > 0) {
+      const toolKeys = Object.keys(report.byTool);
+      expect(toolKeys.length).toBeGreaterThan(0);
+      for (const [tool, data] of Object.entries(report.byTool)) {
+        expect(data.estimates).toBeGreaterThan(0);
+        expect(typeof data.actuals).toBe("number");
+      }
+    }
+  });
+
+  it("matchRate is between 0 and 100", () => {
+    const report = getFeedbackHealthReport();
+    expect(report.matchRate).toBeGreaterThanOrEqual(0);
+    expect(report.matchRate).toBeLessThanOrEqual(100);
+    // When there are no estimates, matchRate must be 0
+    if (report.totalEstimates === 0) {
+      expect(report.matchRate).toBe(0);
+    }
+  });
+
+  it("selfImprovement tracks ready types", () => {
+    const report = getFeedbackHealthReport();
+    // readyTypes contains task types with 5+ matched records
+    for (const type of report.selfImprovement.readyTypes) {
+      const typeData = report.byTaskType[type];
+      expect(typeData).toBeDefined();
+      expect(typeData!.actuals).toBeGreaterThanOrEqual(5);
+    }
+  });
+});

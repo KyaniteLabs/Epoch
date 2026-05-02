@@ -434,3 +434,38 @@ export const cocomoValidateSchema = z.object({
 });
 
 export type CocomoValidateInput = z.infer<typeof cocomoValidateSchema>;
+
+// ---- Tool 20: cocomoGroundTruth --------------------------------------------
+
+export const cocomoGroundTruthSchema = z.object({
+  dataset_filter: z
+    .array(z.string().describe("Dataset name: COCOMO81, NASA93, Albrecht, or Kemerer."))
+    .describe("Optional filter to validate against specific datasets only.")
+    .optional(),
+});
+
+export type CocomoGroundTruthInput = z.infer<typeof cocomoGroundTruthSchema>;
+
+// ---- Tool 21: batchRecordActuals -------------------------------------------
+
+export const batchRecordActualsSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        estimate_id: z.string().describe("ID of the estimate to update."),
+        actual_hours: z.number().positive().describe("Actual hours spent."),
+        notes: z.string().optional().describe("Optional context."),
+      }),
+    )
+    .min(1)
+    .max(500)
+    .describe("Array of actual-hour records (1–500 entries)."),
+});
+
+export type BatchRecordActualsInput = z.infer<typeof batchRecordActualsSchema>;
+
+// ---- Tool 22: feedbackHealth -----------------------------------------------
+
+export const feedbackHealthSchema = z.object({});
+
+export type FeedbackHealthInput = z.infer<typeof feedbackHealthSchema>;

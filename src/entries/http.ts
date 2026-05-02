@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
-import { recordActual, getPendingEstimates } from "../lib/feedback.js";
+import { recordActual, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import type { ToolResult } from "../types/index.js";
 import type { z } from "zod";
@@ -28,7 +28,7 @@ const LLMSTXT = `# Epoch
 > Time Estimation MCP Server — structured temporal reasoning for AI agents
 
 ## Overview
-Epoch provides 21 tools across 5 layers for accurate time estimation.
+Epoch provides 24 tools across 5 layers for accurate time estimation.
 All tools are accessed via POST /v1/tools/{tool_name} with JSON request bodies.
 All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"isError": true, "message": "...", "retryHint": "..."}}
 
@@ -522,6 +522,31 @@ export function createApiApp(): Hono {
     const limit = Math.min(Math.max(Number(c.req.query("limit") ?? "50"), 1), 200);
     const pending = getPendingEstimates(limit);
     return c.json({ ok: true, data: pending });
+  });
+
+  app.post("/v1/feedback/batch-record-actuals", async (c) => {
+    const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body || !Array.isArray(body["entries"])) {
+      return c.json({
+        ok: false,
+        error: { isError: true, message: "Requires entries array (1–500 items).", retryHint: "POST {entries: [{estimate_id: '...', actual_hours: 8.5}]}" },
+      }, 400);
+    }
+
+    const entries = (body["entries"] as Array<Record<string, unknown>>).slice(0, 500);
+    const result = batchRecordActuals(
+      entries.map((e) => ({
+        estimateId: String(e["estimate_id"] ?? ""),
+        actualHours: Number(e["actual_hours"] ?? 0),
+        notes: e["notes"] as string | undefined,
+      })),
+    );
+    return c.json({ ok: true, data: result });
+  });
+
+  app.get("/v1/feedback/health", (c) => {
+    const report = getFeedbackHealthReport();
+    return c.json({ ok: true, data: report });
   });
 
   app.onError((err, c) => {
