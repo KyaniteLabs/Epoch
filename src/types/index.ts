@@ -201,23 +201,6 @@ export interface EstimationInput {
   readonly operands: Readonly<Record<string, unknown>>;
 }
 
-// ---- Critical Path Task ---------------------------------------------------
-
-export interface CriticalPathTask {
-  readonly name: string;
-  readonly duration: number;
-  readonly predecessors: readonly string[];
-}
-
-// ---- Fetch Historical Data ------------------------------------------------
-
-export type HistoricalDataSource =
-  | "jira"
-  | "asana"
-  | "toggl"
-  | "git"
-  | "calendar";
-
 // ---- Reference Class Estimation -------------------------------------------
 
 export type TaskType =

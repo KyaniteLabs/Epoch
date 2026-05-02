@@ -27,6 +27,8 @@ import {
   calibrateEstimates,
   tokenTimeBridge,
 } from "../lib/analytics.js";
+import { getCalibrationData } from "../lib/feedback.js";
+import { getTaskTypeCorrectionFactor } from "../lib/self-improve.js";
 import {
   temporalStatusSchema,
   timeMathSchema,
@@ -91,8 +93,7 @@ const addBusinessDaysSchema = z.object({
     .string()
     .describe("ISO date string for the start date."),
   days: z
-    .number()
-    .int()
+    .coerce.number()
     .describe("Number of business days to add (negative to subtract)."),
   country: z
     .string()
@@ -305,33 +306,71 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "time_math",
-    "Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.",
+    "Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration. For diff, use operands: {start_date, end_date}. For add_days, use operands: {start_date, days}. For add_business_days, use operands: {start_date, days, country}.",
     timeMathSchema,
     timeMathOutput,
     (input) => {
       const operation = input.operation as string;
-      const ops = input.operands as Record<string, unknown>;
+      let ops = input.operands as Record<string, unknown>;
+
+      // Defensive: models sometimes send stringified JSON as operands
+      if (typeof ops === "string") {
+        try { ops = JSON.parse(ops); } catch { /* use as-is */ }
+      }
+      if (!ops || typeof ops !== "object") ops = {};
+
+      const str = (v: unknown): string | undefined =>
+        typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined;
+      const num = (v: unknown, fallback?: number): number | undefined =>
+        typeof v === "number" ? v : typeof v === "string" ? Number(v) : fallback;
 
       switch (operation) {
-        case "add_days":
-          return { ok: true as const, data: addDays(ops.date as string, ops.days as number) };
-        case "diff":
-          return { ok: true as const, data: diffDates(ops.date as string, ops.end_date as string) };
-        case "convert_tz":
-          return convertTimezone(
-            ops.timestamp as string,
-            ops.target_tz as string,
-          );
-        case "parse_nl":
-          return parseDuration(ops.duration_string as string);
-        case "format_duration":
-          return { ok: true as const, data: formatElapsed(ops.milliseconds as number) };
-        case "add_business_days":
-          return addBusinessDays(
-            (ops.start_date as string) ?? (ops.date as string),
-            ops.days as number,
-            (ops.country as string) ?? "US",
-          );
+        case "add_days": {
+          const date = str(ops.start_date) ?? str(ops.date) ?? str(ops.from_date) ?? str(ops.startDate);
+          const days = num(ops.days);
+          if (!date || days === undefined) {
+            return { ok: false as const, error: { isError: true as const, message: "add_days requires operands: {start_date, days}.", retryHint: "Pass start_date as an ISO date string and days as a number." } };
+          }
+          return { ok: true as const, data: addDays(date, days) };
+        }
+        case "diff": {
+          const start = str(ops.start_date) ?? str(ops.date) ?? str(ops.from_date) ?? str(ops.startDate);
+          const end = str(ops.end_date) ?? str(ops.to_date) ?? str(ops.endDate) ?? str(ops.end);
+          if (!start || !end) {
+            return { ok: false as const, error: { isError: true as const, message: "diff requires operands: {start_date, end_date}.", retryHint: "Pass both start_date and end_date as ISO date strings." } };
+          }
+          return { ok: true as const, data: diffDates(start, end) };
+        }
+        case "convert_tz": {
+          const ts = str(ops.timestamp);
+          const tz = str(ops.target_tz);
+          if (!ts || !tz) {
+            return { ok: false as const, error: { isError: true as const, message: "convert_tz requires operands: {timestamp, target_tz}.", retryHint: "Pass an ISO timestamp and a target IANA timezone." } };
+          }
+          return convertTimezone(ts, tz);
+        }
+        case "parse_nl": {
+          const dur = str(ops.duration_string);
+          if (!dur) {
+            return { ok: false as const, error: { isError: true as const, message: "parse_nl requires operands: {duration_string}.", retryHint: 'Pass a duration string like "2h30m" or "1d6h".' } };
+          }
+          return parseDuration(dur);
+        }
+        case "format_duration": {
+          const ms = num(ops.milliseconds);
+          if (ms === undefined) {
+            return { ok: false as const, error: { isError: true as const, message: "format_duration requires operands: {milliseconds}.", retryHint: "Pass a number of milliseconds." } };
+          }
+          return { ok: true as const, data: formatElapsed(ms) };
+        }
+        case "add_business_days": {
+          const start = str(ops.start_date) ?? str(ops.date) ?? str(ops.from_date) ?? str(ops.startDate);
+          const days = num(ops.days);
+          if (!start || days === undefined) {
+            return { ok: false as const, error: { isError: true as const, message: "add_business_days requires operands: {start_date, days, country?}.", retryHint: "Pass start_date as an ISO date string and days as a number." } };
+          }
+          return addBusinessDays(start, days, (ops.country as string) ?? "US");
+        }
         default:
           return {
             ok: false as const,
@@ -393,17 +432,21 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "Estimates effort using a COCOMO II model adjusted for LLM-assisted workflows.",
     cocomoEstimateSchema,
     cocomoOutput,
-    (input) => ({
-      ok: true as const,
-      data: cocomoEstimate({
-        kloc: input.kloc as number,
-        reasoningComplexity: input.reasoning_complexity as number,
-        contextCompleteness: input.context_completeness as number,
-        transformationImpact: input.transformation_impact as number,
-        iterativeCycles: input.iterative_cycles as number,
-        humanOversight: input.human_oversight as number,
-      }),
-    }),
+    (input) => {
+      const rawCycles = input.iterative_cycles as number;
+      const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
+      return {
+        ok: true as const,
+        data: cocomoEstimate({
+          kloc: input.kloc as number,
+          reasoningComplexity: input.reasoning_complexity as number,
+          contextCompleteness: input.context_completeness as number,
+          transformationImpact: input.transformation_impact as number,
+          iterativeCycles,
+          humanOversight: input.human_oversight as number,
+        }),
+      };
+    },
   ),
 
   tool(
@@ -466,22 +509,31 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "Estimates effort using reference-class forecasting from historical data.",
     referenceClassEstimateSchema,
     referenceClassOutput,
-    (input) => ({
-      ok: true as const,
-      data: referenceClassEstimate(
-        [],
-        input.task_type as
-          | "feature"
-          | "bugfix"
-          | "refactor"
-          | "migration"
-          | "infrastructure"
-          | "documentation"
-          | "testing"
-          | "design",
-        input.complexity as number,
-      ),
-    }),
+    (input) => {
+      const taskType = input.task_type as
+        | "feature"
+        | "bugfix"
+        | "refactor"
+        | "migration"
+        | "infrastructure"
+        | "documentation"
+        | "testing"
+        | "design";
+      const records = getCalibrationData(
+        input.team_id as string | undefined,
+        taskType,
+        90,
+        "reference_class_estimate",
+      );
+      return {
+        ok: true as const,
+        data: referenceClassEstimate(
+          records,
+          taskType,
+          input.complexity as number,
+        ),
+      };
+    },
   ),
 
   tool(
@@ -489,14 +541,22 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "Calibrates estimation accuracy using historical team data.",
     calibrateEstimatesSchema,
     calibrateOutput,
-    (input) => ({
-      ok: true as const,
-      data: calibrateEstimates(
+    (input) => {
+      const records = getCalibrationData(
         input.team_id as string,
+        undefined,
         input.period_days as number,
-        input.minimum_samples as number,
-      ),
-    }),
+      );
+      return {
+        ok: true as const,
+        data: calibrateEstimates(
+          input.team_id as string,
+          input.period_days as number,
+          input.minimum_samples as number,
+          records,
+        ),
+      };
+    },
   ),
 
   tool(

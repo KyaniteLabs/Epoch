@@ -1,13 +1,13 @@
 import type {
   TokenTimeMapping,
-  TokenTimeBreakdown,
   ConfidenceLevel,
   UrgencyCategory,
   AccuracyMetrics,
-  LLMModel,
   ReasoningDepth,
   TaskType,
 } from "../types/index.js";
+import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
+import { getTelemetry } from "./telemetry.js";
 
 interface ModelCalibration {
   readonly tokensPerSecond: number;
@@ -36,6 +36,17 @@ const REASONING_DEPTH_MULTIPLIER: Record<ReasoningDepth, number> = {
   deep: 5.0,
 };
 
+const INDUSTRY_CORRECTION_FACTORS: Record<string, number> = {
+  feature: 1.8,
+  bugfix: 1.4,
+  refactor: 2.0,
+  migration: 2.2,
+  infrastructure: 1.9,
+  documentation: 1.3,
+  testing: 1.5,
+  design: 1.7,
+};
+
 function getUrgency(seconds: number): UrgencyCategory {
   const hours = seconds / 3600;
   if (hours < 2) return "short";
@@ -43,8 +54,51 @@ function getUrgency(seconds: number): UrgencyCategory {
   return "long";
 }
 
+function getMedianTps(cal: { medianTps?: number; medianTokensPerSecond?: number }): number {
+  return cal.medianTps ?? cal.medianTokensPerSecond ?? 0;
+}
+
+function getModelCalibration(model: string): ModelCalibration {
+  // Priority: live telemetry → reference DB → hardcoded table → generic fallback
+  const telemetryStats = getTelemetry().getModelStats(model, 30);
+  if (telemetryStats && telemetryStats.sampleCount >= 10) {
+    const base = MODEL_CALIBRATIONS[model] ?? { tokensPerSecond: 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
+    return { ...base, tokensPerSecond: telemetryStats.medianTps };
+  }
+
+  const db = loadReferenceDb();
+  if (db?.tokenTimeCalibration?.[model]) {
+    const dbTps = getMedianTps(db.tokenTimeCalibration[model]);
+    if (dbTps > 0) {
+      const base = MODEL_CALIBRATIONS[model] ?? { tokensPerSecond: 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
+      return { ...base, tokensPerSecond: dbTps };
+    }
+  }
+
+  const dbDefault = db?.tokenTimeCalibration?.["_default"];
+  if (dbDefault && !MODEL_CALIBRATIONS[model]) {
+    const tps = getMedianTps(dbDefault);
+    return { tokensPerSecond: tps > 0 ? tps : 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
+  }
+
+  return MODEL_CALIBRATIONS[model] ?? { tokensPerSecond: 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
+}
+
+function getPromptRatio(model: string): number {
+  const db = loadReferenceDb();
+  const profile = db?.modelLatencyProfiles?.[model];
+  if (profile?.tokensPerRound && typeof profile.tokensPerRound === "object") {
+    const total = profile.tokensPerRound.mean;
+    const prompt = profile.tokensPerRound.meanPrompt;
+    if (total > 0) return prompt / total;
+  }
+  return 0.3;
+}
+
 function getConfidence(model: string): ConfidenceLevel {
-  if (model in MODEL_CALIBRATIONS) return "likely";
+  const cal = getModelCalibration(model);
+  if (MODEL_CALIBRATIONS[model]) return "likely";
+  if (cal.tokensPerSecond !== 75) return "likely";
   return "optimistic";
 }
 
@@ -54,11 +108,8 @@ export function tokenTimeBridge(params: {
   toolCalls: number;
   reasoningDepth: ReasoningDepth;
 }): TokenTimeMapping {
-  const cal = MODEL_CALIBRATIONS[params.model] ?? {
-    tokensPerSecond: 75,
-    reasoningOverheadMs: 2500,
-    toolCallLatencyMs: 500,
-  };
+  const cal = getModelCalibration(params.model);
+  const promptRatio = getPromptRatio(params.model);
 
   const generationTimeSeconds = params.tokens / cal.tokensPerSecond;
   const toolOverheadSeconds = (params.toolCalls * cal.toolCallLatencyMs) / 1000;
@@ -79,8 +130,8 @@ export function tokenTimeBridge(params: {
     confidence,
     urgency: getUrgency(totalSeconds),
     breakdown: {
-      promptTokens: Math.round(params.tokens * 0.3),
-      completionTokens: Math.round(params.tokens * 0.7),
+      promptTokens: Math.round(params.tokens * promptRatio),
+      completionTokens: Math.round(params.tokens * (1 - promptRatio)),
       toolOverheadSeconds: Math.round(toolOverheadSeconds * 100) / 100,
     },
     humanReadable: `Approximately ${timeStr} for ${params.tokens.toLocaleString()} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls). Confidence: ${confidence}.`,
@@ -92,19 +143,20 @@ export interface HistoricalRecord {
   readonly estimatedHours: number;
   readonly actualHours: number;
   readonly teamId?: string;
+  readonly tool?: string;
   readonly completedAt: string;
 }
 
-const INDUSTRY_CORRECTION_FACTORS: Record<string, number> = {
-  feature: 1.8,
-  bugfix: 1.4,
-  refactor: 2.0,
-  migration: 2.2,
-  infrastructure: 1.9,
-  documentation: 1.3,
-  testing: 1.5,
-  design: 1.7,
-};
+function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string): number {
+  // Priority: tool-specific reference DB → task-type reference DB → industry defaults
+  if (tool) {
+    const toolFactor = getToolTaskCorrectionFactor(tool, taskType);
+    if (toolFactor !== 1.8) return toolFactor;
+  }
+  const dbFactor = getDbCorrectionFactor(taskType);
+  if (dbFactor !== 1.8) return dbFactor;
+  return INDUSTRY_CORRECTION_FACTORS[taskType] ?? 1.8;
+}
 
 export function referenceClassEstimate(
   records: HistoricalRecord[],
@@ -131,7 +183,7 @@ export function referenceClassEstimate(
       : (ratios[mid] ?? 1.8);
     sampleSize = filtered.length;
   } else {
-    correctionFactor = INDUSTRY_CORRECTION_FACTORS[taskType] ?? 1.8;
+    correctionFactor = getCorrectionFactorForTaskType(taskType, "reference_class_estimate");
     sampleSize = filtered.length;
   }
 
@@ -192,22 +244,52 @@ function avgPercentageError(records: HistoricalRecord[]): number {
 }
 
 export function calibrateEstimates(
-  _teamId: string,
-  _periodDays: number,
-  _minimumSamples: number,
+  teamId: string,
+  periodDays: number,
+  minimumSamples: number,
+  records?: HistoricalRecord[],
 ): {
   correctionFactor: number;
   accuracyTrend: string;
   velocityTrend: string;
   recommendations: string[];
 } {
+  const data = records ?? [];
+
+  if (data.length >= minimumSamples) {
+    const metrics = computeAccuracyMetrics(data);
+    const correctionFactor = metrics.mape > 0
+      ? Math.round((1 + metrics.mape / 100) * 100) / 100
+      : getGlobalCorrectionFactor();
+
+    const recs = [
+      `Computed from ${data.length} historical records over ${periodDays} days.`,
+      `MAPE: ${metrics.mape}%, bias: ${metrics.bias > 0 ? "underestimation" : "overestimation"} (${metrics.bias}).`,
+      `Accuracy trend: ${metrics.trend}.`,
+    ];
+    if (metrics.trend === "degrading") {
+      recs.push("Accuracy is degrading — review recent estimates for systematic bias.");
+    }
+    if (metrics.sample_size < 20) {
+      recs.push("More data points (20+) will improve calibration reliability.");
+    }
+
+    return {
+      correctionFactor,
+      accuracyTrend: metrics.trend,
+      velocityTrend: metrics.trend === "improving" ? "accelerating" : metrics.trend === "degrading" ? "slowing" : "stable",
+      recommendations: recs,
+    };
+  }
+
+  const dbFactor = getGlobalCorrectionFactor();
   return {
-    correctionFactor: 1.5,
+    correctionFactor: dbFactor,
     accuracyTrend: "stable",
     velocityTrend: "stable",
     recommendations: [
-      "Connect a PM system (Jira, Asana, or Toggl) to enable data-driven calibration.",
-      "Current correction factor uses industry averages (1.5x for software tasks).",
+      `Using reference database correction factor (${dbFactor}x) — ${data.length} samples, need ${minimumSamples}.`,
+      "Submit actuals via POST /v1/feedback/record-actual to enable data-driven calibration.",
       "Accuracy improves significantly with 10+ historical data points per task type.",
     ],
   };

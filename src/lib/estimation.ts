@@ -36,8 +36,8 @@ export function pertEstimate(
       ok: false,
       error: {
         isError: true,
-        message: "Values must satisfy 0 < optimistic <= most_likely <= pessimistic.",
-        retryHint: "Provide three estimates where optimistic is smallest and pessimistic is largest.",
+        message: `PERT values must satisfy 0 < optimistic <= most_likely <= pessimistic. Got optimistic=${optimistic}, most_likely=${mostLikely}, pessimistic=${pessimistic}.`,
+        retryHint: "Provide three positive estimates where optimistic is smallest and pessimistic is largest.",
       },
     };
   }
@@ -107,7 +107,8 @@ export function sprintForecast(params: {
       ok: false,
       error: {
         isError: true,
-        message: "Average velocity must be > 0.",
+        message: `Average velocity is 0 across ${velocityHistory.length} sprint(s). Cannot forecast with zero velocity — the backlog will never clear.`,
+        retryHint: "Include sprints with positive velocity, or estimate velocity from team capacity.",
       },
     };
   }

@@ -263,15 +263,8 @@ export function addBusinessDays(
   }
 
   const code = countryCode.toUpperCase();
-  if (!holidayRegistry.hasCountry(code)) {
-    return {
-      ok: false,
-      error: makeError(
-        `Unsupported country code: "${countryCode}". Supported: ${holidayRegistry.supportedCountries().join(", ")}.`,
-        `Use one of: ${holidayRegistry.supportedCountries().join(", ")}`,
-      ),
-    };
-  }
+  // Fallback: unknown countries get weekend-only counting (no holiday awareness)
+  const knownCountry = holidayRegistry.hasCountry(code);
 
   // Walk day-by-day to properly skip both weekends AND holidays
   const direction = days >= 0 ? 1 : -1;
@@ -283,7 +276,7 @@ export function addBusinessDays(
   while (added < targetCount) {
     current.setDate(current.getDate() + direction);
     const year = current.getFullYear();
-    const holidayKeys = holidayRegistry.holidayDateKeys(code, year);
+    const holidayKeys = knownCountry ? holidayRegistry.holidayDateKeys(code, year) : new Set<string>();
 
     if (isWeekend(current)) continue;
     if (holidayKeys.has(dateToKey(current))) {
@@ -325,15 +318,8 @@ export function countBusinessDays(
   }
 
   const code = countryCode.toUpperCase();
-  if (!holidayRegistry.hasCountry(code)) {
-    return {
-      ok: false,
-      error: makeError(
-        `Unsupported country code: "${countryCode}". Supported: ${holidayRegistry.supportedCountries().join(", ")}.`,
-        `Use one of: ${holidayRegistry.supportedCountries().join(", ")}`,
-      ),
-    };
-  }
+  // Fallback: unknown countries get weekend-only counting (no holiday awareness)
+  const knownCountry = holidayRegistry.hasCountry(code);
 
   // Iterate day-by-day from start (exclusive) to end (inclusive)
   const holidaysSkipped: string[] = [];
@@ -346,7 +332,7 @@ export function countBusinessDays(
 
   while (current.getTime() <= endTime) {
     const year = current.getFullYear();
-    const holidayKeys = holidayRegistry.holidayDateKeys(code, year);
+    const holidayKeys = knownCountry ? holidayRegistry.holidayDateKeys(code, year) : new Set<string>();
 
     if (!isWeekend(current) && !holidayKeys.has(dateToKey(current))) {
       businessDays++;

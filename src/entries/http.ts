@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
+import { recordActual, getPendingEstimates } from "../lib/feedback.js";
 import type { ToolResult } from "../types/index.js";
 import type { z } from "zod";
 
@@ -418,6 +419,40 @@ export function createApiApp(): Hono {
   app.get("/openapi.json", (c) => {
     if (!cachedSpec) cachedSpec = buildOpenApiSpec();
     return c.json(cachedSpec);
+  });
+
+  // ---- Feedback endpoints ----------------------------------------------------
+
+  app.post("/v1/feedback/record-actual", async (c) => {
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ ok: false, error: { message: "Invalid JSON body." } }, 400);
+    }
+
+    const estimateId = body["estimate_id"] as string | undefined;
+    const actualHours = body["actual_hours"] as number | undefined;
+
+    if (!estimateId || actualHours === undefined || actualHours < 0) {
+      return c.json({
+        ok: false,
+        error: {
+          message: "Requires estimate_id (string) and actual_hours (non-negative number).",
+          retryHint: "POST {estimate_id: '...', actual_hours: 8.5, notes: 'optional'}",
+        },
+      }, 400);
+    }
+
+    const notes = body["notes"] as string | undefined;
+    const success = recordActual(estimateId, actualHours, notes);
+    return c.json({ ok: success, data: { estimateId, actualHours, recorded: true } });
+  });
+
+  app.get("/v1/feedback/pending", (c) => {
+    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? "50"), 1), 200);
+    const pending = getPendingEstimates(limit);
+    return c.json({ ok: true, data: pending });
   });
 
   app.onError((err, c) => {

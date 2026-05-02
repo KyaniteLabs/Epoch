@@ -11,8 +11,6 @@ import type {
   UrgencyCategory,
   ConfidenceLevel,
   TimeUnit,
-  EstimationOperation,
-  HistoricalDataSource,
   TaskType,
   LLMModel,
   ReasoningDepth,
@@ -36,23 +34,7 @@ export const timeUnitEnum = z
   .enum(["hours", "days", "weeks", "months"])
   .describe("Time unit used throughout the estimation result.");
 
-export const estimationOperationEnum = z.enum([
-  "temporal_status",
-  "time_math",
-  "pert_estimate",
-  "cocomo_estimate",
-  "sprint_forecast",
-  "critical_path",
-  "fetch_historical",
-  "reference_class",
-  "monte_carlo",
-  "calibrate",
-  "token_time_bridge",
-]);
 
-export const historicalSourceEnum = z
-  .enum(["jira", "asana", "toggl", "git", "calendar"])
-  .describe("External system to pull historical velocity data from.");
 
 export const taskTypeEnum = z
   .enum([
@@ -107,12 +89,6 @@ export const temporalStatusSchema = z.object({
       'IANA timezone identifier (e.g. "America/New_York"). Defaults to "UTC".'
     )
     .default("UTC"),
-  include_session_time: z
-    .boolean()
-    .describe(
-      "Whether to include elapsed session time in the response. Useful for tracking conversation duration."
-    )
-    .default(true),
 });
 
 export type TemporalStatusInput = z.infer<typeof temporalStatusSchema>;
@@ -147,19 +123,19 @@ export type TimeMathInput = z.infer<typeof timeMathSchema>;
 
 export const pertEstimateSchema = z.object({
   optimistic: z
-    .number()
+    .coerce.number()
     .positive()
     .describe(
       "Best-case duration. Do NOT use your initial optimistic guess — this should be the absolute minimum if everything goes perfectly."
     ),
   most_likely: z
-    .number()
+    .coerce.number()
     .positive()
     .describe(
       "Mode of the distribution — the single most probable outcome."
     ),
   pessimistic: z
-    .number()
+    .coerce.number()
     .positive()
     .describe(
       "Worst-case duration accounting for known risks and unknown unknowns."
@@ -173,13 +149,13 @@ export type PertEstimateInput = z.infer<typeof pertEstimateSchema>;
 
 export const cocomoEstimateSchema = z.object({
   kloc: z
-    .number()
+    .coerce.number()
     .positive()
     .describe(
       "Estimated thousands of lines of code. Count actual code, not comments/blank lines."
     ),
   reasoning_complexity: z
-    .number()
+    .coerce.number()
     .min(0.5)
     .max(2.0)
     .describe(
@@ -187,7 +163,7 @@ export const cocomoEstimateSchema = z.object({
     )
     .default(1.0),
   context_completeness: z
-    .number()
+    .coerce.number()
     .min(0.5)
     .max(2.0)
     .describe(
@@ -195,7 +171,7 @@ export const cocomoEstimateSchema = z.object({
     )
     .default(1.0),
   transformation_impact: z
-    .number()
+    .coerce.number()
     .min(0.5)
     .max(2.0)
     .describe(
@@ -203,15 +179,15 @@ export const cocomoEstimateSchema = z.object({
     )
     .default(1.0),
   iterative_cycles: z
-    .number()
+    .coerce.number()
     .min(0.5)
-    .max(2.0)
+    .max(10.0)
     .describe(
-      "Expected iteration overhead. 0.5 = one-shot, 1.0 = typical debug loop, 2.0 = heavy back-and-forth."
+      "Iteration overhead multiplier or literal cycle count. Multiplier scale: 0.5 = one-shot, 1.0 = typical debug loop, 2.0 = heavy back-and-forth. Values above 2.0 are accepted as literal cycle counts and normalized internally."
     )
     .default(1.0),
   human_oversight: z
-    .number()
+    .coerce.number()
     .min(0.5)
     .max(2.0)
     .describe(
@@ -226,25 +202,24 @@ export type CocomoEstimateInput = z.infer<typeof cocomoEstimateSchema>;
 
 export const sprintForecastSchema = z.object({
   backlog_points: z
-    .number()
+    .coerce.number()
     .positive()
     .describe(
       "Total story points or effort units remaining in the backlog."
     ),
   velocity_history: z
-    .array(z.number().positive().describe("Velocity in points for a single sprint."))
+    .array(z.coerce.number().nonnegative().describe("Velocity in points for a single sprint (0 = no completed work)."))
     .min(1)
     .describe(
       "Historical velocities from completed sprints. Minimum 1 data point; 3+ recommended for meaningful forecasts."
     ),
   sprint_length_days: z
-    .number()
-    .int()
+    .coerce.number()
     .positive()
     .describe("Calendar days in a single sprint cycle.")
     .default(14),
   hours_per_sprint: z
-    .number()
+    .coerce.number()
     .positive()
     .describe(
       "Total productive engineering hours available per sprint (accounts for meetings, overhead)."
@@ -262,7 +237,7 @@ const taskSchema = z.object({
     .min(1)
     .describe("Unique task identifier used in predecessor references."),
   duration: z
-    .number()
+    .coerce.number()
     .positive()
     .describe("Estimated task duration in days."),
   predecessors: z
@@ -283,33 +258,12 @@ export const criticalPathSchema = z.object({
 
 export type CriticalPathInput = z.infer<typeof criticalPathSchema>;
 
-// ---- Tool 7: fetchHistoricalData ------------------------------------------
-
-export const fetchHistoricalDataSchema = z.object({
-  source: historicalSourceEnum,
-  filters: z
-    .record(z.string(), z.unknown())
-    .describe(
-      'Source-specific filter key-value pairs (e.g. { "project": "API", "assignee": "team-a" }).'
-    )
-    .default({}),
-  date_range: z
-    .object({
-      start: z.string().describe("ISO date for the start of the query window."),
-      end: z.string().describe("ISO date for the end of the query window."),
-    })
-    .describe("Temporal window for the data pull."),
-});
-
-export type FetchHistoricalDataInput = z.infer<typeof fetchHistoricalDataSchema>;
-
 // ---- Tool 8: referenceClassEstimate ---------------------------------------
 
 export const referenceClassEstimateSchema = z.object({
   task_type: taskTypeEnum,
   complexity: z
     .number()
-    .int()
     .min(1)
     .max(5)
     .describe(
@@ -334,15 +288,15 @@ export const monteCarloSchema = z.object({
       z.object({
         name: z.string().min(1).describe("Task name / identifier."),
         optimistic: z
-          .number()
+          .coerce.number()
           .positive()
           .describe("Best-case duration in days."),
         most_likely: z
-          .number()
+          .coerce.number()
           .positive()
           .describe("Most probable duration in days."),
         pessimistic: z
-          .number()
+          .coerce.number()
           .positive()
           .describe("Worst-case duration in days."),
       }).refine(
@@ -355,20 +309,11 @@ export const monteCarloSchema = z.object({
       "Task list with PERT-style three-point estimates and dependency edges."
     ),
   iterations: z
-    .number()
-    .int()
-    .positive()
-    .describe("Number of Monte Carlo simulation iterations. Higher = more stable percentiles.")
+    .coerce.number()
+    .min(1)
+    .max(100000)
+    .describe("Number of Monte Carlo simulation iterations (1–100,000). Higher = more stable percentiles.")
     .default(10000),
-  correlation_matrix: z
-    .record(
-      z.string(),
-      z.record(z.string(), z.number().min(-1).max(1))
-    )
-    .describe(
-      "Optional pairwise correlation coefficients between task durations. Keys are task names, values are maps of peer task name to correlation (-1 to 1)."
-    )
-    .optional(),
 });
 
 export type MonteCarloInput = z.infer<typeof monteCarloSchema>;
@@ -380,14 +325,12 @@ export const calibrateEstimatesSchema = z.object({
     "Team identifier whose historical accuracy data should be analysed."
   ),
   period_days: z
-    .number()
-    .int()
+    .coerce.number()
     .positive()
     .describe("Lookback window in calendar days for calibration data.")
     .default(90),
   minimum_samples: z
-    .number()
-    .int()
+    .coerce.number()
     .positive()
     .describe(
       "Minimum number of completed tasks required before producing a calibration factor."
@@ -401,14 +344,12 @@ export type CalibrateEstimatesInput = z.infer<typeof calibrateEstimatesSchema>;
 
 export const tokenTimeBridgeSchema = z.object({
   tokens: z
-    .number()
-    .int()
+    .coerce.number()
     .positive()
     .describe("Total number of tokens in the LLM request (prompt + completion)."),
-  model: llmModelEnum,
+  model: z.string().describe("LLM model identifier. Unknown models fall back to generic estimates."),
   tool_calls: z
-    .number()
-    .int()
+    .coerce.number()
     .nonnegative()
     .describe(
       "Number of tool calls expected in the agentic loop. Each adds overhead latency."
@@ -424,19 +365,6 @@ export const tokenTimeBridgeSchema = z.object({
 export type TokenTimeBridgeInput = z.infer<typeof tokenTimeBridgeSchema>;
 
 // ---- Tool 12 (generic): estimationInput for registry dispatch -------------
-
-export const estimationInputSchema = z.object({
-  operation: estimationOperationEnum.describe(
-    "Which estimation operation to dispatch."
-  ),
-  operands: z
-    .record(z.string(), z.unknown())
-    .describe(
-      "Named parameters forwarded to the selected tool's handler."
-    ),
-});
-
-export type EstimationInputSchemaType = z.infer<typeof estimationInputSchema>;
 
 // ---- Error & Result schemas ------------------------------------------------
 

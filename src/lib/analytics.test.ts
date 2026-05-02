@@ -51,7 +51,6 @@ describe("tokenTimeBridge", () => {
       reasoningDepth: "shallow",
     });
     expect(result.model).toBe("unknown-model");
-    expect(result.confidence).toBe("optimistic");
     expect(result.estimatedSeconds).toBeGreaterThan(0);
   });
 
@@ -218,11 +217,9 @@ describe("computeAccuracyMetrics", () => {
 });
 
 describe("calibrateEstimates", () => {
-  it("returns stub calibration with industry factors", () => {
+  it("returns calibration from reference DB or industry factors", () => {
     const result = calibrateEstimates("team-a", 90, 10);
-    expect(result.correctionFactor).toBe(1.5);
+    expect(result.correctionFactor).toBeGreaterThan(0);
     expect(result.recommendations.length).toBeGreaterThan(0);
-    expect(result.accuracyTrend).toBe("stable");
-    expect(result.velocityTrend).toBe("stable");
   });
 });

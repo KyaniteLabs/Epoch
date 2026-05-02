@@ -1,10 +1,14 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Main Dispatch Function
 // Routes tool calls to registered handlers with schema validation.
+// Records telemetry and triggers self-improvement.
 // ---------------------------------------------------------------------------
 
 import type { ToolResult } from "../types/index.js";
 import { TOOL_REGISTRY, TOOL_NAMES } from "./tool-registry.js";
+import { getTelemetry } from "../lib/telemetry.js";
+import { recordEstimate } from "../lib/feedback.js";
+import { notifyToolCall } from "../lib/self-improve.js";
 
 // ---- Dispatch ---------------------------------------------------------------
 
@@ -46,9 +50,30 @@ export async function dispatch(
     };
   }
 
+  const startMs = performance.now();
+
   try {
-    return definition.handler(parsed.data as Record<string, unknown>);
+    const result = definition.handler(parsed.data as Record<string, unknown>);
+    const elapsedMs = performance.now() - startMs;
+
+    const telemetry = getTelemetry();
+    telemetry.record(toolName, elapsedMs, result.ok, parsed.data);
+
+    if (result.ok) {
+      const data = (result as { ok: true; data: unknown }).data;
+      if (data && typeof data === "object") {
+        recordEstimate(toolName, parsed.data, data as Record<string, unknown>);
+      }
+    }
+
+    notifyToolCall();
+
+    return result;
   } catch (err: unknown) {
+    const elapsedMs = performance.now() - startMs;
+    getTelemetry().record(toolName, elapsedMs, false, parsed.data);
+    notifyToolCall();
+
     const message =
       err instanceof Error ? err.message : "Unexpected handler error.";
     return {

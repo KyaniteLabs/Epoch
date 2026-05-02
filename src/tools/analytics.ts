@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { tokenTimeBridge, referenceClassEstimate, calibrateEstimates } from "../lib/analytics.js";
+import { getCalibrationData } from "../lib/feedback.js";
 
 const readOnlyAnnotations = {
   readOnlyHint: true as const,
@@ -26,13 +27,7 @@ Prioritize this over algorithmic models when historical data is available.`,
       team_id: z.string().optional().describe("Team identifier for team-specific correction factors."),
     },
     async ({ task_type, complexity, team_id }) => {
-      const records: Array<{
-        readonly taskType: string;
-        readonly estimatedHours: number;
-        readonly actualHours: number;
-        readonly teamId?: string;
-        readonly completedAt: string;
-      }> = [];
+      const records = getCalibrationData(team_id, task_type, 90);
       const result = referenceClassEstimate(records, task_type, complexity);
       const output = {
         ...result,
@@ -41,9 +36,9 @@ Prioritize this over algorithmic models when historical data is available.`,
         correctionFactor: result.correctionFactor,
         sampleSize: result.sampleSize,
         confidence: result.confidence,
-        note: team_id
-          ? "No historical data connected. Using industry correction factors."
-          : "Connect a PM system (Jira/Asana/Toggl) for data-driven estimates.",
+        note: records.length >= 5
+          ? `Based on ${records.length} historical records for "${task_type}" tasks.`
+          : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
       };
       return { content: [{ type: "text" as const, text: JSON.stringify(output) }] };
     },
@@ -62,7 +57,8 @@ for improving estimation accuracy.`,
       minimum_samples: z.number().int().positive().default(10).describe("Minimum data points needed for reliable calibration."),
     },
     async ({ team_id, period_days, minimum_samples }) => {
-      const result = calibrateEstimates(team_id, period_days, minimum_samples);
+      const records = getCalibrationData(team_id, undefined, period_days);
+      const result = calibrateEstimates(team_id, period_days, minimum_samples, records);
       return {
         content: [{
           type: "text" as const,

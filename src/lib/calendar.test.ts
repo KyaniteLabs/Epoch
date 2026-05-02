@@ -107,11 +107,11 @@ describe("addBusinessDays", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("returns error for unsupported country", () => {
+  it("falls back to weekend-only for unknown country", () => {
     const result = addBusinessDays("2026-05-01", 1, "XX");
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.message).toContain("Unsupported country");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.countryCode).toBe("XX");
   });
 });
 
