@@ -10,3 +10,4 @@ coverage/
 *.log
 .claude/
 .omx/
+canary-report.json

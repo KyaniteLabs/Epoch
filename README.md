@@ -495,6 +495,17 @@ Epoch provides built-in discoverability endpoints so AI agents can find and use 
 | `GET /openapi.json` | OpenAPI 3.1 specification |
 | `GET /health` | Service health and version |
 
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EPOCH_TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
+| `EPOCH_PORT` | `3000` | HTTP server port |
+| `EPOCH_HOST` | `127.0.0.1` | HTTP server bind address |
+| `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |
+| `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
+| `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per IP (HTTP only) |
+
 ## Installation
 
 ```bash
