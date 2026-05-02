@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-05-02
+
+### Added
+- `record_actual` MCP/CLI/HTTP tool for submitting actual hours on past estimates
+- `get_pending_estimates` MCP/CLI/HTTP tool for listing estimates awaiting feedback
+- Estimation feedback loop: actual hours feed into self-improvement correction factors
+- Developer profile correction applied consistently across MCP, CLI, and HTTP paths
+- `src/version.ts` — single source of truth for version (reads package.json at runtime)
+- Telemetry module tests (22 tests)
+- Schema validation tests (72 tests)
+- Edge-case tests for cost, accuracy-trend, and feedback modules
+
+### Fixed
+- Division-by-zero in self-improvement correction factors when estimatedHours is 0
+- Division-by-zero in Monte Carlo triangular sample when optimistic equals pessimistic
+- Division-by-zero in telemetry TPS calculation when elapsedMs rounds to 0
+- NaN/Infinity output guards on PERT and COCOMO computation results
+- Rate limiter Map growing unbounded — stale entries pruned at 10k threshold
+- `parseInt` on `EPOCH_RATE_LIMIT` and `PORT` env vars without NaN fallback
+- `recordActual` returning true even when filesystem write silently fails
+- HTTP error handler leaking internal error messages to clients
+- Version hardcoded as "0.1.0" in three entry points despite package.json being "0.1.1"
+- Telemetry buffer not flushed on process exit
+
+### Changed
+- `loadReferenceDb` now caches for 60 seconds (was re-reading file 3-4x per request)
+- Atomic file writes use write-to-tmp + renameSync for reference database
+- HTTP `record_actual` endpoint propagates write failure in response
+- Tool count: 19 → 21 (added feedback tools)
+- Test count: 356 → 541
+
 ## [0.1.0] - 2026-05-01
 
 ### Added
@@ -27,4 +58,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Built-in AI discoverability (llms.txt, OpenAPI 3.1, ai-plugin.json)
 - Holiday-aware business day calculations (US, UK, FR, DE, JP)
 - CI workflow with pnpm
-- 356 tests with vitest
