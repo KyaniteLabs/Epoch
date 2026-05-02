@@ -26,7 +26,9 @@ import {
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
-const mockReaddirSync = vi.mocked(readdirSync) as unknown as ReturnType<typeof vi.fn> & { mockReturnValue: (v: string[]) => void };
+const mockReaddirSync = vi.mocked(readdirSync) as unknown as ReturnType<typeof vi.fn> & {
+  mockReturnValue: (v: string[]) => void;
+};
 
 const SAMPLE_SUPPLEMENTARY = JSON.stringify({
   version: "1.0.0",
@@ -61,9 +63,7 @@ const SAMPLE_COCOMO = JSON.stringify({
     datasets: [
       {
         name: "test-dataset",
-        projects: [
-          { id: 1, kloc: 10, effortPersonMonths: 30, type: "organic" },
-        ],
+        projects: [{ id: 1, kloc: 10, effortPersonMonths: 30, type: "organic" }],
       },
     ],
     derivedFactors: {
@@ -74,6 +74,67 @@ const SAMPLE_COCOMO = JSON.stringify({
     },
   },
 });
+
+const COMMUNITY_MODEL_CAL = JSON.stringify({
+  _schema: "model-calibration",
+  records: [
+    {
+      model: "community-model-x",
+      tokens_per_second: 80,
+      time_to_first_token_ms: 100,
+      avg_api_latency_ms: 200,
+      cost_input_per_million: 5000,
+      cost_output_per_million: 15000,
+      measured_at: "2026-01-01",
+    },
+  ],
+});
+
+const COMMUNITY_MODEL_CAL_OVERLAP = JSON.stringify({
+  _schema: "model-calibration",
+  records: [
+    {
+      model: "claude-sonnet-4",
+      tokens_per_second: 1,
+      time_to_first_token_ms: 1,
+      avg_api_latency_ms: 1,
+      cost_input_per_million: 1,
+      cost_output_per_million: 1,
+      measured_at: "2026-01-01",
+    },
+  ],
+});
+
+const COMMUNITY_COCOMO = JSON.stringify({
+  _schema: "cocomo-project",
+  records: [
+    {
+      name: "proj-a",
+      kloc: 200,
+      effort_person_months: 48,
+      type: "business",
+      language: "python",
+      year: 2023,
+    },
+    {
+      name: "proj-b",
+      kloc: 50,
+      effort_person_months: 10,
+      type: "embedded",
+    },
+  ],
+});
+
+const COMMUNITY_BAD_SCHEMA = JSON.stringify({
+  _schema: "unknown-schema",
+  records: [{ foo: "bar" }],
+});
+
+const COMMUNITY_NO_RECORDS = JSON.stringify({
+  _schema: "model-calibration",
+});
+
+const COMMUNITY_INVALID_JSON_CONTENT = "not-json-at-all";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -136,10 +197,7 @@ describe("loadCocomoData", () => {
 
   it("continues to next path on parse error", () => {
     mockExistsSync.mockReturnValue(true);
-    // First path: malformed JSON, second path: valid cocomo
-    mockReadFileSync
-      .mockReturnValueOnce("bad json")
-      .mockReturnValueOnce(SAMPLE_COCOMO);
+    mockReadFileSync.mockReturnValueOnce("bad json").mockReturnValueOnce(SAMPLE_COCOMO);
     const data = loadCocomoData();
     expect(data).not.toBeNull();
   });
@@ -212,11 +270,8 @@ describe("getEstimationResearch", () => {
 
 describe("getAllModelPricing", () => {
   it("returns base pricing when no community data", () => {
-    mockExistsSync.mockReturnValue(false);
-    // Load supplementary first
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
-    resetSupplementaryCache();
 
     const pricing = getAllModelPricing();
     expect(pricing["claude-sonnet-4"]).toBeDefined();
@@ -281,68 +336,6 @@ describe("resetSupplementaryCache", () => {
 });
 
 // ---- loadCommunityData ----
-
-const COMMUNITY_MODEL_CAL = JSON.stringify({
-  _schema: "model-calibration",
-  records: [
-    {
-      model: "community-model-x",
-      tokens_per_second: 80,
-      time_to_first_token_ms: 100,
-      avg_api_latency_ms: 200,
-      cost_input_per_million: 5000,
-      cost_output_per_million: 15000,
-      measured_at: "2026-01-01",
-    },
-  ],
-});
-
-const COMMUNITY_MODEL_CAL_OVERLAP = JSON.stringify({
-  _schema: "model-calibration",
-  records: [
-    {
-      model: "claude-sonnet-4",
-      tokens_per_second: 1,
-      time_to_first_token_ms: 1,
-      avg_api_latency_ms: 1,
-      cost_input_per_million: 1,
-      cost_output_per_million: 1,
-      measured_at: "2026-01-01",
-    },
-  ],
-});
-
-const COMMUNITY_COCOMO = JSON.stringify({
-  _schema: "cocomo-project",
-  records: [
-    {
-      name: "proj-a",
-      kloc: 200,
-      effort_person_months: 48,
-      type: "business",
-      language: "python",
-      year: 2023,
-    },
-    {
-      name: "proj-b",
-      kloc: 50,
-      effort_person_months: 10,
-      type: "embedded",
-    },
-  ],
-});
-
-const COMMUNITY_BAD_SCHEMA = JSON.stringify({
-  _schema: "unknown-schema",
-  records: [{ foo: "bar" }],
-});
-
-const COMMUNITY_NO_RECORDS = JSON.stringify({
-  _schema: "model-calibration",
-  // no "records" key
-});
-
-const COMMUNITY_INVALID_JSON_CONTENT = "not-json-at-all";
 
 describe("loadCommunityData", () => {
   it("returns empty data when community dir does not exist", () => {
@@ -436,29 +429,32 @@ describe("loadCommunityData", () => {
 });
 
 // ---- getAllModelPricing with community data ----
+// These tests pre-load both caches to avoid fragile existsSync call sequencing.
 
 describe("getAllModelPricing with community", () => {
   it("augments with community model without overwriting base", () => {
-    // Supplementary data exists
     mockExistsSync.mockReturnValue(true);
-    mockReadFileSync
-      .mockReturnValueOnce(SAMPLE_SUPPLEMENTARY)    // loadSupplementaryData
-      .mockReturnValueOnce(COMMUNITY_MODEL_CAL_OVERLAP); // loadCommunityData
+    mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
+    loadSupplementaryData();
+
     mockReaddirSync.mockReturnValue(["overlap.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_MODEL_CAL_OVERLAP);
+    loadCommunityData();
 
     const all = getAllModelPricing();
 
-    // Base model should retain its original values
     expect(all["claude-sonnet-4"]!.tokensPerSecond).toBe(100);
     expect(all["claude-sonnet-4"]!.costInput).toBe(3);
   });
 
   it("adds new community model not in base", () => {
     mockExistsSync.mockReturnValue(true);
-    mockReadFileSync
-      .mockReturnValueOnce(SAMPLE_SUPPLEMENTARY)
-      .mockReturnValueOnce(COMMUNITY_MODEL_CAL);
+    mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
+    loadSupplementaryData();
+
     mockReaddirSync.mockReturnValue(["models.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_MODEL_CAL);
+    loadCommunityData();
 
     const all = getAllModelPricing();
 
@@ -475,19 +471,19 @@ describe("getAllModelPricing with community", () => {
 describe("getCocomoProjects with community", () => {
   it("appends community dataset to base datasets", () => {
     mockExistsSync.mockReturnValue(true);
-    mockReadFileSync
-      .mockReturnValueOnce(SAMPLE_COCOMO)    // loadCocomoData
-      .mockReturnValueOnce(COMMUNITY_COCOMO); // loadCommunityData
+    mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
+    loadCocomoData();
+
     mockReaddirSync.mockReturnValue(["cocomo.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_COCOMO);
+    loadCommunityData();
 
     const projects = getCocomoProjects();
 
-    // Base dataset + community dataset
     expect(projects).toHaveLength(2);
     expect(projects[0]!.name).toBe("test-dataset");
     expect(projects[1]!.name).toBe("community");
     expect(projects[1]!.projects).toHaveLength(2);
-    // Community projects get id offset 10000+
     expect(projects[1]!.projects[0]!.id).toBe(10000);
     expect(projects[1]!.projects[0]!.kloc).toBe(200);
     expect(projects[1]!.projects[1]!.id).toBe(10001);
@@ -496,10 +492,12 @@ describe("getCocomoProjects with community", () => {
 
   it("maps community cocomo fields correctly", () => {
     mockExistsSync.mockReturnValue(true);
-    mockReadFileSync
-      .mockReturnValueOnce(SAMPLE_COCOMO)
-      .mockReturnValueOnce(COMMUNITY_COCOMO);
+    mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
+    loadCocomoData();
+
     mockReaddirSync.mockReturnValue(["cocomo.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_COCOMO);
+    loadCommunityData();
 
     const projects = getCocomoProjects();
     const communityProj = projects[1]!.projects[0]!;
@@ -513,10 +511,10 @@ describe("getCocomoProjects with community", () => {
   it("returns only base when no community projects", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
-    // community dir doesn't exist
-    mockExistsSync
-      .mockReturnValueOnce(true)   // cocomo path exists
-      .mockReturnValueOnce(false); // community dir doesn't exist
+    loadCocomoData();
+
+    mockExistsSync.mockReturnValue(false);
+    loadCommunityData();
 
     const projects = getCocomoProjects();
 
