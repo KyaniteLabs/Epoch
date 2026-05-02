@@ -408,6 +408,91 @@ export function createCliProgram(): Command {
       await runAndExit("token_time_bridge", input, format, quiet);
     });
 
+  // -- Token & cost tools (2) ------------------------------------------------
+
+  program
+    .command("token-cost-estimate")
+    .description("Estimates wall-clock time AND dollar cost from token count and LLM model.")
+    .requiredOption("--tokens <n>", "Total number of tokens", parseFloat)
+    .requiredOption("--model <model>", "LLM model identifier")
+    .option("--tool-calls <n>", "Number of expected tool calls", parseFloat)
+    .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = { tokens: opts.tokens, model: opts.model };
+      if (opts.toolCalls !== undefined) input.tool_calls = opts.toolCalls;
+      if (opts.reasoningDepth !== undefined) input.reasoning_depth = opts.reasoningDepth;
+      await runAndExit("token_cost_estimate", input, format, quiet);
+    });
+
+  program
+    .command("compare-models")
+    .description("Compares all LLM models side-by-side for a given token budget.")
+    .requiredOption("--tokens <n>", "Token count to estimate", parseFloat)
+    .option("--tool-calls <n>", "Number of tool calls", parseFloat)
+    .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
+    .option("--sort-by <field>", "Sort by cost or time", "cost")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = { tokens: opts.tokens };
+      if (opts.toolCalls !== undefined) input.tool_calls = opts.toolCalls;
+      if (opts.reasoningDepth !== undefined) input.reasoning_depth = opts.reasoningDepth;
+      if (opts.sortBy !== undefined) input.sort_by = opts.sortBy;
+      await runAndExit("compare_models", input, format, quiet);
+    });
+
+  // -- Validation & analytics tools (3) ----------------------------------------
+
+  program
+    .command("accuracy-trend")
+    .description("Tracks estimation accuracy over time with sliding-window MAPE.")
+    .option("--team-id <id>", "Team identifier")
+    .option("--window-size <n>", "Records per sliding window", parseFloat)
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = {};
+      if (opts.teamId !== undefined) input.team_id = opts.teamId;
+      if (opts.windowSize !== undefined) input.window_size = opts.windowSize;
+      await runAndExit("accuracy_trend", input, format, quiet);
+    });
+
+  program
+    .command("schedule-risk")
+    .description("Assesses schedule risk using historical accuracy data.")
+    .requiredOption("--estimated-hours <n>", "Estimated effort in hours", parseFloat)
+    .option("--task-type <type>", "Task type for accuracy lookup")
+    .option("--team-id <id>", "Team identifier")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = { estimated_hours: opts.estimatedHours };
+      if (opts.taskType !== undefined) input.task_type = opts.taskType;
+      if (opts.teamId !== undefined) input.team_id = opts.teamId;
+      await runAndExit("schedule_risk", input, format, quiet);
+    });
+
+  program
+    .command("cocomo-validate")
+    .description("Validates COCOMO estimation model against 195 real historical projects.")
+    .option("--dataset-filter <datasets>", "Comma-separated dataset names")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = {};
+      if (opts.datasetFilter !== undefined) {
+        input.dataset_filter = opts.datasetFilter.split(",").map((s: string) => s.trim());
+      }
+      await runAndExit("cocomo_validate", input, format, quiet);
+    });
+
   // ---- Utility commands -------------------------------------------------------
 
   program

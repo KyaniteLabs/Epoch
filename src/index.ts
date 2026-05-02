@@ -38,6 +38,11 @@ const CLI_SUBCOMMANDS = new Set([
   "reference-class-estimate",
   "calibrate-estimates",
   "token-time-bridge",
+  "token-cost-estimate",
+  "compare-models",
+  "accuracy-trend",
+  "schedule-risk",
+  "cocomo-validate",
   "list-tools",
 ]);
 
