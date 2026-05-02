@@ -197,7 +197,7 @@ export function referenceClassEstimate(
     const clampedComplexity = Math.max(1, Math.min(5, complexity));
     const complexityNorm = (clampedComplexity - 1) / 4; // 0..1 for complexity 1..5
     rawEstimate = realBaseline.p25_hours + (realBaseline.p75_hours - realBaseline.p25_hours) * complexityNorm;
-    baselineSource = `real_sessions_${realBaseline.total_samples}`;
+    baselineSource = `real_tasks_${realBaseline.total_samples}`;
   } else {
     const complexityMultiplier = 0.5 + (complexity - 1) * 0.375;
     rawEstimate = 8 * complexityMultiplier;

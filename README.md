@@ -1,6 +1,6 @@
 # Epoch -- Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-677-brightgreen.svg)]()
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-687-brightgreen.svg)]()
 
 **Epoch helps AI agents understand time.**
 
@@ -14,10 +14,9 @@ AI can write code, analyze data, and build apps -- but it can't tell you how lon
 You: "How long will a 15,000 line project take with a small team?"
 
 Claude (using Epoch):
-  Expected effort: 45 person-months
-  Duration: 8.3 months with 5-6 people
-  Schedule risk: medium (62% confidence)
-  Recommendation: add 2-week buffer for integration testing
+  COCOMO II nominal: 100 person-months (traditional team)
+  AI-adjusted: 9 person-months (LLM-assisted workflow)
+  Schedule risk: medium (MAPE 15%, based on 28 historical features)
   Cost estimate (Claude Sonnet): ~$340 in API tokens
 ```
 
@@ -37,15 +36,18 @@ Claude (using Epoch):
 You: "Which AI model should we use for a 50k-token job?"
 
 Claude (using Epoch):
-  claude-sonnet-4: $0.45 -- fast, high quality
-  gpt-4o:          $0.55 -- fast, high quality
-  gemini-2.5-pro:  $0.35 -- medium speed, high quality
-  Recommendation: gemini-2.5-pro (best value for this workload)
+  gemini-2.0-flash:  $0.02 -- fast, budget-friendly
+  gpt-4o-mini:       $0.02 -- fast, budget-friendly
+  gemini-2.5-pro:    $0.37 -- standard, high quality
+  claude-sonnet-4:    $0.57 -- standard, high quality
+  Recommendation: gemini-2.0-flash for cost, claude-sonnet-4 for quality
 ```
 
 ## Why Epoch?
 
-Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages decades of software engineering research into 21 tools any AI can call -- so your assistant stops guessing and starts calculating.
+Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 21 tools any AI can call -- so your assistant stops guessing and starts calculating.
+
+**Accuracy note:** Reference class baselines are built from 39 real AI-native tasks across 4 repositories. With correct complexity calibration, estimates fall within 25% of actuals ~67% of the time (vs ~25% for unaided human experts per Jorgensen 2004). Accuracy improves as teams submit estimated-vs-actual feedback through the self-improvement engine.
 
 ## What is MCP?
 
@@ -307,12 +309,15 @@ Input:  {
   complexity: 3
 }
 Output: {
-  rawEstimate: 10,
-  correctedEstimate: 16.7,
+  rawEstimate: 6.7,
+  correctedEstimate: 11.1,
   correctionFactor: 1.67,
+  sampleSize: 0,
+  baselineSource: "real_tasks_28",
+  confidence: "pessimistic",
   developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1.45 },
-  adjustedEstimate: 24.2,
-  confidence: "likely"
+  adjustedEstimate: 9.7,
+  note: "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy."
 }
 ```
 
@@ -454,11 +459,11 @@ When `ai_native=false`, tools apply human developer baselines:
 
 | Parameter | Human Baseline | AI-Native Baseline |
 |-----------|---------------|-------------------|
-| Feature development | 14 calendar days | Epoch reference data |
-| Bug fix turnaround | 72 hours | Epoch reference data |
-| Sprint velocity | 35 story points | Epoch reference data |
-| Estimation accuracy (MAPE) | 25% | Epoch reference data |
-| Correction factor | 1.8x | Tool-aware dynamic factor |
+| Feature development | 14 calendar days (industry data) | 5.7h median (28 real tasks) |
+| Bug fix turnaround | 72 hours (industry data) | 6.2h median (8 real tasks) |
+| Sprint velocity | 35 story points (industry data) | 80 story points |
+| Estimation accuracy (MAPE) | 25% (Jorgensen 2004) | 15% (from AI-native profiles) |
+| Correction factor | 1.8x (industry standard) | 1.07-1.45x (from reference DB) |
 
 Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `reference_class_estimate`, `schedule_risk`.
 
@@ -478,7 +483,7 @@ Epoch gets better the more you use it. The self-improvement engine works through
 Estimated vs Actual -> Correction Factor -> Better Estimates -> Repeat
 ```
 
-The engine detects systematic biases (chronic under-estimation, scope-creep patterns) and surfaces actionable recommendations.
+The engine detects systematic biases (chronic under-estimation, accuracy degradation) and surfaces actionable recommendations.
 
 ## Community Data
 
@@ -527,8 +532,8 @@ epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 12 --pretty
 
 ```bash
 # Start the server
-epoch serve --port 3000
-# or: EPOCH_TRANSPORT=http epoch
+epoch serve --port 3099
+# or: EPOCH_TRANSPORT=http EPOCH_PORT=3099 epoch
 
 # Call any tool
 curl -X POST http://localhost:3099/v1/tools/pert_estimate \
@@ -565,7 +570,7 @@ pnpm run build
 ## Development
 
 ```bash
-pnpm test          # Run test suite (677 tests)
+pnpm test          # Run test suite (687 tests)
 pnpm run build     # Build with tsup
 pnpm run typecheck # TypeScript strict mode check
 pnpm run dev       # Run development server
@@ -582,7 +587,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 - **CLI**: Commander.js
 - **Date Handling**: `date-fns` 4.x + `date-fns-tz` 3.x
 - **Build**: `tsup` (ESM output)
-- **Testing**: `vitest` 3.x with v8 coverage (87%+ coverage)
+- **Testing**: `vitest` 3.x with v8 coverage (97% statements, 88% branches)
 
 ## Configuration
 
