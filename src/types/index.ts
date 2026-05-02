@@ -14,6 +14,44 @@ export type ConfidenceLevel = "likely" | "optimistic" | "pessimistic";
 /** Time units understood across all estimation tools. */
 export type TimeUnit = "hours" | "days" | "weeks" | "months";
 
+// ---- Branded Types (Matt Pocock Pattern) ----------------------------------
+
+type Brand<T, B extends string> = T & { readonly __brand: B };
+
+/** Branded number representing hours. */
+export type Hours = Brand<number, "Hours">;
+/** Branded number representing calendar days. */
+export type Days = Brand<number, "Days">;
+/** Branded number representing weeks. */
+export type Weeks = Brand<number, "Weeks">;
+/** Branded number representing thousands of lines of code. */
+export type Kloc = Brand<number, "Kloc">;
+/** Branded number representing USD cost. */
+export type CostUsd = Brand<number, "CostUsd">;
+/** Branded number representing a token count. */
+export type Tokens = Brand<number, "Tokens">;
+/** Branded number representing tokens per second throughput. */
+export type TokensPerSecond = Brand<number, "TokensPerSecond">;
+/** Branded number representing a percentage (0-100). */
+export type Percentage = Brand<number, "Percentage">;
+
+// ---- Brand constructors (use at module boundaries only) ---------------------
+
+export function hours(n: number): Hours { return n as Hours; }
+export function days(n: number): Days { return n as Days; }
+export function weeks(n: number): Weeks { return n as Weeks; }
+export function kloc(n: number): Kloc { return n as Kloc; }
+export function costUsd(n: number): CostUsd { return n as CostUsd; }
+export function tokens(n: number): Tokens { return n as Tokens; }
+export function tokensPerSecond(n: number): TokensPerSecond { return n as TokensPerSecond; }
+export function percentage(n: number): Percentage { return n as Percentage; }
+
+// ---- Unbrand (extract raw number for arithmetic) ---------------------------
+
+export function unbrand<T extends Brand<number, string>>(branded: T): number {
+  return branded as number;
+}
+
 // ---- Temporal Layer -------------------------------------------------------
 
 export interface TemporalResult {
