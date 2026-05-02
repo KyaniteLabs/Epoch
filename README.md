@@ -257,9 +257,9 @@ Output: {
 ```
 Input:  {
   tasks: [
-    { id: "A", duration: 5, dependencies: [] },
-    { id: "B", duration: 3, dependencies: ["A"] },
-    { id: "C", duration: 4, dependencies: ["A"] }
+    { name: "A", duration: 5, predecessors: [] },
+    { name: "B", duration: 3, predecessors: ["A"] },
+    { name: "C", duration: 4, predecessors: ["A"] }
   ]
 }
 Output: {
@@ -296,17 +296,17 @@ Output: {
 
 ```
 Input:  {
-  project_type: "web_application",
-  scope: "medium",
+  task_type: "feature",
+  complexity: 3,
   ai_native: true
 }
 Output: {
-  baseEstimate: 12,
-  referenceClassAdjustment: 1.6,
-  adjustedEstimate: 19.2,
-  confidenceInterval: [14.4, 24],
-  planningFallacyCorrected: true,
-  aiNative: true
+  rawEstimate: 10,
+  correctedEstimate: 16.7,
+  correctionFactor: 1.67,
+  developerProfile: { mode: "ai_native", correctionFactor: 1.8 },
+  adjustedEstimate: 24.2,
+  confidence: "medium"
 }
 ```
 
@@ -314,16 +314,15 @@ Output: {
 
 ```
 Input:  {
-  estimates: [
-    { estimated: 8, actual: 12, type: "feature" },
-    { estimated: 4, actual: 5, type: "bugfix" }
-  ]
+  task_type: "feature",
+  team_id: "backend"
 }
 Output: {
   correctionFactor: 1.38,
   mape: 33.3,
   calibration: "under-estimating",
-  recommendation: "Apply 1.38x multiplier to future estimates"
+  recommendation: "Apply 1.38x multiplier to future estimates",
+  samplesUsed: 12
 }
 ```
 
@@ -354,15 +353,15 @@ Output: {
 
 ```
 Input:  {
-  input_tokens: 50000,
-  output_tokens: 10000,
-  model: "claude-sonnet-4-20250514"
+  tokens: 50000,
+  model: "claude-sonnet-4-6"
 }
 Output: {
+  tokens: 50000,
+  model: "claude-sonnet-4-6",
   inputCost: 0.15,
   outputCost: 0.30,
-  totalCost: 0.45,
-  model: "claude-sonnet-4-20250514"
+  totalCost: 0.45
 }
 ```
 
@@ -370,17 +369,17 @@ Output: {
 
 ```
 Input:  {
-  input_tokens: 50000,
-  output_tokens: 10000,
-  models: ["claude-sonnet-4-20250514", "gpt-4o", "gemini-2.5-pro"]
+  tokens: 50000,
+  sort_by: "cost"
 }
 Output: {
-  comparisons: [
-    { model: "claude-sonnet-4-20250514", totalCost: 0.45, speed: "fast", quality: "high" },
-    { model: "gpt-4o", totalCost: 0.55, speed: "fast", quality: "high" },
-    { model: "gemini-2.5-pro", totalCost: 0.35, speed: "medium", quality: "high" }
+  tokens: 50000,
+  models: [
+    { model: "gemini-2.0-flash", totalCost: 0.19, speed: "fast" },
+    { model: "claude-sonnet-4-6", totalCost: 0.45, speed: "fast" },
+    { model: "gpt-4o", totalCost: 0.55, speed: "fast" }
   ],
-  recommendation: "gemini-2.5-pro"
+  sortBy: "cost"
 }
 ```
 
@@ -407,34 +406,27 @@ Output: {
 
 ```
 Input:  {
-  tasks: [
-    { name: "Auth module", duration: 5, risk_level: "high", dependencies: [] },
-    { name: "UI components", duration: 3, risk_level: "low", dependencies: ["Auth module"] }
-  ]
+  estimated_hours: 40,
+  task_type: "feature"
 }
 Output: {
-  overallRisk: "medium",
-  riskScore: 0.62,
-  highRiskTasks: ["Auth module"],
-  contingencyRecommended: 2.5,
-  riskBreakdown: { scope: 0.4, dependency: 0.3, technical: 0.3 }
+  estimatedHours: 40,
+  riskLevel: "medium",
+  confidenceIntervals: { p50: 52, p80: 65, p95: 78 },
+  recommendation: "Add 30% buffer for feature work with limited historical data."
 }
 ```
 
 **`cocomo_validate`** -- Validate COCOMO II estimates against reference data
 
 ```
-Input:  {
-  kloc: 15,
-  project_type: "organic",
-  estimated_effort: 45
-}
+Input:  {}
 Output: {
-  valid: true,
-  expectedRange: [38, 55],
-  deviation: 0.05,
-  confidence: 0.88,
-  warnings: []
+  projectsEvaluated: 182,
+  overallMape: 85.5,
+  overallBias: 53.5,
+  byType: { organic: { mape: 72 }, semi: { mape: 88 }, embedded: { mape: 95 } },
+  recommendation: "COCOMO estimates need significant correction for AI-assisted development."
 }
 ```
 
