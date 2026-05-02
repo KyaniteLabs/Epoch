@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-05-02
+
+### Fixed
+- Division-by-zero in PERT variance, COCOMO effort, Monte Carlo triangular sample
+- NaN/Infinity output guards on all estimation computation results
+- Rate limiter Map growing unbounded (pruned at 10k entries)
+- `parseInt` NaN fallback on `EPOCH_RATE_LIMIT` and `PORT` env vars
+- Version hardcoded in entry points — centralized via `getVersion()`
+- Telemetry buffer not flushed on process exit
+- HTTP error handler leaking internal error messages to clients
+- `recordActual` returning true even when filesystem write fails
+- MCP/CLI schema drift: PERT missing "months" unit, model field too restrictive, velocity validation inconsistent, iterative_cycles not normalized in MCP path
+- Non-null assertions in topological sort replaced with defensive guards
+- COCOMO accepts extreme kloc values (now capped at 1e9)
+- Monte Carlo accepts invalid task ordering without warning (now validates)
+- Rate limiting trusts `x-forwarded-for` by default (now requires `EPOCH_TRUST_PROXY=1`)
+
+### Added
+- HTTP graceful shutdown via SIGINT/SIGTERM with telemetry flush
+- 60-second TTL cache on `loadReferenceDb` (was re-reading file per request)
+- Atomic file writes for reference database (write-to-tmp + renameSync)
+- `EPOCH_TRUST_PROXY` env var for controlling rate limit IP resolution
+- 22 telemetry tests (previously zero coverage)
+- 3 edge-case tests for kloc overflow and Monte Carlo validation
+- Research documentation, calibration data, and architecture diagram
+
+### Changed
+- Removed unused dependencies: `zod-to-json-schema`, `@asteasolutions/zod-to-openapi`
+- Package description updated: 19 → 21 tools
+- Test count: 357 → 544, coverage: 80% → 90%
+- ESLint errors: 13 → 0
+
 ## [0.1.1] - 2026-05-02
 
 ### Added
