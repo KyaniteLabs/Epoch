@@ -1,7 +1,7 @@
 {
   "name": "@kyanitelabs/epoch",
   "version": "0.1.0",
-  "description": "Time Estimation MCP Server — Making time legible to LLMs through structured external representations",
+  "description": "Time Estimation MCP Server — 19 structured tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, schedule risk, and model comparison. Self-improving engine. MCP + CLI + REST API.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -19,11 +19,26 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "time-estimation",
     "software-estimation",
     "pert",
     "cocomo",
-    "llm-tools"
+    "monte-carlo-simulation",
+    "llm-tools",
+    "ai-agent",
+    "sprint-planning",
+    "project-management",
+    "scheduling",
+    "critical-path",
+    "agile",
+    "typescript",
+    "token-cost",
+    "cost-estimation",
+    "schedule-risk",
+    "reference-class-forecasting",
+    "model-comparison",
+    "self-improving"
   ],
   "author": "Kyanite Labs",
   "license": "MIT",

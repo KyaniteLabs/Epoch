@@ -1,16 +1,23 @@
-# Epoch
+# Epoch — Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![Tests](https://img.shields.io/badge/tests-356-brightgreen.svg)]()
 
-A Time Estimation MCP Server — giving LLMs accurate temporal reasoning through external tools. **14 structured tools** across **5 layers**, accessible via MCP, CLI, and REST API.
+**LLM-native time estimation, scheduling, and cost analysis through 19 structured MCP tools.**
 
-## Why This Exists
+Epoch gives AI agents and developers precise temporal reasoning through PERT three-point estimation, COCOMO II software sizing, Monte Carlo schedule simulation, token-to-time mapping across 12 LLM models, sprint velocity forecasting, reference class forecasting with planning fallacy correction, schedule risk scoring, token cost estimation with model comparison, and a community data pipeline that improves estimates over time.
 
-LLMs cannot track continuous wall-clock time. They have no persistent hidden state, positional encodings represent token sequence position (not real-world time), and self-attention provably cannot model counting behaviors. This leads to systematic failures in duration prediction, temporal ordering, and time estimation — especially in software engineering contexts where agents estimate in token budgets rather than minutes.
+## Key Features
 
-Epoch solves this by providing structured external representations that LLMs can request rather than calculate.
+| Feature | Description |
+|---------|-------------|
+| **19 Structured Tools** | Five-layer architecture covering time, calendar, estimation, analytics, and cost |
+| **Self-Improving Engine** | Feedback loop tracks estimated vs actual, applies correction factors automatically |
+| **Token-to-Time Bridge** | Map LLM token budgets to wall-clock time for 12 model families |
+| **Cost Estimation & Model Comparison** | Token cost analysis and side-by-side model selection |
+| **Community Data Pipeline** | Contribute anonymized estimation data to improve baselines for everyone |
+| **Triple Surface** | Same 19 tools via MCP server, CLI, and REST API |
+| **Built-in AI Discoverability** | `llms.txt`, OpenAPI 3.1 spec, and `ai-plugin.json` served automatically |
+| **TypeScript Strict, 356 Tests** | Zero `any`, 87%+ coverage, `noUncheckedIndexedAccess`, `verbatimModuleSyntax` |
 
 ## Quick Start
 
@@ -43,6 +50,12 @@ epoch token-time-bridge --tokens 50000 --model claude-sonnet-4-20250514
 # Monte Carlo simulation
 epoch monte-carlo-schedule --tasks '[{"name":"A","optimistic":2,"most_likely":4,"pessimistic":8}]'
 
+# COCOMO II estimate
+epoch cocomo-estimate --kloc 15 --project-type organic
+
+# Schedule risk score
+epoch schedule-risk --tasks '[{"name":"A","duration":5,"risk_level":"high"},{"name":"B","duration":3,"risk_level":"low"}]'
+
 # List all tools
 epoch list-tools
 
@@ -69,101 +82,392 @@ curl http://localhost:3000/health
 curl http://localhost:3000/openapi.json
 ```
 
-## For AI Agents
-
-Epoch provides built-in discoverability endpoints so AI agents can find and use the API without prior configuration:
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /.well-known/ai-plugin.json` | OpenAI plugin manifest |
-| `GET /llms.txt` | LLM-consumable documentation |
-| `GET /openapi.json` | OpenAPI 3.1 specification |
-| `GET /health` | Service health and version |
-
 ## Architecture
 
-Five-layer design with 14 tools:
+Five-layer design with 19 tools for time estimation, scheduling, and cost analysis:
 
 | Layer | Purpose | Tools |
 |-------|---------|-------|
-| **Core Temporal** | Time retrieval, timezone conversion, duration parsing, date math | `get_current_time`, `convert_timezone`, `parse_duration`, `time_math` |
-| **Calendar Math** | Business days, holiday awareness (US, UK, FR, DE, JP), working hours | `add_business_days`, `count_business_days` |
-| **Software Estimation** | PERT, COCOMO II (LLM-adapted), sprint velocity, critical path, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
-| **Data Integration** | Reference class forecasting, accuracy calibration | `reference_class_estimate`, `calibrate_estimates` |
-| **Advanced Analytics** | Token-to-wall-clock time mapping, planning fallacy correction | `token_time_bridge` |
+| **1. Core Temporal** | Time, timezones, duration, date math | `get_current_time`, `convert_timezone`, `parse_duration`, `time_math` |
+| **2. Calendar Math** | Business days, holidays (US/UK/FR/DE/JP) | `add_business_days`, `count_business_days` |
+| **3. Estimation** | PERT, COCOMO II, sprint, CPM, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
+| **4. Analytics** | Reference class, calibration, token-time bridge | `reference_class_estimate`, `calibrate_estimates`, `token_time_bridge` |
+| **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate` |
 
 ## Tool Reference
 
-### Core Temporal
+### Layer 1 — Core Temporal
 
-**`get_current_time`** — Current time in any IANA timezone
+**`get_current_time`** — Current wall-clock time in any IANA timezone
+
 ```
 Input:  { timezone: "America/New_York" }
-Output: { iso, humanReadable, timezone, utcOffset }
+Output: {
+  iso: "2026-05-01T08:30:00.000-04:00",
+  humanReadable: "Fri, May 1, 2026, 8:30 AM EDT",
+  timezone: "America/New_York",
+  utcOffset: -240
+}
 ```
 
-**`convert_timezone`** — Convert a timestamp between timezones
+**`convert_timezone`** — Convert a timestamp between IANA timezones
+
 ```
 Input:  { timestamp: "2026-05-01T12:00:00Z", target_tz: "Asia/Tokyo" }
-Output: { iso, timezone, utcOffset, humanReadable }
+Output: {
+  iso: "2026-05-01T21:00:00.000+09:00",
+  timezone: "Asia/Tokyo",
+  utcOffset: 540,
+  humanReadable: "Fri, May 1, 2026, 9:00 PM JST"
+}
 ```
 
-**`parse_duration`** — Parse duration strings (`"2h30m"`, `"1d6h"`, `"45m"`)
+**`parse_duration`** — Parse human-readable duration strings
+
 ```
 Input:  { duration_string: "2h30m" }
-Output: { input, totalSeconds, humanReadable }
+Output: {
+  input: "2h30m",
+  totalSeconds: 9000,
+  humanReadable: "2 hours 30 minutes"
+}
 ```
 
-**`time_math`** — Date arithmetic: `add_days`, `add_business_days`, `diff`, `convert_tz`, `parse_nl`, `format_duration`
+**`time_math`** — Date arithmetic operations
 
-### Calendar Math
+```
+Input:  { operation: "add_days", date: "2026-05-01", value: 7 }
+Output: {
+  result: "2026-05-08T00:00:00.000Z",
+  operation: "add_days",
+  input: "2026-05-01"
+}
+```
+
+Supported operations: `add_days`, `add_business_days`, `diff`, `convert_tz`, `parse_nl`, `format_duration`
+
+### Layer 2 — Calendar Math
 
 **`add_business_days`** — Add N business days with holiday awareness (US, UK, FR, DE, JP)
+
 ```
 Input:  { start_date: "2026-05-01", days: 5, country: "US" }
-Output: { startDate, endDate, businessDays, countryCode }
+Output: {
+  startDate: "2026-05-01",
+  endDate: "2026-05-08",
+  businessDays: 5,
+  weekendDays: 2,
+  holidays: 0,
+  countryCode: "US"
+}
 ```
 
 **`count_business_days`** — Count business days between two dates
 
-### Software Estimation
-
-**`pert_estimate`** — PERT three-point estimation with confidence intervals
 ```
-Input:  { optimistic: 2, most_likely: 4, pessimistic: 12, unit: "hours" }
-Output: { expected: 5, stdDeviation: 1.67, confidence95: [1.67, 8.33], confidence99: [0, 10], urgencyCategory: "medium" }
+Input:  { start_date: "2026-05-01", end_date: "2026-05-15", country: "US" }
+Output: {
+  startDate: "2026-05-01",
+  endDate: "2026-05-15",
+  businessDays: 10,
+  weekendDays: 4,
+  holidays: 1,
+  countryCode: "US"
+}
 ```
 
-**`cocomo_estimate`** — COCOMO II with LLM-adapted cost drivers (reasoning complexity, context completeness, transformation impact, iterative cycles, human oversight)
+### Layer 3 — Estimation
+
+**`pert_estimate`** — PERT three-point estimation with confidence intervals and urgency scoring
+
+```
+Input:  {
+  optimistic: 2,
+  most_likely: 4,
+  pessimistic: 12,
+  unit: "hours",
+  ai_native: true
+}
+Output: {
+  expected: 5,
+  stdDeviation: 1.67,
+  confidence95: [1.67, 8.33],
+  confidence99: [0, 10],
+  urgencyCategory: "medium",
+  aiNative: true,
+  correctionFactor: 1.8
+}
+```
+
+**`cocomo_estimate`** — COCOMO II software sizing with LLM-adapted cost drivers
+
+```
+Input:  {
+  kloc: 15,
+  project_type: "organic",
+  cost_drivers: { complexity: "nominal", reliability: "high" },
+  ai_native: true
+}
+Output: {
+  effort: 45.2,
+  duration: 8.3,
+  staff: 5.4,
+  costDrivers: { ... },
+  aiNative: true,
+  correctionFactor: 1.8
+}
+```
+
+LLM-adapted cost drivers include reasoning complexity, context completeness, transformation impact, iterative cycles, and human oversight requirements.
 
 **`sprint_forecast`** — Sprint velocity forecasting from historical data
+
 ```
-Input:  { backlog_points: 100, velocity_history: [20, 25, 22, 23], sprint_length_days: 14 }
-Output: { requiredSprints, pessimisticSprints, completionDays, hoursPerPoint }
+Input:  {
+  backlog_points: 100,
+  velocity_history: [20, 25, 22, 23],
+  sprint_length_days: 14,
+  ai_native: true
+}
+Output: {
+  requiredSprints: 4,
+  pessimisticSprints: 6,
+  completionDays: 56,
+  hoursPerPoint: 2.5,
+  velocityTrend: "stable",
+  aiNative: true
+}
 ```
 
 **`critical_path`** — Critical Path Method with merge-bias adjustment for parallel tasks
 
-**`monte_carlo_schedule`** — Monte Carlo simulation with seeded PRNG for deterministic results
 ```
-Input:  { tasks: [...], iterations: 10000 }
-Output: { p10, p50, p80, p95, riskEvents, criticalPathProbability }
+Input:  {
+  tasks: [
+    { id: "A", duration: 5, dependencies: [] },
+    { id: "B", duration: 3, dependencies: ["A"] },
+    { id: "C", duration: 4, dependencies: ["A"] }
+  ]
+}
+Output: {
+  criticalPath: ["A", "C"],
+  totalDuration: 9,
+  slack: { B: 2, C: 0 },
+  mergeBiasAdjustment: 0.85
+}
 ```
 
-### Analytics
+**`monte_carlo_schedule`** — Monte Carlo simulation with seeded PRNG for deterministic, reproducible results
 
-**`token_time_bridge`** — Map LLM token budgets to wall-clock time for 12 model families
 ```
-Input:  { tokens: 50000, model: "claude-sonnet-4-20250514", tool_calls: 10, reasoning_depth: "deep" }
-Output: { estimatedSeconds, estimatedMinutes, confidence, breakdown }
+Input:  {
+  tasks: [
+    { name: "A", optimistic: 2, most_likely: 4, pessimistic: 8 },
+    { name: "B", optimistic: 1, most_likely: 3, pessimistic: 6 }
+  ],
+  iterations: 10000
+}
+Output: {
+  p10: 3.2,
+  p50: 6.1,
+  p80: 8.4,
+  p95: 11.2,
+  riskEvents: 2,
+  criticalPathProbability: { A: 0.72, B: 0.28 }
+}
 ```
+
+### Layer 4 — Analytics
 
 **`reference_class_estimate`** — Reference class forecasting with planning fallacy correction
-**`calibrate_estimates`** — Team-specific accuracy calibration from historical data
+
+```
+Input:  {
+  project_type: "web_application",
+  scope: "medium",
+  ai_native: true
+}
+Output: {
+  baseEstimate: 12,
+  referenceClassAdjustment: 1.6,
+  adjustedEstimate: 19.2,
+  confidenceInterval: [14.4, 24],
+  planningFallacyCorrected: true,
+  aiNative: true
+}
+```
+
+**`calibrate_estimates`** — Team-specific accuracy calibration from historical estimated vs actual data
+
+```
+Input:  {
+  estimates: [
+    { estimated: 8, actual: 12, type: "feature" },
+    { estimated: 4, actual: 5, type: "bugfix" }
+  ]
+}
+Output: {
+  correctionFactor: 1.38,
+  mape: 33.3,
+  calibration: "under-estimating",
+  recommendation: "Apply 1.38x multiplier to future estimates"
+}
+```
+
+**`token_time_bridge`** — Map LLM token budgets to wall-clock time for 12 model families
+
+```
+Input:  {
+  tokens: 50000,
+  model: "claude-sonnet-4-20250514",
+  tool_calls: 10,
+  reasoning_depth: "deep"
+}
+Output: {
+  estimatedSeconds: 142,
+  estimatedMinutes: 2.37,
+  confidence: 0.82,
+  breakdown: {
+    tokenGeneration: 95,
+    toolCallOverhead: 35,
+    reasoningOverhead: 12
+  }
+}
+```
+
+### Layer 5 — Cost & Risk
+
+**`token_cost_estimate`** — Token cost estimation for LLM API calls
+
+```
+Input:  {
+  input_tokens: 50000,
+  output_tokens: 10000,
+  model: "claude-sonnet-4-20250514"
+}
+Output: {
+  inputCost: 0.15,
+  outputCost: 0.30,
+  totalCost: 0.45,
+  model: "claude-sonnet-4-20250514"
+}
+```
+
+**`compare_models`** — Side-by-side cost and capability comparison across LLM models
+
+```
+Input:  {
+  input_tokens: 50000,
+  output_tokens: 10000,
+  models: ["claude-sonnet-4-20250514", "gpt-4o", "gemini-2.5-pro"]
+}
+Output: {
+  comparisons: [
+    { model: "claude-sonnet-4-20250514", totalCost: 0.45, speed: "fast", quality: "high" },
+    { model: "gpt-4o", totalCost: 0.55, speed: "fast", quality: "high" },
+    { model: "gemini-2.5-pro", totalCost: 0.35, speed: "medium", quality: "high" }
+  ],
+  recommendation: "gemini-2.5-pro"
+}
+```
+
+**`accuracy_trend`** — Track estimation accuracy over time from historical data
+
+```
+Input:  {
+  history: [
+    { date: "2026-04-01", estimated: 8, actual: 10 },
+    { date: "2026-04-15", estimated: 5, actual: 6 },
+    { date: "2026-05-01", estimated: 12, actual: 13 }
+  ]
+}
+Output: {
+  trendDirection: "improving",
+  averageError: 18.5,
+  mape: 16.7,
+  dataPoints: 3,
+  recommendation: "Correction factor converging — estimates improving"
+}
+```
+
+**`schedule_risk`** — Schedule risk scoring for project timelines
+
+```
+Input:  {
+  tasks: [
+    { name: "Auth module", duration: 5, risk_level: "high", dependencies: [] },
+    { name: "UI components", duration: 3, risk_level: "low", dependencies: ["Auth module"] }
+  ]
+}
+Output: {
+  overallRisk: "medium",
+  riskScore: 0.62,
+  highRiskTasks: ["Auth module"],
+  contingencyRecommended: 2.5,
+  riskBreakdown: { scope: 0.4, dependency: 0.3, technical: 0.3 }
+}
+```
+
+**`cocomo_validate`** — Validate COCOMO II estimates against reference data
+
+```
+Input:  {
+  kloc: 15,
+  project_type: "organic",
+  estimated_effort: 45
+}
+Output: {
+  valid: true,
+  expectedRange: [38, 55],
+  deviation: 0.05,
+  confidence: 0.88,
+  warnings: []
+}
+```
+
+## ai_native Mode
+
+Epoch tools support dual estimation modes to account for the fundamentally different velocity of AI-assisted vs human-only development.
+
+When `ai_native=true` (default), tools use Epoch's reference database with tool-aware correction factors. These baselines reflect AI agent workflows: faster iteration, higher output volume, and different error profiles.
+
+When `ai_native=false`, tools apply human developer baselines:
+
+| Parameter | Human Baseline | AI-Native Baseline |
+|-----------|---------------|-------------------|
+| Feature development | 14 calendar days | Epoch reference data |
+| Bug fix turnaround | 72 hours | Epoch reference data |
+| Sprint velocity | 35 story points | Epoch reference data |
+| Estimation accuracy (MAPE) | 25% | Epoch reference data |
+| Correction factor | 1.8x | Tool-aware dynamic factor |
+
+Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `reference_class_estimate`.
+
+## Self-Improvement Engine
+
+Epoch gets better the more you use it. The self-improvement engine works through a feedback loop:
+
+1. **Estimate** — Generate an initial estimate with any estimation tool
+2. **Record** — Track the actual outcome (time, cost, effort)
+3. **Calibrate** — `calibrate_estimates` computes correction factors from your estimated vs actual data
+4. **Improve** — Future estimates automatically apply updated correction factors
+5. **Trend** — `accuracy_trend` tracks whether your estimation accuracy is improving over time
+
+```
+Estimated vs Actual → Correction Factor → Better Estimates → Repeat
+```
+
+The engine detects systematic biases (chronic under-estimation, scope-creep patterns) and surfaces actionable recommendations.
+
+## Community Data
+
+Help improve Epoch by contributing anonymized estimation data. Community contributions expand the reference database, improve baseline accuracy for all users, and help calibrate AI-native vs human estimation modes.
+
+See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for guidelines on data format, privacy requirements, and submission process.
 
 ## Surfaces
 
-Epoch exposes the same 14 tools through three interfaces:
+Epoch exposes the same 19 tools through three interfaces:
 
 | Surface | Transport | Use Case |
 |---------|-----------|----------|
@@ -180,6 +484,17 @@ epoch serve --port 3000         # REST API server
 EPOCH_TRANSPORT=http epoch      # REST API via env var
 ```
 
+## For AI Agents
+
+Epoch provides built-in discoverability endpoints so AI agents can find and use the API without prior configuration:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /.well-known/ai-plugin.json` | OpenAI plugin manifest |
+| `GET /llms.txt` | LLM-consumable documentation |
+| `GET /openapi.json` | OpenAPI 3.1 specification |
+| `GET /health` | Service health and version |
+
 ## Installation
 
 ```bash
@@ -192,7 +507,7 @@ npm run build
 ## Development
 
 ```bash
-npm test          # Run test suite (139 tests)
+npm test          # Run test suite (356 tests)
 npm run build     # Build with tsup
 npm run typecheck # TypeScript strict mode check
 npm run dev       # Run development server

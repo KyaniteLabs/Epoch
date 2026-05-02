@@ -4,6 +4,18 @@ Epoch's estimation accuracy improves with real-world data. Community contributio
 
 Whether you have a handful of sprint records or months of estimation data, your contribution helps calibrate the models that power `reference_class_estimate`, `calibrate_estimates`, `schedule_risk`, `cocomo_validate`, `token_cost_estimate`, and `compare_models`.
 
+## Why Your Data Matters
+
+Epoch's estimation accuracy scales with the diversity and volume of real-world data. Research shows that expert estimation accuracy does NOT improve with experience alone (Cao 2022) — but self-correcting systems like Epoch can buck this trend when fed enough ground truth.
+
+Every contribution helps:
+- **10 estimation records** → improves reference class correction factors for that task type
+- **50 estimation records** → enables statistically significant accuracy trends
+- **5 COCOMO projects** → strengthens the validation dataset
+- **Model benchmarks** → keeps pricing and performance data current as providers update models
+
+Our goal: build the most accurate open-source estimation database, powered by the community.
+
 ## What Data We Collect
 
 | Type | Description |
