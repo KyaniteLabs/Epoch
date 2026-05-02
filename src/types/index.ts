@@ -177,30 +177,6 @@ export type ToolResult<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly error: ToolError };
 
-// ---- Estimation Input (Registry Dispatch) ---------------------------------
-
-/** All operations the estimation registry can dispatch. */
-export type EstimationOperation =
-  | "temporal_status"
-  | "time_math"
-  | "pert_estimate"
-  | "cocomo_estimate"
-  | "sprint_forecast"
-  | "critical_path"
-  | "fetch_historical"
-  | "reference_class"
-  | "monte_carlo"
-  | "calibrate"
-  | "token_time_bridge";
-
-/** Generic envelope used by the tool registry to route calls. */
-export interface EstimationInput {
-  /** Which estimation operation to perform. */
-  readonly operation: EstimationOperation;
-  /** Named operands forwarded to the handler. */
-  readonly operands: Readonly<Record<string, unknown>>;
-}
-
 // ---- Reference Class Estimation -------------------------------------------
 
 export type TaskType =
