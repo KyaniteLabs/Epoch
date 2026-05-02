@@ -336,7 +336,8 @@ function topologicalSort(tasks: CpmTask[]): string[] {
   }
   for (const t of tasks) {
     for (const p of t.predecessors) {
-      adj.get(p)!.push(t.name);
+      const list = adj.get(p);
+      if (list) list.push(t.name);
     }
   }
 
@@ -347,10 +348,13 @@ function topologicalSort(tasks: CpmTask[]): string[] {
 
   const result: string[] = [];
   while (queue.length > 0) {
-    const current = queue.shift()!;
+    const current = queue.shift();
+    if (!current) break;
     result.push(current);
     for (const next of adj.get(current) ?? []) {
-      const newDeg = inDegree.get(next)! - 1;
+      const prev = inDegree.get(next);
+      if (prev === undefined) continue;
+      const newDeg = prev - 1;
       inDegree.set(next, newDeg);
       if (newDeg === 0) queue.push(next);
     }
