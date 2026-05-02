@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { pertEstimate, sprintForecast, cocomoEstimate, criticalPath, monteCarloSim } from "../lib/estimation.js";
 import { cocomoValidate } from "../lib/cocomo-validate.js";
+import { getDeveloperProfile } from "../lib/profiles.js";
 
 const annotations = {
   readOnlyHint: true as const,
@@ -23,13 +24,20 @@ Use when estimating task duration with uncertain outcomes.`,
       most_likely: z.number().positive().describe("Most probable duration under normal conditions."),
       pessimistic: z.number().positive().describe("Worst-case duration if multiple things go wrong."),
       unit: z.enum(["hours", "days", "weeks"]).default("hours").describe("Time unit for all three estimates."),
+      ai_native: z.boolean().default(true).describe("AI-native work (true) or human developer (false). Affects correction factors."),
     },
-    async ({ optimistic, most_likely, pessimistic, unit }) => {
+    async ({ optimistic, most_likely, pessimistic, unit, ai_native }) => {
+      const profile = getDeveloperProfile(ai_native);
       const result = pertEstimate(optimistic, most_likely, pessimistic, unit);
       if (!result.ok) {
         return { content: [{ type: "text" as const, text: JSON.stringify(result.error) }], isError: true };
       }
-      return { content: [{ type: "text" as const, text: JSON.stringify(result.data) }] };
+      const output = {
+        ...result.data,
+        developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+        adjustedEstimate: result.data.expected * profile.correctionFactor,
+      };
+      return { content: [{ type: "text" as const, text: JSON.stringify(output) }] };
     },
   );
 
@@ -47,8 +55,10 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
       transformation_impact: z.number().min(0.5).max(2.0).default(1.0).describe("Degree of architectural change. 1.0=local change, 2.0=cross-cutting refactor."),
       iterative_cycles: z.number().min(0.5).max(2.0).default(1.0).describe("Expected generate-test-revise loops. 1.0=single pass, 2.0=heavy iteration."),
       human_oversight: z.number().min(0.5).max(2.0).default(1.0).describe("Fraction of work requiring human review. 1.0=standard review, 2.0=extensive validation."),
+      ai_native: z.boolean().default(true).describe("AI-native mode (true) or human developer mode (false). Affects productivity factor."),
     },
     async (params) => {
+      const profile = getDeveloperProfile(params.ai_native);
       const result = cocomoEstimate({
         kloc: params.kloc,
         reasoningComplexity: params.reasoning_complexity,
@@ -57,7 +67,11 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
         iterativeCycles: params.iterative_cycles,
         humanOversight: params.human_oversight,
       });
-      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+      const output = {
+        ...result,
+        developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+      };
+      return { content: [{ type: "text" as const, text: JSON.stringify(output) }] };
     },
   );
 
@@ -72,8 +86,10 @@ and returns required sprints with pessimistic estimate based on velocity varianc
       velocity_history: z.array(z.number().positive()).min(1).describe("Story points completed per past sprint. At least 1 sprint required; 5+ recommended for accuracy."),
       sprint_length_days: z.number().positive().int().default(14).describe("Length of one sprint in calendar days."),
       hours_per_sprint: z.number().positive().default(300).describe("Total working hours available per sprint."),
+      ai_native: z.boolean().default(true).describe("AI-native team (true) or human team (false). Affects default velocity expectations."),
     },
     async (params) => {
+      const profile = getDeveloperProfile(params.ai_native);
       const result = sprintForecast({
         backlogPoints: params.backlog_points,
         velocityHistory: params.velocity_history,
@@ -83,7 +99,11 @@ and returns required sprints with pessimistic estimate based on velocity varianc
       if (!result.ok) {
         return { content: [{ type: "text" as const, text: JSON.stringify(result.error) }], isError: true };
       }
-      return { content: [{ type: "text" as const, text: JSON.stringify(result.data) }] };
+      const output = {
+        ...result.data,
+        developerProfile: { mode: profile.mode, sprintVelocityPoints: profile.sprintVelocityPoints, correctionFactor: profile.correctionFactor },
+      };
+      return { content: [{ type: "text" as const, text: JSON.stringify(output) }] };
     },
   );
 

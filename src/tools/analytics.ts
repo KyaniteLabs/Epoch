@@ -5,6 +5,7 @@ import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
 import { getCalibrationData } from "../lib/feedback.js";
+import { getDeveloperProfile } from "../lib/profiles.js";
 
 const readOnlyAnnotations = {
   readOnlyHint: true as const,
@@ -28,8 +29,10 @@ Prioritize this over algorithmic models when historical data is available.`,
       ]).describe("Category of the task being estimated."),
       complexity: z.number().int().min(1).max(5).describe("Task complexity: 1=trivial, 3=moderate, 5=architectural change."),
       team_id: z.string().optional().describe("Team identifier for team-specific correction factors."),
+      ai_native: z.boolean().default(true).describe("AI-native work (true) or human developer (false). Affects correction factors."),
     },
-    async ({ task_type, complexity, team_id }) => {
+    async ({ task_type, complexity, team_id, ai_native }) => {
+      const profile = getDeveloperProfile(ai_native);
       const records = getCalibrationData(team_id, task_type, 90);
       const result = referenceClassEstimate(records, task_type, complexity);
       const output = {
@@ -39,6 +42,7 @@ Prioritize this over algorithmic models when historical data is available.`,
         correctionFactor: result.correctionFactor,
         sampleSize: result.sampleSize,
         confidence: result.confidence,
+        developerProfile: { mode: profile.mode, estimationMape: profile.estimationMape, underestimationBias: profile.underestimationBias },
         note: records.length >= 5
           ? `Based on ${records.length} historical records for "${task_type}" tasks.`
           : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
