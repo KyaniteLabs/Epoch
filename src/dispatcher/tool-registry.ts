@@ -740,11 +740,20 @@ Use this to close the estimation feedback loop and improve accuracy over time.`,
     (input) => {
       const p = getPendingEstimatesSchema.parse(input);
       const pending = getPendingEstimates(p.limit);
+      const summary = pending.length > 0
+        ? `${pending.length} estimates awaiting actuals. Use record_actual with an estimate ID and the real hours spent to close the feedback loop.`
+        : "No pending estimates — all recent estimates have actuals recorded.";
       return {
         ok: true as const,
         data: {
           count: pending.length,
-          estimates: pending.map((e) => ({ id: e.id, tool: e.tool, estimatedAt: e.estimatedAt, hasActual: e.hasActual })),
+          summary,
+          estimates: pending.slice(-10).map((e) => ({
+            id: e.id,
+            tool: e.tool,
+            inputs: e.inputs,
+            estimatedAt: e.estimatedAt,
+          })),
         },
       };
     },

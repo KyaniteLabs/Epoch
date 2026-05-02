@@ -62,7 +62,11 @@ export async function dispatch(
     if (result.ok) {
       const data = (result as { ok: true; data: unknown }).data;
       if (data && typeof data === "object") {
-        recordEstimate(toolName, parsed.data, data as Record<string, unknown>);
+        const estimateId = recordEstimate(toolName, parsed.data, data as Record<string, unknown>);
+        const d = data as Record<string, unknown>;
+        if (hasHourEstimate(d)) {
+          d.feedbackToken = estimateId;
+        }
       }
     }
 
@@ -88,6 +92,15 @@ export async function dispatch(
 }
 
 // ---- Helpers ----------------------------------------------------------------
+
+const HOUR_FIELDS = [
+  "expected", "totalHours", "estimatedHours", "estimatedMinutes",
+  "estimatedSeconds", "personMonthsLlmAdjusted", "correctedEstimate",
+] as const;
+
+function hasHourEstimate(data: Record<string, unknown>): boolean {
+  return HOUR_FIELDS.some((f) => typeof data[f] === "number");
+}
 
 export function listTools(): Array<{ name: string; description: string }> {
   return [...TOOL_REGISTRY.values()].map((def) => ({
