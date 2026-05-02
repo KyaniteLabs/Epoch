@@ -164,6 +164,17 @@ export function cocomoEstimate(params: {
     };
   }
 
+  if (kloc > 1e9) {
+    return {
+      ok: false,
+      error: {
+        isError: true,
+        message: `KLOC value ${kloc} is too large — computation would overflow.`,
+        retryHint: "Provide a kloc value under 1,000,000,000.",
+      },
+    };
+  }
+
   const A = 2.94;
   const B = 1.10;
   const emProduct = reasoningComplexity * contextCompleteness * transformationImpact * iterativeCycles * humanOversight;
@@ -353,6 +364,21 @@ export function monteCarloSim(
   iterations: number,
   seed?: number,
 ): MonteCarloResult {
+  for (const task of tasks) {
+    if (!(task.optimistic <= task.mostLikely && task.mostLikely <= task.pessimistic)) {
+      return {
+        p10: "0", p50: "0", p80: "0", p95: "0",
+        criticalPathProbability: 0,
+        riskEvents: [{
+          description: `Invalid estimates for task "${task.name}": optimistic (${task.optimistic}) must be <= mostLikely (${task.mostLikely}) <= pessimistic (${task.pessimistic}).`,
+          probability: 1,
+          impactDays: 0,
+        }],
+        humanReadable: `Error: Task "${task.name}" has invalid PERT estimates.`,
+      };
+    }
+  }
+
   const rng = seededRandom(seed ?? 42);
 
   const durations: number[] = [];

@@ -23,7 +23,7 @@ Use when estimating task duration with uncertain outcomes.`,
       optimistic: z.number().positive().describe("Best-case duration if everything goes perfectly. Do NOT use your initial guess — research shows initial estimates average 1.5x too low."),
       most_likely: z.number().positive().describe("Most probable duration under normal conditions."),
       pessimistic: z.number().positive().describe("Worst-case duration if multiple things go wrong."),
-      unit: z.enum(["hours", "days", "weeks"]).default("hours").describe("Time unit for all three estimates."),
+      unit: z.enum(["hours", "days", "weeks", "months"]).default("hours").describe("Time unit for all three estimates."),
       ai_native: z.boolean().default(true).describe("AI-native work (true) or human developer (false). Affects correction factors."),
     },
     annotations,
@@ -61,12 +61,14 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
     annotations,
     async (params) => {
       const profile = getDeveloperProfile(params.ai_native);
+      const rawCycles = params.iterative_cycles;
+      const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
       const result = cocomoEstimate({
         kloc: params.kloc,
         reasoningComplexity: params.reasoning_complexity,
         contextCompleteness: params.context_completeness,
         transformationImpact: params.transformation_impact,
-        iterativeCycles: params.iterative_cycles,
+        iterativeCycles,
         humanOversight: params.human_oversight,
       });
       if (!result.ok) {
@@ -88,7 +90,7 @@ Computes average velocity from sprint history, converts story points to hours,
 and returns required sprints with pessimistic estimate based on velocity variance.`,
     {
       backlog_points: z.number().positive().describe("Total story/effort points remaining in the backlog."),
-      velocity_history: z.array(z.number().positive()).min(1).describe("Story points completed per past sprint. At least 1 sprint required; 5+ recommended for accuracy."),
+      velocity_history: z.array(z.coerce.number().nonnegative()).min(1).describe("Story points completed per past sprint. At least 1 sprint required; 5+ recommended for accuracy."),
       sprint_length_days: z.number().positive().int().default(14).describe("Length of one sprint in calendar days."),
       hours_per_sprint: z.number().positive().default(300).describe("Total working hours available per sprint."),
       ai_native: z.boolean().default(true).describe("AI-native team (true) or human team (false). Affects default velocity expectations."),

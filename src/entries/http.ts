@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
 import { recordActual, getPendingEstimates } from "../lib/feedback.js";
+import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import type { ToolResult } from "../types/index.js";
 import type { z } from "zod";
 import { getVersion } from "../version.js";
@@ -376,10 +377,14 @@ export function createApiApp(): Hono {
     : 100;
   const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
+  const trustProxy = process.env["EPOCH_TRUST_PROXY"] === "1";
+
   app.use("/v1/*", async (c, next) => {
-    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
-      ?? c.req.header("x-real-ip")
-      ?? "unknown";
+    const ip = trustProxy
+      ? (c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+        ?? c.req.header("x-real-ip")
+        ?? "unknown")
+      : "unknown";
     const now = Date.now();
 
     if (requestCounts.size > 10_000) {
@@ -553,7 +558,19 @@ export function startHttpServer(
   const resolvedHost = host ?? process.env["EPOCH_HOST"] ?? "127.0.0.1";
   const app = createApiApp();
 
-  serve({ fetch: app.fetch, port: resolvedPort, hostname: resolvedHost }, () => {
+  const server = serve({ fetch: app.fetch, port: resolvedPort, hostname: resolvedHost }, () => {
     console.error(`Epoch API server listening on http://${resolvedHost}:${resolvedPort}`);
   });
+
+  const shutdown = () => {
+    getTelemetry().flush();
+    server.close(() => {
+      resetTelemetry();
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 5000);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }

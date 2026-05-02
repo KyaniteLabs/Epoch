@@ -92,13 +92,7 @@ tool-call latency) to estimate how long a task will actually take.
 Bridges the gap between token-space (how agents reason) and time-space (what humans need).`,
     {
       tokens: z.number().int().positive().describe("Estimated token count for the task (input + output)."),
-      model: z.enum([
-        "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022",
-        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
-        "gemini-2.0-flash", "gemini-2.5-pro",
-        "llama-3.1-70b", "llama-3.1-405b",
-        "mistral-large", "deepseek-v3",
-      ]).describe("The LLM model being used."),
+      model: z.string().describe("The LLM model being used. Unknown models fall back to generic estimates."),
       tool_calls: z.number().int().nonnegative().default(0).describe("Estimated number of tool/API calls the agent will make."),
       reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning complexity: shallow=simple tasks, moderate=standard, deep=complex multi-step."),
     },
@@ -122,13 +116,7 @@ Combines token-to-time mapping with model-specific pricing data.
 Returns cost breakdown (input/output/overhead) alongside the time estimate.`,
     {
       tokens: z.number().int().positive().describe("Estimated token count for the task (input + output)."),
-      model: z.enum([
-        "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022",
-        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
-        "gemini-2.0-flash", "gemini-2.5-pro",
-        "llama-3.1-70b", "llama-3.1-405b",
-        "mistral-large", "deepseek-v3",
-      ]).describe("The LLM model being used."),
+      model: z.string().describe("The LLM model being used. Unknown models fall back to generic estimates."),
       tool_calls: z.number().int().nonnegative().default(0).describe("Estimated number of tool/API calls."),
       reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning depth."),
     },
