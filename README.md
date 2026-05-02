@@ -196,10 +196,13 @@ Input:  {
 }
 Output: {
   expected: 5,
+  variance: 2.78,
   stdDeviation: 1.67,
   confidence95: [1.67, 8.33],
   confidence99: [0, 10],
+  unit: "hours",
   urgencyCategory: "medium",
+  humanReadable: "Expected: 5 hours. 95% confidence: 1.67 to 8.33 hours. 99% confidence: 0 to 10 hours.",
   developerProfile: { mode: "ai_native", correctionFactor: 1.45 },
   adjustedEstimate: 7.25
 }
@@ -219,7 +222,7 @@ Input:  {
 Output: {
   kloc: 15,
   personMonthsNominal: 99.9,
-  personMonthsLlmAdjusted: 35.8,
+  personMonthsLlmAdjusted: 8.9,
   effortMultipliers: {
     reasoning_complexity: 1.2,
     context_completeness: 1.0,
@@ -416,10 +419,11 @@ Input:  {
 }
 Output: {
   estimatedHours: 40,
-  riskLevel: "critical",
-  confidenceIntervals: { p50: 40, p80: 84.7, p95: 127.3 },
-  historicalAccuracy: { mape: 132.6, sampleSize: 356 },
-  recommendation: "Critical risk. Break down the task and re-estimate each component."
+  riskLevel: "low",
+  confidenceIntervals: { p50: 40, p80: 45.1, p95: 49.9 },
+  historicalAccuracy: { mape: 15, sampleSize: 0 },
+  recommendation: "Low risk. Estimate is within normal variance.",
+  humanReadable: "Schedule risk: low. MAPE: 15% (based on 0 historical records). Confidence intervals: p50=40h, p80=45.1h, p95=49.9h."
 }
 ```
 
@@ -456,7 +460,9 @@ When `ai_native=false`, tools apply human developer baselines:
 | Estimation accuracy (MAPE) | 25% | Epoch reference data |
 | Correction factor | 1.8x | Tool-aware dynamic factor |
 
-Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `reference_class_estimate`.
+Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `reference_class_estimate`, `schedule_risk`.
+
+**Hybrid workflows:** `ai_native` accepts a float from 0.0 (fully human) to 1.0 (fully AI-native). Values like 0.5 produce interpolated profiles for mixed AI/human workflows. Boolean values (`true`/`false`) remain supported for backward compatibility.
 
 ## Self-Improvement Engine
 
@@ -525,15 +531,15 @@ epoch serve --port 3000
 # or: EPOCH_TRANSPORT=http epoch
 
 # Call any tool
-curl -X POST http://localhost:3000/v1/tools/pert_estimate \
+curl -X POST http://localhost:3099/v1/tools/pert_estimate \
   -H "Content-Type: application/json" \
   -d '{"optimistic": 2, "most_likely": 4, "pessimistic": 12, "unit": "hours"}'
 
 # Health check
-curl http://localhost:3000/health
+curl http://localhost:3099/health
 
 # OpenAPI spec
-curl http://localhost:3000/openapi.json
+curl http://localhost:3099/openapi.json
 ```
 
 ## For AI Agents
