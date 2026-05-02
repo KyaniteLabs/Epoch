@@ -71,7 +71,8 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "hono": "^4.12.16",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",

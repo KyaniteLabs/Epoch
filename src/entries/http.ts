@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
 import { recordActual, getPendingEstimates } from "../lib/feedback.js";
 import type { ToolResult } from "../types/index.js";
-import type { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 const VERSION = "0.1.0";
 
@@ -15,7 +15,7 @@ const AI_PLUGIN_MANIFEST = {
   description_for_human:
     "Time estimation tools for accurate scheduling and planning.",
   description_for_model:
-    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 14 tools across 5 layers.",
+    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 19 tools across 5 layers.",
   api: { type: "openapi", url: "/openapi.json" },
   auth: { type: "none" },
   legal_info_url:
@@ -26,7 +26,7 @@ const LLMSTXT = `# Epoch
 > Time Estimation MCP Server — structured temporal reasoning for AI agents
 
 ## Overview
-Epoch provides 14 tools across 5 layers for accurate time estimation.
+Epoch provides 19 tools across 5 layers for accurate time estimation.
 All tools are accessed via POST /v1/tools/{tool_name} with JSON request bodies.
 All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"isError": true, "message": "...", "retryHint": "..."}}
 
@@ -120,6 +120,31 @@ Estimates wall-clock time from token count and LLM model parameters.
 - Supported models: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-sonnet-4-20250514, claude-opus-4-20250514, claude-3.5-haiku-20241022, gemini-2.0-flash, gemini-2.5-pro, llama-3.1-70b, llama-3.1-405b, mistral-large, deepseek-v3
 - reasoning_depth: shallow, moderate, or deep
 
+### token_cost_estimate
+Estimates wall-clock time AND dollar cost from token count and LLM model.
+- Input: {"tokens": 100000, "model": "claude-sonnet-4-20250514", "reasoning_depth": "deep"}
+- Output: {"tokens": 100000, "model": "claude-sonnet-4-20250514", "estimatedSeconds": 1272, "estimatedMinutes": 21.2, "estimatedCost": 1.05, "confidence": "likely", "humanReadable": "Approximately 21.2 minutes and $1.05 for 100,000 tokens with claude-sonnet-4-20250514."}
+
+### compare_models
+Compares all LLM models side-by-side for a given token budget.
+- Input: {"tokens": 100000, "tool_calls": 20, "reasoning_depth": "deep"}
+- Output: {"models": [{"model": "claude-sonnet-4-20250514", "estimatedSeconds": 1272, "estimatedCost": 1.05}, ...], "humanReadable": "Model comparison for 100,000 tokens (deep reasoning, 20 tool calls): ..."}
+
+### accuracy_trend
+Tracks estimation accuracy over time with sliding-window MAPE.
+- Input: {"team_id": "alpha", "window_days": 30, "minimum_samples": 5}
+- Output: {"teamId": "alpha", "mape": 0.18, "trend": "improving", "sampleSize": 12, "windowDays": 30, "humanReadable": "Accuracy trend for team alpha: MAPE 18% (improving) over 30 days with 12 samples."}
+
+### schedule_risk
+Assesses schedule risk using historical accuracy data.
+- Input: {"planned_hours": 80, "confidence_level": 0.9, "team_id": "alpha"}
+- Output: {"plannedHours": 80, "adjustedHours": 96, "riskMultiplier": 1.2, "confidenceLevel": 0.9, "riskLevel": "medium", "humanReadable": "Schedule risk: 80h planned -> 96h adjusted (medium risk, 90% confidence)."}
+
+### cocomo_validate
+Validates COCOMO estimation model against historical projects.
+- Input: {"kloc": 10, "actual_person_months": 12, "project_type": "organic", "team_id": "alpha"}
+- Output: {"kloc": 10, "estimatedMonths": 14.2, "actualMonths": 12, "deviation": -2.2, "deviationPercent": -15.5, "accuracy": "good", "humanReadable": "COCOMO validation: estimated 14.2 months, actual 12 months (15.5% overestimate, good accuracy)."}
+
 ---
 
 ## Quick Start
@@ -128,7 +153,7 @@ curl -X POST http://localhost:3099/v1/tools/pert_estimate \\
   -d '{"optimistic": 2, "most_likely": 4, "pessimistic": 12, "unit": "hours"}'
 `;
 
-// ---- Zod → JSON Schema converter -------------------------------------------
+// ---- Zod -> JSON Schema converter -------------------------------------------
 
 interface JsonSchema {
   [key: string]: unknown;
@@ -329,7 +354,7 @@ function buildOpenApiSpec(): Record<string, unknown> {
       title: "Epoch Time Estimation API",
       version: VERSION,
       description:
-        "Structured time estimation for LLMs and AI agents. 14 tools across 5 layers.",
+        "Structured time estimation for LLMs and AI agents. 19 tools across 5 layers.",
     },
     servers: [
       { url: "http://localhost:3000", description: "Local development" },
@@ -476,7 +501,7 @@ export function startHttpServer(
   host?: string,
 ): void {
   const resolvedPort = port ?? parseInt(process.env["PORT"] ?? "3000", 10);
-  const resolvedHost = host ?? process.env["HOST"] ?? "0.0.0.0";
+  const resolvedHost = host ?? process.env["EPOCH_HOST"] ?? "127.0.0.1";
   const app = createApiApp();
 
   serve({ fetch: app.fetch, port: resolvedPort, hostname: resolvedHost }, () => {
