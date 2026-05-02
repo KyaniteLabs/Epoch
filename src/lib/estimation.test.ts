@@ -226,6 +226,20 @@ describe("cocomoEstimate", () => {
     if (result.ok) return;
     expect(result.error.message).toBe("KLOC must be positive.");
   });
+
+  it("returns error for extremely large kloc", () => {
+    const result = cocomoEstimate({
+      kloc: 1e300,
+      reasoningComplexity: 1.0,
+      contextCompleteness: 1.0,
+      transformationImpact: 1.0,
+      iterativeCycles: 1.0,
+      humanOversight: 1.0,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("too large");
+  });
 });
 
 describe("criticalPath", () => {
@@ -356,5 +370,21 @@ describe("monteCarloSim", () => {
     ], 1000, 7);
     expect(result.criticalPathProbability).toBeGreaterThanOrEqual(0);
     expect(result.criticalPathProbability).toBeLessThanOrEqual(1);
+  });
+
+  it("returns error result for invalid task ordering (optimistic > mostLikely)", () => {
+    const result = monteCarloSim([
+      { name: "Bad", optimistic: 10, mostLikely: 5, pessimistic: 20 },
+    ], 1000, 42);
+    expect(result.riskEvents.length).toBeGreaterThan(0);
+    expect(result.riskEvents[0]!.description).toContain("Invalid estimates");
+  });
+
+  it("returns error result for invalid task ordering (mostLikely > pessimistic)", () => {
+    const result = monteCarloSim([
+      { name: "Bad2", optimistic: 1, mostLikely: 20, pessimistic: 5 },
+    ], 1000, 42);
+    expect(result.riskEvents.length).toBeGreaterThan(0);
+    expect(result.riskEvents[0]!.description).toContain("Invalid estimates");
   });
 });
