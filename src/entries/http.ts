@@ -368,6 +368,31 @@ export function createApiApp(): Hono {
 
   app.use("*", cors());
 
+  // ---- Rate limiter (in-memory sliding window) ------------------------------
+  const rateLimitWindowMs = 60_000;
+  const rateLimitMax = parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10);
+  const requestCounts = new Map<string, { count: number; resetAt: number }>();
+
+  app.use("/v1/*", async (c, next) => {
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+      ?? c.req.header("x-real-ip")
+      ?? "unknown";
+    const now = Date.now();
+    const entry = requestCounts.get(ip);
+    if (!entry || now > entry.resetAt) {
+      requestCounts.set(ip, { count: 1, resetAt: now + rateLimitWindowMs });
+      return next();
+    }
+    entry.count++;
+    if (entry.count > rateLimitMax) {
+      return c.json(
+        { ok: false, error: { isError: true, message: "Rate limit exceeded.", retryHint: `Max ${rateLimitMax} requests per minute. Retry after ${Math.ceil((entry.resetAt - now) / 1000)}s.` } },
+        429,
+      );
+    }
+    return next();
+  });
+
   app.get("/health", (c) => {
     return c.json({
       status: "ok",
@@ -491,6 +516,17 @@ export function createApiApp(): Hono {
       } satisfies ToolResult<unknown>,
       500,
     );
+  });
+
+  app.notFound((c) => {
+    return c.json({
+      ok: false,
+      error: {
+        isError: true,
+        message: `Not found: ${c.req.path}`,
+        retryHint: "Available endpoints: /health, /openapi.json, /llms.txt, /.well-known/ai-plugin.json, /v1/tools/{tool_name}, /v1/feedback/record-actual, /v1/feedback/pending",
+      },
+    }, 404);
   });
 
   return app;
