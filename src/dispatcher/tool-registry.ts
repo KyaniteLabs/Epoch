@@ -27,14 +27,12 @@ import {
   tokenTimeBridge,
 } from "../lib/analytics.js";
 import { getCalibrationData, recordActual, getPendingEstimates } from "../lib/feedback.js";
-import { getTaskTypeCorrectionFactor } from "../lib/self-improve.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
 import { cocomoValidate } from "../lib/cocomo-validate.js";
 import { getDeveloperProfile } from "../lib/profiles.js";
 import {
-  temporalStatusSchema,
   timeMathSchema,
   pertEstimateSchema,
   cocomoEstimateSchema,
@@ -278,7 +276,7 @@ const timeMathOutput = {
   description: "Varies by operation. Returns temporal, duration, or date diff data.",
 } satisfies Record<string, unknown>;
 
-const stringOutput = { type: "string" } satisfies Record<string, unknown>;
+
 
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
 
