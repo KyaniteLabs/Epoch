@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
 import { recordActual, getPendingEstimates } from "../lib/feedback.js";
 import type { ToolResult } from "../types/index.js";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import type { z } from "zod";
 
 const VERSION = "0.1.0";
 
