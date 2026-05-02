@@ -43,6 +43,8 @@ const CLI_SUBCOMMANDS = new Set([
   "accuracy-trend",
   "schedule-risk",
   "cocomo-validate",
+  "record-actual",
+  "get-pending-estimates",
   "list-tools",
 ]);
 

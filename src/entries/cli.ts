@@ -493,6 +493,37 @@ export function createCliProgram(): Command {
       await runAndExit("cocomo_validate", input, format, quiet);
     });
 
+  // ---- Feedback commands -----------------------------------------------------
+
+  program
+    .command("record-actual")
+    .description("Records actual hours for a previous estimate to improve future accuracy.")
+    .requiredOption("--estimate-id <id>", "ID of the estimate to update")
+    .requiredOption("--actual-hours <n>", "Actual hours spent", parseFloat)
+    .option("--notes <text>", "Optional context about what affected the actual time")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = {
+        estimate_id: opts.estimateId,
+        actual_hours: opts.actualHours,
+      };
+      if (opts.notes !== undefined) input.notes = opts.notes;
+      await runAndExit("record_actual", input, format, quiet);
+    });
+
+  program
+    .command("get-pending-estimates")
+    .description("Lists recent estimates that have not yet received actual-hour feedback.")
+    .option("--limit <n>", "Maximum estimates to return", parseInt, 20)
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      await runAndExit("get_pending_estimates", { limit: opts.limit }, format, quiet);
+    });
+
   // ---- Utility commands -------------------------------------------------------
 
   program
