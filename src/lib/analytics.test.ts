@@ -222,4 +222,30 @@ describe("calibrateEstimates", () => {
     expect(result.correctionFactor).toBeGreaterThan(0);
     expect(result.recommendations.length).toBeGreaterThan(0);
   });
+
+  it("detects degrading trend and adds warning recommendation", () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-02-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 11, completedAt: "2026-03-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-04-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 30, completedAt: "2026-05-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 40, completedAt: "2026-06-01" },
+    ];
+    const result = calibrateEstimates("team-a", 90, 5, records);
+    expect(result.accuracyTrend).toBe("degrading");
+    expect(result.recommendations.some(r => r.includes("degrading"))).toBe(true);
+  });
+
+  it("falls back to global correction when mape is 0 with enough samples", () => {
+    const records: HistoricalRecord[] = Array.from({ length: 10 }, (_, i) => ({
+      taskType: "feature",
+      estimatedHours: 10,
+      actualHours: 10,
+      completedAt: `2026-${String(i + 1).padStart(2, "0")}-01`,
+    }));
+    const result = calibrateEstimates("team-a", 90, 5, records);
+    expect(result.correctionFactor).toBeGreaterThan(0);
+    expect(result.accuracyTrend).toBe("stable");
+  });
 });

@@ -144,4 +144,32 @@ describe("registerEstimationTools", () => {
     expect(data.p95).toBeDefined();
     expect(parseFloat(data.p10)).toBeLessThan(parseFloat(data.p95));
   });
+
+  it("cocomo_validate returns validation report", async () => {
+    const { server, tools } = createMockServer();
+    registerEstimationTools(server);
+
+    const validate = tools.find(t => t.name === "cocomo_validate")!;
+    const result = await validate.handler({});
+    const response = result as { content: Array<{ type: string; text: string }> };
+    const data = JSON.parse(response.content[0]!.text);
+    expect(data.projectsEvaluated).toBeGreaterThan(0);
+    expect(data.mape).toBeGreaterThan(0);
+    expect(data.byProjectType).toBeDefined();
+    expect(data.recommendedAdjustments).toBeDefined();
+    expect(data.humanReadable).toBeDefined();
+  });
+
+  it("cocomo_validate with dataset_filter filters results", async () => {
+    const { server, tools } = createMockServer();
+    registerEstimationTools(server);
+
+    const validate = tools.find(t => t.name === "cocomo_validate")!;
+    const result = await validate.handler({
+      dataset_filter: ["NASA93"],
+    });
+    const response = result as { content: Array<{ type: string; text: string }> };
+    const data = JSON.parse(response.content[0]!.text);
+    expect(data.projectsEvaluated).toBeGreaterThan(0);
+  });
 });
