@@ -1057,9 +1057,9 @@ describe("analytics — tokenTimeBridge stress", () => {
   it("handles zero tokens", () => {
     const result = tokenTimeBridge({
       tokens: 0,
-      model: "gpt-4o",
+      model: "claude-opus-4-20250514",
       toolCalls: 0,
-      reasoningDepth: "shallow",
+      reasoningDepth: "deep",
     });
     // With 0 tokens and 0 tool calls, only reasoning overhead remains
     expect(result.estimatedSeconds).toBeGreaterThan(0);

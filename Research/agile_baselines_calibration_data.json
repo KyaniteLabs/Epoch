@@ -1,0 +1,290 @@
+{
+  "metadata": {
+    "generated": "2026-05-01",
+    "purpose": "Calibration data for Epoch sprint_forecast tool",
+    "scope": "Publicly available, anonymized agile estimation and velocity data from industry reports, academic research, and published benchmarks",
+    "caution": "Story points are team-relative and not standardized across teams. All point-based figures should be used as distributional priors, not absolute targets. Combine with team-specific historical data for best results."
+  },
+  "agileBaselines": {
+    "velocityData": {
+      "storyPointsPerSprintPerDeveloper": {
+        "description": "Story points completed per 2-week sprint per developer (team-relative, not comparable across teams)",
+        "median": 8,
+        "mean": 9.5,
+        "p25": 5,
+        "p75": 12,
+        "range": "5-12",
+        "sampleSize": "aggregated across multiple industry surveys",
+        "source": "Atlassian (https://www.atlassian.com/agile/project-management/velocity-scrum); PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity); iAmAgile (https://iamagile.io/blog/how-many-story-points-per-sprint)",
+        "notes": "New Scrum teams typically average 5-10 SP/person/sprint (Atlassian). PM Toolkit reports 8-12 SP/person/sprint as typical. Individual productivity varies with task complexity, role mix, and team dynamics."
+      },
+      "teamVelocityBySize": {
+        "description": "Typical team velocity per 2-week sprint by team size",
+        "smallTeam_3to4_devs": { "range": "20-35 SP/sprint", "source": "PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity)" },
+        "mediumTeam_5to7_devs": { "range": "35-60 SP/sprint", "source": "PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity)" },
+        "largeTeam_8to10_devs": { "range": "50-80 SP/sprint", "source": "PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity)" }
+      },
+      "velocityStabilityCoefficient": {
+        "description": "Coefficient of variation (CV = std_dev / mean) for sprint-to-sprint velocity",
+        "excellent_threshold": { "cv_under": 0.20, "description": "Excellent consistency; team can reliably commit to velocity range. Associated with 85-95% commitment accuracy.", "source": "Premier Agile research via FreeScrumPoker (https://blog.freescrumpoker.com/articles/velocity-tracking-agile-teams-2025.html)" },
+        "concerning_threshold": { "cv_over": 0.30, "description": "High volatility; sprint planning becomes unreliable", "source": "FreeScrumPoker (https://blog.freescrumpoker.com/articles/velocity-tracking-agile-teams-2025.html)" },
+        "highVolatility_threshold": { "cv_over": 0.35, "description": "Indicates inconsistent estimation, changing requirements, team changes, tech debt, or external dependencies", "source": "PM Toolkit (https://pmtoolkit.ai/calculators/velocity)" },
+        "typical_healthy_range": { "cv": "0.10-0.20", "description": "Healthy teams with stable velocity and mature processes", "source": "Aggregated from Toolsbase Agile Metrics Calculator (https://toolsbase.dev/en/agile/agile-metrics-calculator) and GrowingScrumMasters (https://www.growingscrummasters.com/keywords/velocity-stability/)" },
+        "healthy_fluctuation": { "percent": 15, "description": "+/-15% fluctuation sprint-to-sprint is healthy and expected", "source": "ScrumPlanning.com velocity guide (https://scrumplanning.com/p/velocity-tracking-guide)" },
+        "warning_drop": { "percent": 30, "description": "Velocity drops by 30%+ for 2+ consecutive sprints warrants investigation", "source": "ScrumPlanning.com velocity guide (https://scrumplanning.com/p/velocity-tracking-guide)" }
+      },
+      "sprintCompletionRate": {
+        "description": "Percentage of committed stories/story points actually completed within the sprint",
+        "industryAverage_commitDoneRatio": { "mean": 72, "range": "72-78", "unit": "percent", "source": "Scrum.org benchmarks via CodePulse sprint spillover analysis (https://codepulsehq.com/guides/sprint-spillover-analysis-guide)" },
+        "sprints_with_spillover": { "percent": 70, "description": "Approximately 70% of sprints do not complete all committed work", "source": "CodePulse (https://codepulsehq.com/guides/sprint-spillover-analysis-guide), citing State of Agile Reports 2021-2024" },
+        "teams_regularly_hitting_90plus": { "percent": 20, "description": "Less than 20% of teams regularly hit 90%+ sprint completion", "source": "VersionOne surveys via CodePulse (https://codepulsehq.com/guides/sprint-spillover-analysis-guide)" },
+        "highPerforming_target": { "percent": 85, "description": "High-performing teams achieve 80%+ sprint commitment completion. Target 85-90% is healthy.", "source": "ContinuousQuest (https://continuousquest.com/agile-metrics-how-can-they-improve-your-team/); Count.co sprint commitment accuracy benchmarks (https://count.co/metric/sprint-commitment-accuracy)" },
+        "poorPerformance_threshold": { "percent": 60, "description": "Below 60% commit done ratio indicates poor sprint plan execution", "source": "Harness SEI sprint metrics (https://github.com/harness/developer-hub/blob/main/docs/software-engineering-insights/propelo-sei/analytics-and-reporting/efficiency/agile-metrics/sei-sprints-metrics-overview.md)" },
+        "academic_SPI_median": { "percent": 64.17, "description": "Median Schedule Performance Indicator (completed/committed) across studied sprints", "source": "UPM academic paper on sprint velocity fluctuations (https://oa.upm.es/id/eprint/38304/contents)" },
+        "sprint_rollover_patterns": {
+          "teams_with_minimal_rollover_0to10pct": 20,
+          "teams_rolling_26to50pct": 33,
+          "source": "Easy Agile State of Team Alignment 2026 (https://easyagile.com/downloads/state-of-team-alignment-report-2026), n=419 engineers/PMs"
+        }
+      },
+      "storyPointToHoursRatio": {
+        "description": "Relationship between story points and actual hours. NOT a fixed conversion -- varies by team and should be used as a distribution.",
+        "typicalRange": "1 SP = 3-6 hours of actual development effort",
+        "meanHoursPerPoint": 4,
+        "standardDeviation": 0.75,
+        "percentWithin1SD": "68% of the time: 1 SP = 3.25 to 4.75 hours",
+        "percentWithin2SD": "95% of the time: 1 SP = 2.5 to 5.5 hours",
+        "source": "Mike Cohn, Mountain Goat Software (https://mountaingoatsoftware.com/blog/estimating-a-full-backlog-based-on-a-sample-of-it)",
+        "importantCaveat": "The relationship between points and hours is not an equivalence. It is a mean with significant variance. Teams are not perfectly consistent in relative estimation, especially for larger stories (8+ points)."
+      },
+      "sprintLengthDistribution": {
+        "description": "Distribution of sprint/iteration lengths used by Scrum teams",
+        "mostCommon": 14,
+        "unit": "days",
+        "distribution": {
+          "7_days_1week": 6.2,
+          "14_days_2weeks": 59.1,
+          "21_days_3weeks": 23.4,
+          "28_days_4weeks": 9.8,
+          "35plus_days": 1.5
+        },
+        "distributionUnit": "percent of teams",
+        "source": "Parabol 300+ Agile Statistics (https://www.parabol.co/resources/agile-statistics/), aggregated from State of Agile reports"
+      }
+    },
+    "estimationAccuracy": {
+      "expertEstimationAccuracy": {
+        "description": "Expert-based effort estimation accuracy for software development",
+        "withinPercentOfActuals": "20-30%",
+        "directionOfBias": "Slight tendency toward underestimation, but not as strong as commonly assumed",
+        "meanMRE": 28,
+        "meanRE_bias": 8,
+        "MRE_unit": "percent",
+        "source": "Jorgensen, M. (2004) 'A Review of Studies on Expert Estimation of Software Development Effort', Journal of Systems and Software, 70(1), pp. 37-60. Via Simula Research Laboratory (https://web-backend.simula.no/sites/default/files/publications/SE.4.Joergensen.2004.c.pdf)",
+        "additionalSource": "Mike Cohn / Mountain Goat Software summarizes Jorgensen: 'most estimates to be within 20 to 30% of actuals' (https://mountaingoatsoftware.com/blog/are-we-really-bad-at-estimating)"
+      },
+      "storyPointAccuracy": {
+        "description": "How accurately story point estimates reflect actual effort",
+        "taskLevelMRE": {
+          "featureTasks": { "meanMRE": 0.63, "medianMRE": 0.40, "SD": 1.46, "sampleSize": 1282, "description": "Mean Magnitude of Relative Error for feature development tasks" },
+          "bugFixingTasks": { "meanMRE": 0.70, "medianMRE": 0.45, "SD": 1.41, "sampleSize": 377, "description": "MRE for bug-fixing tasks -- not significantly different from features" },
+          "refactoringTasks": { "meanMRE": 0.43, "medianMRE": 0.43, "SD": 1.53, "sampleSize": 313, "description": "MRE for refactoring tasks" },
+          "source": "Cao, L. 'Estimating Efforts for Various Activities in Agile Software Development: An Empirical Study', IEEE Transactions on Software Engineering. Old Dominion University. n=~7000 task-level estimates across 46 iterations. (https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1077&context=itds_facpubs)"
+        },
+        "estimationDoesNotImproveOverTime": {
+          "finding": "Estimation accuracy does NOT improve over time in agile projects, contrary to agile community belief",
+          "evidence": "Kruskal-Wallis test across early/middle/late project phases showed no significant improvement (p=0.0599, H=5.63)",
+          "source": "Cao, L. (2022) IEEE TSE (https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1077&context=itds_facpubs)"
+        },
+        "relativeEstimationAlignment": {
+          "description": "How well team story point scales align (e.g., is an 8-point story really 8x a 1-point story)",
+          "finding": "Teams are 'amazingly consistent' up to 5-point stories. Drift becomes measurable at 8+ points. Example: at one company, 1-point median = 21 hours, 3-point median = 64 hours (near perfect 3x), but 8-point median = 111 hours vs expected 147 (25% drift).",
+          "source": "Mike Cohn, Mountain Goat Software, with data from one company (https://mountaingoatsoftware.com/blog/seeing-how-well-a-teams-story-points-align-from-one-to-eight)"
+        },
+        "velocityPredictionAccuracy": {
+          "range": "+/-25-40%",
+          "description": "Velocity prediction accuracy (story points) across multiple studies",
+          "source": "CodePulse sprint spillover analysis citing multiple State of Agile Reports (https://codepulsehq.com/guides/sprint-spillover-analysis-guide)"
+        }
+      },
+      "underestimationBias": {
+        "description": "Systematic bias in software effort estimation",
+        "effortUnderestimated_atLeast10pct": 57.5,
+        "effortAccurate_within10pct": 23.5,
+        "effortOverestimated_atLeast10pct": 19,
+        "averageEffortOverrun": "100% (i.e., actual effort averages 2x the estimate for underestimated projects)",
+        "medianEffortOverrun": "50%",
+        "source": "ISBSG 'Estimates - How Accurate Are They?' (https://isbsg.org/wp-content/uploads/2017/03/Estimates_-_How_accurate_Are_They_2012.pdf), n=200 projects",
+        "additionalFinding": "Jorgensen (2004) found mean effort overrun of 30-40% across surveyed software projects. Feature tasks are underestimated more frequently than bug-fixing/refactoring tasks.",
+        "featureVsBug_overestimation": {
+          "finding": "Bug-fixing and refactoring tasks are overestimated more frequently than feature tasks. Feature tasks are underestimated more frequently.",
+          "source": "Cao (2022) IEEE TSE (https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1077&context=itds_facpubs)"
+        },
+        "selfReportedAccuracy_vs_Reality": {
+          "finding": "63% of teams report feeling confident in their estimates, but 44% miss the mark on half their work or more",
+          "source": "Easy Agile State of Team Alignment 2026 (https://easyagile.com/downloads/state-of-team-alignment-report-2026), n=419"
+        }
+      },
+      "planningPokerAccuracy": {
+        "description": "Accuracy of Planning Poker estimation method",
+        "feedbackImprovement": {
+          "initialAccuracy": 64,
+          "afterFirstFeedback": 70,
+          "afterSecondFeedback": 81,
+          "unit": "percent correct",
+          "description": "Programmers improved from 64% to 81% accuracy over 3 sets of 10 items when provided feedback on estimation errors",
+          "source": "Study: 'How Much Does Feedback and Performance Review Improve Software Development Effort Estimation? An Empirical Study', cited by Mike Cohn / Mountain Goat Software (https://mountaingoatsoftware.com/blog/are-we-really-bad-at-estimating)"
+        },
+        "estimatorTypeDistribution": {
+          "optimistic": 37,
+          "mostLikely": 27,
+          "unawareOfType": 22,
+          "other": 14,
+          "description": "When not told what type of estimate to provide, 37% gave optimistic, 27% most-likely, 22% did not know what type they provided",
+          "source": "Magne Jorgensen research, cited by Mike Cohn (https://mountaingoatsoftware.com/blog/the-five-possible-estimates-and-which-one-your-team-should-use)"
+        }
+      },
+      "mlBasedEstimation": {
+        "description": "Machine learning approaches to story point estimation",
+        "dataset": {
+          "name": "Choetkiertikul et al. (2019) / TAWOS dataset",
+          "issues": 23313,
+          "projects": 16,
+          "repositories": "Apache, Appcelerator, DuraSpace, Atlassian, Moodle, Lsstcorp, Mulesoft, Spring, Talendforge",
+          "source": "https://arxiv.org/pdf/1609.00489",
+          "availability": "Publicly available for research"
+        },
+        "bestModelAccuracy": { "MAE": 2.09, "standardizedAccuracy": 52.66, "description": "LD-RNN model MAE across 16 projects", "source": "Choetkiertikul et al. (2019) IEEE TSE" },
+        "replicationFinding": "Deep-SE does NOT statistically significantly outperform Median baseline in most cases, confounding earlier claims",
+        "replicationSource": "Sarro et al. (2022) 'Agile Effort Estimation: Have We Solved the Problem Yet?' IEEE TSE (https://arxiv.org/pdf/2201.05401v2.pdf)"
+      }
+    },
+    "projectSuccessRates": {
+      "description": "Software project delivery success/failure statistics",
+      "standishChaosReport": {
+        "overall_rates": {
+          "success": { "percent": 31, "description": "On-time, on-budget, all features", "source": "Standish Group CHAOS Report 2020 (https://thestory.is/en/journal/chaos-report/)" },
+          "challenged": { "percent": 50, "description": "Completed but over-budget, over-time, fewer features", "source": "Standish Group CHAOS Report 2020" },
+          "failed": { "percent": 19, "description": "Cancelled before completion", "source": "Standish Group CHAOS Report 2020" }
+        },
+        "historicalContext": {
+          "1994_rates": { "success": 16.2, "challenged": 52.7, "failed": 31.1, "source": "Standish Group CHAOS Report 1994 (https://www.csus.edu/indiv/v/velianitis/161/ChaosReport.pdf)" },
+          "stagnation": "Success rates have hovered around 30% for over a decade, showing 'stubborn persistence in failure rates' despite widespread Agile adoption",
+          "source": "PM World Journal comparative analysis (https://pmworldjournal.com/article/comparative-research-on-it-project-failure-rates)"
+        },
+        "costOverruns_historical": {
+          "average": 189,
+          "unit": "percent of original estimate",
+          "largeCompanyAvg": 178,
+          "mediumCompanyAvg": 182,
+          "smallCompanyAvg": 214,
+          "source": "Standish Group CHAOS Report 1994 (https://www.csus.edu/indiv/v/velianitis/161/ChaosReport.pdf)",
+          "caveat": "Jenkins (2006) in ScienceDirect argued this 189% figure may be biased upward due to sampling methodology: 'a continued use of that figure as a reference point for estimation accuracy may lead to poor decision making' (https://www.sciencedirect.com/science/article/abs/pii/S0950584905001023)"
+        },
+        "timeOverruns_historical": {
+          "average": 222,
+          "unit": "percent of original time estimate",
+          "source": "Standish Group CHAOS Report 1994"
+        },
+        "agileVsWaterfall": {
+          "finding": "Standish Group reports Agile projects succeed at approximately 3x the rate of Waterfall projects",
+          "source": "Standish Group CHAOS Report 2020, summarized by The Story (https://thestory.is/en/journal/chaos-report/)"
+        }
+      },
+      "onTimeDelivery": {
+        "percent": 31,
+        "description": "31% of IT projects are delivered on-time, on-budget with all features (all methodologies combined)",
+        "source": "Standish Group CHAOS Report 2020"
+      },
+      "onBudgetDelivery": {
+        "effortUnderestimate_average": 100,
+        "description": "Average effort overrun is ~100% for underestimated projects (actual = 2x estimate)",
+        "source": "ISBSG Estimates report (https://isbsg.org/wp-content/uploads/2017/03/Estimates_-_How_accurate_Are_They_2012.pdf)"
+      },
+      "averageScheduleOverrun": {
+        "percent": "100-222%",
+        "description": "Historical range of schedule overruns for challenged projects. Standish reports 222% average; ISBSG reports late projects average ~100% overrun.",
+        "source": "Standish Group CHAOS Report 1994; ISBSG Estimates report"
+      }
+    },
+    "publicDatasets": {
+      "description": "Publicly available datasets with sprint/agile estimation data suitable for model calibration",
+      "tawosDataset": {
+        "name": "TAWOS (Towards Agile Warehouse of Open Source) / Choetkiertikul dataset",
+        "url": "https://arxiv.org/pdf/1609.00489",
+        "issues": 23313,
+        "projects": 16,
+        "contains": "User stories/issues with ground truth story points from JIRA",
+        "sourceOrganizations": ["Apache", "Appcelerator", "DuraSpace", "Atlassian", "Moodle", "Lsstcorp", "Mulesoft", "Spring", "Talendforge"]
+      },
+      "jiraSprintVelocityDataset": {
+        "name": "Agile Scrum Sprint Velocity DataSet (RandulaKoralage)",
+        "url": "https://github.com/RandulaKoralage/AgileScrumSprintVelocityDataSet",
+        "contains": "Sprint data for 4 open source projects: Spring XD, Mesos, Aurora, UserGrid",
+        "format": "CSV files with issues, summaries, and sprint data"
+      },
+      "jiraEstimationPrediction": {
+        "name": "JIRA Estimation Prediction (jai2shukla)",
+        "url": "https://github.com/jai2shukla/JIRA-Estimation-Prediction",
+        "contains": "Agile sprint datasets and story point estimation datasets used in IEEE TSE publications"
+      },
+      "publicJiraDataset": {
+        "name": "Public Jira Dataset (Montgomery et al. 2022)",
+        "description": "Jira data from multiple organizations across several decades. Used in stability analysis of 926 projects from 12 organizations with over 1.6 million data points.",
+        "source": "Referenced in InfoQ article on agile predictability (https://infoq.com/articles/improve-predictability-measure-stability)"
+      }
+    },
+    "stateOfAgileReportHighlights": {
+      "description": "Key statistics from the annual State of Agile reports by Digital.ai (formerly VersionOne/CollabNet)",
+      "18th_report_2025": {
+        "respondents": 350,
+        "agileAdoption": 71,
+        "aiAdoption": 84,
+        "roiPressurePercent": 76,
+        "hybridModelPercent": 74,
+        "increasedAgileSpendPercent": 41,
+        "customerSatisfactionTopMeasure": 52,
+        "source": "Digital.ai 18th State of Agile Report (https://digital.ai/resource-center/analyst-reports/18th-state-of-agile-report/)"
+      },
+      "17th_report_2024": {
+        "respondents": 788,
+        "agileAdoptionInSDLC": 71,
+        "verySatisfied": 11,
+        "somewhatSatisfied": 33,
+        "source": "Digital.ai 17th State of Agile Report (https://digital.ai/press-releases/17th-state-of-agile-report-71-use-agile-in-their-sdlc-small-organizations-report-strong-business-benefits-medium-and-larger-sized-companies-continue-to-experience-barriers-in-successfully-scaling-a)"
+      },
+      "historicalRespondents": "40,000 total participants across all 18 years of the survey"
+    },
+    "recommendedCalibrationDefaults": {
+      "description": "Suggested default values for Epoch sprint_forecast tool calibration, based on aggregated public data",
+      "velocity": {
+        "defaultSPPerDevPerSprint_2week": 8,
+        "velocityCV_healthy": 0.15,
+        "velocityCV_concerning": 0.30,
+        "sprintCompletionRate_average": 0.75,
+        "sprintCompletionRate_highPerforming": 0.85,
+        "p85_velocity_commitStrategy": true,
+        "p85_description": "Use P85 (85th percentile) velocity for sprint commitments to achieve ~85% success rate, rather than average which yields 50% failure rate"
+      },
+      "estimation": {
+        "estimateAccuracy_withinPercentOfActuals": 25,
+        "underestimationBiasPercent": 57.5,
+        "storyPointDrift_onsetAtPoints": 8,
+        "storyPointDrift_magnitude": "15-25% at 8 points, increasing for larger estimates"
+      },
+      "sprintPlanning": {
+        "defaultSprintLength_days": 14,
+        "sprintLength_2week_pctOfTeams": 59.1,
+        "minRollingAverageSprints": 3,
+        "recommendedRollingAverageSprints": 5,
+        "newTeamBaselineSprints": 3
+      },
+      "projectDelivery": {
+        "onTimeOnBudgetRate": 0.31,
+        "challengedRate": 0.50,
+        "failureRate": 0.19,
+        "scheduleOverrun_forChallengedProjects_percent": 100
+      }
+    }
+  }
+}

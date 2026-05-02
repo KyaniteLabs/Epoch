@@ -16,18 +16,18 @@ interface ModelCalibration {
 }
 
 const MODEL_CALIBRATIONS: Record<string, ModelCalibration> = {
-  "claude-sonnet-4-20250514": { tokensPerSecond: 80, reasoningOverheadMs: 2300, toolCallLatencyMs: 500 },
-  "claude-opus-4-20250514": { tokensPerSecond: 40, reasoningOverheadMs: 3500, toolCallLatencyMs: 800 },
-  "claude-3.5-haiku-20241022": { tokensPerSecond: 150, reasoningOverheadMs: 1200, toolCallLatencyMs: 350 },
-  "gpt-4o": { tokensPerSecond: 100, reasoningOverheadMs: 2000, toolCallLatencyMs: 400 },
-  "gpt-4o-mini": { tokensPerSecond: 200, reasoningOverheadMs: 1000, toolCallLatencyMs: 300 },
-  "gpt-4-turbo": { tokensPerSecond: 90, reasoningOverheadMs: 2200, toolCallLatencyMs: 450 },
-  "gemini-2.0-flash": { tokensPerSecond: 180, reasoningOverheadMs: 1100, toolCallLatencyMs: 350 },
-  "gemini-2.5-pro": { tokensPerSecond: 70, reasoningOverheadMs: 2800, toolCallLatencyMs: 550 },
-  "llama-3.1-70b": { tokensPerSecond: 120, reasoningOverheadMs: 1500, toolCallLatencyMs: 400 },
-  "llama-3.1-405b": { tokensPerSecond: 50, reasoningOverheadMs: 3000, toolCallLatencyMs: 600 },
-  "mistral-large": { tokensPerSecond: 85, reasoningOverheadMs: 2000, toolCallLatencyMs: 450 },
-  "deepseek-v3": { tokensPerSecond: 95, reasoningOverheadMs: 1800, toolCallLatencyMs: 400 },
+  "claude-3.5-haiku-20241022": { tokensPerSecond: 100, reasoningOverheadMs: 145, toolCallLatencyMs: 200 },
+  "claude-opus-4-20250514": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
+  "claude-sonnet-4-20250514": { tokensPerSecond: 72, reasoningOverheadMs: 205, toolCallLatencyMs: 200 },
+  "deepseek-v3": { tokensPerSecond: 97, reasoningOverheadMs: 410, toolCallLatencyMs: 200 },
+  "gemini-2.0-flash": { tokensPerSecond: 230, reasoningOverheadMs: 90, toolCallLatencyMs: 200 },
+  "gemini-2.5-pro": { tokensPerSecond: 68, reasoningOverheadMs: 280, toolCallLatencyMs: 200 },
+  "gpt-4-turbo": { tokensPerSecond: 27.5, reasoningOverheadMs: 1405, toolCallLatencyMs: 200 },
+  "gpt-4o": { tokensPerSecond: 85, reasoningOverheadMs: 155, toolCallLatencyMs: 200 },
+  "gpt-4o-mini": { tokensPerSecond: 180, reasoningOverheadMs: 130, toolCallLatencyMs: 200 },
+  "llama-3.1-405b": { tokensPerSecond: 30, reasoningOverheadMs: 300, toolCallLatencyMs: 200 },
+  "llama-3.1-70b": { tokensPerSecond: 100, reasoningOverheadMs: 100, toolCallLatencyMs: 200 },
+  "mistral-large": { tokensPerSecond: 42.6, reasoningOverheadMs: 730, toolCallLatencyMs: 200 },
 };
 
 const REASONING_DEPTH_MULTIPLIER: Record<ReasoningDepth, number> = {

@@ -57,13 +57,13 @@ describe("tokenTimeBridge", () => {
   it("deep reasoning takes longer than shallow", () => {
     const shallow = tokenTimeBridge({
       tokens: 10000,
-      model: "gpt-4o",
+      model: "claude-opus-4-20250514",
       toolCalls: 0,
       reasoningDepth: "shallow",
     });
     const deep = tokenTimeBridge({
       tokens: 10000,
-      model: "gpt-4o",
+      model: "claude-opus-4-20250514",
       toolCalls: 0,
       reasoningDepth: "deep",
     });
