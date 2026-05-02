@@ -497,7 +497,7 @@ export function createApiApp(): Hono {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ ok: false, error: { message: "Invalid JSON body." } }, 400);
+      return c.json({ ok: false, error: { isError: true, message: "Invalid JSON body.", retryHint: "Send a valid JSON body with estimate_id and actual_hours." } }, 400);
     }
 
     const estimateId = body["estimate_id"] as string | undefined;
@@ -532,6 +532,7 @@ export function createApiApp(): Hono {
         error: {
           isError: true,
           message: "Internal server error.",
+          retryHint: "This is an internal error. Try again later or file an issue at https://github.com/KyaniteLabs/Epoch/issues.",
         },
       } satisfies ToolResult<unknown>,
       500,

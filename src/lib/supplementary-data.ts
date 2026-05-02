@@ -111,7 +111,7 @@ export function loadCocomoData(): CocomoCalibrationData | null {
   const paths = [
     join(getDataDir(), "cocomo-calibration-data.json"),
     join(getDataDir(), "supplementary-database.json"),
-    join(import.meta.dirname, "..", "..", "data", "cocomo-calibration-data.json"),
+    join(import.meta.dirname, "..", "data", "cocomo-calibration-data.json"),
   ];
 
   for (const p of paths) {
@@ -233,7 +233,7 @@ function getCommunityDir(): string {
   const cwdBased = join(process.cwd(), "data", "community");
   if (existsSync(cwdBased)) return cwdBased;
   try {
-    const pkgBased = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "data", "community");
+    const pkgBased = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "community");
     if (existsSync(pkgBased)) return pkgBased;
   } catch { /* import.meta.url may not be available in all contexts */ }
   return cwdBased;

@@ -59,7 +59,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 claude mcp add epoch -- npx @puenteworks/epoch
 ```
 
-That's it. Your AI assistant now has 19 time estimation tools.
+That's it. Your AI assistant now has 21 time estimation tools.
 
 Or add it to your project's `.mcp.json`:
 
@@ -213,16 +213,20 @@ Output: {
 ```
 Input:  {
   kloc: 15,
-  project_type: "organic",
-  cost_drivers: { complexity: "nominal", reliability: "high" },
+  reasoning_complexity: 1.2,
+  context_completeness: 1.0,
+  transformation_impact: 0.8,
+  iterative_cycles: 1.5,
+  human_oversight: 1.2,
   ai_native: true
 }
 Output: {
-  effort: 45.2,
-  duration: 8.3,
-  staff: 5.4,
-  costDrivers: { ... },
-  aiNative: true,
+  kloc: 15,
+  personMonthsNominal: 35.8,
+  personMonthsLlmAdjusted: 23.9,
+  scheduleMonths: 8.3,
+  teamSize: 2.9,
+  ratingAdjustments: { ... },
   correctionFactor: 1.8
 }
 ```
