@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { join } from "node:path";
 
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),

@@ -7,14 +7,6 @@
 // ---------------------------------------------------------------------------
 
 import { z } from "zod";
-import type {
-  UrgencyCategory,
-  ConfidenceLevel,
-  TimeUnit,
-  TaskType,
-  LLMModel,
-  ReasoningDepth,
-} from "../types/index.js";
 
 // ---- Shared enum schemas --------------------------------------------------
 

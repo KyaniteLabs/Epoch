@@ -6,7 +6,6 @@
 
 import type { ToolResult } from "../../types/index.js";
 import {
-  getCurrentTime,
   convertTimezone,
   parseDuration,
   formatElapsed,

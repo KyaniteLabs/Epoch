@@ -18,7 +18,6 @@ import type {
   ToolResult,
   ToolError,
 } from "../types/index.js";
-import { getUrgencyCategory } from "./internal/urgency.js";
 import { makeError } from "./internal/error-helpers.js";
 
 // ---- Error helper ---------------------------------------------------------

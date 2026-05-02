@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { format, parseISO, addDays as dateFnsAddDays, differenceInSeconds } from "date-fns";
-import { toZonedTime, formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import type {
   TemporalResult,
   DurationResult,
@@ -55,7 +55,6 @@ export function getCurrentTime(timezone: string): ToolResult<TemporalResult> {
   }
 
   const now = new Date();
-  const zoned = toZonedTime(now, timezone);
 
   return {
     ok: true,

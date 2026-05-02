@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect } from "vitest";
-import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "./index.js";
+import { dispatch, listTools, TOOL_NAMES } from "./index.js";
 
 // ---------------------------------------------------------------------------
 // dispatch()

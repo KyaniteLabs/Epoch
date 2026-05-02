@@ -1,8 +1,6 @@
 import { startMcpServer } from "./entries/mcp.js";
 import { startHttpServer } from "./entries/http.js";
 import { runCli } from "./entries/cli.js";
-import { TOOL_NAMES } from "./dispatcher/index.js";
-
 // Re-export types for consumers
 export type {
   UrgencyCategory,
@@ -22,31 +20,6 @@ export type {
   ReasoningDepth,
   DeveloperProfile,
 } from "./types/index.js";
-
-const CLI_SUBCOMMANDS = new Set([
-  "get-current-time",
-  "convert-timezone",
-  "parse-duration",
-  "time-math",
-  "add-business-days",
-  "count-business-days",
-  "pert-estimate",
-  "cocomo-estimate",
-  "sprint-forecast",
-  "critical-path",
-  "monte-carlo-schedule",
-  "reference-class-estimate",
-  "calibrate-estimates",
-  "token-time-bridge",
-  "token-cost-estimate",
-  "compare-models",
-  "accuracy-trend",
-  "schedule-risk",
-  "cocomo-validate",
-  "record-actual",
-  "get-pending-estimates",
-  "list-tools",
-]);
 
 function main(): void {
   const transport = process.env["EPOCH_TRANSPORT"];
