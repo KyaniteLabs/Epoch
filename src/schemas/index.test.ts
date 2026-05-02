@@ -210,7 +210,7 @@ describe("referenceClassEstimateSchema", () => {
 
   it("applies defaults for scope and complexity", () => {
     const result = referenceClassEstimateSchema.parse({ task_type: "feature" });
-    expect(result.scope).toBe("medium");
+    expect(result.scope).toBeUndefined();
     expect(result.complexity).toBe(3);
   });
 });

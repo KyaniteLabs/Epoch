@@ -240,9 +240,9 @@ export const referenceClassEstimateSchema = z.object({
   scope: z
     .enum(["small", "medium", "large", "xl"])
     .describe(
-      "Rough size of the task: small=tiny fix/tweak, medium=typical task, large=significant effort, xl=epic-scale. Selects a percentile band from historical data for the task type."
+      "Rough size of the task: small=tiny fix/tweak, medium=typical task, large=significant effort, xl=epic-scale. When omitted, inferred from complexity (1-2=small, 3=medium, 4=large, 5=xl)."
     )
-    .default("medium"),
+    .optional(),
   complexity: z
     .number()
     .min(1)

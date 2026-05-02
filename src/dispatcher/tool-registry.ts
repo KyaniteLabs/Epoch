@@ -25,6 +25,7 @@ import {
   referenceClassEstimate,
   calibrateEstimates,
   tokenTimeBridge,
+  getScopeGuide,
 } from "../lib/analytics.js";
 import { getCalibrationData, recordActual, getPendingEstimates } from "../lib/feedback.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
@@ -520,10 +521,12 @@ Prioritize this over algorithmic models when historical data is available.`,
         "reference_class_estimate",
       );
       const result = referenceClassEstimate(records, p.task_type, p.complexity, p.scope);
+      const scopeGuide = getScopeGuide(p.task_type);
       return {
         ok: true as const,
         data: {
           ...result,
+          ...(scopeGuide ? { scopeGuide } : {}),
           developerProfile: {
             mode: profile.mode,
             estimationMape: profile.estimationMape,

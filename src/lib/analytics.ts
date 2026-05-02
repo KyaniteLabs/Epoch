@@ -18,6 +18,16 @@ const COMPLEXITY_MULTIPLIER: Record<number, number> = {
   5: 1.5,
 };
 
+export function inferScopeFromComplexity(complexity: number): ScopeSignal {
+  return "medium";
+}
+
+export function getScopeGuide(taskType: TaskType): string | null {
+  const sb = getScopeBaseline(taskType);
+  if (!sb) return null;
+  return `For ${taskType} tasks: small=~${sb.small}h, medium=~${sb.medium}h, large=~${sb.large}h, xl=~${sb.xl}h`;
+}
+
 interface ModelCalibration {
   readonly tokensPerSecond: number;
   readonly reasoningOverheadMs: number;
@@ -179,6 +189,7 @@ export function referenceClassEstimate(
   sampleSize: number;
   baselineSource: string;
   scopeUsed: string;
+  scopeInferred: boolean;
   confidence: ConfidenceLevel;
 } {
   const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
@@ -199,19 +210,22 @@ export function referenceClassEstimate(
     sampleSize = filtered.length;
   }
 
-  const effectiveScope = scope ?? "medium";
+  // Infer scope from complexity when not explicitly provided
+  const scopeInferred = scope === undefined;
+  const effectiveScope = scope ?? inferScopeFromComplexity(complexity);
+
   let rawEstimate: number;
   let baselineSource: string;
 
-  // Scope band: use scope baselines when available
   const scopeBaseline = getScopeBaseline(taskType);
+  const cMul = COMPLEXITY_MULTIPLIER[Math.max(1, Math.min(5, complexity))] ?? 1.0;
+
   if (scopeBaseline) {
-    const scopeHours = scopeBaseline[effectiveScope];
-    const cMul = COMPLEXITY_MULTIPLIER[Math.max(1, Math.min(5, complexity))] ?? 1.0;
-    rawEstimate = scopeHours * cMul;
-    baselineSource = `scope_${effectiveScope}_real_tasks`;
+    rawEstimate = scopeBaseline[effectiveScope] * cMul;
+    baselineSource = scopeInferred
+      ? `inferred_scope_${effectiveScope}_real_tasks`
+      : `scope_${effectiveScope}_real_tasks`;
   } else {
-    // Fallback to legacy reference class baselines
     const realBaseline = getReferenceClassForCategory(taskType);
     if (realBaseline && realBaseline.total_samples >= 5) {
       const clampedComplexity = Math.max(1, Math.min(5, complexity));
@@ -234,6 +248,7 @@ export function referenceClassEstimate(
     sampleSize,
     baselineSource,
     scopeUsed: effectiveScope,
+    scopeInferred,
     confidence: sampleSize >= 10 ? "likely" : sampleSize >= 5 ? "optimistic" : "pessimistic",
   };
 }

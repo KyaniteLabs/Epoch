@@ -166,22 +166,45 @@ describe("referenceClassEstimate scope signal", () => {
     const c1 = referenceClassEstimate([], "feature", 1, "medium");
     const c3 = referenceClassEstimate([], "feature", 3, "medium");
     const c5 = referenceClassEstimate([], "feature", 5, "medium");
-    // medium scope for feature = 5.72h (p50)
-    // c1: 5.72 * 0.7 = 4.0, c3: 5.72 * 1.0 = 5.72, c5: 5.72 * 1.5 = 8.58
     expect(c1.rawEstimate).toBeLessThan(c3.rawEstimate);
     expect(c3.rawEstimate).toBeLessThan(c5.rawEstimate);
     expect(c3.rawEstimate).toBeCloseTo(5.72, 1);
   });
 
   it("defaults to medium scope when not provided", () => {
-    const result = referenceClassEstimate([], "feature", 3);
-    expect(result.scopeUsed).toBe("medium");
+    const c1 = referenceClassEstimate([], "feature", 1);
+    const c3 = referenceClassEstimate([], "feature", 3);
+    expect(c1.scopeUsed).toBe("medium");
+    expect(c1.scopeInferred).toBe(true);
+    expect(c3.scopeUsed).toBe("medium");
+    expect(c3.scopeInferred).toBe(true);
+  });
+
+  it("applies complexity multiplier on medium default", () => {
+    const c1 = referenceClassEstimate([], "feature", 1);
+    const c3 = referenceClassEstimate([], "feature", 3);
+    const c5 = referenceClassEstimate([], "feature", 5);
+    // medium band = 5.72h; c1=5.72*0.7=4.0, c3=5.72*1.0=5.72, c5=5.72*1.5=8.58
+    expect(c1.rawEstimate).toBeLessThan(c3.rawEstimate);
+    expect(c3.rawEstimate).toBeLessThan(c5.rawEstimate);
+    expect(c3.rawEstimate).toBeCloseTo(5.72, 1);
+  });
+
+  it("inferred medium is same as explicit medium", () => {
+    const inferred = referenceClassEstimate([], "feature", 3);
+    const explicit = referenceClassEstimate([], "feature", 3, "medium");
+    expect(inferred.rawEstimate).toBe(explicit.rawEstimate);
+  });
+
+  it("explicit scope is not marked as inferred", () => {
+    const result = referenceClassEstimate([], "feature", 3, "large");
+    expect(result.scopeInferred).toBe(false);
+    expect(result.scopeUsed).toBe("large");
   });
 
   it("xl scope produces larger estimates than small", () => {
     const small = referenceClassEstimate([], "feature", 3, "small");
     const xl = referenceClassEstimate([], "feature", 3, "xl");
-    // feature small = 3.04, xl = 29.83
     expect(xl.rawEstimate / small.rawEstimate).toBeGreaterThan(5);
   });
 
@@ -196,6 +219,11 @@ describe("referenceClassEstimate scope signal", () => {
   it("baselineSource indicates scope band", () => {
     const result = referenceClassEstimate([], "feature", 3, "large");
     expect(result.baselineSource).toBe("scope_large_real_tasks");
+  });
+
+  it("baselineSource indicates inferred scope", () => {
+    const result = referenceClassEstimate([], "feature", 3);
+    expect(result.baselineSource).toBe("inferred_scope_medium_real_tasks");
   });
 });
 
