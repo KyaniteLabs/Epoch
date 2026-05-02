@@ -31,6 +31,7 @@ Prioritize this over algorithmic models when historical data is available.`,
       team_id: z.string().optional().describe("Team identifier for team-specific correction factors."),
       ai_native: z.boolean().default(true).describe("AI-native work (true) or human developer (false). Affects correction factors."),
     },
+    readOnlyAnnotations,
     async ({ task_type, complexity, team_id, ai_native }) => {
       const profile = getDeveloperProfile(ai_native);
       const records = getCalibrationData(team_id, task_type, 90);
@@ -63,6 +64,7 @@ for improving estimation accuracy.`,
       period_days: z.number().int().positive().default(90).describe("Look-back period in days for historical data."),
       minimum_samples: z.number().int().positive().default(10).describe("Minimum data points needed for reliable calibration."),
     },
+    readOnlyAnnotations,
     async ({ team_id, period_days, minimum_samples }) => {
       const records = getCalibrationData(team_id, undefined, period_days);
       const result = calibrateEstimates(team_id, period_days, minimum_samples, records);
@@ -100,6 +102,7 @@ Bridges the gap between token-space (how agents reason) and time-space (what hum
       tool_calls: z.number().int().nonnegative().default(0).describe("Estimated number of tool/API calls the agent will make."),
       reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning complexity: shallow=simple tasks, moderate=standard, deep=complex multi-step."),
     },
+    readOnlyAnnotations,
     async (params) => {
       const result = tokenTimeBridge({
         tokens: params.tokens,
@@ -129,6 +132,7 @@ Returns cost breakdown (input/output/overhead) alongside the time estimate.`,
       tool_calls: z.number().int().nonnegative().default(0).describe("Estimated number of tool/API calls."),
       reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning depth."),
     },
+    readOnlyAnnotations,
     async (params) => {
       const result = tokenCostEstimate({
         tokens: params.tokens,
@@ -152,6 +156,7 @@ Use when choosing which model to use for a task.`,
       reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning depth."),
       sort_by: z.enum(["cost", "time"]).default("cost").describe("Sort by cost or time."),
     },
+    readOnlyAnnotations,
     async (params) => {
       const result = compareModels({
         tokens: params.tokens,
@@ -174,6 +179,7 @@ Industry research shows estimation accuracy does NOT improve with experience (Ca
       team_id: z.string().optional().describe("Team identifier."),
       window_size: z.number().int().min(5).default(50).describe("Records per sliding window."),
     },
+    readOnlyAnnotations,
     async ({ team_id, window_size }) => {
       const result = computeAccuracyTrend({ teamId: team_id, windowSize: window_size });
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
@@ -192,6 +198,7 @@ Uses industry baseline (25% MAPE) when no historical data is available.`,
       task_type: z.enum(["feature", "bugfix", "refactor", "migration", "infrastructure", "documentation", "testing", "design"]).optional().describe("Task type for accuracy lookup."),
       team_id: z.string().optional().describe("Team identifier."),
     },
+    readOnlyAnnotations,
     async ({ estimated_hours, task_type, team_id }) => {
       const result = scheduleRisk({
         estimatedHours: estimated_hours,

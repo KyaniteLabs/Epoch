@@ -26,6 +26,7 @@ Use when estimating task duration with uncertain outcomes.`,
       unit: z.enum(["hours", "days", "weeks"]).default("hours").describe("Time unit for all three estimates."),
       ai_native: z.boolean().default(true).describe("AI-native work (true) or human developer (false). Affects correction factors."),
     },
+    annotations,
     async ({ optimistic, most_likely, pessimistic, unit, ai_native }) => {
       const profile = getDeveloperProfile(ai_native);
       const result = pertEstimate(optimistic, most_likely, pessimistic, unit);
@@ -57,6 +58,7 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
       human_oversight: z.number().min(0.5).max(2.0).default(1.0).describe("Fraction of work requiring human review. 1.0=standard review, 2.0=extensive validation."),
       ai_native: z.boolean().default(true).describe("AI-native mode (true) or human developer mode (false). Affects productivity factor."),
     },
+    annotations,
     async (params) => {
       const profile = getDeveloperProfile(params.ai_native);
       const result = cocomoEstimate({
@@ -88,6 +90,7 @@ and returns required sprints with pessimistic estimate based on velocity varianc
       hours_per_sprint: z.number().positive().default(300).describe("Total working hours available per sprint."),
       ai_native: z.boolean().default(true).describe("AI-native team (true) or human team (false). Affects default velocity expectations."),
     },
+    annotations,
     async (params) => {
       const profile = getDeveloperProfile(params.ai_native);
       const result = sprintForecast({
@@ -120,6 +123,7 @@ Applies merge bias: tasks with >2 predecessors get 5% duration increase per extr
         predecessors: z.array(z.string()).default([]).describe("Names of tasks that must complete before this one starts."),
       })).min(1).describe("List of project tasks with durations and dependencies."),
     },
+    annotations,
     async ({ tasks }) => {
       const result = criticalPath(tasks);
       if (!result.ok) {
@@ -145,6 +149,7 @@ completion estimates with identified risk events. Use seed for reproducible resu
       iterations: z.number().int().positive().default(10000).describe("Number of simulation iterations. 10000 is a good balance of speed and accuracy."),
       seed: z.number().optional().describe("Random seed for reproducibility. Omit for varied results."),
     },
+    annotations,
     async ({ tasks, iterations, seed }) => {
       const mappedTasks = tasks.map(t => ({
         name: t.name,
@@ -166,6 +171,7 @@ Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjus
     {
       dataset_filter: z.array(z.string()).optional().describe("Optional: filter to specific datasets (COCOMO81, NASA93, Albrecht, Kemerer)."),
     },
+    annotations,
     async ({ dataset_filter }) => {
       const result = cocomoValidate({ datasetFilter: dataset_filter });
       if (!result.ok) {
