@@ -332,4 +332,158 @@ describe("updateReferenceDatabase", () => {
     const { writeFileSync } = await import("node:fs");
     expect(vi.mocked(writeFileSync)).not.toHaveBeenCalled();
   });
+
+  it("merges telemetry stats into existing benchmarks", async () => {
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        toolExecutionBenchmarks: {
+          "test-tool": {
+            p50_ms: 100,
+            p95_ms: 500,
+            mean_ms: 200,
+            stddev_ms: 50,
+            min_ms: 50,
+            max_ms: 800,
+            sampleCount: 10,
+          },
+        },
+      }),
+    );
+    mockGetTelemetry.mockReturnValue({
+      getStats: vi.fn().mockReturnValue([
+        {
+          tool: "test-tool",
+          p50Ms: 120,
+          p95Ms: 600,
+          meanMs: 250,
+          callCount: 10,
+        },
+      ]),
+      record: vi.fn(),
+      flush: vi.fn(),
+      destroy: vi.fn(),
+    } as unknown as ReturnType<typeof getTelemetry>);
+    mockGetCalibrationData.mockReturnValue([]);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // Weighted average: existing weight=10/20=0.5, new weight=10/20=0.5
+    // p50 = (100*0.5 + 120*0.5) = 110
+    expect(writtenData.toolExecutionBenchmarks["test-tool"].p50_ms).toBe(110);
+    expect(writtenData.toolExecutionBenchmarks["test-tool"].sampleCount).toBe(20);
+  });
+
+  it("creates new benchmark entry when tool not in DB", async () => {
+    mockGetTelemetry.mockReturnValue({
+      getStats: vi.fn().mockReturnValue([
+        {
+          tool: "new-tool",
+          p50Ms: 50,
+          p95Ms: 200,
+          meanMs: 80,
+          callCount: 5,
+        },
+      ]),
+      record: vi.fn(),
+      flush: vi.fn(),
+      destroy: vi.fn(),
+    } as unknown as ReturnType<typeof getTelemetry>);
+    mockGetCalibrationData.mockReturnValue([]);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    expect(writtenData.toolExecutionBenchmarks["new-tool"]).toBeDefined();
+    expect(writtenData.toolExecutionBenchmarks["new-tool"].p50_ms).toBe(50);
+    expect(writtenData.toolExecutionBenchmarks["new-tool"].sampleCount).toBe(5);
+  });
+
+  it("skips records with estimatedHours <= 0 in correction computation", async () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 0, actualHours: 5, completedAt: "2026-04-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 15, completedAt: "2026-04-02" },
+      { taskType: "feature", estimatedHours: -5, actualHours: 10, completedAt: "2026-04-03" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-04-04" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-04-05" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // Valid ratios: 1.5, 2.0, 1.0 -> sorted: 1.0, 1.5, 2.0 -> median 1.5
+    expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
+  });
+
+  it("clamps tool correction factor to 3.0 max", async () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 50, tool: "slow-tool", completedAt: "2026-04-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 60, tool: "slow-tool", completedAt: "2026-04-02" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 35, tool: "slow-tool", completedAt: "2026-04-03" },
+      // Need 2 more records to reach 5 minimum
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 6, tool: "fast-tool", completedAt: "2026-04-04" },
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 7, tool: "fast-tool", completedAt: "2026-04-05" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // slow-tool / feature ratios: 5.0, 6.0, 3.5 -> sorted: 3.5, 5.0, 6.0 -> median 5.0 -> clamped 3.0
+    expect(writtenData.toolTaskCorrectionFactors["slow-tool"].feature).toBe(3.0);
+  });
+
+  it("clamps tool correction factor to 0.5 min", async () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 2, tool: "fast-tool", completedAt: "2026-04-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 1, tool: "fast-tool", completedAt: "2026-04-02" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 3, tool: "fast-tool", completedAt: "2026-04-03" },
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 6, tool: "other", completedAt: "2026-04-04" },
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 7, tool: "other", completedAt: "2026-04-05" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // fast-tool / feature ratios: 0.2, 0.1, 0.3 -> sorted: 0.1, 0.2, 0.3 -> median 0.2 -> clamped 0.5
+    expect(writtenData.toolTaskCorrectionFactors["fast-tool"].feature).toBe(0.5);
+  });
+
+  it("uses 'unknown' as tool when record has no tool field", async () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-04-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 14, completedAt: "2026-04-02" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 16, completedAt: "2026-04-03" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 18, completedAt: "2026-04-04" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-04-05" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    expect(writtenData.toolTaskCorrectionFactors.unknown).toBeDefined();
+    // ratios: 1.2, 1.4, 1.6, 1.8, 2.0 -> sorted median = 1.6
+    expect(writtenData.toolTaskCorrectionFactors.unknown.feature).toBe(1.6);
+  });
 });

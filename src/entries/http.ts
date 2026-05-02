@@ -417,6 +417,10 @@ export function createApiApp(): Hono {
     });
   });
 
+  app.get("/v1/tools", (c) => {
+    return c.json({ ok: true, tools: listTools() });
+  });
+
   app.post("/v1/tools/:toolName", async (c) => {
     const toolName = c.req.param("toolName");
 

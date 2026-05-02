@@ -3,17 +3,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(false),
   readFileSync: vi.fn(),
-  readdirSync: vi.fn().mockReturnValue([]),
+  readdirSync: vi.fn().mockReturnValue([] as string[]),
 }));
 
 vi.mock("node:os", () => ({
   homedir: vi.fn().mockReturnValue("/home/test"),
 }));
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import {
   loadSupplementaryData,
   loadCocomoData,
+  loadCommunityData,
   getModelPricing,
   getHumanBaselines,
   getEstimationResearch,
@@ -25,6 +26,7 @@ import {
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+const mockReaddirSync = vi.mocked(readdirSync) as unknown as ReturnType<typeof vi.fn> & { mockReturnValue: (v: string[]) => void };
 
 const SAMPLE_SUPPLEMENTARY = JSON.stringify({
   version: "1.0.0",
@@ -275,5 +277,250 @@ describe("resetSupplementaryCache", () => {
     resetSupplementaryCache();
     loadSupplementaryData();
     expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---- loadCommunityData ----
+
+const COMMUNITY_MODEL_CAL = JSON.stringify({
+  _schema: "model-calibration",
+  records: [
+    {
+      model: "community-model-x",
+      tokens_per_second: 80,
+      time_to_first_token_ms: 100,
+      avg_api_latency_ms: 200,
+      cost_input_per_million: 5000,
+      cost_output_per_million: 15000,
+      measured_at: "2026-01-01",
+    },
+  ],
+});
+
+const COMMUNITY_MODEL_CAL_OVERLAP = JSON.stringify({
+  _schema: "model-calibration",
+  records: [
+    {
+      model: "claude-sonnet-4",
+      tokens_per_second: 1,
+      time_to_first_token_ms: 1,
+      avg_api_latency_ms: 1,
+      cost_input_per_million: 1,
+      cost_output_per_million: 1,
+      measured_at: "2026-01-01",
+    },
+  ],
+});
+
+const COMMUNITY_COCOMO = JSON.stringify({
+  _schema: "cocomo-project",
+  records: [
+    {
+      name: "proj-a",
+      kloc: 200,
+      effort_person_months: 48,
+      type: "business",
+      language: "python",
+      year: 2023,
+    },
+    {
+      name: "proj-b",
+      kloc: 50,
+      effort_person_months: 10,
+      type: "embedded",
+    },
+  ],
+});
+
+const COMMUNITY_BAD_SCHEMA = JSON.stringify({
+  _schema: "unknown-schema",
+  records: [{ foo: "bar" }],
+});
+
+const COMMUNITY_NO_RECORDS = JSON.stringify({
+  _schema: "model-calibration",
+  // no "records" key
+});
+
+const COMMUNITY_INVALID_JSON_CONTENT = "not-json-at-all";
+
+describe("loadCommunityData", () => {
+  it("returns empty data when community dir does not exist", () => {
+    mockExistsSync.mockReturnValue(false);
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toEqual([]);
+    expect(data.cocomoProjects).toEqual([]);
+  });
+
+  it("loads community model calibration records", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["models.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_MODEL_CAL);
+
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toHaveLength(1);
+    expect(data.modelCalibration[0]!.model).toBe("community-model-x");
+  });
+
+  it("loads cocomo community projects", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["cocomo.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_COCOMO);
+
+    const data = loadCommunityData();
+    expect(data.cocomoProjects).toHaveLength(2);
+    expect(data.cocomoProjects[0]!.name).toBe("proj-a");
+  });
+
+  it("skips files with unknown _schema", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["bad.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_BAD_SCHEMA);
+
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toEqual([]);
+    expect(data.cocomoProjects).toEqual([]);
+  });
+
+  it("skips files without records array", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["no-records.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_NO_RECORDS);
+
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toEqual([]);
+  });
+
+  it("skips files with invalid JSON gracefully", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["broken.json", "good.json"]);
+    mockReadFileSync
+      .mockReturnValueOnce(COMMUNITY_INVALID_JSON_CONTENT)
+      .mockReturnValueOnce(COMMUNITY_MODEL_CAL);
+
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toHaveLength(1);
+  });
+
+  it("returns empty when readdirSync throws", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockImplementation(() => {
+      throw new Error("permission denied");
+    });
+
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toEqual([]);
+  });
+
+  it("caches community data (singleton)", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["models.json"]);
+    mockReadFileSync.mockReturnValue(COMMUNITY_MODEL_CAL);
+
+    const first = loadCommunityData();
+    const second = loadCommunityData();
+    expect(first).toBe(second);
+  });
+
+  it("loads multiple community files merging into one result", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReaddirSync.mockReturnValue(["models.json", "cocomo.json"]);
+    mockReadFileSync
+      .mockReturnValueOnce(COMMUNITY_MODEL_CAL)
+      .mockReturnValueOnce(COMMUNITY_COCOMO);
+
+    const data = loadCommunityData();
+    expect(data.modelCalibration).toHaveLength(1);
+    expect(data.cocomoProjects).toHaveLength(2);
+  });
+});
+
+// ---- getAllModelPricing with community data ----
+
+describe("getAllModelPricing with community", () => {
+  it("augments with community model without overwriting base", () => {
+    // Supplementary data exists
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync
+      .mockReturnValueOnce(SAMPLE_SUPPLEMENTARY)    // loadSupplementaryData
+      .mockReturnValueOnce(COMMUNITY_MODEL_CAL_OVERLAP); // loadCommunityData
+    mockReaddirSync.mockReturnValue(["overlap.json"]);
+
+    const all = getAllModelPricing();
+
+    // Base model should retain its original values
+    expect(all["claude-sonnet-4"]!.tokensPerSecond).toBe(100);
+    expect(all["claude-sonnet-4"]!.costInput).toBe(3);
+  });
+
+  it("adds new community model not in base", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync
+      .mockReturnValueOnce(SAMPLE_SUPPLEMENTARY)
+      .mockReturnValueOnce(COMMUNITY_MODEL_CAL);
+    mockReaddirSync.mockReturnValue(["models.json"]);
+
+    const all = getAllModelPricing();
+
+    expect(all["claude-sonnet-4"]).toBeDefined();
+    expect(all["community-model-x"]).toBeDefined();
+    expect(all["community-model-x"]!.tokensPerSecond).toBe(80);
+    expect(all["community-model-x"]!.costInput).toBe(5000 / 1_000_000);
+    expect(all["community-model-x"]!.costOutput).toBe(15000 / 1_000_000);
+  });
+});
+
+// ---- getCocomoProjects with community data ----
+
+describe("getCocomoProjects with community", () => {
+  it("appends community dataset to base datasets", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync
+      .mockReturnValueOnce(SAMPLE_COCOMO)    // loadCocomoData
+      .mockReturnValueOnce(COMMUNITY_COCOMO); // loadCommunityData
+    mockReaddirSync.mockReturnValue(["cocomo.json"]);
+
+    const projects = getCocomoProjects();
+
+    // Base dataset + community dataset
+    expect(projects).toHaveLength(2);
+    expect(projects[0]!.name).toBe("test-dataset");
+    expect(projects[1]!.name).toBe("community");
+    expect(projects[1]!.projects).toHaveLength(2);
+    // Community projects get id offset 10000+
+    expect(projects[1]!.projects[0]!.id).toBe(10000);
+    expect(projects[1]!.projects[0]!.kloc).toBe(200);
+    expect(projects[1]!.projects[1]!.id).toBe(10001);
+    expect(projects[1]!.projects[1]!.kloc).toBe(50);
+  });
+
+  it("maps community cocomo fields correctly", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync
+      .mockReturnValueOnce(SAMPLE_COCOMO)
+      .mockReturnValueOnce(COMMUNITY_COCOMO);
+    mockReaddirSync.mockReturnValue(["cocomo.json"]);
+
+    const projects = getCocomoProjects();
+    const communityProj = projects[1]!.projects[0]!;
+
+    expect(communityProj.effortPersonMonths).toBe(48);
+    expect(communityProj.type).toBe("business");
+    expect(communityProj.language).toBe("python");
+    expect(communityProj.year).toBe(2023);
+  });
+
+  it("returns only base when no community projects", () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
+    // community dir doesn't exist
+    mockExistsSync
+      .mockReturnValueOnce(true)   // cocomo path exists
+      .mockReturnValueOnce(false); // community dir doesn't exist
+
+    const projects = getCocomoProjects();
+
+    expect(projects).toHaveLength(1);
+    expect(projects[0]!.name).toBe("test-dataset");
   });
 });
