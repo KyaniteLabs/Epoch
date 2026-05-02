@@ -121,6 +121,16 @@ const countBusinessDaysSchema = z.object({
     .default("US"),
 });
 
+const recordActualSchema = z.object({
+  estimate_id: z.string().describe("ID of the estimate to update."),
+  actual_hours: z.number().positive().describe("Actual hours spent."),
+  notes: z.string().optional().describe("Optional context."),
+});
+
+const getPendingEstimatesSchema = z.object({
+  limit: z.number().int().positive().max(100).default(20).describe("Max estimates to return."),
+});
+
 // ---- Output schemas (JSON Schema for OpenAPI response docs) -----------------
 
 const temporalOutput = {
@@ -285,40 +295,52 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "get_current_time",
-    "Returns the current time in the specified IANA timezone.",
+    "Returns the current date and time in the specified IANA timezone. Useful for grounding the LLM in the user's local time. Example timezones: 'UTC', 'America/New_York', 'Europe/London', 'Asia/Tokyo'.",
     getCurrentTimeSchema,
     temporalOutput,
-    (input) => getCurrentTime(input.timezone as string),
+    (input) => {
+      const p = getCurrentTimeSchema.parse(input);
+      return getCurrentTime(p.timezone);
+    },
   ),
 
   tool(
     "convert_timezone",
-    "Converts a timestamp from its embedded timezone to a target timezone.",
+    "Converts an ISO-8601 timestamp to a target IANA timezone. " +
+      "The input timestamp must include timezone information or be in UTC. " +
+      "Returns the localised time, UTC offset, and human-readable format.",
     convertTimezoneSchema,
     temporalOutput,
-    (input) =>
-      convertTimezone(
-        input.timestamp as string,
-        input.target_tz as string,
-      ),
+    (input) => {
+      const p = convertTimezoneSchema.parse(input);
+      return convertTimezone(p.timestamp, p.target_tz);
+    },
   ),
 
   tool(
     "parse_duration",
-    'Parses a duration string such as "2h30m", "1d6h", "45m" into seconds and a human-readable form.',
+    "Parses a human-readable duration string into structured seconds. " +
+      "Supports combinations of y (years), mo (months), w (weeks), d (days), h (hours), " +
+      "m (minutes), s (seconds). Examples: '2h30m', '1d6h', '1w3d', '45m'.",
     parseDurationSchema,
     durationOutput,
-    (input) => parseDuration(input.duration_string as string),
+    (input) => {
+      const p = parseDurationSchema.parse(input);
+      return parseDuration(p.duration_string);
+    },
   ),
 
   tool(
     "time_math",
-    "Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration. For diff, use operands: {start_date, end_date}. For add_days, use operands: {start_date, days}. For add_business_days, use operands: {start_date, days, country}.",
+    "Performs compound time-math operations. Dispatches to the appropriate " +
+      "sub-operation based on the 'operation' parameter. " +
+      "Operations: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.",
     timeMathSchema,
     timeMathOutput,
     (input) => {
-      const operation = input.operation as TimeMathOp;
-      let ops = input.operands as Record<string, unknown>;
+      const p = timeMathSchema.parse(input);
+      const operation = p.operation;
+      let ops = p.operands;
 
       // Defensive: models sometimes send stringified JSON as operands
       if (typeof ops === "string") {
@@ -332,45 +354,44 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "add_business_days",
-    "Adds N business days to a start date, skipping weekends and holidays.",
+    "Adds N business (working) days to a start date, skipping weekends and " +
+      "country-specific public holidays. Supports US, UK, FR, DE, and JP holidays.",
     addBusinessDaysSchema,
     businessDayOutput,
-    (input) =>
-      addBusinessDays(
-        input.start_date as string,
-        input.days as number,
-        input.country as string,
-      ),
+    (input) => {
+      const p = addBusinessDaysSchema.parse(input);
+      return addBusinessDays(p.start_date, p.days, p.country);
+    },
   ),
 
   tool(
     "count_business_days",
-    "Counts business days between two dates, skipping weekends and holidays.",
+    "Counts the number of business (working) days between two dates, " +
+      "excluding weekends and country-specific public holidays. " +
+      "The count is exclusive of the start date and inclusive of the end date.",
     countBusinessDaysSchema,
     businessDayOutput,
-    (input) =>
-      countBusinessDays(
-        input.start_date as string,
-        input.end_date as string,
-        input.country as string,
-      ),
+    (input) => {
+      const p = countBusinessDaysSchema.parse(input);
+      return countBusinessDays(p.start_date, p.end_date, p.country);
+    },
   ),
 
   // -- Estimation tools (5) --------------------------------------------------
 
   tool(
     "pert_estimate",
-    "Computes a PERT three-point estimate with expected value, standard deviation, and confidence intervals.",
+    `Calculate PERT expected duration from three-point estimates using Beta distribution.
+
+Formula: E = (O + 4M + P) / 6. Returns expected value, variance, standard deviation,
+and 95%/99% confidence bounds with urgency categorization.
+Use when estimating task duration with uncertain outcomes.`,
     pertEstimateSchema,
     pertOutput,
     (input) => {
-      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
-      const result = pertEstimate(
-        input.optimistic as number,
-        input.most_likely as number,
-        input.pessimistic as number,
-        input.unit as "hours" | "days" | "weeks" | "months",
-      );
+      const p = pertEstimateSchema.parse(input);
+      const profile = getDeveloperProfile(p.ai_native);
+      const result = pertEstimate(p.optimistic, p.most_likely, p.pessimistic, p.unit);
       if (!result.ok) return result;
       return {
         ok: true as const,
@@ -385,20 +406,25 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "cocomo_estimate",
-    "Estimates effort using a COCOMO II model adjusted for LLM-assisted workflows.",
+    `LLM-adapted COCOMO II parametric effort estimation.
+
+Replaces traditional 17 human-labor cost drivers with 5 LLM-specific factors:
+reasoning complexity, context completeness, transformation impact, iterative cycles,
+and human oversight. Returns both nominal and LLM-adjusted person-months.`,
     cocomoEstimateSchema,
     cocomoOutput,
     (input) => {
-      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
-      const rawCycles = input.iterative_cycles as number;
+      const p = cocomoEstimateSchema.parse(input);
+      const profile = getDeveloperProfile(p.ai_native);
+      const rawCycles = p.iterative_cycles;
       const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
       const result = cocomoEstimate({
-        kloc: input.kloc as number,
-        reasoningComplexity: input.reasoning_complexity as number,
-        contextCompleteness: input.context_completeness as number,
-        transformationImpact: input.transformation_impact as number,
+        kloc: p.kloc,
+        reasoningComplexity: p.reasoning_complexity,
+        contextCompleteness: p.context_completeness,
+        transformationImpact: p.transformation_impact,
         iterativeCycles,
-        humanOversight: input.human_oversight as number,
+        humanOversight: p.human_oversight,
       });
       if (!result.ok) return result;
       return {
@@ -413,16 +439,20 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "sprint_forecast",
-    "Forecasts sprints needed to clear a backlog based on historical velocity.",
+    `Forecast sprint completion date from backlog size and historical velocity.
+
+Computes average velocity from sprint history, converts story points to hours,
+and returns required sprints with pessimistic estimate based on velocity variance.`,
     sprintForecastSchema,
     sprintOutput,
     (input) => {
-      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
+      const p = sprintForecastSchema.parse(input);
+      const profile = getDeveloperProfile(p.ai_native);
       const result = sprintForecast({
-        backlogPoints: input.backlog_points as number,
-        velocityHistory: input.velocity_history as number[],
-        sprintLengthDays: input.sprint_length_days as number,
-        hoursPerSprint: input.hours_per_sprint as number,
+        backlogPoints: p.backlog_points,
+        velocityHistory: p.velocity_history,
+        sprintLengthDays: p.sprint_length_days,
+        hoursPerSprint: p.hours_per_sprint,
       });
       if (!result.ok) return result;
       return {
@@ -437,41 +467,35 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "critical_path",
-    "Computes the critical path through a task graph with merge-bias adjustment.",
+    `Compute critical path with merge-bias adjustment for project schedules.
+
+Performs forward/backward pass to identify critical tasks and slack.
+Applies merge bias: tasks with >2 predecessors get 5% duration increase per extra predecessor.`,
     criticalPathSchema,
     criticalPathOutput,
     (input) => {
-      const tasks = input.tasks as Array<{
-        name: string;
-        duration: number;
-        predecessors: string[];
-      }>;
-      return criticalPath(tasks);
+      const p = criticalPathSchema.parse(input);
+      return criticalPath(p.tasks);
     },
   ),
 
   tool(
     "monte_carlo_schedule",
-    "Runs a Monte Carlo simulation on a task list with three-point estimates.",
+    `Run Monte Carlo simulation for probabilistic schedule risk analysis.
+
+Samples task durations from triangular distributions and returns P10/P50/P80/P95
+completion estimates with identified risk events. Use seed for reproducible results.`,
     monteCarloSchema,
     monteCarloOutput,
     (input) => {
-      const rawTasks = input.tasks as Array<{
-        name: string;
-        optimistic: number;
-        most_likely: number;
-        pessimistic: number;
-        predecessors?: string[];
-      }>;
-      const tasks = rawTasks.map((t) => ({
+      const p = monteCarloSchema.parse(input);
+      const tasks = p.tasks.map((t) => ({
         name: t.name,
         optimistic: t.optimistic,
         mostLikely: t.most_likely,
         pessimistic: t.pessimistic,
       }));
-      const iterations = (input.iterations as number) ?? 10000;
-      const seed = input.seed as number | undefined;
-      return { ok: true as const, data: monteCarloSim(tasks, iterations, seed) };
+      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed) };
     },
   ),
 
@@ -479,33 +503,37 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "reference_class_estimate",
-    "Estimates effort using reference-class forecasting from historical data.",
+    `Data-driven estimate using reference class forecasting.
+
+Applies historical correction factors based on actual-vs-estimated ratios.
+When no historical data exists, uses industry averages (1.3-2.2x for software tasks).
+Prioritize this over algorithmic models when historical data is available.`,
     referenceClassEstimateSchema,
     referenceClassOutput,
     (input) => {
-      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
-      const taskType = input.task_type as
-        | "feature"
-        | "bugfix"
-        | "refactor"
-        | "migration"
-        | "infrastructure"
-        | "documentation"
-        | "testing"
-        | "design";
+      const p = referenceClassEstimateSchema.parse(input);
+      const profile = getDeveloperProfile(p.ai_native);
       const records = getCalibrationData(
-        input.team_id as string | undefined,
-        taskType,
+        p.team_id,
+        p.task_type,
         90,
         "reference_class_estimate",
       );
-      const result = referenceClassEstimate(records, taskType, input.complexity as number);
+      const result = referenceClassEstimate(records, p.task_type, p.complexity);
       return {
         ok: true as const,
         data: {
           ...result,
-          developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+          developerProfile: {
+            mode: profile.mode,
+            estimationMape: profile.estimationMape,
+            underestimationBias: profile.underestimationBias,
+            correctionFactor: profile.correctionFactor,
+          },
           adjustedEstimate: Math.round(result.correctedEstimate * profile.correctionFactor * 10) / 10,
+          note: records.length >= 5
+            ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
+            : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
         },
       };
     },
@@ -513,21 +541,26 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "calibrate_estimates",
-    "Calibrates estimation accuracy using historical team data.",
+    `Recalculate team-specific correction factors from historical estimation data.
+
+Compares estimated vs actual hours to compute a correction multiplier.
+Requires PM system integration for best results. Returns recommendations
+for improving estimation accuracy.`,
     calibrateEstimatesSchema,
     calibrateOutput,
     (input) => {
+      const p = calibrateEstimatesSchema.parse(input);
       const records = getCalibrationData(
-        input.team_id as string,
+        p.team_id,
         undefined,
-        input.period_days as number,
+        p.period_days,
       );
       return {
         ok: true as const,
         data: calibrateEstimates(
-          input.team_id as string,
-          input.period_days as number,
-          input.minimum_samples as number,
+          p.team_id,
+          p.period_days,
+          p.minimum_samples,
           records,
         ),
       };
@@ -536,114 +569,154 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "token_time_bridge",
-    "Estimates wall-clock time from token count and LLM model parameters.",
+    `Map LLM token budgets to estimated wall-clock time.
+
+Uses model-specific calibration data (tokens/second, reasoning overhead,
+tool-call latency) to estimate how long a task will actually take.
+Bridges the gap between token-space (how agents reason) and time-space (what humans need).`,
     tokenTimeBridgeSchema,
     tokenTimeOutput,
-    (input) => ({
-      ok: true as const,
-      data: tokenTimeBridge({
-        tokens: input.tokens as number,
-        model: input.model as string,
-        toolCalls: (input.tool_calls as number) ?? 0,
-        reasoningDepth: (input.reasoning_depth as "shallow" | "moderate" | "deep") ?? "moderate",
-      }),
-    }),
+    (input) => {
+      const p = tokenTimeBridgeSchema.parse(input);
+      return {
+        ok: true as const,
+        data: tokenTimeBridge({
+          tokens: p.tokens,
+          model: p.model,
+          toolCalls: p.tool_calls,
+          reasoningDepth: p.reasoning_depth,
+        }),
+      };
+    },
   ),
 
   // -- Cost & Comparison tools (2) -------------------------------------------
 
   tool(
     "token_cost_estimate",
-    "Estimates wall-clock time AND dollar cost from token count and LLM model parameters.",
+    `Estimate wall-clock time AND dollar cost for LLM token usage.
+
+Combines token-to-time mapping with model-specific pricing data.
+Returns cost breakdown (input/output/overhead) alongside the time estimate.`,
     tokenCostEstimateSchema,
     tokenTimeOutput,
-    (input) => ({
-      ok: true as const,
-      data: tokenCostEstimate({
-        tokens: input.tokens as number,
-        model: input.model as string,
-        toolCalls: (input.tool_calls as number) ?? 0,
-        reasoningDepth: (input.reasoning_depth as "shallow" | "moderate" | "deep") ?? "moderate",
-      }),
-    }),
+    (input) => {
+      const p = tokenCostEstimateSchema.parse(input);
+      return {
+        ok: true as const,
+        data: tokenCostEstimate({
+          tokens: p.tokens,
+          model: p.model,
+          toolCalls: p.tool_calls,
+          reasoningDepth: p.reasoning_depth,
+        }),
+      };
+    },
   ),
 
   tool(
     "compare_models",
-    "Compares all LLM models side-by-side for a given token budget, ranked by cost or time.",
+    `Compare all LLM models side-by-side for a given token budget.
+
+Ranks models by estimated cost or time. Shows quality tier for each model.
+Use when choosing which model to use for a task.`,
     compareModelsSchema,
     { type: "object", properties: { tokens: { type: "number" }, models: { type: "array" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
-    (input) => ({
-      ok: true as const,
-      data: compareModels({
-        tokens: input.tokens as number,
-        toolCalls: (input.tool_calls as number) ?? 0,
-        reasoningDepth: (input.reasoning_depth as "shallow" | "moderate" | "deep") ?? "moderate",
-        sortBy: (input.sort_by as "cost" | "time") ?? "cost",
-      }),
-    }),
+    (input) => {
+      const p = compareModelsSchema.parse(input);
+      return {
+        ok: true as const,
+        data: compareModels({
+          tokens: p.tokens,
+          toolCalls: p.tool_calls,
+          reasoningDepth: p.reasoning_depth,
+          sortBy: p.sort_by,
+        }),
+      };
+    },
   ),
 
   // -- Analytics & Risk tools (3) --------------------------------------------
 
   tool(
     "accuracy_trend",
-    "Tracks estimation accuracy over time with sliding-window MAPE, compared to industry baselines.",
+    `Track estimation accuracy improvement over time.
+
+Computes sliding-window MAPE and compares against industry baseline (25%).
+Shows whether your estimates are improving, degrading, or stable.
+Industry research shows estimation accuracy does NOT improve with experience (Cao 2022) — self-correcting systems like Epoch can buck this trend.`,
     accuracyTrendSchema,
     calibrateOutput,
-    (input) => ({
-      ok: true as const,
-      data: computeAccuracyTrend({
-        teamId: input.team_id as string | undefined,
-        windowSize: (input.window_size as number) ?? 50,
-      }),
-    }),
+    (input) => {
+      const p = accuracyTrendSchema.parse(input);
+      return {
+        ok: true as const,
+        data: computeAccuracyTrend({
+          teamId: p.team_id,
+          windowSize: p.window_size,
+        }),
+      };
+    },
   ),
 
   tool(
     "schedule_risk",
-    "Assesses schedule risk using historical accuracy data to compute confidence intervals.",
+    `Assess schedule risk for an estimate using historical accuracy data.
+
+Computes confidence intervals (p50/p80/p95) based on your team's MAPE.
+Returns risk level and actionable recommendations.
+Uses industry baseline (25% MAPE) when no historical data is available.`,
     scheduleRiskSchema,
     { type: "object", properties: { estimatedHours: { type: "number" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, recommendation: { type: "string" } } } satisfies Record<string, unknown>,
-    (input) => ({
-      ok: true as const,
-      data: scheduleRisk({
-        estimatedHours: input.estimated_hours as number,
-        taskType: input.task_type as TaskType | undefined,
-        teamId: input.team_id as string | undefined,
-      }),
-    }),
+    (input) => {
+      const p = scheduleRiskSchema.parse(input);
+      return {
+        ok: true as const,
+        data: scheduleRisk({
+          estimatedHours: p.estimated_hours,
+          taskType: p.task_type,
+          teamId: p.team_id,
+        }),
+      };
+    },
   ),
 
   tool(
     "cocomo_validate",
-    "Validates COCOMO estimation model against 195 real historical projects.",
+    `Validate COCOMO estimation model against 195 real historical projects.
+
+Runs the COCOMO Basic formula against projects from NASA93, COCOMO81, Albrecht, and Kemerer datasets.
+Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjustments.`,
     cocomoValidateSchema,
     { type: "object", properties: { projectsEvaluated: { type: "number" }, mape: { type: "number" }, bias: { type: "number" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
-    (input) => cocomoValidate({
-      datasetFilter: input.dataset_filter as string[] | undefined,
-    }),
+    (input) => {
+      const p = cocomoValidateSchema.parse(input);
+      return cocomoValidate({
+        datasetFilter: p.dataset_filter,
+      });
+    },
   ),
 
   // -- Feedback tools (2) ----------------------------------------------------
 
   tool(
     "record_actual",
-    "Records actual hours for a previous estimate to improve future estimation accuracy.",
-    z.object({
-      estimate_id: z.string().describe("ID of the estimate to update."),
-      actual_hours: z.number().positive().describe("Actual hours spent."),
-      notes: z.string().optional().describe("Optional context."),
-    }),
+    `Submit actual hours for a previous estimate to improve future accuracy.
+
+Pairs with any estimation tool. The estimate_id comes from the estimate response.
+Actuals feed into the self-improvement loop — after enough samples, correction factors
+update automatically to reduce estimation bias.`,
+    recordActualSchema,
     { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
-      const recorded = recordActual(input.estimate_id as string, input.actual_hours as number, input.notes as string | undefined);
+      const p = recordActualSchema.parse(input);
+      const recorded = recordActual(p.estimate_id, p.actual_hours, p.notes);
       return {
         ok: true as const,
         data: {
           recorded,
-          estimate_id: input.estimate_id,
-          actual_hours: input.actual_hours,
+          estimate_id: p.estimate_id,
+          actual_hours: p.actual_hours,
           message: recorded
             ? "Actual recorded. Correction factors update after more feedback accumulates."
             : "Failed to record actual — feedback storage unavailable.",
@@ -654,13 +727,15 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "get_pending_estimates",
-    "Lists recent estimates that have not yet received actual-hour feedback.",
-    z.object({
-      limit: z.number().int().positive().max(100).default(20).describe("Max estimates to return."),
-    }),
+    `List recent estimates that have not yet received actual-hour feedback.
+
+Returns estimates awaiting actuals so you can submit feedback via record_actual.
+Use this to close the estimation feedback loop and improve accuracy over time.`,
+    getPendingEstimatesSchema,
     { type: "object", properties: { count: { type: "number" }, estimates: { type: "array" } } } satisfies Record<string, unknown>,
     (input) => {
-      const pending = getPendingEstimates((input.limit as number) ?? 20);
+      const p = getPendingEstimatesSchema.parse(input);
+      const pending = getPendingEstimates(p.limit);
       return {
         ok: true as const,
         data: {

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Epoch MCP Server — Zod Schemas for all 11 MCP Tools
+// Epoch MCP Server — Zod Schemas for MCP Tools
 // KyaniteLabs | Time Estimation for LLMs
 //
 // Patterns: .describe() on every field, branded IDs, discriminated unions,
@@ -10,23 +10,9 @@ import { z } from "zod";
 
 // ---- Shared enum schemas --------------------------------------------------
 
-export const urgencyCategoryEnum = z
-  .enum(["short", "medium", "long"])
-  .describe(
-    "Urgency bucket derived from the estimate magnitude: short (<1 day), medium (1-30 days), long (>30 days)."
-  );
-
-export const confidenceLevelEnum = z
-  .enum(["likely", "optimistic", "pessimistic"])
-  .describe(
-    "Qualitative confidence attached to the estimate or forecast."
-  );
-
 export const timeUnitEnum = z
   .enum(["hours", "days", "weeks", "months"])
   .describe("Time unit used throughout the estimation result.");
-
-
 
 export const taskTypeEnum = z
   .enum([
@@ -71,19 +57,6 @@ export const reasoningDepthEnum = z
 /** Brand a string to prevent accidental ID interchange. */
 const brandedString = (label: string) =>
   z.string().describe(`${label} identifier`).brand<string>();
-
-// ---- Tool 1: temporalStatus -----------------------------------------------
-
-export const temporalStatusSchema = z.object({
-  timezone: z
-    .string()
-    .describe(
-      'IANA timezone identifier (e.g. "America/New_York"). Defaults to "UTC".'
-    )
-    .default("UTC"),
-});
-
-export type TemporalStatusInput = z.infer<typeof temporalStatusSchema>;
 
 // ---- Tool 2: timeMath -----------------------------------------------------
 
@@ -372,146 +345,6 @@ export const tokenTimeBridgeSchema = z.object({
 });
 
 export type TokenTimeBridgeInput = z.infer<typeof tokenTimeBridgeSchema>;
-
-// ---- Tool 12 (generic): estimationInput for registry dispatch -------------
-
-// ---- Error & Result schemas ------------------------------------------------
-
-export const toolErrorSchema = z.object({
-  ok: z.literal(false),
-  error: z.object({
-    message: z
-      .string()
-      .describe("Human-readable explanation of what went wrong."),
-    retry_hint: z
-      .string()
-      .describe("Suggested action the caller can take before retrying.")
-      .optional(),
-  }),
-});
-
-export type ToolErrorSchemaType = z.infer<typeof toolErrorSchema>;
-
-/**
- * Creates a discriminated-union result schema for a given data shape.
- *
- * @example
- * ```ts
- * const pertResultSchema = makeResultSchema(pertDataSchema);
- * // z.discriminatedUnion("ok", [
- * //   z.object({ ok: z.literal(true), data: pertDataSchema }),
- * //   z.object({ ok: z.literal(false), error: ... }),
- * // ])
- * ```
- */
-export function makeResultSchema<T>(dataSchema: z.ZodType<T>) {
-  return z.discriminatedUnion("ok", [
-    z.object({
-      ok: z.literal(true),
-      data: dataSchema,
-    }),
-    z.object({
-      ok: z.literal(false),
-      error: z.object({
-        message: z.string(),
-        retry_hint: z.string().optional(),
-      }),
-    }),
-  ]);
-}
-
-// ---- Inferred result schemas (for tool response validation) ----------------
-
-export const temporalResultDataSchema = z.object({
-  iso: z.string().describe("ISO-8601 timestamp."),
-  humanReadable: z.string().describe("Human-readable date/time string."),
-  timezone: z.string().describe("IANA timezone identifier."),
-  utcOffset: z.string().describe("UTC offset string (e.g. '+05:30')."),
-});
-
-export const durationResultDataSchema = z.object({
-  input: z.string().describe("Original input string."),
-  totalSeconds: z.number().describe("Duration in seconds."),
-  humanReadable: z.string().describe("Human-readable duration."),
-});
-
-export const businessDayResultDataSchema = z.object({
-  startDate: z.string().describe("ISO start date."),
-  endDate: z.string().describe("ISO end date."),
-  businessDays: z.number().int().nonnegative().describe("Count of business days."),
-  countryCode: z.string().describe("ISO-3166-1-alpha-2 country code."),
-});
-
-export const pertResultDataSchema = z.object({
-  optimistic: z.number().positive(),
-  mostLikely: z.number().positive(),
-  pessimistic: z.number().positive(),
-  expected: z.number().positive(),
-  variance: z.number().nonnegative(),
-  stdDeviation: z.number().nonnegative(),
-  confidence95: z.tuple([z.number(), z.number()]),
-  confidence99: z.tuple([z.number(), z.number()]),
-  unit: timeUnitEnum,
-  urgencyCategory: urgencyCategoryEnum,
-});
-
-export const cocomoResultDataSchema = z.object({
-  kloc: z.number().positive(),
-  personMonthsNominal: z.number().positive(),
-  personMonthsLlmAdjusted: z.number().positive(),
-  effortMultipliers: z.record(z.string(), z.number()),
-  assumptions: z.array(z.string()),
-});
-
-export const sprintForecastResultDataSchema = z.object({
-  backlogPoints: z.number().positive(),
-  averageVelocity: z.number().positive(),
-  requiredSprints: z.number().positive(),
-  pessimisticSprints: z.number().positive(),
-  hoursPerPoint: z.number().positive(),
-  totalHours: z.number().positive(),
-  completionDays: z.number().positive(),
-  sprintLengthDays: z.number().int().positive(),
-});
-
-export const tokenTimeMappingDataSchema = z.object({
-  tokens: z.number().int().positive(),
-  model: z.string(),
-  estimatedSeconds: z.number().positive(),
-  estimatedMinutes: z.number().positive(),
-  confidence: confidenceLevelEnum,
-  breakdown: z.object({
-    promptTokens: z.number().int().nonnegative(),
-    completionTokens: z.number().int().nonnegative(),
-    toolOverheadSeconds: z.number().nonnegative(),
-  }),
-});
-
-export const monteCarloResultDataSchema = z.object({
-  p10: z.string(),
-  p50: z.string(),
-  p80: z.string(),
-  p95: z.string(),
-  criticalPathProbability: z.number().min(0).max(1),
-  riskEvents: z.array(
-    z.object({
-      description: z.string(),
-      probability: z.number().min(0).max(1),
-      impactDays: z.number().nonnegative(),
-    })
-  ),
-});
-
-// ---- Discriminated result schemas via makeResultSchema ---------------------
-
-export const temporalResultSchema = makeResultSchema(temporalResultDataSchema);
-export const durationResultSchema = makeResultSchema(durationResultDataSchema);
-export const businessDayResultSchema = makeResultSchema(businessDayResultDataSchema);
-export const pertResultSchema = makeResultSchema(pertResultDataSchema);
-export const cocomoResultSchema = makeResultSchema(cocomoResultDataSchema);
-export const sprintForecastResultSchema = makeResultSchema(sprintForecastResultDataSchema);
-export const tokenTimeResultSchema = makeResultSchema(tokenTimeMappingDataSchema);
-export const monteCarloResultSchema = makeResultSchema(monteCarloResultDataSchema);
 
 // ---- Tool 15: tokenCostEstimate -------------------------------------------
 

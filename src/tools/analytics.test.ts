@@ -1,207 +1,185 @@
-import { describe, it, expect, vi } from "vitest";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerAnalyticsTools } from "./analytics.js";
+import { describe, it, expect } from "vitest";
+import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
 
 // ---------------------------------------------------------------------------
-// Tool Registration Tests — Layer 4-5 (Analytics)
+// Tool Registry Tests — Layer 4-5 (Analytics)
 // ---------------------------------------------------------------------------
 
-type MockHandler = (args: Record<string, unknown>) => Promise<unknown>;
-
-function createMockServer(): {
-  server: McpServer;
-  tools: Array<{ name: string; handler: MockHandler }>;
-} {
-  const tools: Array<{ name: string; handler: MockHandler }> = [];
-
-  const server = {
-    tool: vi.fn((name: string, _desc: string, _schema: unknown, handlerOrAnn: unknown, maybeHandler?: unknown) => {
-      const fn = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
-      tools.push({ name, handler: (fn ?? handlerOrAnn) as MockHandler });
-    }),
-  } as unknown as McpServer;
-
-  return { server, tools };
-}
-
-describe("registerAnalyticsTools", () => {
+describe("analytics tools via registry", () => {
   it("registers 7 analytics tools", () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-    expect(tools.length).toBe(7);
-
-    const names = tools.map(t => t.name);
-    expect(names).toContain("reference_class_estimate");
-    expect(names).toContain("calibrate_estimates");
-    expect(names).toContain("token_time_bridge");
+    const names = [
+      "reference_class_estimate",
+      "calibrate_estimates",
+      "token_time_bridge",
+      "token_cost_estimate",
+      "compare_models",
+      "accuracy_trend",
+      "schedule_risk",
+    ];
+    for (const name of names) {
+      expect(TOOL_REGISTRY.has(name)).toBe(true);
+    }
   });
 
-  it("reference_class_estimate returns estimate", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const ref = tools.find(t => t.name === "reference_class_estimate")!;
-    const result = await ref.handler({
+  it("reference_class_estimate returns estimate", () => {
+    const tool = TOOL_REGISTRY.get("reference_class_estimate")!;
+    const result = tool.handler({
       task_type: "feature",
       complexity: 3,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const content = response.content[0]!;
-    const data = JSON.parse(content.text);
-    expect(data.rawEstimate).toBeGreaterThan(0);
-    expect(data.correctedEstimate).toBeGreaterThan(0);
-    expect(data.correctionFactor).toBeGreaterThan(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.rawEstimate as number).toBeGreaterThan(0);
+      expect(data.correctedEstimate as number).toBeGreaterThan(0);
+      expect(data.correctionFactor as number).toBeGreaterThan(1);
+    }
   });
 
-  it("reference_class_estimate with team_id returns note", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const ref = tools.find(t => t.name === "reference_class_estimate")!;
-    const result = await ref.handler({
+  it("reference_class_estimate with team_id returns note", () => {
+    const tool = TOOL_REGISTRY.get("reference_class_estimate")!;
+    const result = tool.handler({
       task_type: "bugfix",
       complexity: 2,
       team_id: "team-alpha",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.note).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.data as Record<string, unknown>).note).toBeDefined();
+    }
   });
 
-  it("calibrate_estimates returns stub data", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const cal = tools.find(t => t.name === "calibrate_estimates")!;
-    const result = await cal.handler({
+  it("calibrate_estimates returns stub data", () => {
+    const tool = TOOL_REGISTRY.get("calibrate_estimates")!;
+    const result = tool.handler({
       team_id: "team-a",
       period_days: 90,
       minimum_samples: 10,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.correction_factor).toBeGreaterThan(0);
-    expect(data.recommendations.length).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.correctionFactor as number).toBeGreaterThan(0);
+      expect((data.recommendations as unknown[]).length).toBeGreaterThan(0);
+    }
   });
 
-  it("token_time_bridge estimates wall-clock time", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const bridge = tools.find(t => t.name === "token_time_bridge")!;
-    const result = await bridge.handler({
+  it("token_time_bridge estimates wall-clock time", () => {
+    const tool = TOOL_REGISTRY.get("token_time_bridge")!;
+    const result = tool.handler({
       tokens: 50000,
       model: "claude-sonnet-4-20250514",
       tool_calls: 10,
       reasoning_depth: "deep",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.estimatedSeconds).toBeGreaterThan(0);
-    expect(data.estimatedMinutes).toBeGreaterThan(0);
-    expect(data.confidence).toBe("likely");
-    expect(data.model).toBe("claude-sonnet-4-20250514");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.estimatedSeconds as number).toBeGreaterThan(0);
+      expect(data.estimatedMinutes as number).toBeGreaterThan(0);
+      expect(data.confidence).toBe("likely");
+      expect(data.model).toBe("claude-sonnet-4-20250514");
+    }
   });
 
-  it("token_time_bridge handles unknown model", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const bridge = tools.find(t => t.name === "token_time_bridge")!;
-    const result = await bridge.handler({
+  it("token_time_bridge handles unknown model", () => {
+    const tool = TOOL_REGISTRY.get("token_time_bridge")!;
+    const result = tool.handler({
       tokens: 1000,
       model: "gpt-4o-mini",
       tool_calls: 0,
       reasoning_depth: "shallow",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.estimatedSeconds).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.data as Record<string, unknown>).estimatedSeconds as number).toBeGreaterThan(0);
+    }
   });
 
-  it("compare_models returns model comparison", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const compare = tools.find(t => t.name === "compare_models")!;
-    const result = await compare.handler({
+  it("compare_models returns model comparison", () => {
+    const tool = TOOL_REGISTRY.get("compare_models")!;
+    const result = tool.handler({
       tokens: 50000,
       tool_calls: 5,
       reasoning_depth: "moderate",
       sort_by: "cost",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.models).toBeDefined();
-    expect(Array.isArray(data.models)).toBe(true);
-    expect(data.models.length).toBeGreaterThan(0);
-    expect(data.models[0]).toHaveProperty("model");
-    expect(data.models[0]).toHaveProperty("estimatedSeconds");
-    expect(data.models[0]).toHaveProperty("estimatedCost");
-    expect(data.models[0]).toHaveProperty("qualityTier");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.models).toBeDefined();
+      expect(Array.isArray(data.models)).toBe(true);
+      const models = data.models as Array<Record<string, unknown>>;
+      expect(models.length).toBeGreaterThan(0);
+      expect(models[0]).toHaveProperty("model");
+      expect(models[0]).toHaveProperty("estimatedSeconds");
+      expect(models[0]).toHaveProperty("estimatedCost");
+      expect(models[0]).toHaveProperty("qualityTier");
+    }
   });
 
-  it("accuracy_trend returns trend data", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const trend = tools.find(t => t.name === "accuracy_trend")!;
-    const result = await trend.handler({
+  it("accuracy_trend returns trend data", () => {
+    const tool = TOOL_REGISTRY.get("accuracy_trend")!;
+    const result = tool.handler({
       window_size: 50,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.overallTrend).toBeDefined();
-    expect(data.industryBaselineMape).toBeGreaterThan(0);
-    expect(data.totalEstimates).toBeGreaterThanOrEqual(0);
-    expect(data.humanReadable).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.overallTrend).toBeDefined();
+      expect(data.industryBaselineMape as number).toBeGreaterThan(0);
+      expect(data.totalEstimates as number).toBeGreaterThanOrEqual(0);
+      expect(data.humanReadable).toBeDefined();
+    }
   });
 
-  it("accuracy_trend with team_id returns team data", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const trend = tools.find(t => t.name === "accuracy_trend")!;
-    const result = await trend.handler({
+  it("accuracy_trend with team_id returns team data", () => {
+    const tool = TOOL_REGISTRY.get("accuracy_trend")!;
+    const result = tool.handler({
       team_id: "team-bravo",
       window_size: 20,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.overallTrend).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.data as Record<string, unknown>).overallTrend).toBeDefined();
+    }
   });
 
-  it("schedule_risk returns risk assessment", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const risk = tools.find(t => t.name === "schedule_risk")!;
-    const result = await risk.handler({
+  it("schedule_risk returns risk assessment", () => {
+    const tool = TOOL_REGISTRY.get("schedule_risk")!;
+    const result = tool.handler({
       estimated_hours: 40,
       task_type: "feature",
       team_id: "team-alpha",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.riskLevel).toBeDefined();
-    expect(data.confidenceIntervals.p50).toBeGreaterThan(0);
-    expect(data.confidenceIntervals.p80).toBeGreaterThanOrEqual(data.confidenceIntervals.p50);
-    expect(data.confidenceIntervals.p95).toBeGreaterThanOrEqual(data.confidenceIntervals.p80);
-    expect(data.historicalAccuracy.mape).toBeGreaterThan(0);
-    expect(data.recommendation).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.riskLevel).toBeDefined();
+      const ci = data.confidenceIntervals as Record<string, number>;
+      const p50 = ci.p50 as number;
+      const p80 = ci.p80 as number;
+      const p95 = ci.p95 as number;
+      expect(p50).toBeGreaterThan(0);
+      expect(p80).toBeGreaterThanOrEqual(p50);
+      expect(p95).toBeGreaterThanOrEqual(p80);
+      const hist = data.historicalAccuracy as Record<string, unknown>;
+      expect(hist.mape as number).toBeGreaterThan(0);
+      expect(data.recommendation).toBeDefined();
+    }
   });
 
-  it("schedule_risk with minimal inputs returns assessment", async () => {
-    const { server, tools } = createMockServer();
-    registerAnalyticsTools(server);
-
-    const risk = tools.find(t => t.name === "schedule_risk")!;
-    const result = await risk.handler({
+  it("schedule_risk with minimal inputs returns assessment", () => {
+    const tool = TOOL_REGISTRY.get("schedule_risk")!;
+    const result = tool.handler({
       estimated_hours: 8,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.confidenceIntervals.p50).toBeGreaterThan(0);
-    expect(data.riskLevel).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      const ci = data.confidenceIntervals as Record<string, number>;
+      expect(ci.p50).toBeGreaterThan(0);
+      expect(data.riskLevel).toBeDefined();
+    }
   });
 });

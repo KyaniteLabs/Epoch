@@ -1,9 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { registerTemporalTools } from "../tools/temporal.js";
-import { registerEstimationTools } from "../tools/estimation.js";
-import { registerAnalyticsTools } from "../tools/analytics.js";
-import { registerFeedbackTools } from "../tools/feedback.js";
+import { registerAllMcpTools } from "../dispatcher/mcp-adapter.js";
 import { getVersion } from "../version.js";
 
 export function startMcpServer(): Promise<void> {
@@ -12,10 +9,7 @@ export function startMcpServer(): Promise<void> {
     version: getVersion(),
   });
 
-  registerTemporalTools(server);
-  registerEstimationTools(server);
-  registerAnalyticsTools(server);
-  registerFeedbackTools(server);
+  registerAllMcpTools(server);
 
   const transport = new StdioServerTransport();
   return server.connect(transport);

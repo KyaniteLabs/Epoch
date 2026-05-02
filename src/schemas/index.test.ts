@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  temporalStatusSchema,
   timeMathSchema,
   pertEstimateSchema,
   cocomoEstimateSchema,
@@ -15,9 +14,6 @@ import {
   accuracyTrendSchema,
   scheduleRiskSchema,
   cocomoValidateSchema,
-  makeResultSchema,
-  temporalResultDataSchema,
-  toolErrorSchema,
   timeUnitEnum,
   taskTypeEnum,
   llmModelEnum,
@@ -41,24 +37,6 @@ describe("enum schemas", () => {
 
   it("reasoningDepthEnum rejects invalid depth", () => {
     expect(reasoningDepthEnum.safeParse("extreme").success).toBe(false);
-  });
-});
-
-// ---- temporalStatus ----
-
-describe("temporalStatusSchema", () => {
-  it("accepts valid timezone", () => {
-    const r = temporalStatusSchema.safeParse({ timezone: "America/New_York" });
-    expect(r.success).toBe(true);
-  });
-
-  it("applies UTC default", () => {
-    const r = temporalStatusSchema.safeParse({});
-    expect(r.success && r.data.timezone).toBe("UTC");
-  });
-
-  it("rejects non-string timezone", () => {
-    expect(temporalStatusSchema.safeParse({ timezone: 42 }).success).toBe(false);
   });
 });
 
@@ -423,76 +401,5 @@ describe("cocomoValidateSchema", () => {
 
   it("rejects non-array dataset_filter", () => {
     expect(cocomoValidateSchema.safeParse({ dataset_filter: "COCOMO81" }).success).toBe(false);
-  });
-});
-
-// ---- makeResultSchema ----
-
-describe("makeResultSchema", () => {
-  const schema = makeResultSchema(temporalResultDataSchema);
-
-  it("accepts success result", () => {
-    expect(schema.safeParse({
-      ok: true,
-      data: {
-        iso: "2026-01-01T00:00:00.000Z",
-        humanReadable: "January 1, 2026",
-        timezone: "UTC",
-        utcOffset: "+00:00",
-      },
-    }).success).toBe(true);
-  });
-
-  it("accepts error result", () => {
-    expect(schema.safeParse({
-      ok: false,
-      error: { message: "something went wrong", retry_hint: "try again" },
-    }).success).toBe(true);
-  });
-
-  it("accepts error result without retry_hint", () => {
-    expect(schema.safeParse({
-      ok: false,
-      error: { message: "fatal" },
-    }).success).toBe(true);
-  });
-
-  it("rejects result with ok not boolean literal", () => {
-    expect(schema.safeParse({
-      ok: "true",
-      data: {},
-    }).success).toBe(false);
-  });
-
-  it("rejects success result with missing data fields", () => {
-    expect(schema.safeParse({
-      ok: true,
-      data: { iso: "2026-01-01" },
-    }).success).toBe(false);
-  });
-});
-
-// ---- toolErrorSchema ----
-
-describe("toolErrorSchema", () => {
-  it("accepts valid error", () => {
-    expect(toolErrorSchema.safeParse({
-      ok: false,
-      error: { message: "bad input" },
-    }).success).toBe(true);
-  });
-
-  it("accepts error with retry_hint", () => {
-    expect(toolErrorSchema.safeParse({
-      ok: false,
-      error: { message: "bad input", retry_hint: "check your values" },
-    }).success).toBe(true);
-  });
-
-  it("rejects error without message", () => {
-    expect(toolErrorSchema.safeParse({
-      ok: false,
-      error: {},
-    }).success).toBe(false);
   });
 });

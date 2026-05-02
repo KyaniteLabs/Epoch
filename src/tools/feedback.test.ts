@@ -1,110 +1,78 @@
 import { describe, it, expect, vi } from "vitest";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 vi.mock("../lib/feedback.js", () => ({
   recordActual: vi.fn(() => true),
   getPendingEstimates: vi.fn(() => []),
 }));
 
-import { registerFeedbackTools } from "./feedback.js";
+import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
 
 // ---------------------------------------------------------------------------
-// Tool Registration Tests — Feedback (record_actual, get_pending_estimates)
+// Tool Registry Tests — Feedback (record_actual, get_pending_estimates)
 // ---------------------------------------------------------------------------
 
-type MockHandler = (args: Record<string, unknown>) => Promise<unknown>;
-
-function createMockServer(): {
-  server: McpServer;
-  tools: Array<{ name: string; handler: MockHandler }>;
-} {
-  const tools: Array<{ name: string; handler: MockHandler }> = [];
-
-  const server = {
-    tool: vi.fn((name: string, _desc: string, _schema: unknown, handlerOrAnn: unknown, maybeHandler?: unknown) => {
-      const fn = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
-      tools.push({ name, handler: (fn ?? handlerOrAnn) as MockHandler });
-    }),
-  } as unknown as McpServer;
-
-  return { server, tools };
-}
-
-describe("registerFeedbackTools", () => {
+describe("feedback tools via registry", () => {
   it("registers 2 feedback tools", () => {
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-    expect(tools.length).toBe(2);
-
-    const names = tools.map(t => t.name);
-    expect(names).toContain("record_actual");
-    expect(names).toContain("get_pending_estimates");
+    expect(TOOL_REGISTRY.has("record_actual")).toBe(true);
+    expect(TOOL_REGISTRY.has("get_pending_estimates")).toBe(true);
   });
 
   // ---- record_actual ----
 
-  it("record_actual returns recorded true on success", async () => {
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-
-    const rec = tools.find(t => t.name === "record_actual")!;
-    const result = await rec.handler({
+  it("record_actual returns recorded true on success", () => {
+    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const result = tool.handler({
       estimate_id: "abc-123",
       actual_hours: 5.5,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.recorded).toBe(true);
-    expect(data.estimate_id).toBe("abc-123");
-    expect(data.actual_hours).toBe(5.5);
-    expect(data.message).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("recorded", true);
+      expect(result.data).toHaveProperty("estimate_id", "abc-123");
+      expect(result.data).toHaveProperty("actual_hours", 5.5);
+      expect((result.data as Record<string, unknown>).message).toBeDefined();
+    }
   });
 
-  it("record_actual passes optional notes", async () => {
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-
-    const rec = tools.find(t => t.name === "record_actual")!;
-    const result = await rec.handler({
+  it("record_actual passes optional notes", () => {
+    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const result = tool.handler({
       estimate_id: "xyz-789",
       actual_hours: 3,
       notes: "Scope creep added extra work",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.recorded).toBe(true);
-    expect(data.estimate_id).toBe("xyz-789");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("recorded", true);
+      expect(result.data).toHaveProperty("estimate_id", "xyz-789");
+    }
   });
 
   it("record_actual returns recorded false when lib returns false", async () => {
     const { recordActual } = await import("../lib/feedback.js");
     vi.mocked(recordActual).mockReturnValueOnce(false);
 
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-
-    const rec = tools.find(t => t.name === "record_actual")!;
-    const result = await rec.handler({
+    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const result = tool.handler({
       estimate_id: "fail-case",
       actual_hours: 1,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.recorded).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("recorded", false);
+    }
   });
 
   // ---- get_pending_estimates ----
 
-  it("get_pending_estimates returns empty list", async () => {
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-
-    const pend = tools.find(t => t.name === "get_pending_estimates")!;
-    const result = await pend.handler({ limit: 20 });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.count).toBe(0);
-    expect(data.estimates).toEqual([]);
+  it("get_pending_estimates returns empty list", () => {
+    const tool = TOOL_REGISTRY.get("get_pending_estimates")!;
+    const result = tool.handler({ limit: 20 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("count", 0);
+      expect(result.data).toHaveProperty("estimates", []);
+    }
   });
 
   it("get_pending_estimates returns pending estimates", async () => {
@@ -114,16 +82,15 @@ describe("registerFeedbackTools", () => {
       { id: "e2", tool: "cocomo_estimate", inputs: {}, outputs: {}, estimatedAt: "2025-01-02T00:00:00Z", hasActual: false },
     ]);
 
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-
-    const pend = tools.find(t => t.name === "get_pending_estimates")!;
-    const result = await pend.handler({ limit: 10 });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.count).toBe(2);
-    expect(data.estimates[0]!.id).toBe("e1");
-    expect(data.estimates[1]!.id).toBe("e2");
+    const tool = TOOL_REGISTRY.get("get_pending_estimates")!;
+    const result = tool.handler({ limit: 10 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("count", 2);
+      const estimates = (result.data as Record<string, unknown>).estimates as Array<Record<string, unknown>>;
+      expect(estimates[0]!.id).toBe("e1");
+      expect(estimates[1]!.id).toBe("e2");
+    }
   });
 
   it("get_pending_estimates uses default limit", async () => {
@@ -133,10 +100,7 @@ describe("registerFeedbackTools", () => {
       return [];
     });
 
-    const { server, tools } = createMockServer();
-    registerFeedbackTools(server);
-
-    const pend = tools.find(t => t.name === "get_pending_estimates")!;
-    await pend.handler({ limit: 20 });
+    const tool = TOOL_REGISTRY.get("get_pending_estimates")!;
+    tool.handler({ limit: 20 });
   });
 });

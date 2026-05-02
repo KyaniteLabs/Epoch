@@ -1,81 +1,54 @@
-import { describe, it, expect, vi } from "vitest";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerEstimationTools } from "./estimation.js";
+import { describe, it, expect } from "vitest";
+import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
 
 // ---------------------------------------------------------------------------
-// Tool Registration Tests — Layer 3 (Estimation)
+// Tool Registry Tests — Layer 3 (Estimation)
 // ---------------------------------------------------------------------------
 
-type MockHandler = (args: Record<string, unknown>) => Promise<unknown>;
-
-function createMockServer(): {
-  server: McpServer;
-  tools: Array<{ name: string; handler: MockHandler }>;
-} {
-  const tools: Array<{ name: string; handler: MockHandler }> = [];
-
-  const server = {
-    tool: vi.fn((name: string, _desc: string, _schema: unknown, handlerOrAnn: unknown, maybeHandler?: unknown) => {
-      const fn = typeof handlerOrAnn === "function" ? handlerOrAnn : maybeHandler;
-      tools.push({ name, handler: (fn ?? handlerOrAnn) as MockHandler });
-    }),
-  } as unknown as McpServer;
-
-  return { server, tools };
-}
-
-describe("registerEstimationTools", () => {
+describe("estimation tools via registry", () => {
   it("registers 6 estimation tools", () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-    expect(tools.length).toBe(6);
-
-    const names = tools.map(t => t.name);
-    expect(names).toContain("pert_estimate");
-    expect(names).toContain("cocomo_estimate");
-    expect(names).toContain("sprint_forecast");
-    expect(names).toContain("critical_path");
-    expect(names).toContain("monte_carlo_schedule");
+    const names = [
+      "pert_estimate",
+      "cocomo_estimate",
+      "sprint_forecast",
+      "critical_path",
+      "monte_carlo_schedule",
+      "cocomo_validate",
+    ];
+    for (const name of names) {
+      expect(TOOL_REGISTRY.has(name)).toBe(true);
+    }
   });
 
-  it("pert_estimate computes PERT correctly", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const pert = tools.find(t => t.name === "pert_estimate")!;
-    const result = await pert.handler({
+  it("pert_estimate computes PERT correctly", () => {
+    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const result = tool.handler({
       optimistic: 2,
       most_likely: 4,
       pessimistic: 12,
       unit: "hours",
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.expected).toBe(5);
-    expect(data.unit).toBe("hours");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("expected", 5);
+      expect(result.data).toHaveProperty("unit", "hours");
+    }
   });
 
-  it("pert_estimate returns error for invalid inputs", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const pert = tools.find(t => t.name === "pert_estimate")!;
-    const result = await pert.handler({
+  it("pert_estimate returns error for invalid inputs", () => {
+    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const result = tool.handler({
       optimistic: 10,
       most_likely: 5,
       pessimistic: 15,
       unit: "hours",
     });
-    const response = result as { content: Array<{ type: string; text: string }>; isError?: boolean };
-    expect(response.isError).toBe(true);
+    expect(result.ok).toBe(false);
   });
 
-  it("cocomo_estimate returns effort estimates", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const cocomo = tools.find(t => t.name === "cocomo_estimate")!;
-    const result = await cocomo.handler({
+  it("cocomo_estimate returns effort estimates", () => {
+    const tool = TOOL_REGISTRY.get("cocomo_estimate")!;
+    const result = tool.handler({
       kloc: 10,
       reasoning_complexity: 1.0,
       context_completeness: 1.0,
@@ -83,93 +56,91 @@ describe("registerEstimationTools", () => {
       iterative_cycles: 1.0,
       human_oversight: 1.0,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.personMonthsNominal).toBeGreaterThan(0);
-    expect(data.personMonthsLlmAdjusted).toBeGreaterThan(0);
-    expect(data.effortMultipliers).toBeDefined();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("personMonthsNominal");
+      expect(result.data).toHaveProperty("personMonthsLlmAdjusted");
+      expect(result.data).toHaveProperty("effortMultipliers");
+      const data = result.data as Record<string, unknown>;
+      expect(data.personMonthsNominal as number).toBeGreaterThan(0);
+      expect(data.personMonthsLlmAdjusted as number).toBeGreaterThan(0);
+    }
   });
 
-  it("sprint_forecast returns sprint data", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const sprint = tools.find(t => t.name === "sprint_forecast")!;
-    const result = await sprint.handler({
+  it("sprint_forecast returns sprint data", () => {
+    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const result = tool.handler({
       backlog_points: 100,
       velocity_history: [20, 25, 22, 23],
       sprint_length_days: 14,
       hours_per_sprint: 300,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.averageVelocity).toBeDefined();
-    expect(data.requiredSprints).toBeGreaterThan(0);
-    expect(data.completionDays).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.averageVelocity).toBeDefined();
+      expect(data.requiredSprints as number).toBeGreaterThan(0);
+      expect(data.completionDays as number).toBeGreaterThan(0);
+    }
   });
 
-  it("critical_path computes path", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const cp = tools.find(t => t.name === "critical_path")!;
-    const result = await cp.handler({
+  it("critical_path computes path", () => {
+    const tool = TOOL_REGISTRY.get("critical_path")!;
+    const result = tool.handler({
       tasks: [
         { name: "A", duration: 3, predecessors: [] },
         { name: "B", duration: 5, predecessors: ["A"] },
       ],
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.total_duration).toBe(8);
-    expect(data.critical_path).toEqual(["A", "B"]);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toHaveProperty("total_duration", 8);
+      expect(result.data).toHaveProperty("critical_path", ["A", "B"]);
+    }
   });
 
-  it("monte_carlo_schedule returns percentiles", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const mc = tools.find(t => t.name === "monte_carlo_schedule")!;
-    const result = await mc.handler({
+  it("monte_carlo_schedule returns percentiles", () => {
+    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const result = tool.handler({
       tasks: [
         { name: "T1", optimistic: 1, most_likely: 3, pessimistic: 8 },
       ],
       iterations: 1000,
       seed: 42,
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.p10).toBeDefined();
-    expect(data.p50).toBeDefined();
-    expect(data.p95).toBeDefined();
-    expect(parseFloat(data.p10)).toBeLessThan(parseFloat(data.p95));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.p10).toBeDefined();
+      expect(data.p50).toBeDefined();
+      expect(data.p95).toBeDefined();
+      expect(parseFloat(data.p10 as string)).toBeLessThan(parseFloat(data.p95 as string));
+    }
   });
 
-  it("cocomo_validate returns validation report", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const validate = tools.find(t => t.name === "cocomo_validate")!;
-    const result = await validate.handler({});
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.projectsEvaluated).toBeGreaterThan(0);
-    expect(data.mape).toBeGreaterThan(0);
-    expect(data.byProjectType).toBeDefined();
-    expect(data.recommendedAdjustments).toBeDefined();
-    expect(data.humanReadable).toBeDefined();
+  it("cocomo_validate returns validation report", () => {
+    const tool = TOOL_REGISTRY.get("cocomo_validate")!;
+    const result = tool.handler({});
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.projectsEvaluated as number).toBeGreaterThan(0);
+      expect(data.mape as number).toBeGreaterThan(0);
+      expect(data.byProjectType).toBeDefined();
+      expect(data.recommendedAdjustments).toBeDefined();
+      expect(data.humanReadable).toBeDefined();
+    }
   });
 
-  it("cocomo_validate with dataset_filter filters results", async () => {
-    const { server, tools } = createMockServer();
-    registerEstimationTools(server);
-
-    const validate = tools.find(t => t.name === "cocomo_validate")!;
-    const result = await validate.handler({
+  it("cocomo_validate with dataset_filter filters results", () => {
+    const tool = TOOL_REGISTRY.get("cocomo_validate")!;
+    const result = tool.handler({
       dataset_filter: ["NASA93"],
     });
-    const response = result as { content: Array<{ type: string; text: string }> };
-    const data = JSON.parse(response.content[0]!.text);
-    expect(data.projectsEvaluated).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.projectsEvaluated as number).toBeGreaterThan(0);
+    }
   });
 });
