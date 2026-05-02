@@ -115,7 +115,7 @@ Output: {
   iso: "2026-05-01T08:30:00.000-04:00",
   humanReadable: "Fri, May 1, 2026, 8:30 AM EDT",
   timezone: "America/New_York",
-  utcOffset: -240
+  utcOffset: "-04:00"
 }
 ```
 
@@ -126,7 +126,7 @@ Input:  { timestamp: "2026-05-01T12:00:00Z", target_tz: "Asia/Tokyo" }
 Output: {
   iso: "2026-05-01T21:00:00.000+09:00",
   timezone: "Asia/Tokyo",
-  utcOffset: 540,
+  utcOffset: "+09:00",
   humanReadable: "Fri, May 1, 2026, 9:00 PM JST"
 }
 ```
