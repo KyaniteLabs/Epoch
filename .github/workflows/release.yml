@@ -26,9 +26,6 @@ jobs:
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Set up npm for trusted publishing
-        run: npm config set //registry.npmjs.org/:_authToken "" && npm install -g npm@latest
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
