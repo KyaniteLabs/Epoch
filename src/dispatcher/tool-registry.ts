@@ -571,7 +571,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "compare_models",
     "Compares all LLM models side-by-side for a given token budget, ranked by cost or time.",
     compareModelsSchema,
-    { type: "object", properties: { tokens: { type: "number" }, models: { type: "array" }, humanReadable: { type: "string" } } },
+    { type: "object", properties: { tokens: { type: "number" }, models: { type: "array" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => ({
       ok: true as const,
       data: compareModels({
@@ -603,7 +603,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "schedule_risk",
     "Assesses schedule risk using historical accuracy data to compute confidence intervals.",
     scheduleRiskSchema,
-    { type: "object", properties: { estimatedHours: { type: "number" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, recommendation: { type: "string" } } },
+    { type: "object", properties: { estimatedHours: { type: "number" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, recommendation: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => ({
       ok: true as const,
       data: scheduleRisk({
@@ -618,7 +618,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "cocomo_validate",
     "Validates COCOMO estimation model against 195 real historical projects.",
     cocomoValidateSchema,
-    { type: "object", properties: { projectsEvaluated: { type: "number" }, mape: { type: "number" }, bias: { type: "number" }, humanReadable: { type: "string" } } },
+    { type: "object", properties: { projectsEvaluated: { type: "number" }, mape: { type: "number" }, bias: { type: "number" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => cocomoValidate({
       datasetFilter: input.dataset_filter as string[] | undefined,
     }),
@@ -634,7 +634,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
       actual_hours: z.number().positive().describe("Actual hours spent."),
       notes: z.string().optional().describe("Optional context."),
     }),
-    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } },
+    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
       const recorded = recordActual(input.estimate_id as string, input.actual_hours as number, input.notes as string | undefined);
       return {
@@ -657,7 +657,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     z.object({
       limit: z.number().int().positive().max(100).default(20).describe("Max estimates to return."),
     }),
-    { type: "object", properties: { count: { type: "number" }, estimates: { type: "array" } } },
+    { type: "object", properties: { count: { type: "number" }, estimates: { type: "array" } } } satisfies Record<string, unknown>,
     (input) => {
       const pending = getPendingEstimates((input.limit as number) ?? 20);
       return {
