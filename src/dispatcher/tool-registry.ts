@@ -637,15 +637,20 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
       notes: z.string().optional().describe("Optional context."),
     }),
     { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } },
-    (input) => ({
-      ok: true as const,
-      data: {
-        recorded: recordActual(input.estimate_id as string, input.actual_hours as number, input.notes as string | undefined),
-        estimate_id: input.estimate_id,
-        actual_hours: input.actual_hours,
-        message: "Actual recorded. Correction factors update after more feedback accumulates.",
-      },
-    }),
+    (input) => {
+      const recorded = recordActual(input.estimate_id as string, input.actual_hours as number, input.notes as string | undefined);
+      return {
+        ok: true as const,
+        data: {
+          recorded,
+          estimate_id: input.estimate_id,
+          actual_hours: input.actual_hours,
+          message: recorded
+            ? "Actual recorded. Correction factors update after more feedback accumulates."
+            : "Failed to record actual — feedback storage unavailable.",
+        },
+      };
+    },
   ),
 
   tool(

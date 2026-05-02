@@ -506,7 +506,7 @@ export function createApiApp(): Hono {
 
     const notes = body["notes"] as string | undefined;
     const success = recordActual(estimateId, actualHours, notes);
-    return c.json({ ok: success, data: { estimateId, actualHours, recorded: true } });
+    return c.json({ ok: success, data: { estimateId, actualHours, recorded: success } });
   });
 
   app.get("/v1/feedback/pending", (c) => {

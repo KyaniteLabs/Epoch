@@ -220,6 +220,8 @@ function aggregate(records: ToolCallRecord[], windowDays: number): ToolStats {
 
 let _instance: TelemetryStore | null = null;
 
+process.on("exit", () => { _instance?.flush(); });
+
 export function getTelemetry(): TelemetryStore {
   if (!_instance) {
     _instance = new TelemetryStore();
