@@ -46,6 +46,13 @@ export const llmModelEnum = z
     "LLM model identifier used to estimate token-to-time conversion."
   );
 
+/** AI ratio: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Booleans accepted for backward compat. */
+const aiNativeGradient = z
+  .union([z.boolean(), z.coerce.number().min(0).max(1)])
+  .transform((v) => (typeof v === "boolean" ? (v ? 1.0 : 0.0) : v))
+  .describe("Degree of AI assistance: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Accepts boolean for backward compatibility (true=1.0, false=0.0).")
+  .default(1.0);
+
 export const reasoningDepthEnum = z
   .enum(["shallow", "moderate", "deep"])
   .describe(
@@ -106,10 +113,7 @@ export const pertEstimateSchema = z.object({
       "Worst-case duration accounting for known risks and unknown unknowns."
     ),
   unit: timeUnitEnum.default("hours").describe("Time unit for all three PERT estimates."),
-  ai_native: z
-    .boolean()
-    .describe("Whether the work is done by AI agents (true) or human developers (false). Affects urgency thresholds and correction factors.")
-    .default(true),
+  ai_native: aiNativeGradient,
 });
 
 export type PertEstimateInput = z.infer<typeof pertEstimateSchema>;
@@ -163,10 +167,7 @@ export const cocomoEstimateSchema = z.object({
       "Human review overhead multiplier. 0.5 = auto-merged, 1.0 = standard PR review, 2.0 = compliance/security review."
     )
     .default(1.0),
-  ai_native: z
-    .boolean()
-    .describe("Whether the work is done by AI agents (true) or human developers (false). Affects COCOMO productivity factor.")
-    .default(true),
+  ai_native: aiNativeGradient,
 });
 
 export type CocomoEstimateInput = z.infer<typeof cocomoEstimateSchema>;
@@ -198,10 +199,7 @@ export const sprintForecastSchema = z.object({
       "Total productive engineering hours available per sprint (accounts for meetings, overhead)."
     )
     .default(300),
-  ai_native: z
-    .boolean()
-    .describe("Whether the team uses AI agents (true) or is purely human (false). Affects default velocity and time estimates.")
-    .default(true),
+  ai_native: aiNativeGradient,
 });
 
 export type SprintForecastInput = z.infer<typeof sprintForecastSchema>;
@@ -251,10 +249,7 @@ export const referenceClassEstimateSchema = z.object({
       "Optional team identifier to scope historical data to a specific team."
     )
     .optional(),
-  ai_native: z
-    .boolean()
-    .describe("Whether the work is done by AI agents (true) or human developers (false). Affects correction factors.")
-    .default(true),
+  ai_native: aiNativeGradient,
 });
 
 export type ReferenceClassEstimateInput = z.infer<
@@ -417,6 +412,7 @@ export const scheduleRiskSchema = z.object({
   team_id: brandedString("Team")
     .describe("Optional team identifier to scope historical data.")
     .optional(),
+  ai_native: aiNativeGradient,
 });
 
 export type ScheduleRiskInput = z.infer<typeof scheduleRiskSchema>;

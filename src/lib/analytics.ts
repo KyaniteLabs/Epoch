@@ -8,6 +8,7 @@ import type {
 } from "../types/index.js";
 import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
+import { getReferenceClassForCategory } from "./supplementary-data.js";
 
 interface ModelCalibration {
   readonly tokensPerSecond: number;
@@ -167,6 +168,7 @@ export function referenceClassEstimate(
   correctedEstimate: number;
   correctionFactor: number;
   sampleSize: number;
+  baselineSource: string;
   confidence: ConfidenceLevel;
 } {
   const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
@@ -187,8 +189,21 @@ export function referenceClassEstimate(
     sampleSize = filtered.length;
   }
 
-  const complexityMultiplier = 0.5 + (complexity - 1) * 0.375;
-  const rawEstimate = 8 * complexityMultiplier;
+  // Use real session data when available, otherwise fall back to traditional 8h baseline
+  const realBaseline = getReferenceClassForCategory(taskType);
+  let rawEstimate: number;
+  let baselineSource: string;
+  if (realBaseline && realBaseline.total_samples >= 5) {
+    const clampedComplexity = Math.max(1, Math.min(5, complexity));
+    const complexityNorm = (clampedComplexity - 1) / 4; // 0..1 for complexity 1..5
+    rawEstimate = realBaseline.p25_hours + (realBaseline.p75_hours - realBaseline.p25_hours) * complexityNorm;
+    baselineSource = `real_sessions_${realBaseline.total_samples}`;
+  } else {
+    const complexityMultiplier = 0.5 + (complexity - 1) * 0.375;
+    rawEstimate = 8 * complexityMultiplier;
+    baselineSource = "industry_8h";
+  }
+
   const correctedEstimate = Math.round(rawEstimate * correctionFactor * 10) / 10;
 
   return {
@@ -196,6 +211,7 @@ export function referenceClassEstimate(
     correctedEstimate,
     correctionFactor: Math.round(correctionFactor * 100) / 100,
     sampleSize,
+    baselineSource,
     confidence: sampleSize >= 10 ? "likely" : sampleSize >= 5 ? "optimistic" : "pessimistic",
   };
 }

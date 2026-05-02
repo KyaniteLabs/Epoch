@@ -400,7 +400,8 @@ export interface CocomoValidationReport {
 // ---- Developer Profile (Feature 6) --------------------------------------
 
 export interface DeveloperProfile {
-  readonly mode: "ai_native" | "human";
+  readonly mode: "ai_native" | "human" | "hybrid";
+  readonly aiRatio: number;
   readonly featureDevTimeDays: number;
   readonly bugfixTimeHours: number;
   readonly sprintVelocityPoints: number;

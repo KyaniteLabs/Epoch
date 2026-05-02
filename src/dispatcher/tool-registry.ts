@@ -31,7 +31,7 @@ import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
 import { cocomoValidate } from "../lib/cocomo-validate.js";
-import { getDeveloperProfile } from "../lib/profiles.js";
+import { getDeveloperProfileGradient } from "../lib/profiles.js";
 import {
   timeMathSchema,
   pertEstimateSchema,
@@ -390,7 +390,7 @@ Use when estimating task duration with uncertain outcomes.`,
     pertOutput,
     (input) => {
       const p = pertEstimateSchema.parse(input);
-      const profile = getDeveloperProfile(p.ai_native);
+      const profile = getDeveloperProfileGradient(p.ai_native);
       const result = pertEstimate(p.optimistic, p.most_likely, p.pessimistic, p.unit);
       if (!result.ok) return result;
       return {
@@ -398,7 +398,7 @@ Use when estimating task duration with uncertain outcomes.`,
         data: {
           ...result.data,
           developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
-          adjustedEstimate: result.data.expected * profile.correctionFactor,
+          adjustedEstimate: Math.round(result.data.expected * profile.correctionFactor * 100) / 100,
         },
       };
     },
@@ -415,7 +415,7 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
     cocomoOutput,
     (input) => {
       const p = cocomoEstimateSchema.parse(input);
-      const profile = getDeveloperProfile(p.ai_native);
+      const profile = getDeveloperProfileGradient(p.ai_native);
       const rawCycles = p.iterative_cycles;
       const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
       const result = cocomoEstimate({
@@ -447,7 +447,7 @@ and returns required sprints with pessimistic estimate based on velocity varianc
     sprintOutput,
     (input) => {
       const p = sprintForecastSchema.parse(input);
-      const profile = getDeveloperProfile(p.ai_native);
+      const profile = getDeveloperProfileGradient(p.ai_native);
       const result = sprintForecast({
         backlogPoints: p.backlog_points,
         velocityHistory: p.velocity_history,
@@ -512,7 +512,7 @@ Prioritize this over algorithmic models when historical data is available.`,
     referenceClassOutput,
     (input) => {
       const p = referenceClassEstimateSchema.parse(input);
-      const profile = getDeveloperProfile(p.ai_native);
+      const profile = getDeveloperProfileGradient(p.ai_native);
       const records = getCalibrationData(
         p.team_id,
         p.task_type,
@@ -530,7 +530,7 @@ Prioritize this over algorithmic models when historical data is available.`,
             underestimationBias: profile.underestimationBias,
             correctionFactor: profile.correctionFactor,
           },
-          adjustedEstimate: Math.round(result.correctedEstimate * profile.correctionFactor * 10) / 10,
+          adjustedEstimate: Math.round(result.rawEstimate * profile.correctionFactor * 10) / 10,
           note: records.length >= 5
             ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
             : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
@@ -676,6 +676,7 @@ Uses industry baseline (25% MAPE) when no historical data is available.`,
           estimatedHours: p.estimated_hours,
           taskType: p.task_type,
           teamId: p.team_id,
+          aiNative: p.ai_native,
         }),
       };
     },

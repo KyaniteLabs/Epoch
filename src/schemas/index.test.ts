@@ -78,7 +78,7 @@ describe("pertEstimateSchema", () => {
   it("applies defaults for unit and ai_native", () => {
     const r = pertEstimateSchema.safeParse(valid);
     expect(r.success && r.data.unit).toBe("hours");
-    expect(r.success && r.data.ai_native).toBe(true);
+    expect(r.success && r.data.ai_native).toBe(1.0);
   });
 
   it("rejects zero optimistic", () => {

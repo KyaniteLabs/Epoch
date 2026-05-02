@@ -165,9 +165,8 @@ Output: {
   startDate: "2026-05-01",
   endDate: "2026-05-08",
   businessDays: 5,
-  weekendDays: 2,
-  holidays: 0,
-  countryCode: "US"
+  countryCode: "US",
+  humanReadable: "5 business days from 2026-05-01 to 2026-05-08 (US)."
 }
 ```
 
@@ -179,9 +178,8 @@ Output: {
   startDate: "2026-05-01",
   endDate: "2026-05-15",
   businessDays: 10,
-  weekendDays: 4,
-  holidays: 1,
-  countryCode: "US"
+  countryCode: "US",
+  humanReadable: "10 business days between 2026-05-01 and 2026-05-15 (US)."
 }
 ```
 

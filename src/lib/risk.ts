@@ -3,11 +3,13 @@ import { assertNever } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
 import { getCalibrationData } from "./feedback.js";
 import { getEstimationResearch } from "./supplementary-data.js";
+import { getDeveloperProfileGradient } from "./profiles.js";
 
 export function scheduleRisk(params: {
   estimatedHours: number;
   taskType?: TaskType;
   teamId?: string;
+  aiNative?: number;
 }): ScheduleRiskAssessment {
   const { estimatedHours, taskType, teamId } = params;
   const records = getCalibrationData(teamId, taskType);
@@ -20,7 +22,8 @@ export function scheduleRisk(params: {
     mape = metrics.mape;
     sampleSize = metrics.sample_size;
   } else {
-    mape = getEstimationResearch().expertEstimatesWithinPercent;
+    const profile = getDeveloperProfileGradient(params.aiNative ?? 1.0);
+    mape = profile.estimationMape;
     sampleSize = records.length;
   }
 

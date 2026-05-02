@@ -557,8 +557,8 @@ export function startHttpServer(
   port?: number,
   host?: string,
 ): void {
-  const resolvedPort = port ?? (Number.isFinite(parseInt(process.env["PORT"] ?? "3000", 10))
-    ? parseInt(process.env["PORT"] ?? "3000", 10)
+  const resolvedPort = port ?? (Number.isFinite(parseInt(process.env["EPOCH_PORT"] ?? process.env["PORT"] ?? "3000", 10))
+    ? parseInt(process.env["EPOCH_PORT"] ?? process.env["PORT"] ?? "3000", 10)
     : 3000);
   const resolvedHost = host ?? process.env["EPOCH_HOST"] ?? "127.0.0.1";
   const app = createApiApp();

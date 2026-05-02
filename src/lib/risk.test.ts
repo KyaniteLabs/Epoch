@@ -14,6 +14,19 @@ vi.mock("./supplementary-data.js", () => ({
   })),
 }));
 
+vi.mock("./profiles.js", () => ({
+  getDeveloperProfileGradient: vi.fn((aiRatio: number) => ({
+    mode: aiRatio >= 1.0 ? "ai_native" : aiRatio <= 0.0 ? "human" : "hybrid",
+    aiRatio,
+    featureDevTimeDays: aiRatio >= 1.0 ? 0.72 : 14 * (1 - aiRatio) + 0.72 * aiRatio,
+    bugfixTimeHours: aiRatio >= 1.0 ? 6.15 : 72 * (1 - aiRatio) + 6.15 * aiRatio,
+    sprintVelocityPoints: 80,
+    estimationMape: 15 * aiRatio + 25 * (1 - aiRatio),
+    underestimationBias: 0.2 * aiRatio + 0.575 * (1 - aiRatio),
+    correctionFactor: 1.07 * aiRatio + 1.8 * (1 - aiRatio),
+  })),
+}));
+
 import { getCalibrationData } from "./feedback.js";
 
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
@@ -36,12 +49,11 @@ describe("scheduleRisk", () => {
   it("uses industry baseline when no history", () => {
     mockGetCalibrationData.mockReturnValue([]);
     const result = scheduleRisk({ estimatedHours: 40 });
-    expect(result.historicalAccuracy.mape).toBe(25);
-    expect(result.riskLevel).toBe("medium");
+    expect(result.historicalAccuracy.mape).toBe(15);
+    expect(result.riskLevel).toBe("low");
   });
 
   it("computes risk from historical data", () => {
-    // 10 records with ~30% error -> MAPE ~30, risk = medium
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
     const result = scheduleRisk({ estimatedHours: 20 });
     expect(result.historicalAccuracy.mape).toBeGreaterThan(0);
@@ -50,11 +62,9 @@ describe("scheduleRisk", () => {
   });
 
   it("confidence intervals widen with higher MAPE", () => {
-    // Low error: MAPE ~10
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 10));
     const lowRisk = scheduleRisk({ estimatedHours: 40 });
 
-    // High error: MAPE ~50
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 50));
     const highRisk = scheduleRisk({ estimatedHours: 40 });
 
@@ -62,16 +72,27 @@ describe("scheduleRisk", () => {
   });
 
   it("low risk for accurate history", () => {
-    // 10 records with ~5% error -> MAPE ~5, risk = low
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 5));
     const result = scheduleRisk({ estimatedHours: 16 });
     expect(result.riskLevel).toBe("low");
   });
 
   it("critical risk for very inaccurate history", () => {
-    // 10 records with 150% error -> actual=25, MAPE = |25-10|/25*100 = 60% > 50 -> critical
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 150));
     const result = scheduleRisk({ estimatedHours: 8 });
     expect(result.riskLevel).toBe("critical");
+  });
+
+  it("hybrid mode (0.5) interpolates MAPE between AI and human", () => {
+    mockGetCalibrationData.mockReturnValue([]);
+    const result = scheduleRisk({ estimatedHours: 40, aiNative: 0.5 });
+    // MAPE should be 20 (midpoint between AI=15 and human=25)
+    expect(result.historicalAccuracy.mape).toBe(20);
+  });
+
+  it("human mode (0.0) uses higher MAPE baseline", () => {
+    mockGetCalibrationData.mockReturnValue([]);
+    const result = scheduleRisk({ estimatedHours: 40, aiNative: 0.0 });
+    expect(result.historicalAccuracy.mape).toBe(25);
   });
 });

@@ -29,6 +29,27 @@ export interface EstimationAccuracyResearch {
   readonly averageScheduleOverrunPercent: number;
 }
 
+export interface ReferenceClassCategory {
+  readonly sessions: number;
+  readonly tasks: number;
+  readonly total_samples: number;
+  readonly median_hours: number;
+  readonly p10_hours: number;
+  readonly p25_hours: number;
+  readonly p75_hours: number;
+  readonly p90_hours: number;
+  readonly p95_hours: number;
+  readonly mean_hours: number;
+  readonly min_hours: number;
+  readonly max_hours: number;
+}
+
+export interface ReferenceClassBaselines {
+  readonly source: string;
+  readonly totalSessions: number;
+  readonly categories: Record<string, ReferenceClassCategory>;
+}
+
 export interface CocomoProject {
   readonly id: number;
   readonly kloc: number;
@@ -59,6 +80,7 @@ interface SupplementaryDatabase {
   readonly modelCalibration?: Record<string, ModelPricing>;
   readonly humanDeveloperBaselines?: HumanDeveloperBaselines;
   readonly estimationAccuracyResearch?: EstimationAccuracyResearch;
+  readonly referenceClassBaselines?: ReferenceClassBaselines;
   readonly developerProfileContrast?: {
     readonly humanDeveloper: Record<string, number>;
     readonly aiNativeDeveloper: Record<string, number>;
@@ -143,6 +165,15 @@ export function getModelPricing(model: string): ModelPricing | null {
 
 export function getHumanBaselines(): HumanDeveloperBaselines | null {
   return loadSupplementaryData()?.humanDeveloperBaselines ?? null;
+}
+
+export function getReferenceClassBaselines(): ReferenceClassBaselines | null {
+  return loadSupplementaryData()?.referenceClassBaselines ?? null;
+}
+
+export function getReferenceClassForCategory(category: string): ReferenceClassCategory | null {
+  const baselines = getReferenceClassBaselines();
+  return baselines?.categories?.[category] ?? null;
 }
 
 export function getEstimationResearch(): EstimationAccuracyResearch {
