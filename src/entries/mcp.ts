@@ -4,11 +4,12 @@ import { registerTemporalTools } from "../tools/temporal.js";
 import { registerEstimationTools } from "../tools/estimation.js";
 import { registerAnalyticsTools } from "../tools/analytics.js";
 import { registerFeedbackTools } from "../tools/feedback.js";
+import { getVersion } from "../version.js";
 
 export function startMcpServer(): Promise<void> {
   const server = new McpServer({
     name: "epoch",
-    version: "0.1.0",
+    version: getVersion(),
   });
 
   registerTemporalTools(server);

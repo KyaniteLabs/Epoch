@@ -29,12 +29,17 @@ import {
   getToolTaskCorrectionFactor,
   getGlobalCorrectionFactor,
   updateReferenceDatabase,
+  invalidateReferenceDbCache,
 } from "./self-improve.js";
 import type { HistoricalRecord } from "./analytics.js";
 
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
 const mockGetTelemetry = vi.mocked(getTelemetry);
+
+beforeEach(() => {
+  invalidateReferenceDbCache();
+});
 
 function makeDb(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({

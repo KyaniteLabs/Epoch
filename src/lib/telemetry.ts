@@ -171,7 +171,7 @@ class TelemetryStore {
       .map((line) => {
         try { return JSON.parse(line) as ToolCallRecord; } catch { return null; }
       })
-      .filter((r): r is ToolCallRecord => r !== null && r.timestamp >= cutoff && r.model === model && typeof r.tokens === "number" && r.tokens > 0);
+      .filter((r): r is ToolCallRecord => r !== null && r.timestamp >= cutoff && r.model === model && typeof r.tokens === "number" && r.tokens > 0 && r.elapsedMs > 0);
 
     if (records.length < 10) return null;
 

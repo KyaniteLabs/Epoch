@@ -5,8 +5,9 @@ import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/in
 import { recordActual, getPendingEstimates } from "../lib/feedback.js";
 import type { ToolResult } from "../types/index.js";
 import type { z } from "zod";
+import { getVersion } from "../version.js";
 
-const VERSION = "0.1.0";
+const VERSION = getVersion();
 
 const AI_PLUGIN_MANIFEST = {
   schema_version: "v1",
@@ -370,7 +371,9 @@ export function createApiApp(): Hono {
 
   // ---- Rate limiter (in-memory sliding window) ------------------------------
   const rateLimitWindowMs = 60_000;
-  const rateLimitMax = parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10);
+  const rateLimitMax = Number.isFinite(parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10))
+    ? parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10)
+    : 100;
   const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
   app.use("/v1/*", async (c, next) => {
@@ -378,6 +381,13 @@ export function createApiApp(): Hono {
       ?? c.req.header("x-real-ip")
       ?? "unknown";
     const now = Date.now();
+
+    if (requestCounts.size > 10_000) {
+      for (const [key, val] of requestCounts) {
+        if (now > val.resetAt) requestCounts.delete(key);
+      }
+    }
+
     const entry = requestCounts.get(ip);
     if (!entry || now > entry.resetAt) {
       requestCounts.set(ip, { count: 1, resetAt: now + rateLimitWindowMs });
@@ -506,12 +516,13 @@ export function createApiApp(): Hono {
   });
 
   app.onError((err, c) => {
+    console.error("[epoch] Unhandled error:", err);
     return c.json(
       {
         ok: false,
         error: {
           isError: true,
-          message: `Internal server error: ${err.message}`,
+          message: "Internal server error.",
         },
       } satisfies ToolResult<unknown>,
       500,
@@ -536,7 +547,9 @@ export function startHttpServer(
   port?: number,
   host?: string,
 ): void {
-  const resolvedPort = port ?? parseInt(process.env["PORT"] ?? "3000", 10);
+  const resolvedPort = port ?? (Number.isFinite(parseInt(process.env["PORT"] ?? "3000", 10))
+    ? parseInt(process.env["PORT"] ?? "3000", 10)
+    : 3000);
   const resolvedHost = host ?? process.env["EPOCH_HOST"] ?? "127.0.0.1";
   const app = createApiApp();
 

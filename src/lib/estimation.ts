@@ -44,6 +44,10 @@ export function pertEstimate(
   const variance = stdDev * stdDev;
   const expectedHours = toHours(expected, unit);
 
+  if (!Number.isFinite(expected) || !Number.isFinite(stdDev)) {
+    return { ok: false, error: { isError: true, message: "Computation produced invalid result." } };
+  }
+
   return {
     ok: true,
     data: {
@@ -167,6 +171,10 @@ export function cocomoEstimate(params: {
 
   const llmOverhead = 1.0 + (iterativeCycles - 1.0) * 0.15;
   const personMonthsLlmAdjusted = personMonthsNominal / Math.max(1.5, 3.0 / llmOverhead);
+
+  if (!Number.isFinite(personMonthsNominal) || !Number.isFinite(personMonthsLlmAdjusted)) {
+    return { ok: false, error: { isError: true, message: "COCOMO computation produced invalid result." } };
+  }
 
   return {
     ok: true,
@@ -403,6 +411,7 @@ function seededRandom(seed: number): () => number {
 }
 
 function triangularSample(min: number, mode: number, max: number, rng: () => number): number {
+  if (max === min) return min;
   const u = rng();
   const fc = (mode - min) / (max - min);
   if (u < fc) {

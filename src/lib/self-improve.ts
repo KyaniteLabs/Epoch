@@ -130,15 +130,30 @@ export async function updateReferenceDatabase(): Promise<void> {
     writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf-8");
     renameSync(tmpPath, targetPath);
   }
+  invalidateReferenceDbCache();
 }
 
+let _cachedDb: ReferenceDatabase | null | undefined;
+let _cachedDbAt = 0;
+const DB_CACHE_TTL = 60_000;
+
 export function loadReferenceDb(): ReferenceDatabase | null {
+  if (_cachedDb !== undefined && Date.now() - _cachedDbAt < DB_CACHE_TTL) return _cachedDb;
   try {
     const content = readFileSync(REFERENCE_DB_PATH, "utf-8");
-    return JSON.parse(content) as ReferenceDatabase;
+    _cachedDb = JSON.parse(content) as ReferenceDatabase;
+    _cachedDbAt = Date.now();
+    return _cachedDb;
   } catch {
+    _cachedDb = null;
+    _cachedDbAt = Date.now();
     return null;
   }
+}
+
+export function invalidateReferenceDbCache(): void {
+  _cachedDb = undefined;
+  _cachedDbAt = 0;
 }
 
 export function getTaskTypeCorrectionFactor(taskType: TaskType): number {
@@ -219,6 +234,7 @@ function mergeBenchmark(existing: ToolBenchmark, stat: { p50Ms: number; p95Ms: n
 function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, number> {
   const grouped = new Map<string, number[]>();
   for (const r of records) {
+    if (r.estimatedHours <= 0) continue;
     const arr = grouped.get(r.taskType) ?? [];
     arr.push(r.actualHours / r.estimatedHours);
     grouped.set(r.taskType, arr);
@@ -239,7 +255,9 @@ function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, n
 
 function computeGlobalCorrection(records: HistoricalRecord[]): number {
   if (records.length === 0) return 1.07;
-  const ratios = records.map((r) => r.actualHours / r.estimatedHours);
+  const valid = records.filter((r) => r.estimatedHours > 0);
+  if (valid.length === 0) return 1.07;
+  const ratios = valid.map((r) => r.actualHours / r.estimatedHours);
   ratios.sort((a, b) => a - b);
   const mid = Math.floor(ratios.length / 2);
   const median = ratios.length % 2 === 0
@@ -251,6 +269,7 @@ function computeGlobalCorrection(records: HistoricalRecord[]): number {
 function computeToolCorrectionFactors(records: HistoricalRecord[]): Record<string, Record<string, number>> {
   const grouped = new Map<string, Map<string, number[]>>();
   for (const r of records) {
+    if (r.estimatedHours <= 0) continue;
     const tool = r.tool ?? "unknown";
     if (!grouped.has(tool)) grouped.set(tool, new Map());
     const taskMap = grouped.get(tool)!;

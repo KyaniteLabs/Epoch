@@ -38,13 +38,14 @@ function ensureDir(): boolean {
   }
 }
 
-function appendLine(filename: string, data: unknown): void {
-  if (!ensureDir()) return;
+function appendLine(filename: string, data: unknown): boolean {
+  if (!ensureDir()) return false;
   const path = join(dataDir(), filename);
   try {
     appendFileSync(path, JSON.stringify(data) + "\n", "utf-8");
+    return true;
   } catch {
-    // feedback is non-critical
+    return false;
   }
 }
 
@@ -89,8 +90,7 @@ export function recordActual(estimateId: string, actualHours: number, notes?: st
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
   };
-  appendLine(ACTUALS_FILE, record);
-  return true;
+  return appendLine(ACTUALS_FILE, record);
 }
 
 export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasActual: boolean }> {

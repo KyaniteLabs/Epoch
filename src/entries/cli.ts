@@ -7,6 +7,7 @@ import { Command, Option } from "commander";
 import { dispatch } from "../dispatcher/index.js";
 import { formatJson, formatTable } from "../dispatcher/formatters.js";
 import type { ToolResult } from "../types/index.js";
+import { getVersion } from "../version.js";
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -72,7 +73,7 @@ export function createCliProgram(): Command {
 
   program
     .name("epoch")
-    .version("0.1.0")
+    .version(getVersion())
     .description("Time Estimation CLI")
     .addOption(
       new Option("--format <type>", "Output format")
