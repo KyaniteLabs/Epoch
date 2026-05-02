@@ -500,18 +500,18 @@ Epoch provides built-in discoverability endpoints so AI agents can find and use 
 ```bash
 git clone https://github.com/KyaniteLabs/Epoch.git
 cd Epoch
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 ## Development
 
 ```bash
-npm test          # Run test suite (356 tests)
-npm run build     # Build with tsup
-npm run typecheck # TypeScript strict mode check
-npm run dev       # Run development server
-npm run inspector # Open MCP Inspector for interactive testing
+pnpm test          # Run test suite (356 tests)
+pnpm run build     # Build with tsup
+pnpm run typecheck # TypeScript strict mode check
+pnpm run dev       # Run development server
+pnpm run inspector # Open MCP Inspector for interactive testing
 ```
 
 ## Tech Stack
