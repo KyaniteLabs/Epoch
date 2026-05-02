@@ -93,6 +93,16 @@ describe("tokenCostEstimate", () => {
 
     expect(Math.abs(sum - result.estimatedCost)).toBeLessThan(0.01);
   });
+
+  it("zero tokens produces zero cost", () => {
+    const result = tokenCostEstimate({
+      tokens: 0,
+      model: "gpt-4o",
+      toolCalls: 0,
+      reasoningDepth: "shallow",
+    });
+    expect(result.estimatedCost).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

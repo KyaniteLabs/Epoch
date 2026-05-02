@@ -82,6 +82,19 @@ describe("computeAccuracyTrend", () => {
     expect(result.overallTrend).toBe("stable");
   });
 
+  it("detects degrading trend", () => {
+    const lowError = makeRecords(50, () => 10);
+    const highError = makeRecords(50, () => 80).map((r, i) => ({
+      ...r,
+      completedAt: new Date(2026, 1, i + 20).toISOString(),
+    }));
+    const records = lowError.concat(highError);
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = computeAccuracyTrend({ windowSize: 50 });
+    expect(result.overallTrend).toBe("degrading");
+    expect(result.currentMape).toBeGreaterThan(result.windows[0]!.mape);
+  });
+
   it("industry baseline is 25%", () => {
     mockGetCalibrationData.mockReturnValue(makeRecords(5, () => 10));
     const result = computeAccuracyTrend();
