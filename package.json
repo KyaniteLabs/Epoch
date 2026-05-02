@@ -8,6 +8,21 @@
   "bin": {
     "epoch": "dist/index.js"
   },
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "bugs": {
+    "url": "https://github.com/KyaniteLabs/Epoch/issues"
+  },
+  "homepage": "https://github.com/KyaniteLabs/Epoch#readme",
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",

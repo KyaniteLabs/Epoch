@@ -12,12 +12,9 @@ import type {
   ToolResult,
   ToolError,
 } from "../types/index.js";
+import { makeError } from "./internal/error-helpers.js";
 
 // ---- Helpers --------------------------------------------------------------
-
-function makeError(message: string, retryHint?: string): ToolError {
-  return { isError: true, message, retryHint };
-}
 
 function isValidTimezone(tz: string): boolean {
   if (!tz || tz.length < 2) return false;

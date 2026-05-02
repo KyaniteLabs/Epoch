@@ -3,6 +3,18 @@ import { startHttpServer } from "./entries/http.js";
 import { runCli } from "./entries/cli.js";
 import { TOOL_NAMES } from "./dispatcher/index.js";
 
+// Re-export types for consumers
+export type {
+  UrgencyCategory,
+  ConfidenceLevel,
+  TimeUnit,
+  TaskType,
+  ToolError,
+  LLMModel,
+  ReasoningDepth,
+  DeveloperProfile,
+} from "./types/index.js";
+
 const CLI_SUBCOMMANDS = new Set([
   "get-current-time",
   "convert-timezone",
