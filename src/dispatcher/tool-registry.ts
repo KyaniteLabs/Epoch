@@ -10,11 +10,10 @@ import {
   getCurrentTime,
   convertTimezone,
   parseDuration,
-  formatElapsed,
-  diffDates,
-  addDays,
 } from "../lib/temporal.js";
 import { addBusinessDays, countBusinessDays } from "../lib/calendar.js";
+import { dispatchTimeMath } from "../lib/internal/time-math-dispatch.js";
+import type { TimeMathOp } from "../lib/internal/time-math-dispatch.js";
 import {
   pertEstimate,
   cocomoEstimate,
@@ -319,7 +318,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     timeMathSchema,
     timeMathOutput,
     (input) => {
-      const operation = input.operation as string;
+      const operation = input.operation as TimeMathOp;
       let ops = input.operands as Record<string, unknown>;
 
       // Defensive: models sometimes send stringified JSON as operands
@@ -328,69 +327,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
       }
       if (!ops || typeof ops !== "object") ops = {};
 
-      const str = (v: unknown): string | undefined =>
-        typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined;
-      const num = (v: unknown, fallback?: number): number | undefined =>
-        typeof v === "number" ? v : typeof v === "string" ? Number(v) : fallback;
-
-      switch (operation) {
-        case "add_days": {
-          const date = str(ops.start_date) ?? str(ops.date) ?? str(ops.from_date) ?? str(ops.startDate);
-          const days = num(ops.days);
-          if (!date || days === undefined) {
-            return { ok: false as const, error: { isError: true as const, message: "add_days requires operands: {start_date, days}.", retryHint: "Pass start_date as an ISO date string and days as a number." } };
-          }
-          return { ok: true as const, data: addDays(date, days) };
-        }
-        case "diff": {
-          const start = str(ops.start_date) ?? str(ops.date) ?? str(ops.from_date) ?? str(ops.startDate);
-          const end = str(ops.end_date) ?? str(ops.to_date) ?? str(ops.endDate) ?? str(ops.end);
-          if (!start || !end) {
-            return { ok: false as const, error: { isError: true as const, message: "diff requires operands: {start_date, end_date}.", retryHint: "Pass both start_date and end_date as ISO date strings." } };
-          }
-          return { ok: true as const, data: diffDates(start, end) };
-        }
-        case "convert_tz": {
-          const ts = str(ops.timestamp);
-          const tz = str(ops.target_tz);
-          if (!ts || !tz) {
-            return { ok: false as const, error: { isError: true as const, message: "convert_tz requires operands: {timestamp, target_tz}.", retryHint: "Pass an ISO timestamp and a target IANA timezone." } };
-          }
-          return convertTimezone(ts, tz);
-        }
-        case "parse_nl": {
-          const dur = str(ops.duration_string);
-          if (!dur) {
-            return { ok: false as const, error: { isError: true as const, message: "parse_nl requires operands: {duration_string}.", retryHint: 'Pass a duration string like "2h30m" or "1d6h".' } };
-          }
-          return parseDuration(dur);
-        }
-        case "format_duration": {
-          const ms = num(ops.milliseconds);
-          if (ms === undefined) {
-            return { ok: false as const, error: { isError: true as const, message: "format_duration requires operands: {milliseconds}.", retryHint: "Pass a number of milliseconds." } };
-          }
-          return { ok: true as const, data: formatElapsed(ms) };
-        }
-        case "add_business_days": {
-          const start = str(ops.start_date) ?? str(ops.date) ?? str(ops.from_date) ?? str(ops.startDate);
-          const days = num(ops.days);
-          if (!start || days === undefined) {
-            return { ok: false as const, error: { isError: true as const, message: "add_business_days requires operands: {start_date, days, country?}.", retryHint: "Pass start_date as an ISO date string and days as a number." } };
-          }
-          return addBusinessDays(start, days, (ops.country as string) ?? "US");
-        }
-        default:
-          return {
-            ok: false as const,
-            error: {
-              isError: true as const,
-              message: `Unknown time_math operation: ${operation}`,
-              retryHint:
-                "Use one of: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.",
-            },
-          };
-      }
+      return dispatchTimeMath(operation, ops);
     },
   ),
 

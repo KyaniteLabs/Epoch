@@ -99,7 +99,8 @@ describe("registerTemporalTools", () => {
     });
     const response = result as { content: Array<{ type: string; text: string }> };
     const data = JSON.parse(response.content[0]!.text);
-    expect(data.date).toBe("2026-05-06");
+    // Shared dispatch returns the addDays result directly as data
+    expect(data).toBe("2026-05-06");
   });
 
   it("time_math diff operation works", async () => {
@@ -127,7 +128,8 @@ describe("registerTemporalTools", () => {
     });
     const response = result as { content: Array<{ type: string; text: string }> };
     const data = JSON.parse(response.content[0]!.text);
-    expect(data.formatted).toBe("1h");
+    // Shared dispatch returns the formatElapsed result directly as data
+    expect(data).toBe("1h");
   });
 
   it("time_math returns error for missing operands", async () => {

@@ -9,14 +9,12 @@ import {
   getCurrentTime,
   convertTimezone,
   parseDuration,
-  formatElapsed,
-  addDays,
-  diffDates,
 } from "../lib/temporal.js";
 import {
   addBusinessDays,
   countBusinessDays,
 } from "../lib/calendar.js";
+import { dispatchTimeMath } from "../lib/internal/time-math-dispatch.js";
 
 // ---- Annotation constant --------------------------------------------------
 
@@ -37,8 +35,6 @@ const TIME_MATH_OPERATIONS = [
   "parse_nl",
   "format_duration",
 ] as const;
-
-type TimeMathOperation = (typeof TIME_MATH_OPERATIONS)[number];
 
 // ---- Registration ---------------------------------------------------------
 
@@ -173,15 +169,15 @@ export function registerTemporalTools(server: McpServer): void {
     },
     TOOL_ANNOTATIONS,
     async ({ operation, operands }) => {
-      const data = dispatchTimeMath(operation, operands);
-      if ("isError" in data) {
+      const result = dispatchTimeMath(operation, operands);
+      if (!result.ok) {
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(data) }],
+          content: [{ type: "text" as const, text: JSON.stringify(result.error) }],
           isError: true,
         };
       }
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(data) }],
+        content: [{ type: "text" as const, text: JSON.stringify(result.data) }],
       };
     },
   );
@@ -257,104 +253,4 @@ export function registerTemporalTools(server: McpServer): void {
       };
     },
   );
-}
-
-// ---- Time Math Dispatcher -------------------------------------------------
-
-function dispatchTimeMath(
-  operation: TimeMathOperation,
-  operands: Record<string, unknown>,
-): Record<string, unknown> {
-  switch (operation) {
-    case "add_days": {
-      const date = operands["date"];
-      const days = operands["days"];
-      if (typeof date !== "string" || typeof days !== "number") {
-        return makeDispatchError(
-          "add_days requires 'date' (string) and 'days' (number) operands.",
-        );
-      }
-      const result = addDays(date, days);
-      return { date: result, operation: "add_days", input: { date, days } };
-    }
-
-    case "add_business_days": {
-      const start_date = operands["start_date"] ?? operands["date"];
-      const days = operands["days"];
-      const country = operands["country"];
-      if (typeof start_date !== "string" || typeof days !== "number" || typeof country !== "string") {
-        return makeDispatchError(
-          "add_business_days requires 'date' (or 'start_date'), 'days', and 'country' operands.",
-        );
-      }
-      const result = addBusinessDays(start_date, days, country);
-      if (!result.ok) return result.error as unknown as Record<string, unknown>;
-      return result.data as unknown as Record<string, unknown>;
-    }
-
-    case "diff": {
-      const date = operands["date"];
-      const end_date = operands["end_date"];
-      if (typeof date !== "string" || typeof end_date !== "string") {
-        return makeDispatchError(
-          "diff requires 'date' (start) and 'end_date' operands.",
-        );
-      }
-      const result = diffDates(date, end_date);
-      return { ...result, operation: "diff", input: { start: date, end: end_date } };
-    }
-
-    case "convert_tz": {
-      const timestamp = operands["timestamp"];
-      const target_tz = operands["target_tz"];
-      if (typeof timestamp !== "string" || typeof target_tz !== "string") {
-        return makeDispatchError(
-          "convert_tz requires 'timestamp' and 'target_tz' operands.",
-        );
-      }
-      const result = convertTimezone(timestamp, target_tz);
-      if (!result.ok) return result.error as unknown as Record<string, unknown>;
-      return result.data as unknown as Record<string, unknown>;
-    }
-
-    case "parse_nl": {
-      const duration_string = operands["duration_string"];
-      if (typeof duration_string !== "string") {
-        return makeDispatchError(
-          "parse_nl requires a 'duration_string' operand.",
-        );
-      }
-      const result = parseDuration(duration_string);
-      if (!result.ok) return result.error as unknown as Record<string, unknown>;
-      return result.data as unknown as Record<string, unknown>;
-    }
-
-    case "format_duration": {
-      const milliseconds = operands["milliseconds"];
-      if (typeof milliseconds !== "number") {
-        return makeDispatchError(
-          "format_duration requires a 'milliseconds' operand (number).",
-        );
-      }
-      const formatted = formatElapsed(milliseconds);
-      return {
-        formatted,
-        milliseconds,
-        operation: "format_duration",
-      };
-    }
-
-    default:
-      return makeDispatchError(
-        `Unknown operation: "${operation}". Supported: ${TIME_MATH_OPERATIONS.join(", ")}.`,
-      );
-  }
-}
-
-function makeDispatchError(message: string): Record<string, unknown> {
-  return {
-    isError: true,
-    message,
-    retryHint: `Valid operations: ${TIME_MATH_OPERATIONS.join(", ")}. Check that all required operands are provided.`,
-  };
 }
