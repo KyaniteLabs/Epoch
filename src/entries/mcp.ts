@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { registerTemporalTools } from "../tools/temporal.js";
 import { registerEstimationTools } from "../tools/estimation.js";
 import { registerAnalyticsTools } from "../tools/analytics.js";
+import { registerFeedbackTools } from "../tools/feedback.js";
 
 export function startMcpServer(): Promise<void> {
   const server = new McpServer({
@@ -13,6 +14,7 @@ export function startMcpServer(): Promise<void> {
   registerTemporalTools(server);
   registerEstimationTools(server);
   registerAnalyticsTools(server);
+  registerFeedbackTools(server);
 
   const transport = new StdioServerTransport();
   return server.connect(transport);

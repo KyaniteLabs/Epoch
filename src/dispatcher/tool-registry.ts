@@ -26,7 +26,7 @@ import {
   calibrateEstimates,
   tokenTimeBridge,
 } from "../lib/analytics.js";
-import { getCalibrationData } from "../lib/feedback.js";
+import { getCalibrationData, recordActual, getPendingEstimates } from "../lib/feedback.js";
 import { getTaskTypeCorrectionFactor } from "../lib/self-improve.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
@@ -624,6 +624,47 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     (input) => cocomoValidate({
       datasetFilter: input.dataset_filter as string[] | undefined,
     }),
+  ),
+
+  // -- Feedback tools (2) ----------------------------------------------------
+
+  tool(
+    "record_actual",
+    "Records actual hours for a previous estimate to improve future estimation accuracy.",
+    z.object({
+      estimate_id: z.string().describe("ID of the estimate to update."),
+      actual_hours: z.number().positive().describe("Actual hours spent."),
+      notes: z.string().optional().describe("Optional context."),
+    }),
+    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } },
+    (input) => ({
+      ok: true as const,
+      data: {
+        recorded: recordActual(input.estimate_id as string, input.actual_hours as number, input.notes as string | undefined),
+        estimate_id: input.estimate_id,
+        actual_hours: input.actual_hours,
+        message: "Actual recorded. Correction factors update after more feedback accumulates.",
+      },
+    }),
+  ),
+
+  tool(
+    "get_pending_estimates",
+    "Lists recent estimates that have not yet received actual-hour feedback.",
+    z.object({
+      limit: z.number().int().positive().max(100).default(20).describe("Max estimates to return."),
+    }),
+    { type: "object", properties: { count: { type: "number" }, estimates: { type: "array" } } },
+    (input) => {
+      const pending = getPendingEstimates((input.limit as number) ?? 20);
+      return {
+        ok: true as const,
+        data: {
+          count: pending.length,
+          estimates: pending.map((e) => ({ id: e.id, tool: e.tool, estimatedAt: e.estimatedAt, hasActual: e.hasActual })),
+        },
+      };
+    },
   ),
 ]);
 

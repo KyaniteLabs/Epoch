@@ -15,7 +15,7 @@ const AI_PLUGIN_MANIFEST = {
   description_for_human:
     "Time estimation tools for accurate scheduling and planning.",
   description_for_model:
-    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 19 tools across 5 layers.",
+    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 21 tools across 5 layers.",
   api: { type: "openapi", url: "/openapi.json" },
   auth: { type: "none" },
   legal_info_url:
@@ -26,7 +26,7 @@ const LLMSTXT = `# Epoch
 > Time Estimation MCP Server — structured temporal reasoning for AI agents
 
 ## Overview
-Epoch provides 19 tools across 5 layers for accurate time estimation.
+Epoch provides 21 tools across 5 layers for accurate time estimation.
 All tools are accessed via POST /v1/tools/{tool_name} with JSON request bodies.
 All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"isError": true, "message": "...", "retryHint": "..."}}
 
@@ -354,7 +354,7 @@ function buildOpenApiSpec(): Record<string, unknown> {
       title: "Epoch Time Estimation API",
       version: VERSION,
       description:
-        "Structured time estimation for LLMs and AI agents. 19 tools across 5 layers.",
+        "Structured time estimation for LLMs and AI agents. 21 tools across 5 layers.",
     },
     servers: [
       { url: "http://localhost:3000", description: "Local development" },
