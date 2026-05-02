@@ -1,6 +1,6 @@
 # Epoch -- Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-357-brightgreen.svg)]()
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-677-brightgreen.svg)]()
 
 **Epoch helps AI agents understand time.**
 
@@ -45,7 +45,7 @@ Claude (using Epoch):
 
 ## Why Epoch?
 
-Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages decades of software engineering research into 19 tools any AI can call -- so your assistant stops guessing and starts calculating.
+Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages decades of software engineering research into 21 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
 ## What is MCP?
 
@@ -93,7 +93,7 @@ Everything below is for developers who want to understand the internals, use the
 
 ## Architecture
 
-Five-layer design with 19 tools for time estimation, scheduling, and cost analysis:
+Five-layer design with 21 tools for time estimation, scheduling, and cost analysis:
 
 | Layer | Purpose | Tools |
 |-------|---------|-------|
@@ -476,7 +476,7 @@ See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for guidelines on data format
 
 ## Surfaces
 
-Epoch exposes the same 19 tools through three interfaces:
+Epoch exposes the same 21 tools through three interfaces:
 
 | Surface | Transport | Use Case |
 |---------|-----------|----------|
@@ -553,7 +553,7 @@ pnpm run build
 ## Development
 
 ```bash
-pnpm test          # Run test suite (357 tests)
+pnpm test          # Run test suite (677 tests)
 pnpm run build     # Build with tsup
 pnpm run typecheck # TypeScript strict mode check
 pnpm run dev       # Run development server
@@ -562,7 +562,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 
 ## Tech Stack
 
-- **Runtime**: Node.js 22+ (ESM)
+- **Runtime**: Node.js 20+ (ESM)
 - **Language**: TypeScript 5.8 (strict mode, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
 - **Validation**: Zod 3.24 with `.describe()` on every field
 - **MCP SDK**: `@modelcontextprotocol/sdk` 1.12+

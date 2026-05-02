@@ -24,6 +24,7 @@ export function cocomoValidate(params?: {
       error: {
         isError: true,
         message: "COCOMO calibration data not found. Load calibration datasets before validation.",
+        retryHint: "Ensure the COCOMO calibration data files are present in the data directory.",
       },
     };
   }
@@ -78,6 +79,7 @@ export function cocomoValidate(params?: {
       error: {
         isError: true,
         message: "No valid projects found in COCOMO calibration data (all projects had kloc <= 0 or effort <= 0).",
+        retryHint: "Check that calibration datasets contain projects with positive kloc and effort values.",
       },
     };
   }

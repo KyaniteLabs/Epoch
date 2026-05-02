@@ -45,7 +45,7 @@ export function pertEstimate(
   const expectedHours = toHours(expected, unit);
 
   if (!Number.isFinite(expected) || !Number.isFinite(stdDev)) {
-    return { ok: false, error: { isError: true, message: "Computation produced invalid result." } };
+    return { ok: false, error: { isError: true, message: "Computation produced invalid result.", retryHint: "Ensure all inputs are finite numbers and optimistic < mostLikely < pessimistic." } };
   }
 
   return {
@@ -97,6 +97,7 @@ export function sprintForecast(params: {
       error: {
         isError: true,
         message: "backlog_points must be positive.",
+        retryHint: "Provide a positive number for backlog_points.",
       },
     };
   }
@@ -184,7 +185,7 @@ export function cocomoEstimate(params: {
   const personMonthsLlmAdjusted = personMonthsNominal / Math.max(1.5, 3.0 / llmOverhead);
 
   if (!Number.isFinite(personMonthsNominal) || !Number.isFinite(personMonthsLlmAdjusted)) {
-    return { ok: false, error: { isError: true, message: "COCOMO computation produced invalid result." } };
+    return { ok: false, error: { isError: true, message: "COCOMO computation produced invalid result.", retryHint: "Ensure kloc and all rating multipliers are finite positive numbers." } };
   }
 
   return {
