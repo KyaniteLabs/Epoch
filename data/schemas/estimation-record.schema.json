@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/KyaniteLabs/Epoch/schemas/estimation-record.schema.json",
+  "title": "EstimationRecord",
+  "description": "A single estimation data point comparing original estimate to actual effort, optionally including AI-assisted development metrics.",
+  "type": "object",
+  "properties": {
+    "estimated_hours": {
+      "type": "number",
+      "minimum": 0.1,
+      "description": "Original estimate in hours"
+    },
+    "actual_hours": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Actual effort in hours"
+    },
+    "task_type": {
+      "type": "string",
+      "enum": [
+        "feature",
+        "bugfix",
+        "refactor",
+        "migration",
+        "infrastructure",
+        "documentation",
+        "testing",
+        "design"
+      ],
+      "description": "Category of the task"
+    },
+    "complexity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Complexity rating from 1 (trivial) to 5 (extremely complex)"
+    },
+    "team_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of people who worked on the task"
+    },
+    "model_used": {
+      "type": "string",
+      "description": "LLM model name if AI-assisted (e.g. 'claude-sonnet-4-20250514')"
+    },
+    "tokens_used": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Token count if AI-assisted"
+    },
+    "tool_calls": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of tool calls if AI-assisted"
+    },
+    "reasoning_depth": {
+      "type": "string",
+      "enum": ["shallow", "moderate", "deep"],
+      "description": "Qualitative reasoning depth used during estimation"
+    },
+    "sprint_length_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Sprint length in days"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the estimate was made"
+    },
+    "contributor_id": {
+      "type": "string",
+      "description": "Anonymized contributor hash (NOT email or name)"
+    }
+  },
+  "required": ["estimated_hours", "actual_hours", "task_type", "complexity", "timestamp"],
+  "additionalProperties": false
+}

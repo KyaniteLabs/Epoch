@@ -25,10 +25,10 @@ function createMockServer(): {
 }
 
 describe("registerEstimationTools", () => {
-  it("registers 5 estimation tools", () => {
+  it("registers 6 estimation tools", () => {
     const { server, tools } = createMockServer();
     registerEstimationTools(server);
-    expect(tools.length).toBe(5);
+    expect(tools.length).toBe(6);
 
     const names = tools.map(t => t.name);
     expect(names).toContain("pert_estimate");

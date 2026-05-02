@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { pertEstimate, sprintForecast, cocomoEstimate, criticalPath, monteCarloSim } from "../lib/estimation.js";
+import { cocomoValidate } from "../lib/cocomo-validate.js";
 
 const annotations = {
   readOnlyHint: true as const,
@@ -133,6 +134,24 @@ completion estimates with identified risk events. Use seed for reproducible resu
       }));
       const result = monteCarloSim(mappedTasks, iterations, seed);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "cocomo_validate",
+    `Validate COCOMO estimation model against 195 real historical projects.
+
+Runs the COCOMO Basic formula against projects from NASA93, COCOMO81, Albrecht, and Kemerer datasets.
+Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjustments.`,
+    {
+      dataset_filter: z.array(z.string()).optional().describe("Optional: filter to specific datasets (COCOMO81, NASA93, Albrecht, Kemerer)."),
+    },
+    async ({ dataset_filter }) => {
+      const result = cocomoValidate({ datasetFilter: dataset_filter });
+      if (!result.ok) {
+        return { content: [{ type: "text" as const, text: JSON.stringify(result.error) }], isError: true };
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify(result.data) }] };
     },
   );
 }

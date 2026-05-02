@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/KyaniteLabs/Epoch/schemas/cocomo-project.schema.json",
+  "title": "CocomoProject",
+  "description": "A COCOMO project data point with size, effort, and classification for calibration of constructive cost models.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Project name (can be anonymized)"
+    },
+    "kloc": {
+      "type": "number",
+      "minimum": 0.01,
+      "description": "Thousands of lines of code"
+    },
+    "effort_person_months": {
+      "type": "number",
+      "minimum": 0.1,
+      "description": "Total effort in person-months"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["organic", "semidetached", "embedded"],
+      "description": "COCOMO project classification"
+    },
+    "language": {
+      "type": "string",
+      "description": "Primary programming language"
+    },
+    "year": {
+      "type": "integer",
+      "minimum": 1970,
+      "maximum": 2030,
+      "description": "Year the project was completed or measured"
+    },
+    "category": {
+      "type": "string",
+      "description": "Project category (e.g. 'web', 'embedded', 'scientific')"
+    },
+    "function_points": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Function point count"
+    },
+    "duration_months": {
+      "type": "number",
+      "minimum": 0.1,
+      "description": "Project duration in months"
+    },
+    "team_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Average team size"
+    },
+    "contributor_id": {
+      "type": "string",
+      "description": "Anonymized contributor hash (NOT email or name)"
+    }
+  },
+  "required": ["name", "kloc", "effort_person_months", "type"],
+  "additionalProperties": false
+}

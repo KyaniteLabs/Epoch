@@ -503,3 +503,89 @@ export const cocomoResultSchema = makeResultSchema(cocomoResultDataSchema);
 export const sprintForecastResultSchema = makeResultSchema(sprintForecastResultDataSchema);
 export const tokenTimeResultSchema = makeResultSchema(tokenTimeMappingDataSchema);
 export const monteCarloResultSchema = makeResultSchema(monteCarloResultDataSchema);
+
+// ---- Tool 15: tokenCostEstimate -------------------------------------------
+
+export const tokenCostEstimateSchema = z.object({
+  tokens: z
+    .coerce.number()
+    .positive()
+    .describe("Total number of tokens in the LLM request (prompt + completion)."),
+  model: z.string().describe("LLM model identifier. Unknown models fall back to generic estimates."),
+  tool_calls: z
+    .coerce.number()
+    .nonnegative()
+    .describe("Number of tool calls expected in the agentic loop.")
+    .default(0),
+  reasoning_depth: reasoningDepthEnum
+    .describe("Expected depth of chain-of-thought reasoning.")
+    .default("moderate"),
+});
+
+export type TokenCostEstimateInput = z.infer<typeof tokenCostEstimateSchema>;
+
+// ---- Tool 16: compareModels -----------------------------------------------
+
+export const compareModelsSchema = z.object({
+  tokens: z
+    .coerce.number()
+    .positive()
+    .describe("Total number of tokens to estimate across all models."),
+  tool_calls: z
+    .coerce.number()
+    .nonnegative()
+    .describe("Number of tool calls expected.")
+    .default(0),
+  reasoning_depth: reasoningDepthEnum
+    .describe("Expected depth of chain-of-thought reasoning.")
+    .default("moderate"),
+  sort_by: z
+    .enum(["cost", "time"])
+    .describe("Sort models by cost (default) or estimated time.")
+    .default("cost"),
+});
+
+export type CompareModelsInput = z.infer<typeof compareModelsSchema>;
+
+// ---- Tool 17: accuracyTrend -----------------------------------------------
+
+export const accuracyTrendSchema = z.object({
+  team_id: brandedString("Team")
+    .describe("Optional team identifier to scope historical data.")
+    .optional(),
+  window_size: z
+    .coerce.number()
+    .min(5)
+    .describe("Number of records per sliding window.")
+    .default(50),
+});
+
+export type AccuracyTrendInput = z.infer<typeof accuracyTrendSchema>;
+
+// ---- Tool 18: scheduleRisk ------------------------------------------------
+
+export const scheduleRiskSchema = z.object({
+  estimated_hours: z
+    .coerce.number()
+    .positive()
+    .describe("The estimated effort in hours to assess risk for."),
+  task_type: taskTypeEnum
+    .describe("Optional task type to refine historical accuracy lookup.")
+    .optional(),
+  team_id: brandedString("Team")
+    .describe("Optional team identifier to scope historical data.")
+    .optional(),
+});
+
+export type ScheduleRiskInput = z.infer<typeof scheduleRiskSchema>;
+
+// ---- Tool 19: cocomoValidate ----------------------------------------------
+
+export const cocomoValidateSchema = z.object({
+  dataset_filter: z
+    .array(z.string().describe("Dataset name: COCOMO81, NASA93, Albrecht, or Kemerer."))
+    .describe("Optional filter to validate against specific datasets only.")
+    .optional(),
+});
+
+export type CocomoValidateInput = z.infer<typeof cocomoValidateSchema>;

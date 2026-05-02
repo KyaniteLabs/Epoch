@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/KyaniteLabs/Epoch/schemas/sprint-velocity.schema.json",
+  "title": "SprintVelocity",
+  "description": "Sprint velocity data point tracking completed work against team capacity for estimation calibration.",
+  "type": "object",
+  "properties": {
+    "sprint_length_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30,
+      "description": "Sprint length in calendar days"
+    },
+    "points_completed": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Story points or planning points completed"
+    },
+    "team_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of team members"
+    },
+    "hours_per_sprint": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total working hours available in the sprint"
+    },
+    "backlog_size_points": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total backlog size in points at sprint start"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of sprint completion (ISO 8601 date)"
+    },
+    "contributor_id": {
+      "type": "string",
+      "description": "Anonymized contributor hash (NOT email or name)"
+    }
+  },
+  "required": ["sprint_length_days", "points_completed", "team_size", "timestamp"],
+  "additionalProperties": false
+}

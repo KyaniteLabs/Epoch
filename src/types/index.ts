@@ -293,6 +293,114 @@ export interface AccuracyMetrics {
 
 export type SupportedCountry = "US" | "UK" | "FR" | "DE" | "JP";
 
+// ---- Cost Estimation (Feature 1) -----------------------------------------
+
+export interface TokenCostEstimate {
+  readonly tokens: number;
+  readonly model: string;
+  readonly estimatedSeconds: number;
+  readonly estimatedMinutes: number;
+  readonly estimatedCost: number;
+  readonly costBreakdown: {
+    readonly inputCost: number;
+    readonly outputCost: number;
+    readonly toolCallOverheadCost: number;
+  };
+  readonly timeBreakdown: TokenTimeBreakdown;
+  readonly confidence: ConfidenceLevel;
+  readonly urgency: UrgencyCategory;
+  readonly humanReadable: string;
+}
+
+// ---- Model Comparison (Feature 2) ----------------------------------------
+
+export type QualityTier = "fast" | "standard" | "premium";
+
+export interface ModelComparisonEntry {
+  readonly model: string;
+  readonly estimatedSeconds: number;
+  readonly estimatedMinutes: number;
+  readonly estimatedCost: number;
+  readonly costAvailable: boolean;
+  readonly qualityTier: QualityTier;
+  readonly tokensPerSecond: number;
+}
+
+export interface ModelComparison {
+  readonly tokens: number;
+  readonly models: readonly ModelComparisonEntry[];
+  readonly sortBy: string;
+  readonly humanReadable: string;
+}
+
+// ---- Accuracy Trend (Feature 3) ------------------------------------------
+
+export interface AccuracyWindow {
+  readonly period: string;
+  readonly mape: number;
+  readonly bias: number;
+  readonly sampleSize: number;
+}
+
+export interface AccuracyTrend {
+  readonly windows: readonly AccuracyWindow[];
+  readonly overallTrend: "improving" | "degrading" | "stable";
+  readonly currentMape: number;
+  readonly industryBaselineMape: number;
+  readonly improvementVsIndustry: number;
+  readonly totalEstimates: number;
+  readonly totalWithActuals: number;
+  readonly humanReadable: string;
+}
+
+// ---- Schedule Risk (Feature 4) -------------------------------------------
+
+export type RiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface ScheduleRiskAssessment {
+  readonly estimatedHours: number;
+  readonly riskLevel: RiskLevel;
+  readonly confidenceIntervals: {
+    readonly p50: number;
+    readonly p80: number;
+    readonly p95: number;
+  };
+  readonly historicalAccuracy: {
+    readonly mape: number;
+    readonly sampleSize: number;
+  };
+  readonly recommendation: string;
+  readonly humanReadable: string;
+}
+
+// ---- COCOMO Validation (Feature 5) --------------------------------------
+
+export interface CocomoValidationReport {
+  readonly projectsEvaluated: number;
+  readonly mape: number;
+  readonly bias: number;
+  readonly byProjectType: Readonly<Record<string, { readonly mape: number; readonly count: number }>>;
+  readonly recommendedAdjustments: ReadonlyArray<{
+    readonly parameter: string;
+    readonly currentValue: number;
+    readonly recommendedValue: number;
+    readonly reason: string;
+  }>;
+  readonly humanReadable: string;
+}
+
+// ---- Developer Profile (Feature 6) --------------------------------------
+
+export interface DeveloperProfile {
+  readonly mode: "ai_native" | "human";
+  readonly featureDevTimeDays: number;
+  readonly bugfixTimeHours: number;
+  readonly sprintVelocityPoints: number;
+  readonly estimationMape: number;
+  readonly underestimationBias: number;
+  readonly correctionFactor: number;
+}
+
 // ---- Re-exports from lib ---------------------------------------------------
 
 export type { HistoricalRecord } from "../lib/analytics.js";

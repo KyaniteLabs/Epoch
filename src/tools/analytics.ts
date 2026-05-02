@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { tokenTimeBridge, referenceClassEstimate, calibrateEstimates } from "../lib/analytics.js";
+import { tokenCostEstimate, compareModels } from "../lib/cost.js";
+import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
+import { scheduleRisk } from "../lib/risk.js";
 import { getCalibrationData } from "../lib/feedback.js";
 
 const readOnlyAnnotations = {
@@ -99,6 +102,97 @@ Bridges the gap between token-space (how agents reason) and time-space (what hum
         model: params.model,
         toolCalls: params.tool_calls,
         reasoningDepth: params.reasoning_depth,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "token_cost_estimate",
+    `Estimate wall-clock time AND dollar cost for LLM token usage.
+
+Combines token-to-time mapping with model-specific pricing data.
+Returns cost breakdown (input/output/overhead) alongside the time estimate.`,
+    {
+      tokens: z.number().int().positive().describe("Estimated token count for the task (input + output)."),
+      model: z.enum([
+        "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022",
+        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
+        "gemini-2.0-flash", "gemini-2.5-pro",
+        "llama-3.1-70b", "llama-3.1-405b",
+        "mistral-large", "deepseek-v3",
+      ]).describe("The LLM model being used."),
+      tool_calls: z.number().int().nonnegative().default(0).describe("Estimated number of tool/API calls."),
+      reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning depth."),
+    },
+    async (params) => {
+      const result = tokenCostEstimate({
+        tokens: params.tokens,
+        model: params.model,
+        toolCalls: params.tool_calls,
+        reasoningDepth: params.reasoning_depth,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "compare_models",
+    `Compare all LLM models side-by-side for a given token budget.
+
+Ranks models by estimated cost or time. Shows quality tier for each model.
+Use when choosing which model to use for a task.`,
+    {
+      tokens: z.number().int().positive().describe("Token count to estimate across all models."),
+      tool_calls: z.number().int().nonnegative().default(0).describe("Number of tool calls."),
+      reasoning_depth: z.enum(["shallow", "moderate", "deep"]).default("moderate").describe("Reasoning depth."),
+      sort_by: z.enum(["cost", "time"]).default("cost").describe("Sort by cost or time."),
+    },
+    async (params) => {
+      const result = compareModels({
+        tokens: params.tokens,
+        toolCalls: params.tool_calls,
+        reasoningDepth: params.reasoning_depth,
+        sortBy: params.sort_by,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "accuracy_trend",
+    `Track estimation accuracy improvement over time.
+
+Computes sliding-window MAPE and compares against industry baseline (25%).
+Shows whether your estimates are improving, degrading, or stable.
+Industry research shows estimation accuracy does NOT improve with experience (Cao 2022) — self-correcting systems like Epoch can buck this trend.`,
+    {
+      team_id: z.string().optional().describe("Team identifier."),
+      window_size: z.number().int().min(5).default(50).describe("Records per sliding window."),
+    },
+    async ({ team_id, window_size }) => {
+      const result = computeAccuracyTrend({ teamId: team_id, windowSize: window_size });
+      return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "schedule_risk",
+    `Assess schedule risk for an estimate using historical accuracy data.
+
+Computes confidence intervals (p50/p80/p95) based on your team's MAPE.
+Returns risk level and actionable recommendations.
+Uses industry baseline (25% MAPE) when no historical data is available.`,
+    {
+      estimated_hours: z.number().positive().describe("The estimated effort in hours."),
+      task_type: z.enum(["feature", "bugfix", "refactor", "migration", "infrastructure", "documentation", "testing", "design"]).optional().describe("Task type for accuracy lookup."),
+      team_id: z.string().optional().describe("Team identifier."),
+    },
+    async ({ estimated_hours, task_type, team_id }) => {
+      const result = scheduleRisk({
+        estimatedHours: estimated_hours,
+        taskType: task_type,
+        teamId: team_id,
       });
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     },

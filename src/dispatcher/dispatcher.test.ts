@@ -95,9 +95,9 @@ describe("dispatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("listTools", () => {
-  it("returns 14 tools", () => {
+  it("returns 19 tools", () => {
     const tools = listTools();
-    expect(tools).toHaveLength(14);
+    expect(tools).toHaveLength(19);
   });
 
   it("each tool has name and description", () => {

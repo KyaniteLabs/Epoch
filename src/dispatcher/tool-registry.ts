@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Tool Registry
-// Maps all 14 tool names to handler functions and Zod input schemas.
+// Maps all 19 tool names to handler functions and Zod input schemas.
 // Translates between snake_case schema fields and camelCase lib params.
 // ---------------------------------------------------------------------------
 
 import { z } from "zod";
-import type { ToolResult } from "../types/index.js";
+import type { ToolResult, TaskType } from "../types/index.js";
 import {
   getCurrentTime,
   convertTimezone,
@@ -29,6 +29,10 @@ import {
 } from "../lib/analytics.js";
 import { getCalibrationData } from "../lib/feedback.js";
 import { getTaskTypeCorrectionFactor } from "../lib/self-improve.js";
+import { tokenCostEstimate, compareModels } from "../lib/cost.js";
+import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
+import { scheduleRisk } from "../lib/risk.js";
+import { cocomoValidate } from "../lib/cocomo-validate.js";
 import {
   temporalStatusSchema,
   timeMathSchema,
@@ -40,6 +44,11 @@ import {
   referenceClassEstimateSchema,
   calibrateEstimatesSchema,
   tokenTimeBridgeSchema,
+  tokenCostEstimateSchema,
+  compareModelsSchema,
+  accuracyTrendSchema,
+  scheduleRiskSchema,
+  cocomoValidateSchema,
 } from "../schemas/index.js";
 
 // ---- Tool Definition --------------------------------------------------------
@@ -572,6 +581,81 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
         toolCalls: (input.tool_calls as number) ?? 0,
         reasoningDepth: (input.reasoning_depth as "shallow" | "moderate" | "deep") ?? "moderate",
       }),
+    }),
+  ),
+
+  // -- Cost & Comparison tools (2) -------------------------------------------
+
+  tool(
+    "token_cost_estimate",
+    "Estimates wall-clock time AND dollar cost from token count and LLM model parameters.",
+    tokenCostEstimateSchema,
+    tokenTimeOutput,
+    (input) => ({
+      ok: true as const,
+      data: tokenCostEstimate({
+        tokens: input.tokens as number,
+        model: input.model as string,
+        toolCalls: (input.tool_calls as number) ?? 0,
+        reasoningDepth: (input.reasoning_depth as "shallow" | "moderate" | "deep") ?? "moderate",
+      }),
+    }),
+  ),
+
+  tool(
+    "compare_models",
+    "Compares all LLM models side-by-side for a given token budget, ranked by cost or time.",
+    compareModelsSchema,
+    { type: "object", properties: { tokens: { type: "number" }, models: { type: "array" }, humanReadable: { type: "string" } } },
+    (input) => ({
+      ok: true as const,
+      data: compareModels({
+        tokens: input.tokens as number,
+        toolCalls: (input.tool_calls as number) ?? 0,
+        reasoningDepth: (input.reasoning_depth as "shallow" | "moderate" | "deep") ?? "moderate",
+        sortBy: (input.sort_by as "cost" | "time") ?? "cost",
+      }),
+    }),
+  ),
+
+  // -- Analytics & Risk tools (3) --------------------------------------------
+
+  tool(
+    "accuracy_trend",
+    "Tracks estimation accuracy over time with sliding-window MAPE, compared to industry baselines.",
+    accuracyTrendSchema,
+    calibrateOutput,
+    (input) => ({
+      ok: true as const,
+      data: computeAccuracyTrend({
+        teamId: input.team_id as string | undefined,
+        windowSize: (input.window_size as number) ?? 50,
+      }),
+    }),
+  ),
+
+  tool(
+    "schedule_risk",
+    "Assesses schedule risk using historical accuracy data to compute confidence intervals.",
+    scheduleRiskSchema,
+    { type: "object", properties: { estimatedHours: { type: "number" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, recommendation: { type: "string" } } },
+    (input) => ({
+      ok: true as const,
+      data: scheduleRisk({
+        estimatedHours: input.estimated_hours as number,
+        taskType: input.task_type as TaskType | undefined,
+        teamId: input.team_id as string | undefined,
+      }),
+    }),
+  ),
+
+  tool(
+    "cocomo_validate",
+    "Validates COCOMO estimation model against 195 real historical projects.",
+    cocomoValidateSchema,
+    { type: "object", properties: { projectsEvaluated: { type: "number" }, mape: { type: "number" }, bias: { type: "number" }, humanReadable: { type: "string" } } },
+    (input) => cocomoValidate({
+      datasetFilter: input.dataset_filter as string[] | undefined,
     }),
   ),
 ]);

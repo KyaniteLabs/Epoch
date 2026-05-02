@@ -1,0 +1,18 @@
+name: Validate Community Data
+
+on:
+  pull_request:
+    paths:
+      - 'data/community/**'
+
+jobs:
+  validate:
+    name: Validate data schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate community data
+        run: node scripts/validate-community-data.mjs

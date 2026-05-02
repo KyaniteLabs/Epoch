@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/KyaniteLabs/Epoch/schemas/model-calibration.schema.json",
+  "title": "ModelCalibration",
+  "description": "LLM model performance and pricing data for calibration of AI-assisted estimation workflows.",
+  "type": "object",
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "Model identifier (e.g. 'claude-sonnet-4-20250514')"
+    },
+    "tokens_per_second": {
+      "type": "number",
+      "minimum": 0.1,
+      "description": "Output tokens per second"
+    },
+    "time_to_first_token_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Time to first token in milliseconds"
+    },
+    "avg_api_latency_ms": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Average API latency in milliseconds"
+    },
+    "cost_input_per_million": {
+      "type": "number",
+      "minimum": 0,
+      "description": "USD cost per million input tokens"
+    },
+    "cost_output_per_million": {
+      "type": "number",
+      "minimum": 0,
+      "description": "USD cost per million output tokens"
+    },
+    "benchmark_source": {
+      "type": "string",
+      "description": "Where the numbers come from (e.g. 'artificialanalysis.ai')"
+    },
+    "measured_at": {
+      "type": "string",
+      "format": "date",
+      "description": "Date the measurements were taken (ISO 8601 date)"
+    },
+    "contributor_id": {
+      "type": "string",
+      "description": "Anonymized contributor hash (NOT email or name)"
+    }
+  },
+  "required": ["model", "tokens_per_second", "time_to_first_token_ms", "avg_api_latency_ms", "cost_input_per_million", "cost_output_per_million", "measured_at"],
+  "additionalProperties": false
+}
