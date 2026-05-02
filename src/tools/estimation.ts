@@ -69,8 +69,11 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
         iterativeCycles: params.iterative_cycles,
         humanOversight: params.human_oversight,
       });
+      if (!result.ok) {
+        return { content: [{ type: "text" as const, text: JSON.stringify(result.error) }], isError: true };
+      }
       const output = {
-        ...result,
+        ...result.data,
         developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
       };
       return { content: [{ type: "text" as const, text: JSON.stringify(output) }] };

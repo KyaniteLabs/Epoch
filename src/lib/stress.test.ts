@@ -702,7 +702,7 @@ describe("estimation — pertEstimate stress", () => {
 });
 
 describe("estimation — cocomoEstimate stress", () => {
-  it("returns zero result for kloc=0", () => {
+  it("returns error for kloc=0", () => {
     const result = cocomoEstimate({
       kloc: 0,
       reasoningComplexity: 1.0,
@@ -711,11 +711,12 @@ describe("estimation — cocomoEstimate stress", () => {
       iterativeCycles: 1.0,
       humanOversight: 1.0,
     });
-    expect(result.personMonthsNominal).toBe(0);
-    expect(result.kloc).toBe(0);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("KLOC must be positive.");
   });
 
-  it("handles negative kloc (returns zero)", () => {
+  it("returns error for negative kloc", () => {
     const result = cocomoEstimate({
       kloc: -10,
       reasoningComplexity: 1.0,
@@ -724,8 +725,9 @@ describe("estimation — cocomoEstimate stress", () => {
       iterativeCycles: 1.0,
       humanOversight: 1.0,
     });
-    expect(result.kloc).toBe(0);
-    expect(result.personMonthsNominal).toBe(0);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("KLOC must be positive.");
   });
 
   it("works with all multipliers at 0.5", () => {
@@ -737,9 +739,11 @@ describe("estimation — cocomoEstimate stress", () => {
       iterativeCycles: 0.5,
       humanOversight: 0.5,
     });
-    expect(result.personMonthsNominal).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.personMonthsNominal).toBeGreaterThan(0);
     // 0.5^5 = 0.03125, rounded to 3 decimal places = 0.031
-    expect(result.effortMultipliers.product).toBeCloseTo(0.031, 2);
+    expect(result.data.effortMultipliers.product).toBeCloseTo(0.031, 2);
   });
 
   it("works with all multipliers at 2.0", () => {
@@ -751,8 +755,10 @@ describe("estimation — cocomoEstimate stress", () => {
       iterativeCycles: 2.0,
       humanOversight: 2.0,
     });
-    expect(result.personMonthsNominal).toBeGreaterThan(0);
-    expect(result.effortMultipliers.product).toBeCloseTo(32.0, 1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.personMonthsNominal).toBeGreaterThan(0);
+    expect(result.data.effortMultipliers.product).toBeCloseTo(32.0, 1);
   });
 
   it("returns assumptions array", () => {
@@ -764,7 +770,9 @@ describe("estimation — cocomoEstimate stress", () => {
       iterativeCycles: 1.0,
       humanOversight: 1.0,
     });
-    expect(result.assumptions.length).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.assumptions.length).toBeGreaterThan(0);
   });
 });
 

@@ -144,23 +144,17 @@ export function cocomoEstimate(params: {
   transformationImpact: number;
   iterativeCycles: number;
   humanOversight: number;
-}): CocomoResult {
+}): ToolResult<CocomoResult> {
   const { kloc, reasoningComplexity, contextCompleteness, transformationImpact, iterativeCycles, humanOversight } = params;
 
   if (kloc <= 0) {
     return {
-      kloc: 0,
-      personMonthsNominal: 0,
-      personMonthsLlmAdjusted: 0,
-      effortMultipliers: {
-        reasoning_complexity: reasoningComplexity,
-        context_completeness: contextCompleteness,
-        transformation_impact: transformationImpact,
-        iterative_cycles: iterativeCycles,
-        human_oversight: humanOversight,
-        product: 0,
+      ok: false,
+      error: {
+        isError: true,
+        message: "KLOC must be positive.",
+        retryHint: "Provide a positive value for kloc (thousands of lines of code).",
       },
-      assumptions: ["kloc must be > 0. Estimate is zero."],
     };
   }
 
@@ -173,23 +167,26 @@ export function cocomoEstimate(params: {
   const personMonthsLlmAdjusted = personMonthsNominal / Math.max(1.5, 3.0 / llmOverhead);
 
   return {
-    kloc,
-    personMonthsNominal: Math.round(personMonthsNominal * 10) / 10,
-    personMonthsLlmAdjusted: Math.round(personMonthsLlmAdjusted * 10) / 10,
-    effortMultipliers: {
-      reasoning_complexity: reasoningComplexity,
-      context_completeness: contextCompleteness,
-      transformation_impact: transformationImpact,
-      iterative_cycles: iterativeCycles,
-      human_oversight: humanOversight,
-      product: Math.round(emProduct * 1000) / 1000,
+    ok: true,
+    data: {
+      kloc,
+      personMonthsNominal: Math.round(personMonthsNominal * 10) / 10,
+      personMonthsLlmAdjusted: Math.round(personMonthsLlmAdjusted * 10) / 10,
+      effortMultipliers: {
+        reasoning_complexity: reasoningComplexity,
+        context_completeness: contextCompleteness,
+        transformation_impact: transformationImpact,
+        iterative_cycles: iterativeCycles,
+        human_oversight: humanOversight,
+        product: Math.round(emProduct * 1000) / 1000,
+      },
+      assumptions: [
+        "Based on COCOMO II Post-Architecture model (A=2.94, B=1.10).",
+        "LLM productivity factor derived from empirical agent benchmarks.",
+        "Cost drivers scaled for LLM-assisted workflows.",
+        "Adjust for your team's actual velocity.",
+      ],
     },
-    assumptions: [
-      "Based on COCOMO II Post-Architecture model (A=2.94, B=1.10).",
-      "LLM productivity factor derived from empirical agent benchmarks.",
-      "Cost drivers scaled for LLM-assisted workflows.",
-      "Adjust for your team's actual velocity.",
-    ],
   };
 }
 

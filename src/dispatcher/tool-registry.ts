@@ -132,7 +132,7 @@ const temporalOutput = {
     timezone: { type: "string", description: "IANA timezone identifier" },
     utcOffset: { type: "string", description: "UTC offset string" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const durationOutput = {
   type: "object",
@@ -141,7 +141,7 @@ const durationOutput = {
     totalSeconds: { type: "number" },
     humanReadable: { type: "string" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const businessDayOutput = {
   type: "object",
@@ -152,7 +152,7 @@ const businessDayOutput = {
     countryCode: { type: "string", description: "ISO-3166 country code" },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const pertOutput = {
   type: "object",
@@ -169,7 +169,7 @@ const pertOutput = {
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const cocomoOutput = {
   type: "object",
@@ -180,7 +180,7 @@ const cocomoOutput = {
     effortMultipliers: { type: "object", additionalProperties: { type: "number" } },
     assumptions: { type: "array", items: { type: "string" } },
   },
-};
+} satisfies Record<string, unknown>;
 
 const sprintOutput = {
   type: "object",
@@ -194,7 +194,7 @@ const sprintOutput = {
     completionDays: { type: "number" },
     sprintLengthDays: { type: "number" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const criticalPathOutput = {
   type: "object",
@@ -204,7 +204,7 @@ const criticalPathOutput = {
     total_duration: { type: "number" },
     merge_bias_adjustment: { type: "number" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const monteCarloOutput = {
   type: "object",
@@ -227,7 +227,7 @@ const monteCarloOutput = {
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const tokenTimeOutput = {
   type: "object",
@@ -248,7 +248,7 @@ const tokenTimeOutput = {
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
-};
+} satisfies Record<string, unknown>;
 
 const referenceClassOutput = {
   type: "object",
@@ -259,7 +259,7 @@ const referenceClassOutput = {
     sampleSize: { type: "number" },
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
   },
-};
+} satisfies Record<string, unknown>;
 
 const calibrateOutput = {
   type: "object",
@@ -270,14 +270,14 @@ const calibrateOutput = {
     sample_size: { type: "number" },
     trend: { type: "string", enum: ["improving", "degrading", "stable"] },
   },
-};
+} satisfies Record<string, unknown>;
 
 const timeMathOutput = {
   type: "object",
   description: "Varies by operation. Returns temporal, duration, or date diff data.",
-};
+} satisfies Record<string, unknown>;
 
-const stringOutput = { type: "string" };
+const stringOutput = { type: "string" } satisfies Record<string, unknown>;
 
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
 
@@ -381,17 +381,14 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     (input) => {
       const rawCycles = input.iterative_cycles as number;
       const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
-      return {
-        ok: true as const,
-        data: cocomoEstimate({
-          kloc: input.kloc as number,
-          reasoningComplexity: input.reasoning_complexity as number,
-          contextCompleteness: input.context_completeness as number,
-          transformationImpact: input.transformation_impact as number,
-          iterativeCycles,
-          humanOversight: input.human_oversight as number,
-        }),
-      };
+      return cocomoEstimate({
+        kloc: input.kloc as number,
+        reasoningComplexity: input.reasoning_complexity as number,
+        contextCompleteness: input.context_completeness as number,
+        transformationImpact: input.transformation_impact as number,
+        iterativeCycles,
+        humanOversight: input.human_oversight as number,
+      });
     },
   ),
 

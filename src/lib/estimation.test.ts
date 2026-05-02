@@ -168,10 +168,12 @@ describe("cocomoEstimate", () => {
       iterativeCycles: 1.0,
       humanOversight: 1.0,
     });
-    expect(result.kloc).toBe(10);
-    expect(result.personMonthsNominal).toBeGreaterThan(0);
-    expect(result.effortMultipliers.product).toBe(1.0);
-    expect(result.assumptions.length).toBeGreaterThan(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.kloc).toBe(10);
+    expect(result.data.personMonthsNominal).toBeGreaterThan(0);
+    expect(result.data.effortMultipliers.product).toBe(1.0);
+    expect(result.data.assumptions.length).toBeGreaterThan(0);
   });
 
   it("LLM-adjusted is less than nominal", () => {
@@ -183,7 +185,9 @@ describe("cocomoEstimate", () => {
       iterativeCycles: 1.0,
       humanOversight: 1.0,
     });
-    expect(result.personMonthsLlmAdjusted).toBeLessThan(result.personMonthsNominal);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.personMonthsLlmAdjusted).toBeLessThan(result.data.personMonthsNominal);
   });
 
   it("increases effort with high complexity multipliers", () => {
@@ -203,7 +207,24 @@ describe("cocomoEstimate", () => {
       iterativeCycles: 2.0,
       humanOversight: 2.0,
     });
-    expect(high.personMonthsNominal).toBeGreaterThan(low.personMonthsNominal);
+    expect(low.ok).toBe(true);
+    expect(high.ok).toBe(true);
+    if (!low.ok || !high.ok) return;
+    expect(high.data.personMonthsNominal).toBeGreaterThan(low.data.personMonthsNominal);
+  });
+
+  it("returns error for kloc <= 0", () => {
+    const result = cocomoEstimate({
+      kloc: 0,
+      reasoningComplexity: 1.0,
+      contextCompleteness: 1.0,
+      transformationImpact: 1.0,
+      iterativeCycles: 1.0,
+      humanOversight: 1.0,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("KLOC must be positive.");
   });
 });
 
