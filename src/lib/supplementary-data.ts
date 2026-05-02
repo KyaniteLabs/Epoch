@@ -111,6 +111,7 @@ export function loadCocomoData(): CocomoCalibrationData | null {
   const paths = [
     join(getDataDir(), "cocomo-calibration-data.json"),
     join(getDataDir(), "supplementary-database.json"),
+    join(import.meta.dirname, "..", "..", "data", "cocomo-calibration-data.json"),
   ];
 
   for (const p of paths) {
@@ -154,24 +155,11 @@ export function getEstimationResearch(): EstimationAccuracyResearch {
   };
 }
 
-export function getToolCallOverheadMs(): number {
-  return loadSupplementaryData()?.toolCallOverheadMs ?? 200;
-}
-
 // getCocomoProjects is defined below with community data support
 
 export function getCocomoDerivedFactors(): CocomoDerivedFactors | null {
   const data = loadCocomoData();
   return data?.cocomoCalibration?.derivedFactors ?? null;
-}
-
-export function getDeveloperProfileContrast(): { human: Record<string, number>; aiNative: Record<string, number> } {
-  const db = loadSupplementaryData();
-  const contrast = db?.developerProfileContrast;
-  return {
-    human: contrast?.humanDeveloper ?? { featureDevTimeDays: 14, bugfixTimeHours: 72, sprintVelocityPoints: 35 },
-    aiNative: contrast?.aiNativeDeveloper ?? { featureDevTimeDays: 4, bugfixTimeHours: 8, sprintVelocityPoints: 80 },
-  };
 }
 
 // ---- Community Data ---------------------------------------------------------
@@ -342,14 +330,6 @@ export function getCocomoProjects(): readonly CocomoDataset[] {
     })),
   };
   return [...base, communityDataset];
-}
-
-export function getCommunitySprints(): readonly CommunitySprintVelocity[] {
-  return loadCommunityData().sprintVelocity;
-}
-
-export function getCommunityEstimationRecords(): readonly CommunityEstimationRecord[] {
-  return loadCommunityData().estimationRecords;
 }
 
 export function resetSupplementaryCache(): void {

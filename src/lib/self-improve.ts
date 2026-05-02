@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
@@ -125,11 +125,10 @@ export async function updateReferenceDatabase(): Promise<void> {
   const dirDist = join(import.meta.dirname);
   const writeDir = existsSync(dir) ? dir : dirDist;
   if (existsSync(writeDir)) {
-    writeFileSync(
-      join(writeDir, "reference-database.json"),
-      JSON.stringify(db, null, 2),
-      "utf-8",
-    );
+    const targetPath = join(writeDir, "reference-database.json");
+    const tmpPath = join(writeDir, "reference-database.json.tmp");
+    writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf-8");
+    renameSync(tmpPath, targetPath);
   }
 }
 

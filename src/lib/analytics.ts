@@ -169,7 +169,7 @@ export function referenceClassEstimate(
   sampleSize: number;
   confidence: ConfidenceLevel;
 } {
-  const filtered = records.filter(r => r.taskType === taskType);
+  const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
 
   let correctionFactor: number;
   let sampleSize: number;
@@ -240,7 +240,9 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
 }
 
 function avgPercentageError(records: HistoricalRecord[]): number {
-  return records.reduce((sum, r) => sum + Math.abs(r.actualHours - r.estimatedHours) / r.actualHours, 0) / records.length * 100;
+  const valid = records.filter(r => r.actualHours > 0);
+  if (valid.length === 0) return 0;
+  return valid.reduce((sum, r) => sum + Math.abs(r.actualHours - r.estimatedHours) / r.actualHours, 0) / valid.length * 100;
 }
 
 export function calibrateEstimates(

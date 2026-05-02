@@ -9,7 +9,8 @@
     "epoch": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "data"
   ],
   "exports": {
     ".": {

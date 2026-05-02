@@ -1,4 +1,5 @@
 import type { TaskType, ScheduleRiskAssessment, RiskLevel } from "../types/index.js";
+import { assertNever } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
 import { getCalibrationData } from "./feedback.js";
 import { getEstimationResearch } from "./supplementary-data.js";
@@ -68,6 +69,7 @@ function getRecommendation(riskLevel: RiskLevel): string {
       return "High risk. Recommend re-estimating with more detail.";
     case "critical":
       return "Critical risk. Break down the task and re-estimate each component.";
+    default: return assertNever(riskLevel);
   }
 }
 

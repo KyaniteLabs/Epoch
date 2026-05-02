@@ -9,6 +9,7 @@ import type {
   ToolResult,
   TimeUnit,
 } from "../types/index.js";
+import { assertNever } from "../types/index.js";
 import { getUrgencyCategory } from "./internal/urgency.js";
 
 function toHours(value: number, unit: TimeUnit): number {
@@ -17,6 +18,7 @@ function toHours(value: number, unit: TimeUnit): number {
     case "days": return value * 8;
     case "weeks": return value * 40;
     case "months": return value * 160;
+    default: return assertNever(unit);
   }
 }
 

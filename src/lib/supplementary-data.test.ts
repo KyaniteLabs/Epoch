@@ -17,7 +17,6 @@ import {
   getModelPricing,
   getHumanBaselines,
   getEstimationResearch,
-  getToolCallOverheadMs,
   getAllModelPricing,
   getCocomoProjects,
   getCocomoDerivedFactors,
@@ -204,21 +203,6 @@ describe("getEstimationResearch", () => {
     expect(research.expertEstimatesWithinPercent).toBe(25);
     expect(research.underestimationRate).toBe(57.5);
     expect(research.averageScheduleOverrunPercent).toBe(189);
-  });
-});
-
-// ---- getToolCallOverheadMs ----
-
-describe("getToolCallOverheadMs", () => {
-  it("returns value from data", () => {
-    mockExistsSync.mockReturnValue(true);
-    mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
-    expect(getToolCallOverheadMs()).toBe(150);
-  });
-
-  it("returns default 200 when no data", () => {
-    mockExistsSync.mockReturnValue(false);
-    expect(getToolCallOverheadMs()).toBe(200);
   });
 });
 

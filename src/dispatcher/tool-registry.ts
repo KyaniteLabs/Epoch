@@ -32,6 +32,7 @@ import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
 import { cocomoValidate } from "../lib/cocomo-validate.js";
+import { getDeveloperProfile } from "../lib/profiles.js";
 import {
   temporalStatusSchema,
   timeMathSchema,
@@ -364,13 +365,24 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "Computes a PERT three-point estimate with expected value, standard deviation, and confidence intervals.",
     pertEstimateSchema,
     pertOutput,
-    (input) =>
-      pertEstimate(
+    (input) => {
+      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
+      const result = pertEstimate(
         input.optimistic as number,
         input.most_likely as number,
         input.pessimistic as number,
         input.unit as "hours" | "days" | "weeks" | "months",
-      ),
+      );
+      if (!result.ok) return result;
+      return {
+        ok: true as const,
+        data: {
+          ...result.data,
+          developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+          adjustedEstimate: result.data.expected * profile.correctionFactor,
+        },
+      };
+    },
   ),
 
   tool(
@@ -379,9 +391,10 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     cocomoEstimateSchema,
     cocomoOutput,
     (input) => {
+      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
       const rawCycles = input.iterative_cycles as number;
       const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
-      return cocomoEstimate({
+      const result = cocomoEstimate({
         kloc: input.kloc as number,
         reasoningComplexity: input.reasoning_complexity as number,
         contextCompleteness: input.context_completeness as number,
@@ -389,6 +402,14 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
         iterativeCycles,
         humanOversight: input.human_oversight as number,
       });
+      if (!result.ok) return result;
+      return {
+        ok: true as const,
+        data: {
+          ...result.data,
+          developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+        },
+      };
     },
   ),
 
@@ -397,13 +418,23 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "Forecasts sprints needed to clear a backlog based on historical velocity.",
     sprintForecastSchema,
     sprintOutput,
-    (input) =>
-      sprintForecast({
+    (input) => {
+      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
+      const result = sprintForecast({
         backlogPoints: input.backlog_points as number,
         velocityHistory: input.velocity_history as number[],
         sprintLengthDays: input.sprint_length_days as number,
         hoursPerSprint: input.hours_per_sprint as number,
-      }),
+      });
+      if (!result.ok) return result;
+      return {
+        ok: true as const,
+        data: {
+          ...result.data,
+          developerProfile: { mode: profile.mode, sprintVelocityPoints: profile.sprintVelocityPoints, correctionFactor: profile.correctionFactor },
+        },
+      };
+    },
   ),
 
   tool(
@@ -453,6 +484,7 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     referenceClassEstimateSchema,
     referenceClassOutput,
     (input) => {
+      const profile = getDeveloperProfile((input.ai_native as boolean) ?? true);
       const taskType = input.task_type as
         | "feature"
         | "bugfix"
@@ -468,13 +500,14 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
         90,
         "reference_class_estimate",
       );
+      const result = referenceClassEstimate(records, taskType, input.complexity as number);
       return {
         ok: true as const,
-        data: referenceClassEstimate(
-          records,
-          taskType,
-          input.complexity as number,
-        ),
+        data: {
+          ...result,
+          developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+          adjustedEstimate: Math.round(result.correctedEstimate * profile.correctionFactor * 10) / 10,
+        },
       };
     },
   ),

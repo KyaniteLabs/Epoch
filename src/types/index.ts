@@ -46,12 +46,6 @@ export function tokens(n: number): Tokens { return n as Tokens; }
 export function tokensPerSecond(n: number): TokensPerSecond { return n as TokensPerSecond; }
 export function percentage(n: number): Percentage { return n as Percentage; }
 
-// ---- Unbrand (extract raw number for arithmetic) ---------------------------
-
-export function unbrand<T extends Brand<number, string>>(branded: T): number {
-  return branded as number;
-}
-
 // ---- Temporal Layer -------------------------------------------------------
 
 export interface TemporalResult {
@@ -413,6 +407,13 @@ export interface DeveloperProfile {
   readonly estimationMape: number;
   readonly underestimationBias: number;
   readonly correctionFactor: number;
+}
+
+// ---- Exhaustiveness Check --------------------------------------------------
+
+/** Compile-time exhaustiveness check for switch statements. */
+export function assertNever(x: never, message?: string): never {
+  throw new Error(message ?? `Unexpected value: ${JSON.stringify(x)}`);
 }
 
 // ---- Re-exports from lib ---------------------------------------------------
