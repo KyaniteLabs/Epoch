@@ -9,12 +9,7 @@ import type {
   ToolResult,
   TimeUnit,
 } from "../types/index.js";
-
-function getUrgencyCategory(hours: number): "short" | "medium" | "long" {
-  if (hours < 2) return "short";
-  if (hours <= 48) return "medium";
-  return "long";
-}
+import { getUrgencyCategory } from "./internal/urgency.js";
 
 function toHours(value: number, unit: TimeUnit): number {
   switch (unit) {

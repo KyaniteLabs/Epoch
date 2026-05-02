@@ -14,17 +14,14 @@ import {
 import { toZonedTime } from "date-fns-tz";
 import type {
   BusinessDayResult,
-  UrgencyCategory,
   SupportedCountry,
   ToolResult,
   ToolError,
 } from "../types/index.js";
+import { getUrgencyCategory } from "./internal/urgency.js";
+import { makeError } from "./internal/error-helpers.js";
 
 // ---- Error helper ---------------------------------------------------------
-
-function makeError(message: string, retryHint?: string): ToolError {
-  return { isError: true, message, retryHint };
-}
 
 function parseDate(dateStr: string): Date | ToolError {
   const parsed = parseISO(dateStr);
@@ -401,12 +398,5 @@ export function isWithinWorkingHours(
   return true;
 }
 
-/**
- * Categorises urgency by remaining hours.
- * Under 2h = "short", 2h-48h = "medium", over 48h = "long".
- */
-export function getUrgencyCategory(hours: number): UrgencyCategory {
-  if (hours < 2) return "short";
-  if (hours <= 48) return "medium";
-  return "long";
-}
+// Re-exported from shared utility for backward compatibility.
+export { getUrgencyCategory } from "./internal/urgency.js";

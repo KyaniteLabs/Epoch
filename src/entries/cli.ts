@@ -30,6 +30,15 @@ function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
   return (rootOpts.format ?? "json") as "json" | "table";
 }
 
+/** Resolve root options from Commander command chain. */
+function getRootOpts(cmd: Command): Record<string, unknown> {
+  return cmd.parent!.opts() as Record<string, unknown>;
+}
+
+function isQuiet(rootOpts: Record<string, unknown>): boolean {
+  return rootOpts.quiet === true;
+}
+
 /** Run dispatch, format, and exit with the appropriate code. */
 async function runAndExit(
   toolName: string,
@@ -80,9 +89,9 @@ export function createCliProgram(): Command {
     .description("Returns the current time in the specified IANA timezone.")
     .option("--timezone <tz>", 'IANA timezone identifier (default "UTC")', "UTC")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "get_current_time",
         { timezone: opts.timezone },
@@ -97,9 +106,9 @@ export function createCliProgram(): Command {
     .requiredOption("--timestamp <ts>", "ISO-8601 timestamp to convert")
     .requiredOption("--target-tz <tz>", "Target IANA timezone identifier")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "convert_timezone",
         {
@@ -116,9 +125,9 @@ export function createCliProgram(): Command {
     .description('Parses a duration string such as "2h30m", "1d6h", "45m".')
     .requiredOption("--duration <string>", "Duration string to parse")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "parse_duration",
         { duration_string: opts.duration },
@@ -141,9 +150,9 @@ export function createCliProgram(): Command {
     .option("--duration-string <s>", "Natural language duration string (parse_nl)")
     .option("--milliseconds <n>", "Duration in milliseconds (format_duration)", parseFloat)
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const operands: Record<string, unknown> = {};
       if (opts.date !== undefined) operands.date = opts.date;
       if (opts.days !== undefined) operands.days = opts.days;
@@ -172,9 +181,9 @@ export function createCliProgram(): Command {
     .requiredOption("--days <n>", "Number of business days to add", parseFloat)
     .option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "add_business_days",
         {
@@ -194,9 +203,9 @@ export function createCliProgram(): Command {
     .requiredOption("--end-date <d>", "ISO date string for the end date")
     .option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "count_business_days",
         {
@@ -219,9 +228,9 @@ export function createCliProgram(): Command {
     .requiredOption("--pessimistic <n>", "Worst-case duration", parseFloat)
     .option("--unit <unit>", "Time unit (hours|days|weeks|months)", "hours")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "pert_estimate",
         {
@@ -245,9 +254,9 @@ export function createCliProgram(): Command {
     .option("--iterative-cycles <n>", "Iteration overhead multiplier (0.5-2.0)", parseFloat)
     .option("--human-oversight <n>", "Human review overhead multiplier (0.5-2.0)", parseFloat)
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const input: Record<string, unknown> = { kloc: opts.kloc };
       if (opts.reasoningComplexity !== undefined) {
         input.reasoning_complexity = opts.reasoningComplexity;
@@ -275,9 +284,9 @@ export function createCliProgram(): Command {
     .option("--sprint-length-days <n>", "Calendar days in one sprint", parseFloat)
     .option("--hours-per-sprint <n>", "Productive engineering hours per sprint", parseFloat)
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const velocityHistory = opts.velocityHistory
         .split(",")
         .map((s: string) => {
@@ -308,9 +317,9 @@ export function createCliProgram(): Command {
     .description("Computes the critical path through a task graph with merge-bias adjustment.")
     .requiredOption("--tasks <json>", "Task array as JSON")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const tasks = parseJsonArg(opts.tasks, "tasks");
       await runAndExit(
         "critical_path",
@@ -326,9 +335,9 @@ export function createCliProgram(): Command {
     .requiredOption("--tasks <json>", "Task array as JSON")
     .option("--iterations <n>", "Number of simulation iterations", parseFloat)
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const tasks = parseJsonArg(opts.tasks, "tasks");
       const input: Record<string, unknown> = { tasks };
       if (opts.iterations !== undefined) {
@@ -345,9 +354,9 @@ export function createCliProgram(): Command {
     .requiredOption("--task-type <type>", "Category of work (feature|bugfix|refactor|migration|infrastructure|documentation|testing|design)")
     .requiredOption("--complexity <n>", "Complexity 1-5", parseFloat)
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       await runAndExit(
         "reference_class_estimate",
         {
@@ -365,9 +374,9 @@ export function createCliProgram(): Command {
     .requiredOption("--team-id <id>", "Team identifier")
     .option("--period-days <n>", "Lookback window in calendar days", parseFloat)
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const input: Record<string, unknown> = { team_id: opts.teamId };
       if (opts.periodDays !== undefined) {
         input.period_days = opts.periodDays;
@@ -383,9 +392,9 @@ export function createCliProgram(): Command {
     .option("--tool-calls <n>", "Number of expected tool calls", parseFloat)
     .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
     .action(async (opts, cmd) => {
-      const root = cmd.parent!;
-      const format = resolveFormat(root.opts() as Record<string, unknown>);
-      const quiet = root.opts().quiet === true;
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
       const input: Record<string, unknown> = {
         tokens: opts.tokens,
         model: opts.model,
