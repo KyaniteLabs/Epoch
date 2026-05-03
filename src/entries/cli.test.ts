@@ -192,9 +192,10 @@ describe("CLI tests", () => {
       "feedback-health",
       "cocomo-ground-truth",
       "list-tools",
+      "self-improve",
     ];
 
-    it("registers all 25 commands (24 tools + list-tools)", () => {
+    it("registers all 26 commands (24 tools + list-tools + self-improve)", () => {
       const program = createCliProgram();
       const commandNames = program.commands.map((c) => c.name());
       for (const name of EXPECTED_COMMANDS) {

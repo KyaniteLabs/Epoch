@@ -576,6 +576,16 @@ export function createCliProgram(): Command {
       await runAndExit("cocomo_ground_truth", input, format, quiet);
     });
 
+  program
+    .command("self-improve")
+    .description("Trigger self-improvement: recompute correction factors from feedback data.")
+    .action(async () => {
+      const { updateReferenceDatabase } = await import("../lib/self-improve.js");
+      await updateReferenceDatabase();
+      process.stdout.write(JSON.stringify({ ok: true, message: "Self-improvement complete." }) + "\n");
+      process.exit(0);
+    });
+
   // ---- Utility commands -------------------------------------------------------
 
   program
