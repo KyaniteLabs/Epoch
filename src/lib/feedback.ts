@@ -281,9 +281,8 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const byTool: FeedbackHealthReport["byTool"] = {};
   for (const [tool, count] of toolEstimates) {
     const matched = toolRecords.get(tool) ?? [];
-    const mape = matched.length >= 2 ? computeAccuracyMetrics(matched).mape : null;
-    const mdape = matched.length >= 2 ? computeAccuracyMetrics(matched).mdape : null;
-    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, mape, mdape };
+    const metrics = matched.length >= 2 ? computeAccuracyMetrics(matched) : null;
+    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
   }
 
   // By task type — group the pre-matched records
@@ -302,9 +301,8 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const byTaskType: FeedbackHealthReport["byTaskType"] = {};
   for (const [type, count] of typeEstimateCounts) {
     const records = typeGroups.get(type) ?? [];
-    const mape = records.length >= 2 ? computeAccuracyMetrics(records).mape : null;
-    const mdape = records.length >= 2 ? computeAccuracyMetrics(records).mdape : null;
-    byTaskType[type] = { estimates: count, actuals: records.length, mape, mdape };
+    const metrics = records.length >= 2 ? computeAccuracyMetrics(records) : null;
+    byTaskType[type] = { estimates: count, actuals: records.length, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
   }
 
   // Self-improvement readiness: types with 5+ matched records
