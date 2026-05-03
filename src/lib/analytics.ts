@@ -8,7 +8,7 @@ import type {
 } from "../types/index.js";
 import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
-import { getReferenceClassForCategory, getScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
+import { getReferenceClassForCategory, getScopeBaseline, getAiNativeScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
 
 const COMPLEXITY_MULTIPLIER: Record<number, number> = {
   1: 0.7,
@@ -185,6 +185,7 @@ export function referenceClassEstimate(
   taskType: TaskType,
   complexity: number,
   scope?: ScopeSignal,
+  aiNative?: boolean,
 ): {
   rawEstimate: number;
   correctedEstimate: number;
@@ -200,20 +201,6 @@ export function referenceClassEstimate(
   let correctionFactor: number;
   let sampleSize: number;
 
-  if (filtered.length >= 5) {
-    const ratios = filtered.map(r => r.actualHours / r.estimatedHours);
-    ratios.sort((a, b) => a - b);
-    const mid = Math.floor(ratios.length / 2);
-    const rawMedian = ratios.length % 2 === 0
-      ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
-      : (ratios[mid] ?? 1.8);
-    correctionFactor = Math.min(3.0, Math.max(0.5, rawMedian));
-    sampleSize = filtered.length;
-  } else {
-    correctionFactor = getCorrectionFactorForTaskType(taskType, "reference_class_estimate");
-    sampleSize = filtered.length;
-  }
-
   // Infer scope from complexity when not explicitly provided
   const scopeInferred = scope === undefined;
   const effectiveScope = scope ?? inferScopeFromComplexity(complexity);
@@ -221,7 +208,27 @@ export function referenceClassEstimate(
   let rawEstimate: number;
   let baselineSource: string;
 
-  const scopeBaseline = getScopeBaseline(taskType);
+  // Use AI-native baselines when ai_native mode is active
+  const usingAiBaselines = aiNative && getAiNativeScopeBaseline(taskType) !== null;
+  const scopeBaseline = aiNative
+    ? getAiNativeScopeBaseline(taskType) ?? getScopeBaseline(taskType)
+    : getScopeBaseline(taskType);
+
+  if (filtered.length >= 5) {
+    const ratios = filtered.map(r => r.actualHours / r.estimatedHours);
+    ratios.sort((a, b) => a - b);
+    const mid = Math.floor(ratios.length / 2);
+    const rawMedian = ratios.length % 2 === 0
+      ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
+      : (ratios[mid] ?? 1.8);
+    // When using AI-native baselines, historical CF (computed against human baselines)
+    // would double-correct. Use 1.0 unless local records are also from AI-native estimates.
+    correctionFactor = usingAiBaselines ? 1.0 : Math.min(3.0, Math.max(0.1, rawMedian));
+    sampleSize = filtered.length;
+  } else {
+    correctionFactor = usingAiBaselines ? 1.0 : getCorrectionFactorForTaskType(taskType, "reference_class_estimate");
+    sampleSize = filtered.length;
+  }
   const cMul = COMPLEXITY_MULTIPLIER[Math.max(1, Math.min(5, complexity))] ?? 1.0;
 
   if (scopeBaseline) {

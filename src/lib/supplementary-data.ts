@@ -190,6 +190,23 @@ export function getScopeBaseline(category: string): ScopeBaseline | null {
   return loadSupplementaryData()?.scopeBaselines?.[category] ?? null;
 }
 
+// AI-native baselines derived from 139 matched estimate-actual pairs.
+// Human baselines assume 4–17h per task; AI-native work finishes in 0.1–5h.
+const AI_NATIVE_SCOPE_BASELINES: Record<string, ScopeBaseline> = {
+  feature:        { small: 0.5, medium: 2.0, large: 5.0, xl: 8.0 },
+  bugfix:         { small: 0.1, medium: 2.0, large: 5.0, xl: 8.0 },
+  infrastructure: { small: 0.3, medium: 2.0, large: 5.0, xl: 8.0 },
+  testing:        { small: 0.1, medium: 1.5, large: 5.0, xl: 8.0 },
+  refactor:       { small: 0.5, medium: 1.5, large: 4.5, xl: 8.0 },
+  documentation:  { small: 0.3, medium: 2.0, large: 4.0, xl: 8.0 },
+  design:         { small: 0.5, medium: 3.0, large: 6.0, xl: 10.0 },
+  migration:      { small: 0.5, medium: 2.5, large: 5.0, xl: 8.0 },
+};
+
+export function getAiNativeScopeBaseline(category: string): ScopeBaseline | null {
+  return AI_NATIVE_SCOPE_BASELINES[category] ?? null;
+}
+
 export function getEstimationResearch(): EstimationAccuracyResearch {
   const db = loadSupplementaryData();
   return db?.estimationAccuracyResearch ?? {
