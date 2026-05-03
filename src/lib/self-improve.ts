@@ -259,7 +259,7 @@ function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, n
     const median = ratios.length % 2 === 0
       ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
       : (ratios[mid] ?? 1.8);
-    factors[type] = Math.round(Math.min(3.0, Math.max(0.5, median)) * 100) / 100;
+    factors[type] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
   }
 
   return factors;
@@ -300,7 +300,7 @@ function computeToolCorrectionFactors(records: HistoricalRecord[]): Record<strin
       const median = ratios.length % 2 === 0
         ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
         : (ratios[mid] ?? 1.4);
-      result[tool][taskType] = Math.round(Math.min(3.0, Math.max(0.5, median)) * 100) / 100;
+      result[tool][taskType] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
     }
   }
   return result;

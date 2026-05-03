@@ -279,7 +279,7 @@ describe("updateReferenceDatabase", () => {
     expect(writtenData.taskTypeCorrectionFactors).toEqual({});
   });
 
-  it("computes tool-specific factors with minimum 3 samples and clamps to [0.5, 3.0]", async () => {
+  it("computes tool-specific factors with minimum 3 samples and clamps to [0.1, 3.0]", async () => {
     const records: HistoricalRecord[] = [
       // pert_estimate + feature: 3 records, ratios = [1.2, 1.4, 1.6] → median = 1.4
       { taskType: "feature", estimatedHours: 10, actualHours: 12, tool: "pert_estimate", completedAt: "2026-04-01" },
@@ -446,7 +446,7 @@ describe("updateReferenceDatabase", () => {
     expect(writtenData.toolTaskCorrectionFactors["slow-tool"].feature).toBe(3.0);
   });
 
-  it("clamps tool correction factor to 0.5 min", async () => {
+  it("clamps tool correction factor to 0.1 min", async () => {
     const records: HistoricalRecord[] = [
       { taskType: "feature", estimatedHours: 10, actualHours: 2, tool: "fast-tool", completedAt: "2026-04-01" },
       { taskType: "feature", estimatedHours: 10, actualHours: 1, tool: "fast-tool", completedAt: "2026-04-02" },
@@ -462,8 +462,8 @@ describe("updateReferenceDatabase", () => {
     const writtenData = JSON.parse(
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
-    // fast-tool / feature ratios: 0.2, 0.1, 0.3 -> sorted: 0.1, 0.2, 0.3 -> median 0.2 -> clamped 0.5
-    expect(writtenData.toolTaskCorrectionFactors["fast-tool"].feature).toBe(0.5);
+    // fast-tool / feature ratios: 0.2, 0.1, 0.3 -> sorted: 0.1, 0.2, 0.3 -> median 0.2 -> clamped 0.2 (within 0.1 floor)
+    expect(writtenData.toolTaskCorrectionFactors["fast-tool"].feature).toBe(0.2);
   });
 
   it("uses 'unknown' as tool when record has no tool field", async () => {
