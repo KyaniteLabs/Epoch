@@ -1,6 +1,6 @@
 {
   "name": "@puenteworks/epoch",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Time Estimation MCP Server — 24 structured tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, schedule risk, and model comparison. Self-improving engine with estimation feedback loop. MCP + CLI + REST API.",
   "type": "module",
   "main": "dist/index.js",

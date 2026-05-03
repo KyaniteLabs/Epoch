@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-05-03
+
+### Added
+- `estimatedHours` field on `critical_path` output (total_duration × 8) — enables feedback tokens for CPM estimates
+- `self-improve` CLI command to manually trigger correction factor recomputation
+- Data quality indicator in `feedback-health`: overallMdape, outlierRatio, recommendation string
+- `dateRange` field in accuracy trend windows showing first-to-last record dates
+- 5 tests for urgency category boundary conditions
+
+### Fixed
+- Seed data artifacts (actualHours < 0.25h) filtered from accuracy computation — MdAPE improved 150% → 100%
+- AI-native correction factor bypass removed: data-driven CFs now applied when ≥5 records exist, even with AI baselines — fixes systematic 2x overestimation
+- Monte Carlo and Critical Path now receive feedback tokens via `estimatedHours` output field
+
+### Changed
+- AI-native scope baselines differentiated by task type (bugfix 0.1–6h, migration 0.5–16h instead of uniform 8–10h)
+- `MINIMUM_ACTUAL_HOURS` constant (0.25h) replaces inline magic number
+- Global correction factor updated to 0.5 (was 0.3)
+
 ## [0.1.3] - 2026-05-02
 
 ### Added
