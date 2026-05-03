@@ -287,6 +287,8 @@ export interface MonteCarloTask {
 export interface AccuracyMetrics {
   /** Mean Absolute Percentage Error across all samples. */
   readonly mape: number;
+  /** Median Absolute Percentage Error — robust to outliers. */
+  readonly mdape: number;
   /** Mean bias (positive = underestimation, negative = overestimation). */
   readonly bias: number;
   /** Variance of the bias distribution. */

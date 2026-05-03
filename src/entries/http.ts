@@ -113,7 +113,7 @@ Estimates effort using reference-class forecasting from historical data.
 ### calibrate_estimates
 Calibrates estimation accuracy using historical team data.
 - Input: {"team_id": "alpha", "period_days": 90, "minimum_samples": 5}
-- Output: {"mape": 0.0, "bias": 0.0, "variance": 0.0, "sample_size": 0, "trend": "stable"}
+- Output: {"mape": 0.0, "mdape": 0.0, "bias": 0.0, "variance": 0.0, "sample_size": 0, "trend": "stable"}
 
 ### token_time_bridge
 Estimates wall-clock time from token count and LLM model parameters.

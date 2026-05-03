@@ -203,12 +203,12 @@ describe("referenceClassEstimate scope signal", () => {
     expect(referenceClassEstimate([], "feature", 6).scopeUsed).toBe("xl");
   });
 
-  it("clamps correction factor from historical data to [0.5, 3.0]", () => {
+  it("clamps correction factor from historical data to [0.1, 3.0]", () => {
     const extremeRecords: HistoricalRecord[] = Array.from({ length: 7 }, (_, i) => ({
       taskType: "feature", estimatedHours: 10, actualHours: 100 + i * 10, completedAt: `2026-0${i + 1}-01`,
     }));
     const result = referenceClassEstimate(extremeRecords, "feature", 3);
-    expect(result.correctionFactor).toBeGreaterThanOrEqual(0.5);
+    expect(result.correctionFactor).toBeGreaterThanOrEqual(0.1);
     expect(result.correctionFactor).toBeLessThanOrEqual(3.0);
   });
 
@@ -359,5 +359,103 @@ describe("calibrateEstimates", () => {
     const result = calibrateEstimates("team-a", 90, 5, records);
     expect(result.correctionFactor).toBeGreaterThan(0);
     expect(result.accuracyTrend).toBe("stable");
+  });
+});
+
+describe("computeAccuracyMetrics MdAPE", () => {
+  it("returns mdape 0 for empty records", () => {
+    const result = computeAccuracyMetrics([]);
+    expect(result.mdape).toBe(0);
+  });
+
+  it("computes MdAPE as median of absolute percentage errors", () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-01-01" }, // 16.7%
+      { taskType: "feature", estimatedHours: 10, actualHours: 8, completedAt: "2026-02-01" },  // 25%
+      { taskType: "feature", estimatedHours: 10, actualHours: 5, completedAt: "2026-03-01" },  // 100%
+    ];
+    const result = computeAccuracyMetrics(records);
+    // MAPE = (16.7 + 25 + 100) / 3 = 47.2
+    expect(result.mape).toBeCloseTo(47.2, 0);
+    // MdAPE = median(16.7, 25, 100) = 25
+    expect(result.mdape).toBeCloseTo(25, 0);
+    expect(result.mdape).toBeLessThan(result.mape);
+  });
+
+  it("MdAPE is robust to extreme outliers that inflate MAPE", () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "bugfix", estimatedHours: 4, actualHours: 3.8, completedAt: "2026-01-01" },    // 5.3%
+      { taskType: "bugfix", estimatedHours: 4, actualHours: 3.5, completedAt: "2026-02-01" },    // 14.3%
+      { taskType: "bugfix", estimatedHours: 4, actualHours: 4.2, completedAt: "2026-03-01" },    // 4.8%
+      { taskType: "bugfix", estimatedHours: 4, actualHours: 0.01, completedAt: "2026-04-01" },   // 39900%
+      { taskType: "bugfix", estimatedHours: 4, actualHours: 3.9, completedAt: "2026-05-01" },    // 2.6%
+    ];
+    const result = computeAccuracyMetrics(records);
+    // MAPE dominated by the 39900% outlier → huge
+    expect(result.mape).toBeGreaterThan(5000);
+    // MdAPE = median(2.6, 4.8, 5.3, 14.3, 39900) = 5.3
+    expect(result.mdape).toBeLessThan(20);
+  });
+
+  it("MdAPE equals MAPE when all errors are equal", () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 8, actualHours: 10, completedAt: "2026-01-01" },
+      { taskType: "feature", estimatedHours: 8, actualHours: 10, completedAt: "2026-02-01" },
+      { taskType: "feature", estimatedHours: 8, actualHours: 10, completedAt: "2026-03-01" },
+    ];
+    const result = computeAccuracyMetrics(records);
+    expect(result.mdape).toBeCloseTo(result.mape, 1);
+  });
+
+  it("computes MdAPE for even-length arrays (average of two middle values)", () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 9, completedAt: "2026-01-01" },   // 11.1%
+      { taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-02-01" },  // 50%
+    ];
+    const result = computeAccuracyMetrics(records);
+    // Two values: 11.1, 50 → MdAPE = (11.1 + 50) / 2 = 30.55
+    expect(result.mdape).toBeCloseTo(30.6, 0);
+  });
+});
+
+describe("referenceClassEstimate AI-native baselines", () => {
+  it("uses AI-native scope baselines when aiNative is true", () => {
+    const human = referenceClassEstimate([], "bugfix", 1, "small", false);
+    const ai = referenceClassEstimate([], "bugfix", 1, "small", true);
+    // AI-native small bugfix: 0.1h * 0.7 (complexity 1) = 0.07
+    // Human: much larger
+    expect(ai.rawEstimate).toBeLessThan(human.rawEstimate);
+    expect(ai.rawEstimate).toBeLessThan(1);
+  });
+
+  it("sets CF=1.0 when using AI-native baselines to avoid double correction", () => {
+    const ai = referenceClassEstimate([], "feature", 3, "medium", true);
+    expect(ai.correctionFactor).toBe(1.0);
+  });
+
+  it("falls back to human baselines when aiNative is false", () => {
+    const human = referenceClassEstimate([], "feature", 3, "medium", false);
+    // Human baselines have medium=5.72 for feature
+    expect(human.rawEstimate).toBeGreaterThan(3);
+  });
+
+  it("AI-native estimates are realistic for all task types", () => {
+    const types = ["feature", "bugfix", "infrastructure", "testing", "refactor", "documentation", "design", "migration"] as const;
+    for (const type of types) {
+      const ai = referenceClassEstimate([], type, 3, "small", true);
+      // Small AI-native tasks should be under 1 hour
+      expect(ai.rawEstimate).toBeLessThan(1.5);
+      expect(ai.rawEstimate).toBeGreaterThan(0);
+    }
+  });
+
+  it("AI-native medium task scales correctly with complexity", () => {
+    const c1 = referenceClassEstimate([], "feature", 1, "medium", true);
+    const c3 = referenceClassEstimate([], "feature", 3, "medium", true);
+    const c5 = referenceClassEstimate([], "feature", 5, "medium", true);
+    expect(c1.rawEstimate).toBeLessThan(c3.rawEstimate);
+    expect(c3.rawEstimate).toBeLessThan(c5.rawEstimate);
+    // medium feature = 2.0h base; c1=2.0*0.7=1.4, c3=2.0*1.0=2.0, c5=2.0*1.5=3.0
+    expect(c3.rawEstimate).toBeCloseTo(2.0, 0);
   });
 });
