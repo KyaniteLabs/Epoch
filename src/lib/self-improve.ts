@@ -68,14 +68,18 @@ interface TokenCalibration {
 
 let callCounter = 0;
 let lastUpdateAt = 0;
+let isUpdating = false;
 
 export function notifyToolCall(): void {
   callCounter++;
-  if (callCounter >= MIN_CALLS_FOR_UPDATE && Date.now() - lastUpdateAt > 86_400_000) {
+  if (callCounter >= MIN_CALLS_FOR_UPDATE && Date.now() - lastUpdateAt > 86_400_000 && !isUpdating) {
     callCounter = 0;
     lastUpdateAt = Date.now();
+    isUpdating = true;
     updateReferenceDatabase().catch(() => {
       // self-improvement is non-critical
+    }).finally(() => {
+      isUpdating = false;
     });
   }
 }

@@ -113,9 +113,10 @@ function buildHumanReadable(
       ? `${Math.abs(improvementVsIndustry)}% worse than industry baseline (${industryBaseline}%)`
       : `equal to industry baseline (${industryBaseline}%)`;
 
+  const mapeValues = windows.map(w => w.mape);
   const windowSummary = windows.length === 1
     ? `1 window with MAPE ${windows[0]?.mape ?? 0}%`
-    : `${windows.length} windows, MAPE range: ${Math.min(...windows.map(w => w.mape))}% to ${Math.max(...windows.map(w => w.mape))}%`;
+    : `${windows.length} windows, MAPE range: ${mapeValues.length > 0 ? Math.min(...mapeValues) : 0}% to ${mapeValues.length > 0 ? Math.max(...mapeValues) : 0}%`;
 
   return `Accuracy trend is ${trendLabel}. Current MAPE: ${currentMape}%, ${vsIndustry}. ${windowSummary} across ${windows.reduce((sum, w) => sum + w.sampleSize, 0)} estimates.`;
 }
