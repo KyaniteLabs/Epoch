@@ -134,4 +134,17 @@ describe("computeAccuracyTrend", () => {
     // Last window should have at least half the normal size (25)
     expect(lastWindow.sampleSize).toBeGreaterThanOrEqual(25);
   });
+
+  it("handles records with undefined completedAt without crashing", () => {
+    const records = Array.from({ length: 15 }, (_, i) => ({
+      taskType: "feature",
+      estimatedHours: 5 + i,
+      actualHours: 4 + i,
+      completedAt: i % 3 === 0 ? (undefined as unknown as string) : `2026-01-${10 + i}T00:00:00Z`,
+    }));
+    mockGetCalibrationData.mockReturnValue(records as any);
+    const result = computeAccuracyTrend({ windowSize: 50 });
+    expect(result.windows.length).toBeGreaterThanOrEqual(1);
+    expect(result.overallTrend).toBeDefined();
+  });
 });

@@ -98,13 +98,22 @@ export function recordEstimate(
   return id;
 }
 
+export type RecordActualResult =
+  | { ok: true }
+  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" };
+
 export function recordActual(estimateId: string, actualHours: number, notes?: string): boolean {
-  if (actualHours < MINIMUM_ACTUAL_HOURS) return false;
+  const result = recordActualDetailed(estimateId, actualHours, notes);
+  return result.ok;
+}
+
+export function recordActualDetailed(estimateId: string, actualHours: number, notes?: string): RecordActualResult {
+  if (actualHours < MINIMUM_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
 
   // Reject duplicates — last-write-wins silently corrupts calibration
   const existing = readLines<ActualRecord>(ACTUALS_FILE);
   if (existing.some((a) => a.estimateId === estimateId)) {
-    return false;
+    return { ok: false, reason: "duplicate" };
   }
 
   const record: ActualRecord = {
@@ -113,7 +122,8 @@ export function recordActual(estimateId: string, actualHours: number, notes?: st
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
   };
-  return appendLine(ACTUALS_FILE, record);
+  const written = appendLine(ACTUALS_FILE, record);
+  return written ? { ok: true } : { ok: false, reason: "write_failed" };
 }
 
 export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasActual: boolean }> {

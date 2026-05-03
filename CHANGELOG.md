@@ -21,10 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `trend` field in feedback health `byTool` and `byTaskType` entries — shows accuracy trajectory (improving/degrading/stable) per breakdown
-- 2 tests for trend field (byTool with 8 records, byTaskType with 3 records)
+- `overallCappedMdape` in data quality section — outlier-robust accuracy at the top level
+- `humanReadable` summary now shows both capped and raw MdAPE
+- `recordActualDetailed` — returns structured result with specific failure reason (duplicate, below_threshold, write_failed)
+- `record_actual` tool returns specific error messages per failure reason (was generic "storage unavailable")
+- 2 tests for trend field, 1 for accuracy-trend null guard, 2 for record_actual error messages
+
+### Fixed
+- `accuracy_trend` crash on undefined `completedAt` — null-guarded sort and dateRange formatting (reported by external dogfood session)
+- `record_actual` generic error message replaced with specific reasons for each failure mode
 
 ### Changed
-- 889 tests (was 887)
+- 892 tests (was 887)
 
 ## [0.1.13] - 2026-05-03
 

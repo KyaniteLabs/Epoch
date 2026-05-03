@@ -27,7 +27,7 @@ import {
   tokenTimeBridge,
   getScopeGuide,
 } from "../lib/analytics.js";
-import { getCalibrationData, recordActual, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import { getCalibrationData, recordActual, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
@@ -771,11 +771,16 @@ update automatically to reduce estimation bias.`,
     { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
       const p = recordActualSchema.parse(input);
-      const recorded = recordActual(p.estimate_id, p.actual_hours, p.notes);
-      if (!recorded) {
+      const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes);
+      if (!result.ok) {
+        const messages: Record<string, string> = {
+          below_threshold: `Actual hours (${p.actual_hours}) below minimum threshold (0.25h).`,
+          duplicate: `An actual for estimate ${p.estimate_id} already exists. Each estimate can only have one actual.`,
+          write_failed: "Failed to write to feedback storage — ensure ~/.epoch/ directory is writable.",
+        };
         return {
           ok: false as const,
-          error: { isError: true, message: "Failed to record actual — feedback storage unavailable.", retryHint: "Ensure ~/.epoch/ directory is writable and the estimate_id exists." },
+          error: { isError: true, message: messages[result.reason] ?? "Unknown error.", retryHint: "Check estimate_id and actual_hours values." },
         };
       }
       return {

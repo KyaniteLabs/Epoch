@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../lib/feedback.js", () => ({
   recordActual: vi.fn(() => true),
+  recordActualDetailed: vi.fn(() => ({ ok: true })),
   getPendingEstimates: vi.fn(() => []),
 }));
 
@@ -49,8 +50,8 @@ describe("feedback tools via registry", () => {
   });
 
   it("record_actual returns error when lib returns false", async () => {
-    const { recordActual } = await import("../lib/feedback.js");
-    vi.mocked(recordActual).mockReturnValueOnce(false);
+    const { recordActualDetailed } = await import("../lib/feedback.js");
+    vi.mocked(recordActualDetailed).mockReturnValueOnce({ ok: false, reason: "duplicate" });
 
     const tool = TOOL_REGISTRY.get("record_actual")!;
     const result = tool.handler({
@@ -58,6 +59,36 @@ describe("feedback tools via registry", () => {
       actual_hours: 1,
     });
     expect(result.ok).toBe(false);
+  });
+
+  it("record_actual returns specific error for duplicate", async () => {
+    const { recordActualDetailed } = await import("../lib/feedback.js");
+    vi.mocked(recordActualDetailed).mockReturnValueOnce({ ok: false, reason: "duplicate" });
+
+    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const result = tool.handler({
+      estimate_id: "dup-case",
+      actual_hours: 2,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("already exists");
+    }
+  });
+
+  it("record_actual returns specific error for below threshold", async () => {
+    const { recordActualDetailed } = await import("../lib/feedback.js");
+    vi.mocked(recordActualDetailed).mockReturnValueOnce({ ok: false, reason: "below_threshold" });
+
+    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const result = tool.handler({
+      estimate_id: "small-case",
+      actual_hours: 0.1,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("minimum threshold");
+    }
   });
 
   // ---- get_pending_estimates ----
