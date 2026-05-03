@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
@@ -7,6 +8,10 @@ import type { HistoricalRecord, TaskType } from "../types/index.js";
 const REFERENCE_DB_PATH = resolveReferenceDbPath();
 
 function resolveReferenceDbPath(): string {
+  // Prefer user data dir (survives npm updates, no git noise)
+  const userDataPath = join(homedir(), ".epoch", "reference-database.json");
+  if (existsSync(userDataPath)) return userDataPath;
+
   // Dev: src/lib/self-improve.ts → src/data/reference-database.json
   const devPath = join(import.meta.dirname, "..", "data", "reference-database.json");
   if (existsSync(devPath)) return devPath;
@@ -18,6 +23,12 @@ function resolveReferenceDbPath(): string {
   // Fallback: try project root
   const rootPath = join(import.meta.dirname, "..", "reference-database.json");
   return rootPath;
+}
+
+function getUserDataDir(): string {
+  const dir = process.env["EPOCH_DATA_DIR"] ?? join(homedir(), ".epoch");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return dir;
 }
 const MIN_CALLS_FOR_UPDATE = 100;
 
@@ -125,15 +136,12 @@ export async function updateReferenceDatabase(): Promise<void> {
   db.generatedAt = new Date().toISOString();
   db.source = "self-improvement";
 
-  const dir = join(import.meta.dirname, "..", "data");
-  const dirDist = join(import.meta.dirname);
-  const writeDir = existsSync(dir) ? dir : dirDist;
-  if (existsSync(writeDir)) {
-    const targetPath = join(writeDir, "reference-database.json");
-    const tmpPath = join(writeDir, "reference-database.json.tmp");
-    writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf-8");
-    renameSync(tmpPath, targetPath);
-  }
+  // Write to user data dir (~/.epoch/) — never mutate source tree
+  const dataDir = getUserDataDir();
+  const targetPath = join(dataDir, "reference-database.json");
+  const tmpPath = join(dataDir, "reference-database.json.tmp");
+  writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf-8");
+  renameSync(tmpPath, targetPath);
   invalidateReferenceDbCache();
 }
 
