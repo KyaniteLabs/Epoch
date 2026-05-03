@@ -101,4 +101,26 @@ describe("computeAccuracyTrend", () => {
     const result = computeAccuracyTrend();
     expect(result.industryBaselineMape).toBe(25);
   });
+
+  it("includes dateRange in each window", () => {
+    const records = makeRecords(100, () => 30);
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = computeAccuracyTrend({ windowSize: 50 });
+    for (const w of result.windows) {
+      expect(w.dateRange).toBeDefined();
+      expect(w.dateRange).toContain(" to ");
+      // Date format: YYYY-MM-DD
+      expect(w.dateRange).toMatch(/^\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it("dateRange spans first to last record in each window", () => {
+    const records = makeRecords(100, () => 20);
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = computeAccuracyTrend({ windowSize: 50 });
+    // First window: records 0-49, dates Jan 1 - Feb 19
+    expect(result.windows[0]!.dateRange).toContain("2026-01-01");
+    // Second window: records 50-99, dates Feb 20 - Apr 10
+    expect(result.windows[1]!.dateRange).toContain("2026-02-20");
+  });
 });

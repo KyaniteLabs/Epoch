@@ -37,6 +37,7 @@ export function computeAccuracyTrend(params?: {
     const metrics = computeAccuracyMetrics(sorted);
     const window: AccuracyWindow = {
       period: `Window 1 (estimates 1-${sorted.length})`,
+      dateRange: sorted.length > 0 ? `${sorted[0]!.completedAt.slice(0, 10)} to ${sorted[sorted.length - 1]!.completedAt.slice(0, 10)}` : undefined,
       mape: metrics.mape,
       mdape: metrics.mdape,
       bias: metrics.bias,
@@ -68,6 +69,7 @@ export function computeAccuracyTrend(params?: {
     const endEstimate = i + windowRecords.length;
     windows.push({
       period: `Window ${windowIndex} (estimates ${startEstimate}-${endEstimate})`,
+      dateRange: `${windowRecords[0]!.completedAt.slice(0, 10)} to ${windowRecords[windowRecords.length - 1]!.completedAt.slice(0, 10)}`,
       mape: metrics.mape,
       mdape: metrics.mdape,
       bias: metrics.bias,
