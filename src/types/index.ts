@@ -179,6 +179,8 @@ export interface TokenTimeMapping {
   readonly breakdown: TokenTimeBreakdown;
   /** Human-readable summary (e.g. "Approximately 21 minutes for 100,000 tokens with claude-sonnet-4."). */
   readonly humanReadable: string;
+  /** Estimated AI token cost (50k tokens/hour × estimatedHours). */
+  readonly estimatedTokenCost: number;
 }
 
 // ---- Monte Carlo Layer ----------------------------------------------------

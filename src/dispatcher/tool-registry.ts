@@ -279,6 +279,7 @@ const tokenTimeOutput = {
       },
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
+    estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;

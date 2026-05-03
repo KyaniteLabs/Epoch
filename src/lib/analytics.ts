@@ -157,6 +157,7 @@ export function tokenTimeBridge(params: {
       toolOverheadSeconds: Math.round(toolOverheadSeconds * 100) / 100,
     },
     humanReadable: `Approximately ${timeStr} for ${params.tokens.toLocaleString()} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls). Confidence: ${confidence}.`,
+    estimatedTokenCost: Math.round((totalSeconds / 3600) * 50000 * 100) / 100,
   };
 }
 

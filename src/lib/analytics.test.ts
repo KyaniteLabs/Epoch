@@ -107,6 +107,18 @@ describe("tokenTimeBridge", () => {
     });
     expect(short.urgency).toBe("short");
   });
+
+  it("includes estimatedTokenCost", () => {
+    const result = tokenTimeBridge({
+      tokens: 100000,
+      model: "gpt-4o",
+      toolCalls: 3,
+      reasoningDepth: "moderate",
+    });
+    expect(result.estimatedTokenCost).toBeGreaterThan(0);
+    const expectedHours = result.estimatedSeconds / 3600;
+    expect(result.estimatedTokenCost).toBeCloseTo(expectedHours * 50000, -2);
+  });
 });
 
 describe("referenceClassEstimate", () => {
