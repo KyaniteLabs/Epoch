@@ -170,6 +170,9 @@ export const cocomoEstimateSchema = z.object({
       "Human review overhead multiplier. 0.5 = auto-merged, 1.0 = standard PR review, 2.0 = compliance/security review."
     )
     .default(1.0),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching.")
+    .optional(),
   ai_native: aiNativeGradient,
 });
 
@@ -202,6 +205,9 @@ export const sprintForecastSchema = z.object({
       "Total productive engineering hours available per sprint (accounts for meetings, overhead)."
     )
     .default(300),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching.")
+    .optional(),
   ai_native: aiNativeGradient,
 });
 
@@ -232,6 +238,9 @@ export const criticalPathSchema = z.object({
     .describe(
       "All tasks in the project graph. Each task must have a unique name."
     ),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching.")
+    .optional(),
 });
 
 export type CriticalPathInput = z.infer<typeof criticalPathSchema>;
@@ -350,6 +359,9 @@ export const tokenTimeBridgeSchema = z.object({
       "Expected depth of chain-of-thought reasoning. Deep reasoning adds significant per-token latency."
     )
     .default("moderate"),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching.")
+    .optional(),
 });
 
 export type TokenTimeBridgeInput = z.infer<typeof tokenTimeBridgeSchema>;
@@ -370,6 +382,9 @@ export const tokenCostEstimateSchema = z.object({
   reasoning_depth: reasoningDepthEnum
     .describe("Expected depth of chain-of-thought reasoning.")
     .default("moderate"),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching.")
+    .optional(),
 });
 
 export type TokenCostEstimateInput = z.infer<typeof tokenCostEstimateSchema>;
