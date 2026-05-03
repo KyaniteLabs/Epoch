@@ -23,6 +23,7 @@ import {
   getCalibrationData,
   batchRecordActuals,
   getFeedbackHealthReport,
+  matchEstimatesToActuals,
 } from "./feedback.js";
 
 const mockExistsSync = vi.mocked(existsSync);
@@ -522,5 +523,102 @@ describe("getFeedbackHealthReport", () => {
     expect(report.dataQuality.overallMdape).toBeGreaterThan(0);
     expect(report.dataQuality.outlierRatio).toBeGreaterThan(0);
     expect(report.dataQuality.recommendation).toBeTruthy();
+  });
+});
+
+// ---- matchEstimatesToActuals / extractEstimatedHours ----
+
+describe("matchEstimatesToActuals", () => {
+  it("extracts hours from totalHours", () => {
+    const estimates = [{ id: "e1", tool: "sprint_forecast", inputs: {}, outputs: { totalHours: 100 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(100);
+  });
+
+  it("extracts hours from estimatedHours", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 24 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 20, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(24);
+  });
+
+  it("extracts hours from estimatedMinutes", () => {
+    const estimates = [{ id: "e1", tool: "token_time_bridge", inputs: {}, outputs: { estimatedMinutes: 30 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 0.5, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBeCloseTo(0.5, 1);
+  });
+
+  it("extracts hours from estimatedSeconds", () => {
+    const estimates = [{ id: "e1", tool: "token_time_bridge", inputs: {}, outputs: { estimatedSeconds: 3600 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(1);
+  });
+
+  it("extracts hours from expected with unit=days", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { expected: 5, unit: "days" }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 40, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(40);
+  });
+
+  it("extracts hours from expected with unit=weeks", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { expected: 2, unit: "weeks" }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(80);
+  });
+
+  it("extracts hours from correctedEstimate", () => {
+    const estimates = [{ id: "e1", tool: "reference_class_estimate", inputs: {}, outputs: { correctedEstimate: 15.5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 12, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(15.5);
+  });
+
+  it("extracts hours from total_duration (critical path)", () => {
+    const estimates = [{ id: "e1", tool: "critical_path", inputs: {}, outputs: { total_duration: 11, critical_path: ["A", "B"] }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 88, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(88);
+  });
+
+  it("extracts hours from personMonthsLlmAdjusted", () => {
+    const estimates = [{ id: "e1", tool: "cocomo_estimate", inputs: {}, outputs: { personMonthsLlmAdjusted: 8.2 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 1312, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.estimatedHours).toBe(8.2 * 160);
+  });
+
+  it("skips estimates with no extractable hours", () => {
+    const estimates = [{ id: "e1", tool: "get_current_time", inputs: {}, outputs: { iso: "2026-01-01T00:00:00Z" }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips actuals below 0.25 hours", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 0.1, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty for unmatched estimateIds", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "orphan", actualHours: 10, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
   });
 });
