@@ -283,8 +283,8 @@ export interface FeedbackHealthReport {
   matchedPairs: number;
   seedRecordsFiltered: number;
   matchRate: number;
-  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; recommendation: string }>;
-  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; recommendation: string }>;
+  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; bias: number | null; recommendation: string }>;
+  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; bias: number | null; recommendation: string }>;
   selfImprovement: {
     readyTypes: string[];
     callsUntilUpdate: number;
@@ -361,7 +361,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     } else {
       recommendation = `Good coverage (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Review outliers if MdAPE > 50%.`;
     }
-    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, recommendation };
+    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, bias: metrics?.bias ?? null, recommendation };
   }
 
   // By task type — group the pre-matched records
@@ -392,7 +392,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     } else {
       typeRec = `Good coverage (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Review outliers if MdAPE > 50%.`;
     }
-    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, recommendation: typeRec };
+    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, bias: metrics?.bias ?? null, recommendation: typeRec };
   }
 
   // Self-improvement readiness: types with 5+ matched records

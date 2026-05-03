@@ -616,6 +616,55 @@ describe("getFeedbackHealthReport", () => {
     expect(report.byTaskType["testing"]!.recommendation).toContain("MdAPE:");
   });
 
+  it("byTool includes bias field", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 10 } }),
+          makeEstimate({ id: "e2", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 20 } }),
+          makeEstimate({ id: "e3", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 30 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e2", actualHours: 25, reportedAt: "2026-01-11T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 28, reportedAt: "2026-01-12T00:00:00Z" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    // bias = avg(actual - estimated) = avg(-2, 5, -2) = 0.33
+    expect(typeof report.byTool["pert_estimate"]!.bias).toBe("number");
+    expect(report.byTool["pert_estimate"]!.bias).toBeCloseTo(0.33, 1);
+  });
+
+  it("byTaskType includes bias field", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", inputs: { task_type: "bugfix" }, outputs: { estimatedHours: 5 } }),
+          makeEstimate({ id: "e2", inputs: { task_type: "bugfix" }, outputs: { estimatedHours: 5 } }),
+          makeEstimate({ id: "e3", inputs: { task_type: "bugfix" }, outputs: { estimatedHours: 5 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e2", actualHours: 9, reportedAt: "2026-01-11T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 7, reportedAt: "2026-01-12T00:00:00Z" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    // bias = avg(3, 4, 2) = 3 — systematic underestimation
+    expect(report.byTaskType["bugfix"]!.bias).toBeGreaterThan(0);
+  });
+
   it("dataCompletenessScore is > 0 with matched pairs", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
