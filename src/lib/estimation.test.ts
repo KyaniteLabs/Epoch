@@ -181,6 +181,71 @@ describe("sprintForecast", () => {
     if (!result.ok) return;
     expect(result.data.optimisticSprints).toBeCloseTo(result.data.requiredSprints * 0.75, 0);
   });
+
+  it("returns low confidence with 1-2 sprints", () => {
+    const one = sprintForecast({
+      backlogPoints: 30, velocityHistory: [10], sprintLengthDays: 14, hoursPerSprint: 100,
+    });
+    const two = sprintForecast({
+      backlogPoints: 30, velocityHistory: [10, 12], sprintLengthDays: 14, hoursPerSprint: 100,
+    });
+    expect(one.ok).toBe(true);
+    expect(two.ok).toBe(true);
+    if (!one.ok || !two.ok) return;
+    expect(one.data.confidence).toBe("low");
+    expect(two.data.confidence).toBe("low");
+  });
+
+  it("returns medium confidence with 3-5 sprints and low CV", () => {
+    const result = sprintForecast({
+      backlogPoints: 100, velocityHistory: [20, 22, 21, 23], sprintLengthDays: 14, hoursPerSprint: 300,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.confidence).toBe("medium");
+    expect(result.data.velocityCv).toBeGreaterThan(0);
+    expect(result.data.velocityCv).toBeLessThan(0.3);
+  });
+
+  it("returns low confidence with 3-5 sprints and high CV", () => {
+    const result = sprintForecast({
+      backlogPoints: 100, velocityHistory: [5, 40, 10, 50], sprintLengthDays: 14, hoursPerSprint: 300,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.confidence).toBe("low");
+    expect(result.data.velocityCv).toBeGreaterThan(0.3);
+  });
+
+  it("returns high confidence with 6+ sprints and low CV", () => {
+    const result = sprintForecast({
+      backlogPoints: 100, velocityHistory: [20, 22, 21, 23, 20, 22], sprintLengthDays: 14, hoursPerSprint: 300,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.confidence).toBe("high");
+    expect(result.data.velocityCv).toBeLessThan(0.3);
+  });
+
+  it("returns medium confidence with 6+ sprints and moderate CV", () => {
+    const result = sprintForecast({
+      backlogPoints: 100, velocityHistory: [10, 30, 15, 35, 12, 28], sprintLengthDays: 14, hoursPerSprint: 300,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.confidence).toBe("medium");
+    expect(result.data.velocityCv).toBeGreaterThanOrEqual(0.3);
+    expect(result.data.velocityCv).toBeLessThan(0.5);
+  });
+
+  it("velocityCv is 0 with single velocity", () => {
+    const result = sprintForecast({
+      backlogPoints: 30, velocityHistory: [10], sprintLengthDays: 14, hoursPerSprint: 100,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.velocityCv).toBe(0);
+  });
 });
 
 describe("cocomoEstimate", () => {

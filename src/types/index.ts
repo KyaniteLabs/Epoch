@@ -140,6 +140,10 @@ export interface SprintForecastResult {
   readonly completionDays: number;
   /** Length of a single sprint in calendar days. */
   readonly sprintLengthDays: number;
+  /** Forecast confidence based on velocity history size and consistency. */
+  readonly confidence: "low" | "medium" | "high";
+  /** Coefficient of variation of velocity history (0 if single sprint). */
+  readonly velocityCv: number;
 }
 
 // ---- Token-Time Bridge Layer ----------------------------------------------

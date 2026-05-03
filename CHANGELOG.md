@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-05-03
+
+### Added
+- `confidence` and `velocityCv` fields in sprint_forecast output — rates forecast reliability based on velocity history size and coefficient of variation (low/medium/high)
+- 6 tests for sprint confidence rating (low/medium/high confidence boundaries, CV thresholds, single-velocity edge case)
+
+### Changed
+- 852 tests (was 846)
+
 ## [0.1.9] - 2026-05-03
 
 ### Added

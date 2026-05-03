@@ -212,6 +212,8 @@ const sprintOutput = {
     totalHours: { type: "number" },
     completionDays: { type: "number" },
     sprintLengthDays: { type: "number" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    velocityCv: { type: "number" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;

@@ -132,16 +132,20 @@ export function sprintForecast(params: {
 
   let pessimisticSprints: number;
   let optimisticSprints: number;
+  let velocityCv = 0;
   if (velocityHistory.length > 1) {
     const meanV = avgVelocity;
     const variance = velocityHistory.reduce((sum, v) => sum + (v - meanV) ** 2, 0) / (velocityHistory.length - 1);
     const stdV = Math.sqrt(variance);
+    velocityCv = Math.round((stdV / meanV) * 100) / 100;
     pessimisticSprints = backlogPoints / Math.max(avgVelocity - stdV, 0.1);
     optimisticSprints = backlogPoints / (avgVelocity + stdV);
   } else {
     pessimisticSprints = requiredSprints * 1.5;
     optimisticSprints = requiredSprints * 0.75;
   }
+
+  const confidence = computeSprintConfidence(velocityHistory.length, velocityCv);
 
   return {
     ok: true,
@@ -155,6 +159,8 @@ export function sprintForecast(params: {
       totalHours: Math.round(totalHours * 10) / 10,
       completionDays: Math.round(requiredSprints * sprintLengthDays),
       sprintLengthDays,
+      confidence,
+      velocityCv,
     },
   };
 }
@@ -493,6 +499,12 @@ function seededRandom(seed: number): () => number {
     s = (s * 16807) % 2147483647;
     return (s - 1) / 2147483646;
   };
+}
+
+function computeSprintConfidence(sprintCount: number, cv: number): "low" | "medium" | "high" {
+  if (sprintCount <= 2) return "low";
+  if (sprintCount <= 5) return cv < 0.3 ? "medium" : "low";
+  return cv < 0.3 ? "high" : cv < 0.5 ? "medium" : "low";
 }
 
 function triangularSample(min: number, mode: number, max: number, rng: () => number): number {
