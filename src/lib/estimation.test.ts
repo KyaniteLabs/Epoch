@@ -96,6 +96,37 @@ describe("pertEstimate", () => {
     if (!result.ok) return;
     expect(result.data.unit).toBe("days");
   });
+
+  it("returns low risk when spread ratio < 1.0", () => {
+    // (8-4)/4 = 1.0 → actually borderline, use tighter
+    const result = pertEstimate(3, 4, 5, "hours");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.riskLevel).toBe("low");
+  });
+
+  it("returns medium risk when spread ratio is 1.0-2.0", () => {
+    // (10-4)/4 = 1.5
+    const result = pertEstimate(4, 4, 10, "hours");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.riskLevel).toBe("medium");
+  });
+
+  it("returns high risk when spread ratio > 2.0", () => {
+    // (20-2)/4 = 4.5
+    const result = pertEstimate(2, 4, 20, "hours");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.riskLevel).toBe("high");
+  });
+
+  it("returns low risk for equal estimates (zero spread)", () => {
+    const result = pertEstimate(5, 5, 5, "hours");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.riskLevel).toBe("low");
+  });
 });
 
 describe("sprintForecast", () => {

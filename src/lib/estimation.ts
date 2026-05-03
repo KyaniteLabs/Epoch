@@ -67,6 +67,7 @@ export function pertEstimate(
       ],
       unit,
       urgencyCategory: getUrgencyCategory(expectedHours),
+      riskLevel: computePertRiskLevel(optimistic, mostLikely, pessimistic),
       humanReadable: `Expected: ${Math.round(expected * 100) / 100} ${unit}. 95% confidence: ${Math.max(0, Math.round((expected - 2 * stdDev) * 100) / 100)} to ${Math.round((expected + 2 * stdDev) * 100) / 100} ${unit}. 99% confidence: ${Math.max(0, Math.round((expected - 3 * stdDev) * 100) / 100)} to ${Math.round((expected + 3 * stdDev) * 100) / 100} ${unit}.`,
     },
   };
@@ -505,6 +506,13 @@ function computeSprintConfidence(sprintCount: number, cv: number): "low" | "medi
   if (sprintCount <= 2) return "low";
   if (sprintCount <= 5) return cv < 0.3 ? "medium" : "low";
   return cv < 0.3 ? "high" : cv < 0.5 ? "medium" : "low";
+}
+
+function computePertRiskLevel(optimistic: number, mostLikely: number, pessimistic: number): "low" | "medium" | "high" {
+  const spread = (pessimistic - optimistic) / mostLikely;
+  if (spread < 1.0) return "low";
+  if (spread < 2.0) return "medium";
+  return "high";
 }
 
 function triangularSample(min: number, mode: number, max: number, rng: () => number): number {

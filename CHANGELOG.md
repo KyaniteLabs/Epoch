@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `confidence` and `velocityCv` fields in sprint_forecast output — rates forecast reliability based on velocity history size and coefficient of variation (low/medium/high)
-- 6 tests for sprint confidence rating (low/medium/high confidence boundaries, CV thresholds, single-velocity edge case)
+- `riskLevel` field in pert_estimate output — assesses estimation risk from spread ratio (pessimistic-optimistic)/mostLikely (low < 1.0, medium < 2.0, high ≥ 2.0)
+- 10 tests for sprint confidence (6) and PERT risk level (4)
 
 ### Changed
-- 852 tests (was 846)
+- 856 tests (was 846)
 
 ## [0.1.9] - 2026-05-03
 

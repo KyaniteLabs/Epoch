@@ -100,6 +100,8 @@ export interface PertResult {
   readonly confidence99: readonly [number, number];
   readonly unit: TimeUnit;
   readonly urgencyCategory: UrgencyCategory;
+  /** Risk level based on estimate spread (pessimistic-optimistic)/mostLikely. */
+  readonly riskLevel: "low" | "medium" | "high";
   /** Human-readable summary (e.g. "Expected: 7 hours. 95% confidence: 1 to 13 hours."). */
   readonly humanReadable: string;
 }

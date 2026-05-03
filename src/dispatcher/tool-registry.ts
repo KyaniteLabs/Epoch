@@ -183,6 +183,7 @@ const pertOutput = {
     confidence99: { type: "array", items: { type: "number" }, description: "99% confidence interval [lower, upper]" },
     unit: { type: "string", enum: ["hours", "days", "weeks", "months"] },
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
+    riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Estimation risk based on spread between optimistic and pessimistic" },
     humanReadable: { type: "string", description: "Human-readable summary" },
     feedbackToken: feedbackTokenField,
   },
