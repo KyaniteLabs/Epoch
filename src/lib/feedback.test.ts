@@ -783,4 +783,16 @@ describe("matchEstimatesToActuals", () => {
     expect(result).toHaveLength(2);
     expect(result.map(r => r.estimatedHours)).toEqual([10, 8]);
   });
+
+  it("handles actuals with completedAt instead of reportedAt", () => {
+    const estimates = [
+      { id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+    ];
+    const actuals = [
+      { estimateId: "e1", actualHours: 8, completedAt: "2026-01-10T00:00:00Z" },
+    ];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+    expect(result[0].completedAt).toBe("2026-01-10T00:00:00Z");
+  });
 });

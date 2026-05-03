@@ -191,11 +191,11 @@ export function matchEstimatesToActuals(
       tool: est.tool,
       ...(complexity !== undefined && { complexity }),
       ...(filters?.teamId && { teamId: filters.teamId }),
-      completedAt: act.reportedAt,
+      completedAt: act.reportedAt ?? act["completedAt" as keyof typeof act] ?? "",
     });
   }
 
-  return records.sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+  return records.sort((a, b) => (a.completedAt ?? "").localeCompare(b.completedAt ?? ""));
 }
 
 function extractEstimatedHours(outputs: Record<string, unknown>): number | null {
