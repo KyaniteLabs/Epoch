@@ -197,4 +197,11 @@ describe("scheduleRisk", () => {
     expect(result.taskTypeBreakdown!["migration"]).toBeUndefined();
     expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
   });
+
+  it("includes estimatedTokenCost (estimatedHours × 50000)", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const result = scheduleRisk({ estimatedHours: 10 });
+    expect(result.estimatedTokenCost).toBeGreaterThan(0);
+    expect(result.estimatedTokenCost).toBeCloseTo(result.estimatedHours * 50000, -2);
+  });
 });

@@ -201,6 +201,8 @@ export interface MonteCarloResult {
   readonly p95: string;
   /** Median estimate converted to hours (p50 × 8). Enables feedback token. */
   readonly estimatedHours: number;
+  /** Estimated AI token cost at p50 (50k tokens/hour × estimatedHours). */
+  readonly estimatedCost: number;
   /** Probability the critical path will be met (0-1). */
   readonly criticalPathProbability: number;
   /** Whether p50 converged (difference between first and second half < 5%). */
@@ -391,6 +393,7 @@ export type RiskLevel = "low" | "medium" | "high" | "critical";
 
 export interface ScheduleRiskAssessment {
   readonly estimatedHours: number;
+  readonly estimatedTokenCost: number;
   readonly riskLevel: RiskLevel;
   readonly confidenceIntervals: {
     readonly p50: number;

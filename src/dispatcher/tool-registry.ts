@@ -255,6 +255,7 @@ const monteCarloOutput = {
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
     estimatedHours: { type: "number", description: "Median estimate in hours (p50 × 8)" },
+    estimatedCost: { type: "number", description: "Estimated AI token cost at p50 (50k tokens/hour × estimatedHours)" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
@@ -706,7 +707,7 @@ Computes confidence intervals (p50/p80/p95) based on your team's MAPE.
 Returns risk level and actionable recommendations.
 Uses industry baseline (25% MAPE) when no historical data is available.`,
     scheduleRiskSchema,
-    { type: "object", properties: { estimatedHours: { type: "number" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, historicalAccuracy: { type: "object", properties: { mape: { type: "number" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, taskTypeBreakdown: { type: "object", additionalProperties: { type: "object", properties: { riskLevel: { type: "string" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, description: "Risk breakdown by task type from historical data" }, recommendation: { type: "string" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { estimatedHours: { type: "number" }, estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, historicalAccuracy: { type: "object", properties: { mape: { type: "number" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, taskTypeBreakdown: { type: "object", additionalProperties: { type: "object", properties: { riskLevel: { type: "string" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, description: "Risk breakdown by task type from historical data" }, recommendation: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
       const p = scheduleRiskSchema.parse(input);
       return {

@@ -76,6 +76,7 @@ export function scheduleRisk(params: {
 
   return {
     estimatedHours: p50,
+    estimatedTokenCost: Math.round(p50 * 50000 * 100) / 100,
     riskLevel,
     confidenceIntervals: { p50, p80, p95 },
     historicalAccuracy: {
