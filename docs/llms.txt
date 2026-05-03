@@ -101,7 +101,8 @@ Reference class forecasting with historical correction.
 - `complexity` (number 1-5, required)
 - `scope` (enum: small|medium|large|xl, optional) — Inferred from complexity if omitted
 - `team_id` (string, optional)
-- Returns: rawEstimate, correctedEstimate, correctionFactor, sampleSize, scopeUsed, feedbackToken
+- `ai_native` (number 0.0-1.0, default 0.0) — AI-native ratio; values >= 0.7 use AI-native scope baselines
+- Returns: rawEstimate, correctedEstimate, correctionFactor, sampleSize, scopeUsed, adjustedEstimate, developerProfile, feedbackToken
 
 #### calibrate_estimates
 Compute team-specific correction factors.
@@ -177,7 +178,7 @@ Bulk feedback submission (1-500 entries).
 #### feedback_health
 Health report on the feedback loop.
 - No parameters
-- Returns: totalEstimates, totalActuals, matchRate, byTool, byTaskType, selfImprovement
+- Returns: totalEstimates, totalActuals, matchRate, byTool (with mape + mdape), byTaskType (with mape + mdape), selfImprovement
 
 ## Interfaces
 
@@ -194,4 +195,4 @@ Health report on the feedback loop.
 
 ## Data
 
-Reference baselines built from 8,000+ samples across 8 task categories from real AI-native development workflows.
+Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 779 tests, 28 test files.
