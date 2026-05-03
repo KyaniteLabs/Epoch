@@ -224,7 +224,7 @@ function mergeBenchmark(existing: ToolBenchmark, stat: { p50Ms: number; p95Ms: n
     p50_ms: Math.round((existing.p50_ms * w + stat.p50Ms * w2) * 100) / 100,
     p95_ms: Math.round((existing.p95_ms * w + stat.p95Ms * w2) * 100) / 100,
     mean_ms: Math.round((existing.mean_ms * w + stat.meanMs * w2) * 100) / 100,
-    stddev_ms: existing.stddev_ms,
+    stddev_ms: Math.round(Math.sqrt((existing.stddev_ms ** 2) * w + (stat.p95Ms - stat.p50Ms) ** 2 * w2) * 100) / 100,
     min_ms: Math.min(existing.min_ms, stat.p50Ms * 0.5),
     max_ms: Math.max(existing.max_ms, stat.p95Ms * 1.5),
     sampleCount: total,

@@ -735,15 +735,19 @@ update automatically to reduce estimation bias.`,
     (input) => {
       const p = recordActualSchema.parse(input);
       const recorded = recordActual(p.estimate_id, p.actual_hours, p.notes);
+      if (!recorded) {
+        return {
+          ok: false as const,
+          error: { isError: true, message: "Failed to record actual — feedback storage unavailable.", retryHint: "Ensure ~/.epoch/ directory is writable and the estimate_id exists." },
+        };
+      }
       return {
         ok: true as const,
         data: {
-          recorded,
+          recorded: true,
           estimate_id: p.estimate_id,
           actual_hours: p.actual_hours,
-          message: recorded
-            ? "Actual recorded. Correction factors update after more feedback accumulates."
-            : "Failed to record actual — feedback storage unavailable.",
+          message: "Actual recorded. Correction factors update after more feedback accumulates.",
         },
       };
     },

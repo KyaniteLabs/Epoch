@@ -387,4 +387,19 @@ describe("monteCarloSim", () => {
     expect(result.riskEvents.length).toBeGreaterThan(0);
     expect(result.riskEvents[0]!.description).toContain("Invalid estimates");
   });
+
+  it("produces same value for all percentiles with single iteration", () => {
+    const result = monteCarloSim([
+      { name: "Solo", optimistic: 2, mostLikely: 5, pessimistic: 10 },
+    ], 1, 42);
+    expect(result.p10).toBe(result.p50);
+    expect(result.p50).toBe(result.p95);
+  });
+});
+
+describe("pertEstimate edge cases", () => {
+  it("returns error when all three values are in reverse order", () => {
+    const result = pertEstimate(15, 10, 5, "hours");
+    expect(result.ok).toBe(false);
+  });
 });

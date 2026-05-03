@@ -48,7 +48,7 @@ describe("feedback tools via registry", () => {
     }
   });
 
-  it("record_actual returns recorded false when lib returns false", async () => {
+  it("record_actual returns error when lib returns false", async () => {
     const { recordActual } = await import("../lib/feedback.js");
     vi.mocked(recordActual).mockReturnValueOnce(false);
 
@@ -57,10 +57,7 @@ describe("feedback tools via registry", () => {
       estimate_id: "fail-case",
       actual_hours: 1,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toHaveProperty("recorded", false);
-    }
+    expect(result.ok).toBe(false);
   });
 
   // ---- get_pending_estimates ----

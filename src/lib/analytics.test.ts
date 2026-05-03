@@ -195,6 +195,34 @@ describe("referenceClassEstimate scope signal", () => {
     expect(c3.rawEstimate).toBeCloseTo(6.0, 0);
   });
 
+  it("handles out-of-range and boundary complexity for scope inference", () => {
+    expect(referenceClassEstimate([], "feature", 0).scopeUsed).toBe("small");
+    expect(referenceClassEstimate([], "feature", 2.5).scopeUsed).toBe("medium");
+    expect(referenceClassEstimate([], "feature", 3.5).scopeUsed).toBe("large");
+    expect(referenceClassEstimate([], "feature", 4.5).scopeUsed).toBe("xl");
+    expect(referenceClassEstimate([], "feature", 6).scopeUsed).toBe("xl");
+  });
+
+  it("clamps correction factor from historical data to [0.5, 3.0]", () => {
+    const extremeRecords: HistoricalRecord[] = Array.from({ length: 7 }, (_, i) => ({
+      taskType: "feature", estimatedHours: 10, actualHours: 100 + i * 10, completedAt: `2026-0${i + 1}-01`,
+    }));
+    const result = referenceClassEstimate(extremeRecords, "feature", 3);
+    expect(result.correctionFactor).toBeGreaterThanOrEqual(0.5);
+    expect(result.correctionFactor).toBeLessThanOrEqual(3.0);
+  });
+
+  it("returns sample_size 0 when all records have actualHours===0", () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 0, completedAt: "2026-01-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 0, completedAt: "2026-02-01" },
+    ];
+    const result = computeAccuracyMetrics(records);
+    expect(result.sample_size).toBe(0);
+    expect(result.mape).toBe(0);
+    expect(result.trend).toBe("stable");
+  });
+
   it("inferred medium is same as explicit medium", () => {
     const inferred = referenceClassEstimate([], "feature", 3);
     const explicit = referenceClassEstimate([], "feature", 3, "medium");

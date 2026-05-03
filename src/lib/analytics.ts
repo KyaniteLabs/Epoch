@@ -204,9 +204,10 @@ export function referenceClassEstimate(
     const ratios = filtered.map(r => r.actualHours / r.estimatedHours);
     ratios.sort((a, b) => a - b);
     const mid = Math.floor(ratios.length / 2);
-    correctionFactor = ratios.length % 2 === 0
+    const rawMedian = ratios.length % 2 === 0
       ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
       : (ratios[mid] ?? 1.8);
+    correctionFactor = Math.min(3.0, Math.max(0.5, rawMedian));
     sampleSize = filtered.length;
   } else {
     correctionFactor = getCorrectionFactorForTaskType(taskType, "reference_class_estimate");
