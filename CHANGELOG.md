@@ -12,13 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `estimatedTokenCost` in schedule_risk output — estimates AI token cost (50k tokens/hour × estimatedHours)
 - `estimatedTokenCost` in sprint_forecast output — estimates AI token cost (50k tokens/hour × totalHours)
 - `estimatedTokenCost` in token_time_bridge output — estimates AI token cost (50k tokens/hour × estimatedHours)
+- `estimatedTokenCost` in reference_class_estimate output — estimates AI token cost (50k tokens/hour × correctedEstimate)
 - `recommendation` in feedback_health byTool entries — actionable per-tool guidance (needs data, sufficient, good coverage)
 - `recommendation` in feedback_health byTaskType entries — same per-task-type actionable guidance
 - `dataCompletenessScore` in feedback_health dataQuality — 0-100 score from tool coverage (40%), type coverage (30%), pair count (30%)
-- 10 tests for token cost outputs (4), per-tool recommendations (3), per-task-type recommendations (2), and data completeness score (1)
+- 11 tests for token cost outputs (5), per-tool recommendations (3), per-task-type recommendations (2), and data completeness score (1)
 
 ### Changed
-- 872 tests (was 862)
+- 873 tests (was 862)
+- All 5 estimation tools now provide estimatedTokenCost for consistent cost tracking
 
 ## [0.1.11] - 2026-05-03
 

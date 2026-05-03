@@ -292,6 +292,7 @@ const referenceClassOutput = {
     correctionFactor: { type: "number" },
     sampleSize: { type: "number" },
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
+    estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × correctedEstimate)" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;

@@ -274,6 +274,12 @@ describe("referenceClassEstimate scope signal", () => {
     const result = referenceClassEstimate([], "feature", 3);
     expect(result.baselineSource).toBe("inferred_scope_medium_real_tasks");
   });
+
+  it("includes estimatedTokenCost (correctedEstimate × 50000)", () => {
+    const result = referenceClassEstimate([], "feature", 3, "medium");
+    expect(result.estimatedTokenCost).toBeGreaterThan(0);
+    expect(result.estimatedTokenCost).toBeCloseTo(result.correctedEstimate * 50000, -2);
+  });
 });
 
 describe("computeAccuracyMetrics", () => {

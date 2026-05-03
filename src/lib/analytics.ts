@@ -268,6 +268,7 @@ export function referenceClassEstimate(
     scopeUsed: effectiveScope,
     scopeInferred,
     confidence: sampleSize >= 10 ? "likely" : sampleSize >= 5 ? "optimistic" : "pessimistic",
+    estimatedTokenCost: Math.round(correctedEstimate * 50000 * 100) / 100,
   };
 }
 
