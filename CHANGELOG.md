@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `complexity` parameter on `schedule_risk` (1-5) — complexity ≥ 4 widens confidence intervals via cone-of-uncertainty scaling
-- 4 tests for complexity-based risk scaling (high/low complexity, humanReadable labels)
+- `task_type` optional parameter on `pert_estimate` and `monte_carlo_schedule` — enables per-task-type accuracy tracking for these tools
 - `mdape` in schedule_risk `historicalAccuracy` output schema (was computed but not in MCP output schema)
+- 8 tests for complexity-based risk scaling and task_type propagation
 
 ### Changed
-- 838 tests (was 834)
+- 842 tests (was 834)
 
 ## [0.1.7] - 2026-05-03
 

@@ -195,4 +195,4 @@ Health report on the feedback loop.
 
 ## Data
 
-Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 838 tests, 30 test files.
+Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 842 tests, 30 test files.

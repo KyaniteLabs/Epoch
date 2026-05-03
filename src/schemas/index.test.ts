@@ -97,6 +97,16 @@ describe("pertEstimateSchema", () => {
     const r = pertEstimateSchema.safeParse({ optimistic: "2", most_likely: "5", pessimistic: "10" });
     expect(r.success && r.data.optimistic).toBe(2);
   });
+
+  it("accepts optional task_type", () => {
+    const r = pertEstimateSchema.safeParse({ ...valid, task_type: "bugfix" });
+    expect(r.success && r.data.task_type).toBe("bugfix");
+  });
+
+  it("task_type defaults to undefined", () => {
+    const r = pertEstimateSchema.safeParse(valid);
+    expect(r.success && r.data.task_type).toBeUndefined();
+  });
 });
 
 // ---- cocomoEstimate ----
@@ -250,6 +260,16 @@ describe("monteCarloSchema", () => {
 
   it("rejects zero iterations", () => {
     expect(monteCarloSchema.safeParse({ ...valid, iterations: 0 }).success).toBe(false);
+  });
+
+  it("accepts optional task_type", () => {
+    const r = monteCarloSchema.safeParse({ ...valid, task_type: "migration" });
+    expect(r.success && r.data.task_type).toBe("migration");
+  });
+
+  it("task_type defaults to undefined", () => {
+    const r = monteCarloSchema.safeParse(valid);
+    expect(r.success && r.data.task_type).toBeUndefined();
   });
 });
 

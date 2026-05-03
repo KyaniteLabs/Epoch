@@ -113,6 +113,9 @@ export const pertEstimateSchema = z.object({
       "Worst-case duration accounting for known risks and unknown unknowns."
     ),
   unit: timeUnitEnum.default("hours").describe("Time unit for all three PERT estimates."),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching. Enables per-task-type accuracy tracking.")
+    .optional(),
   ai_native: aiNativeGradient,
 });
 
@@ -298,6 +301,9 @@ export const monteCarloSchema = z.object({
     .describe("Number of Monte Carlo simulation iterations (1–100,000). Higher = more stable percentiles.")
     .default(10000),
   seed: z.number().int().optional().describe("Optional seed for reproducible results."),
+  task_type: taskTypeEnum
+    .describe("Optional task type for feedback matching. Enables per-task-type accuracy tracking.")
+    .optional(),
 });
 
 export type MonteCarloInput = z.infer<typeof monteCarloSchema>;
