@@ -45,6 +45,7 @@ interface ReferenceDatabase {
     correctionFactors: { byTaskType: Record<string, number>; global: number };
   };
   taskTypeCorrectionFactors: Record<string, number>;
+  complexityCorrectionFactors: Record<string, Record<number, number>>;
   toolTaskCorrectionFactors: Record<string, Record<string, number>>;
   tokenTimeCalibration: Record<string, TokenCalibration>;
   globalCorrectionFactor: number;
@@ -127,6 +128,7 @@ export async function updateReferenceDatabase(): Promise<void> {
       db.taskTypeCorrectionFactors[taskType] = factor;
     }
     db.toolTaskCorrectionFactors = computeToolCorrectionFactors(feedbackRecords);
+    db.complexityCorrectionFactors = computeComplexityCorrectionFactors(feedbackRecords);
     db.globalCorrectionFactor = computeGlobalCorrection(feedbackRecords);
   }
 
@@ -203,6 +205,16 @@ export function getToolTaskCorrectionFactor(tool: string, taskType: TaskType): n
 
   // Fallback to aggregate task-type factor
   return getTaskTypeCorrectionFactor(taskType);
+}
+
+export function getComplexityCorrectionFactor(taskType: TaskType, complexity: number): number | null {
+  const db = loadReferenceDb();
+  if (!db?.complexityCorrectionFactors) return null;
+
+  const typeFactors = db.complexityCorrectionFactors[taskType];
+  if (typeFactors?.[complexity]) return typeFactors[complexity];
+
+  return null;
 }
 
 function mapToCanaryKey(taskType: string): string {
@@ -302,6 +314,34 @@ function computeToolCorrectionFactors(records: HistoricalRecord[]): Record<strin
         ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
         : (ratios[mid] ?? 1.4);
       result[tool][taskType] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
+    }
+  }
+  return result;
+}
+
+function computeComplexityCorrectionFactors(records: HistoricalRecord[]): Record<string, Record<number, number>> {
+  const grouped = new Map<string, Map<number, number[]>>();
+  for (const r of records) {
+    if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
+    if (r.complexity === undefined) continue;
+    const taskMap = grouped.get(r.taskType) ?? new Map();
+    const arr = taskMap.get(r.complexity) ?? [];
+    arr.push(r.actualHours / r.estimatedHours);
+    taskMap.set(r.complexity, arr);
+    grouped.set(r.taskType, taskMap);
+  }
+
+  const result: Record<string, Record<number, number>> = {};
+  for (const [taskType, taskMap] of grouped) {
+    result[taskType] = {};
+    for (const [complexity, ratios] of taskMap) {
+      if (ratios.length < 3) continue;
+      ratios.sort((a, b) => a - b);
+      const mid = Math.floor(ratios.length / 2);
+      const median = ratios.length % 2 === 0
+        ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
+        : (ratios[mid] ?? 1.0);
+      result[taskType][complexity] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
     }
   }
   return result;

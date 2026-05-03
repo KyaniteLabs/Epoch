@@ -6,7 +6,7 @@ import type {
   ReasoningDepth,
   TaskType,
 } from "../types/index.js";
-import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
+import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getComplexityCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
 import { getReferenceClassForCategory, getScopeBaseline, getAiNativeScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
 
@@ -166,11 +166,16 @@ export interface HistoricalRecord {
   readonly actualHours: number;
   readonly teamId?: string;
   readonly tool?: string;
+  readonly complexity?: number;
   readonly completedAt: string;
 }
 
-function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string): number {
-  // Priority: tool-specific reference DB → task-type reference DB → industry defaults
+function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string, complexity?: number): number {
+  // Priority: complexity-aware → tool-specific → task-type → industry defaults
+  if (complexity !== undefined) {
+    const ccf = getComplexityCorrectionFactor(taskType, complexity);
+    if (ccf !== null) return ccf;
+  }
   if (tool) {
     const toolFactor = getToolTaskCorrectionFactor(tool, taskType);
     if (toolFactor !== 1.8) return toolFactor;
@@ -227,7 +232,7 @@ export function referenceClassEstimate(
     correctionFactor = Math.min(3.0, Math.max(0.1, rawMedian));
     sampleSize = filtered.length;
   } else {
-    correctionFactor = usingAiBaselines ? 1.0 : getCorrectionFactorForTaskType(taskType, "reference_class_estimate");
+    correctionFactor = usingAiBaselines ? 1.0 : getCorrectionFactorForTaskType(taskType, "reference_class_estimate", complexity);
     sampleSize = filtered.length;
   }
   const cMul = COMPLEXITY_MULTIPLIER[Math.max(1, Math.min(5, complexity))] ?? 1.0;

@@ -486,4 +486,82 @@ describe("updateReferenceDatabase", () => {
     // ratios: 1.2, 1.4, 1.6, 1.8, 2.0 -> sorted median = 1.6
     expect(writtenData.toolTaskCorrectionFactors.unknown.feature).toBe(1.6);
   });
+
+  it("computes complexity-aware correction factors when complexity is present", async () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 3, complexity: 1, completedAt: "2026-04-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 4, complexity: 1, completedAt: "2026-04-02" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 2, complexity: 1, completedAt: "2026-04-03" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 8, complexity: 5, completedAt: "2026-04-04" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 7, complexity: 5, completedAt: "2026-04-05" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 9, complexity: 5, completedAt: "2026-04-06" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    expect(writtenData.complexityCorrectionFactors).toBeDefined();
+    expect(writtenData.complexityCorrectionFactors.feature).toBeDefined();
+    expect(writtenData.complexityCorrectionFactors.feature[1]).toBe(0.3); // median(0.3, 0.4, 0.2) = 0.3
+    expect(writtenData.complexityCorrectionFactors.feature[5]).toBe(0.8); // median(0.8, 0.7, 0.9) = 0.8
+  });
+
+  it("skips complexity factors with fewer than 3 records", async () => {
+    const records: HistoricalRecord[] = [
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 2, complexity: 3, completedAt: "2026-04-01" },
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 3, complexity: 3, completedAt: "2026-04-02" },
+      // Only 2 records for complexity 3 — below minimum of 3
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 4, completedAt: "2026-04-03" },
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 5, completedAt: "2026-04-04" },
+      { taskType: "bugfix", estimatedHours: 5, actualHours: 6, completedAt: "2026-04-05" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // complexity 3 should not appear (only 2 records)
+    expect(writtenData.complexityCorrectionFactors.bugfix?.[3]).toBeUndefined();
+  });
+});
+
+describe("getComplexityCorrectionFactor", () => {
+  it("returns factor when task type and complexity match", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({
+      version: "1.0",
+      taskTypeCorrectionFactors: {},
+      complexityCorrectionFactors: { feature: { 1: 0.3, 3: 0.7, 5: 0.8 } },
+      toolTaskCorrectionFactors: {},
+      globalCorrectionFactor: 1.0,
+    }));
+
+    const { getComplexityCorrectionFactor, invalidateReferenceDbCache } = await import("./self-improve.js");
+    invalidateReferenceDbCache();
+    expect(getComplexityCorrectionFactor("feature", 1)).toBe(0.3);
+    expect(getComplexityCorrectionFactor("feature", 5)).toBe(0.8);
+  });
+
+  it("returns null when complexity not found", async () => {
+    const { readFileSync } = await import("node:fs");
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({
+      version: "1.0",
+      taskTypeCorrectionFactors: {},
+      complexityCorrectionFactors: { feature: { 1: 0.3 } },
+      toolTaskCorrectionFactors: {},
+      globalCorrectionFactor: 1.0,
+    }));
+
+    const { getComplexityCorrectionFactor, invalidateReferenceDbCache } = await import("./self-improve.js");
+    invalidateReferenceDbCache();
+    expect(getComplexityCorrectionFactor("feature", 9)).toBeNull();
+    expect(getComplexityCorrectionFactor("bugfix", 1)).toBeNull();
+  });
 });

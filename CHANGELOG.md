@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-05-03
+
+### Added
+- Complexity-aware correction factors in self-improvement engine — `complexityCorrectionFactors` stores per-task-type, per-complexity-level CFs (e.g., feature/1=0.30 vs feature/5=0.28)
+- `getComplexityCorrectionFactor(taskType, complexity)` lookup with fallback to task-type CF
+- `complexity` field on `HistoricalRecord` — extracted from estimate inputs and propagated through feedback pipeline
+- `seedRecordsFiltered` count in feedback health report showing how many seed/synthetic records were excluded
+- MdAPE as primary metric in `accuracy-trend` humanReadable output (was MAPE-only)
+- 4 tests for complexity correction factors (computation, minimum threshold, lookup, null fallback)
+- `scripts/` utility scripts for data analysis (health-check, check-cf, check-complexity-cf, analyze-outliers, etc.)
+
+### Changed
+- `getCorrectionFactorForTaskType` priority: complexity-aware → tool-specific → task-type → industry defaults
+- `referenceClassEstimate` passes `complexity` to correction factor lookup for more targeted adjustments
+- 834 tests (was 830)
+
 ## [0.1.6] - 2026-05-03
 
 ### Added

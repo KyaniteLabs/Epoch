@@ -180,11 +180,16 @@ export function matchEstimatesToActuals(
     if (filters?.teamId && est.inputs["team_id"] !== filters.teamId) continue;
     if (filters?.tool && est.tool !== filters.tool) continue;
 
+    const complexity = typeof est.inputs["complexity"] === "number"
+      ? est.inputs["complexity"]
+      : undefined;
+
     records.push({
       taskType: type,
       estimatedHours: estHours,
       actualHours: act.actualHours,
       tool: est.tool,
+      ...(complexity !== undefined && { complexity }),
       ...(filters?.teamId && { teamId: filters.teamId }),
       completedAt: act.reportedAt,
     });
