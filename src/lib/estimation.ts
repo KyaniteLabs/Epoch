@@ -364,6 +364,7 @@ export function criticalPath(tasks: CpmTask[]): ToolResult<CpmResult> {
       total_duration: Math.round(totalDuration * 100) / 100,
       merge_bias_adjustment: Math.round(totalMergeBias * 100) / 100,
       estimatedHours: Math.round(totalDuration * 8 * 100) / 100,
+      estimatedTokenCost: Math.round(totalDuration * 8 * 50000 * 100) / 100,
     },
   };
 }

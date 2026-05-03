@@ -229,6 +229,7 @@ const criticalPathOutput = {
     total_duration: { type: "number" },
     merge_bias_adjustment: { type: "number" },
     estimatedHours: { type: "number", description: "Total duration in hours (total_duration × 8)" },
+    estimatedTokenCost: { type: "number", description: "Estimated token cost (50k tokens/hour × estimatedHours)" },
   },
 } satisfies Record<string, unknown>;
 

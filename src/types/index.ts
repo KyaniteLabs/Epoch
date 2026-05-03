@@ -287,6 +287,8 @@ export interface CpmResult {
   readonly merge_bias_adjustment: number;
   /** Total duration converted to hours (total_duration × 8). Enables feedback token. */
   readonly estimatedHours: number;
+  /** Estimated token cost for AI-assisted work (tokens/hour × estimatedHours). */
+  readonly estimatedTokenCost: number;
 }
 
 // ---- Monte Carlo Task Input -----------------------------------------------

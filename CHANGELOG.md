@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `taskTypeBreakdown` in schedule_risk output — shows risk level and MdAPE per task type from historical data (requires 3+ records per type)
-- 2 tests for task-type risk breakdown
+- `estimatedTokenCost` in critical_path output — estimates AI token cost at 50k tokens/hour
+- 3 tests for task-type risk breakdown (2) and CP token cost (1)
 
 ### Changed
-- 861 tests (was 859)
+- 862 tests (was 859)
 
 ## [0.1.10] - 2026-05-03
 

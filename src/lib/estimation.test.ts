@@ -505,6 +505,18 @@ describe("criticalPath", () => {
     expect(result.data.estimatedHours).toBeGreaterThan(0);
     expect(Math.abs(result.data.estimatedHours - result.data.total_duration * 8)).toBeLessThan(1);
   });
+
+  it("includes estimatedTokenCost (50k tokens/hour)", () => {
+    const result = criticalPath([
+      { name: "A", duration: 3, predecessors: [] },
+      { name: "B", duration: 5, predecessors: ["A"] },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // total_duration = 8, hours = 64, token cost = 64 * 50000 = 3,200,000
+    expect(result.data.estimatedTokenCost).toBeGreaterThan(0);
+    expect(result.data.estimatedTokenCost).toBe(result.data.estimatedHours * 50000);
+  });
 });
 
 describe("monteCarloSim", () => {
