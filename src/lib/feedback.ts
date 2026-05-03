@@ -274,6 +274,7 @@ export interface FeedbackHealthReport {
     outlierRatio: number;
     recommendation: string;
   };
+  humanReadable: string;
 }
 
 export function getFeedbackHealthReport(): FeedbackHealthReport {
@@ -369,6 +370,10 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     recommendation = "Insufficient data for quality assessment. Need at least 5 matched estimate-actual pairs.";
   }
 
+  const toolsWithData = Object.entries(byTool).filter(([, v]) => v.matchedPairs > 0).length;
+  const typesWithData = Object.entries(byTaskType).filter(([, v]) => v.matchedPairs > 0).length;
+  const mdapeLabel = overallMdape !== null ? `${Math.round(overallMdape)}%` : "N/A";
+
   return {
     totalEstimates,
     totalActuals,
@@ -378,5 +383,6 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     byTaskType,
     selfImprovement: { readyTypes, callsUntilUpdate },
     dataQuality: { overallMdape, outlierRatio, recommendation },
+    humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%. ${recommendation}`,
   };
 }
