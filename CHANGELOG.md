@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-05-03
+
+### Added
+- Seed/synthetic data filter in `matchEstimatesToActuals` — excludes records with `seed-` prefixed IDs, "seed"/"synthetic"/"dogfood-seed" in notes, or actual/estimate ratio below 0.03
+- `MIN_RATIO` constant (0.03) for extreme outlier detection
+- `isSeedRecord` helper function for seed data classification
+- 6 tests for seed data filtering (seed prefix, seed notes, synthetic notes, extreme ratio, reasonable ratio, mixed dataset)
+
+### Changed
+- Matched pairs reduced from 237 to 123 after filtering 114 seed/synthetic records
+- Global correction factor updated to 0.50 (was 0.75) — reflects AI-native reality
+- Task-type correction factors now range from 0.23 (documentation) to 1.01 (migration)
+- 830 tests (was 824)
+
 ## [0.1.5] - 2026-05-03
 
 ### Added

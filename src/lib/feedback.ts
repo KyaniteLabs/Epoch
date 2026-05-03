@@ -26,6 +26,8 @@ const ACTUALS_FILE = "feedback.jsonl";
 
 /** Actuals below this threshold (15 min) are excluded as seed/test artifacts. */
 const MINIMUM_ACTUAL_HOURS = 0.25;
+/** Ratio threshold — actual/estimate below this indicates synthetic/seed data. */
+const MIN_RATIO = 0.03;
 
 function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;
@@ -129,6 +131,12 @@ export function getCalibrationData(
   );
 }
 
+function isSeedRecord(act: ActualRecord): boolean {
+  if (act.estimateId.startsWith("seed-")) return true;
+  const notes = (act.notes ?? "").toLowerCase();
+  return notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed");
+}
+
 export function matchEstimatesToActuals(
   estimates: EstimateRecord[],
   actuals: ActualRecord[],
@@ -157,8 +165,14 @@ export function matchEstimatesToActuals(
     if (!act) continue;
     if (act.actualHours < MINIMUM_ACTUAL_HOURS) continue;
 
+    // Filter seed/synthetic records: explicitly marked or implausibly low ratio
+    if (isSeedRecord(act)) continue;
+
     const estHours = extractEstimatedHours(est.outputs);
     if (estHours === null) continue;
+
+    // Filter extreme ratio outliers (e.g. 0.02h actual against 4h estimate = synthetic)
+    if (act.actualHours / estHours < MIN_RATIO) continue;
 
     const type = (est.inputs["task_type"] as string) ?? inferTaskType(est.tool);
 

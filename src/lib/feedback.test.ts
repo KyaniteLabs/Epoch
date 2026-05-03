@@ -621,4 +621,55 @@ describe("matchEstimatesToActuals", () => {
     const result = matchEstimatesToActuals(estimates as any, actuals as any);
     expect(result).toHaveLength(0);
   });
+
+  it("filters records with seed- prefixed estimateId", () => {
+    const estimates = [{ id: "seed-abc", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "seed-abc", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters records with 'seed' in notes", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 8, notes: "seed data", reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters records with 'synthetic' in notes", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 8, notes: "synthetic baseline", reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters records with implausibly low actual/estimate ratio", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 100 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }]; // ratio = 0.01
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(0);
+  });
+
+  it("keeps records with reasonable ratio even if small", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 3, reportedAt: "2026-01-10T00:00:00Z" }]; // ratio = 0.3
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(1);
+  });
+
+  it("keeps genuine records while filtering seeds in mixed dataset", () => {
+    const estimates = [
+      { id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+      { id: "seed-x", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 5 }, estimatedAt: "2026-01-01T00:00:00Z" },
+      { id: "e3", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 8 }, estimatedAt: "2026-01-01T00:00:00Z" },
+    ];
+    const actuals = [
+      { estimateId: "e1", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" },
+      { estimateId: "seed-x", actualHours: 0.5, notes: "seed", reportedAt: "2026-01-10T00:00:00Z" },
+      { estimateId: "e3", actualHours: 6, reportedAt: "2026-01-10T00:00:00Z" },
+    ];
+    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.estimatedHours)).toEqual([10, 8]);
+  });
 });
