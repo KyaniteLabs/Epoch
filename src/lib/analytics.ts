@@ -221,9 +221,10 @@ export function referenceClassEstimate(
     const rawMedian = ratios.length % 2 === 0
       ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
       : (ratios[mid] ?? 1.8);
-    // When using AI-native baselines, historical CF (computed against human baselines)
-    // would double-correct. Use 1.0 unless local records are also from AI-native estimates.
-    correctionFactor = usingAiBaselines ? 1.0 : Math.min(3.0, Math.max(0.1, rawMedian));
+    // Use data-driven CF when we have enough records, regardless of baseline source.
+    // Only fall back to 1.0 for AI baselines when there's insufficient local data
+    // (to avoid applying a CF derived from human-baseline estimates to AI baselines).
+    correctionFactor = Math.min(3.0, Math.max(0.1, rawMedian));
     sampleSize = filtered.length;
   } else {
     correctionFactor = usingAiBaselines ? 1.0 : getCorrectionFactorForTaskType(taskType, "reference_class_estimate");

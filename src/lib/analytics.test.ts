@@ -445,9 +445,23 @@ describe("referenceClassEstimate AI-native baselines", () => {
     expect(ai.rawEstimate).toBeLessThan(1);
   });
 
-  it("sets CF=1.0 when using AI-native baselines to avoid double correction", () => {
+  it("sets CF=1.0 when using AI-native baselines without enough data", () => {
     const ai = referenceClassEstimate([], "feature", 3, "medium", true);
     expect(ai.correctionFactor).toBe(1.0);
+  });
+
+  it("uses data-driven CF with AI baselines when enough records exist", () => {
+    // 5 records where actual = 0.5 * estimated → median ratio = 0.5
+    const records = Array.from({ length: 5 }, () => ({
+      taskType: "feature" as const,
+      estimatedHours: 10,
+      actualHours: 5,
+      tool: "reference_class_estimate",
+      completedAt: new Date().toISOString(),
+    }));
+    const result = referenceClassEstimate(records, "feature", 3, "medium", true);
+    expect(result.correctionFactor).toBeLessThan(1.0);
+    expect(result.correctionFactor).toBeCloseTo(0.5, 1);
   });
 
   it("falls back to human baselines when aiNative is false", () => {
