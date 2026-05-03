@@ -119,6 +119,10 @@ export interface CocomoResult {
   readonly effortMultipliers: Readonly<Record<string, number>>;
   /** Documented assumptions behind the estimate. */
   readonly assumptions: readonly string[];
+  /** AI speedup factor (nominal / LLM-adjusted). */
+  readonly aiSpeedup: number;
+  /** Qualitative speedup category. */
+  readonly speedupCategory: "moderate" | "significant" | "extreme";
 }
 
 // ---- Sprint Forecast Layer ------------------------------------------------

@@ -361,6 +361,55 @@ describe("cocomoEstimate", () => {
     if (result.ok) return;
     expect(result.error.message).toContain("too large");
   });
+
+  it("computes aiSpeedup as nominal / LLM-adjusted", () => {
+    const result = cocomoEstimate({
+      kloc: 10,
+      reasoningComplexity: 1.0,
+      contextCompleteness: 1.0,
+      transformationImpact: 1.0,
+      iterativeCycles: 1.0,
+      humanOversight: 1.0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.aiSpeedup).toBeGreaterThan(1);
+    // aiSpeedup should approximate nominal/adjusted (both rounded independently)
+    const rawRatio = result.data.personMonthsNominal / result.data.personMonthsLlmAdjusted;
+    expect(result.data.aiSpeedup).toBeCloseTo(rawRatio, 0);
+  });
+
+  it("returns extreme speedup at default multipliers", () => {
+    const result = cocomoEstimate({
+      kloc: 10,
+      reasoningComplexity: 1.0,
+      contextCompleteness: 1.0,
+      transformationImpact: 1.0,
+      iterativeCycles: 1.0,
+      humanOversight: 1.0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.speedupCategory).toBe("extreme");
+    expect(result.data.aiSpeedup).toBeGreaterThanOrEqual(10);
+  });
+
+  it("returns significant speedup with very high iterative cycles", () => {
+    const result = cocomoEstimate({
+      kloc: 10,
+      reasoningComplexity: 1.0,
+      contextCompleteness: 1.0,
+      transformationImpact: 1.0,
+      iterativeCycles: 10.0,
+      humanOversight: 1.0,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // llmOverhead = 1 + (10-1)*0.15 = 2.35, divisor = max(3, 12/2.35) = 5.11
+    expect(result.data.aiSpeedup).toBeGreaterThanOrEqual(5);
+    expect(result.data.aiSpeedup).toBeLessThan(10);
+    expect(result.data.speedupCategory).toBe("significant");
+  });
 });
 
 describe("criticalPath", () => {

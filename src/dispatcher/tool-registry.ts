@@ -197,6 +197,8 @@ const cocomoOutput = {
     personMonthsLlmAdjusted: { type: "number" },
     effortMultipliers: { type: "object", additionalProperties: { type: "number" } },
     assumptions: { type: "array", items: { type: "string" } },
+    aiSpeedup: { type: "number", description: "AI speedup factor (nominal / LLM-adjusted)" },
+    speedupCategory: { type: "string", enum: ["moderate", "significant", "extreme"], description: "Qualitative speedup category" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;

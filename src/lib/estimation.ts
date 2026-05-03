@@ -213,6 +213,9 @@ export function cocomoEstimate(params: {
     return { ok: false, error: { isError: true, message: "COCOMO computation produced invalid result.", retryHint: "Ensure kloc and all rating multipliers are finite positive numbers." } };
   }
 
+  const aiSpeedup = Math.round((personMonthsNominal / personMonthsLlmAdjusted) * 10) / 10;
+  const speedupCategory = aiSpeedup < 5 ? "moderate" : aiSpeedup < 10 ? "significant" : "extreme";
+
   return {
     ok: true,
     data: {
@@ -233,6 +236,8 @@ export function cocomoEstimate(params: {
         "Cost drivers scaled for LLM-assisted workflows.",
         "Adjust for your team's actual velocity.",
       ],
+      aiSpeedup,
+      speedupCategory,
     },
   };
 }
