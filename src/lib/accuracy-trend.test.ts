@@ -123,4 +123,15 @@ describe("computeAccuracyTrend", () => {
     // Second window: records 50-99, dates Feb 20 - Apr 10
     expect(result.windows[1]!.dateRange).toContain("2026-02-20");
   });
+
+  it("redistributes windows to avoid tiny last window", () => {
+    // 120 records with windowSize=50 → would give [50, 50, 20]
+    // Adaptive should redistribute to more even windows
+    const records = makeRecords(120, () => 20);
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = computeAccuracyTrend({ windowSize: 50 });
+    const lastWindow = result.windows[result.windows.length - 1]!;
+    // Last window should have at least half the normal size (25)
+    expect(lastWindow.sampleSize).toBeGreaterThanOrEqual(25);
+  });
 });

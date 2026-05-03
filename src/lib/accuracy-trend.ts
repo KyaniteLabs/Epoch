@@ -7,7 +7,7 @@ export function computeAccuracyTrend(params?: {
   windowSize?: number;
   teamId?: string;
 }): AccuracyTrend {
-  const windowSize = params?.windowSize ?? 50;
+  const requestedWindowSize = params?.windowSize ?? 50;
   const records = getCalibrationData(params?.teamId);
 
   const totalEstimates = records.length;
@@ -31,6 +31,18 @@ export function computeAccuracyTrend(params?: {
   const sorted = [...records].sort((a, b) =>
     a.completedAt.localeCompare(b.completedAt),
   );
+
+  // Adaptive window sizing: avoid tiny last windows by redistributing evenly
+  const minWindowSize = 10;
+  let windowSize = requestedWindowSize;
+  if (sorted.length >= windowSize * 2) {
+    const remainder = sorted.length % windowSize;
+    if (remainder > 0 && remainder < windowSize / 2) {
+      const numWindows = Math.ceil(sorted.length / windowSize);
+      windowSize = Math.ceil(sorted.length / numWindows);
+    }
+  }
+  windowSize = Math.max(minWindowSize, windowSize);
 
   // If fewer records than windowSize, return single window
   if (sorted.length < windowSize) {
