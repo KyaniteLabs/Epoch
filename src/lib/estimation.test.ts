@@ -292,7 +292,7 @@ describe("sprintForecast", () => {
       backlogPoints: 30, velocityHistory: [10, -5], sprintLengthDays: 14, hoursPerSprint: 100,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) return;
+    if (result.ok) return;
     expect(result.error.message).toContain("velocity_history[1]");
   });
 
@@ -301,7 +301,7 @@ describe("sprintForecast", () => {
       backlogPoints: 30, velocityHistory: [10, NaN], sprintLengthDays: 14, hoursPerSprint: 100,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) return;
+    if (result.ok) return;
     expect(result.error.message).toContain("velocity_history[1]");
   });
 });
@@ -550,7 +550,7 @@ describe("criticalPath", () => {
       { name: "A", duration: 0, predecessors: [] },
     ]);
     expect(result.ok).toBe(false);
-    if (!result.ok) return;
+    if (result.ok) return;
     expect(result.error.message).toContain("invalid duration");
   });
 
@@ -559,7 +559,7 @@ describe("criticalPath", () => {
       { name: "A", duration: -2, predecessors: [] },
     ]);
     expect(result.ok).toBe(false);
-    if (!result.ok) return;
+    if (result.ok) return;
     expect(result.error.message).toContain("invalid duration");
   });
 
@@ -568,7 +568,7 @@ describe("criticalPath", () => {
       { name: "A", duration: 3, predecessors: ["A"] },
     ]);
     expect(result.ok).toBe(false);
-    if (!result.ok) return;
+    if (result.ok) return;
     expect(result.error.message).toContain("itself");
   });
 
@@ -577,7 +577,7 @@ describe("criticalPath", () => {
       { name: "A", duration: NaN, predecessors: [] },
     ]);
     expect(result.ok).toBe(false);
-    if (!result.ok) return;
+    if (result.ok) return;
     expect(result.error.message).toContain("invalid duration");
   });
 });

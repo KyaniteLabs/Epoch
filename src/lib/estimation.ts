@@ -93,7 +93,7 @@ export function sprintForecast(params: {
   }
 
   for (let i = 0; i < velocityHistory.length; i++) {
-    const v = velocityHistory[i];
+    const v = velocityHistory[i]!;
     if (!(v >= 0) || !Number.isFinite(v)) {
       return {
         ok: false,
@@ -449,6 +449,7 @@ export function monteCarloSim(
   if (tasks.length === 0) {
     return {
       p10: "0", p50: "0", p80: "0", p95: "0",
+      estimatedHours: 0, estimatedCost: 0, converged: false,
       criticalPathProbability: 0,
       riskEvents: [{ description: "Task list must not be empty.", probability: 1, impactDays: 0 }],
       humanReadable: "Error: Provide at least one task for Monte Carlo simulation.",
@@ -457,6 +458,7 @@ export function monteCarloSim(
   if (iterations <= 0) {
     return {
       p10: "0", p50: "0", p80: "0", p95: "0",
+      estimatedHours: 0, estimatedCost: 0, converged: false,
       criticalPathProbability: 0,
       riskEvents: [{ description: "Iterations must be >= 1.", probability: 1, impactDays: 0 }],
       humanReadable: "Error: Iterations must be a positive number.",
@@ -466,6 +468,7 @@ export function monteCarloSim(
     if (!(task.optimistic <= task.mostLikely && task.mostLikely <= task.pessimistic)) {
       return {
         p10: "0", p50: "0", p80: "0", p95: "0",
+        estimatedHours: 0, estimatedCost: 0, converged: false,
         criticalPathProbability: 0,
         riskEvents: [{
           description: `Invalid estimates for task "${task.name}": optimistic (${task.optimistic}) must be <= mostLikely (${task.mostLikely}) <= pessimistic (${task.pessimistic}).`,

@@ -842,7 +842,7 @@ describe("matchEstimatesToActuals", () => {
     ];
     const result = matchEstimatesToActuals(estimates as any, actuals as any);
     expect(result).toHaveLength(1);
-    expect(result[0].completedAt).toBe("2026-01-10T00:00:00Z");
+    expect(result[0]!.completedAt).toBe("2026-01-10T00:00:00Z");
   });
 });
 
@@ -874,7 +874,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["monte_carlo_schedule"];
+    const tool = report.byTool["monte_carlo_schedule"]!;
     expect(tool).toBeDefined();
     expect(tool.cappedMdape).not.toBeNull();
     // 5 records: 3 extreme outliers (2300-3233%) + 2 reasonable (7-11%).
@@ -905,7 +905,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"];
+    const tool = report.byTool["pert_estimate"]!;
     expect(tool.recommendation).toContain("systematic overestimation");
   });
 
@@ -930,7 +930,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"];
+    const tool = report.byTool["pert_estimate"]!;
     expect(tool.recommendation).toContain("well-calibrated");
   });
 
@@ -955,7 +955,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const type = report.byTaskType["migration"];
+    const type = report.byTaskType["migration"]!;
     expect(type.recommendation).toContain("systematic underestimation");
   });
 
@@ -976,7 +976,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"];
+    const tool = report.byTool["pert_estimate"]!;
     expect(tool.trend).not.toBeNull();
     expect(["improving", "degrading", "stable"]).toContain(tool.trend);
   });
@@ -1002,7 +1002,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const type = report.byTaskType["testing"];
+    const type = report.byTaskType["testing"]!;
     // Trend requires 6+ records to compute; with 3, metrics still has trend="stable"
     expect(typeof type.trend).toBe("string");
   });
