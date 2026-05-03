@@ -283,7 +283,7 @@ export interface FeedbackHealthReport {
   matchedPairs: number;
   seedRecordsFiltered: number;
   matchRate: number;
-  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
+  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; recommendation: string }>;
   byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
   selfImprovement: {
     readyTypes: string[];
@@ -349,7 +349,18 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   for (const [tool, count] of toolEstimates) {
     const matched = toolRecords.get(tool) ?? [];
     const metrics = matched.length >= 2 ? computeAccuracyMetrics(matched) : null;
-    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: matched.length, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
+    const pairs = matched.length;
+    let recommendation: string;
+    if (pairs === 0) {
+      recommendation = "No matched pairs. Record actuals to start calibration.";
+    } else if (pairs < 3) {
+      recommendation = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
+    } else if (pairs < 10) {
+      recommendation = `Sufficient for calibration (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Collect more to improve reliability.`;
+    } else {
+      recommendation = `Good coverage (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Review outliers if MdAPE > 50%.`;
+    }
+    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, recommendation };
   }
 
   // By task type — group the pre-matched records

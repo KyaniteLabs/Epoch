@@ -524,6 +524,59 @@ describe("getFeedbackHealthReport", () => {
     expect(report.dataQuality.outlierRatio).toBeGreaterThan(0);
     expect(report.dataQuality.recommendation).toBeTruthy();
   });
+
+  it("byTool includes recommendation for tools with 0 pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "e1", tool: "cocomo_estimate" }) + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(report.byTool["cocomo_estimate"]!.recommendation).toContain("No matched pairs");
+  });
+
+  it("byTool includes recommendation for tools with 1-2 pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "e1" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "e1", actualHours: 5 }) + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Only 1 matched pair");
+    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Need 2 more");
+  });
+
+  it("byTool includes recommendation with MdAPE for tools with 3+ pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", outputs: { expected: 10, unit: "hours" } }),
+          makeEstimate({ id: "e2", outputs: { expected: 10, unit: "hours" } }),
+          makeEstimate({ id: "e3", outputs: { expected: 10, unit: "hours" } }),
+          makeEstimate({ id: "e4", outputs: { expected: 10, unit: "hours" } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          makeActual({ estimateId: "e1", actualHours: 12 }),
+          makeActual({ estimateId: "e2", actualHours: 8 }),
+          makeActual({ estimateId: "e3", actualHours: 11 }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Sufficient for calibration");
+    expect(report.byTool["pert_estimate"]!.recommendation).toContain("MdAPE:");
+  });
 });
 
 // ---- matchEstimatesToActuals / extractEstimatedHours ----
