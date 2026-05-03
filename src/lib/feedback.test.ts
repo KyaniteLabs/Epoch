@@ -94,6 +94,12 @@ describe("recordActual", () => {
     const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
     expect(written).not.toHaveProperty("notes");
   });
+
+  it("rejects actuals below minimum threshold (0.25h)", () => {
+    expect(recordActual("est-1", 0.1)).toBe(false);
+    expect(recordActual("est-2", 0.24)).toBe(false);
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
 });
 
 // ---- getPendingEstimates ----

@@ -88,6 +88,8 @@ export function recordEstimate(
 }
 
 export function recordActual(estimateId: string, actualHours: number, notes?: string): boolean {
+  if (actualHours < MINIMUM_ACTUAL_HOURS) return false;
+
   // Reject duplicates — last-write-wins silently corrupts calibration
   const existing = readLines<ActualRecord>(ACTUALS_FILE);
   if (existing.some((a) => a.estimateId === estimateId)) {
