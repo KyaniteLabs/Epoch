@@ -122,4 +122,17 @@ describe("scheduleRisk", () => {
     expect(result.humanReadable).toContain("MdAPE:");
     expect(result.humanReadable).toContain("MAPE:");
   });
+
+  it("humanReadable includes task type label when provided", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const result = scheduleRisk({ estimatedHours: 20, taskType: "feature" });
+    expect(result.humanReadable).toContain("for feature");
+  });
+
+  it("humanReadable omits task type label when not provided", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const result = scheduleRisk({ estimatedHours: 20 });
+    expect(result.humanReadable).not.toContain("for ");
+    expect(result.humanReadable).toContain("Schedule risk:");
+  });
 });

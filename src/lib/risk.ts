@@ -64,6 +64,7 @@ export function scheduleRisk(params: {
 
   const mapeRounded = Math.round(mape * 10) / 10;
   const mdapeRounded = Math.round(mdape * 10) / 10;
+  const taskLabel = taskType ? ` for ${taskType}` : "";
 
   return {
     estimatedHours: p50,
@@ -74,7 +75,7 @@ export function scheduleRisk(params: {
       sampleSize,
     },
     recommendation,
-    humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation),
+    humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel),
   };
 }
 
@@ -101,6 +102,7 @@ function buildHumanReadable(
   p95: number,
   sampleSize: number,
   recommendation: string,
+  taskLabel: string,
 ): string {
-  return `Schedule risk: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
+  return `Schedule risk${taskLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
 }
