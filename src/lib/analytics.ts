@@ -332,9 +332,15 @@ export function calibrateEstimates(
 
   if (data.length >= minimumSamples) {
     const metrics = computeAccuracyMetrics(data);
-    const correctionFactor = metrics.mdape > 0
-      ? Math.round((1 + metrics.mdape / 100) * 100) / 100
-      : getGlobalCorrectionFactor();
+
+    // Compute CF as median(actual/estimated) — values < 1 mean overestimation.
+    const ratios = data.filter(r => r.estimatedHours > 0).map(r => r.actualHours / r.estimatedHours);
+    ratios.sort((a, b) => a - b);
+    const mid = Math.floor(ratios.length / 2);
+    const medianRatio = ratios.length > 0
+      ? (ratios.length % 2 === 0 ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2 : (ratios[mid] ?? 1))
+      : 1;
+    const correctionFactor = Math.round(Math.min(3.0, Math.max(0.1, medianRatio)) * 100) / 100;
 
     const recs = [
       `Computed from ${data.length} historical records over ${periodDays} days.`,
