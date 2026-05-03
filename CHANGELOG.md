@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Correction factor floor lowered from 0.5 to 0.1 (AI-native work finishes at 0.06–0.43x of human estimates)
 - 10 tests for MdAPE computation and AI-native baseline logic
 - 10 tests for sprint_forecast and monte_carlo_schedule edge cases (schema validation, deterministic seeds, risk events)
+- 10 tests for token_time_bridge (all 12 models, reasoning depth scaling, tool overhead, urgency, fallback calibration)
+- 4 tests for cost estimation edge cases (premium vs fast cost, table formatting, urgency inheritance)
+- 3 tests for schedule_risk MdAPE (outlier-robust risk levels, humanReadable output)
+- 7 tests for feedback module (duplicate rejection, batch operations, MdAPE in health report)
 - 6 tests for MCP adapter (ZodEffects unwrap, tool registration, read/write annotations)
 - 6 tests for dispatcher routing (unknown tools, validation, feedbackToken propagation)
 - NaN guards on `actual_hours` in HTTP endpoint
@@ -21,8 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `referenceClassEstimate` accepts `aiNative` flag to use AI-native baselines with CF=1.0 (avoids double correction)
+- `scheduleRisk` uses MdAPE (median) instead of MAPE for confidence intervals and risk classification — outlier-robust
+- `accuracyTrend` uses MdAPE for trend detection (15% threshold for improving/degrading)
+- `calibrateEstimates` uses MdAPE for correction factor computation
 - Feedback health report includes `mdape` alongside `mape` for both by-tool and by-task-type breakdowns
-- Test count: 738 → 769
+- RCE CLI now supports `--scope`, `--ai-native`, `--team-id` flags
+- `adjustedEstimate` rounding uses 2 decimal places (was 1, losing values like 0.045)
+- Test count: 738 → 794
 
 ### Fixed
 - `inferScopeFromComplexity` was a stub always returning "medium" — now maps complexity 1-2→small, 3→medium, 4→large, 5→xl
