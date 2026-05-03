@@ -845,3 +845,117 @@ describe("matchEstimatesToActuals", () => {
     expect(result[0].completedAt).toBe("2026-01-10T00:00:00Z");
   });
 });
+
+describe("cappedMdape in feedback health", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("cappedMdape caps individual errors at 500%", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", tool: "monte_carlo_schedule", inputs: { task_type: "feature" }, outputs: { estimatedHours: 10 } }),
+          makeEstimate({ id: "e2", tool: "monte_carlo_schedule", inputs: { task_type: "feature" }, outputs: { estimatedHours: 8 } }),
+          makeEstimate({ id: "e3", tool: "monte_carlo_schedule", inputs: { task_type: "feature" }, outputs: { estimatedHours: 5 } }),
+          makeEstimate({ id: "e4", tool: "monte_carlo_schedule", inputs: { task_type: "feature" }, outputs: { estimatedHours: 12 } }),
+          makeEstimate({ id: "e5", tool: "monte_carlo_schedule", inputs: { task_type: "feature" }, outputs: { estimatedHours: 3 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 0.3, reportedAt: "2026-01-10T00:00:00Z" }), // 3233% error, ratio=0.03
+          JSON.stringify({ estimateId: "e2", actualHours: 0.25, reportedAt: "2026-01-10T00:00:00Z" }), // 3100% error, ratio=0.031
+          JSON.stringify({ estimateId: "e3", actualHours: 4.5, reportedAt: "2026-01-10T00:00:00Z" }), // 11% error
+          JSON.stringify({ estimateId: "e4", actualHours: 0.5, reportedAt: "2026-01-10T00:00:00Z" }), // 2300% error, ratio=0.042
+          JSON.stringify({ estimateId: "e5", actualHours: 2.8, reportedAt: "2026-01-10T00:00:00Z" }), // 7% error
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    const tool = report.byTool["monte_carlo_schedule"];
+    expect(tool).toBeDefined();
+    expect(tool.cappedMdape).not.toBeNull();
+    // 5 records: 3 extreme outliers (2300-3233%) + 2 reasonable (7-11%).
+    // Uncapped median picks 3rd sorted error ≈ 2300%+
+    // Capped median picks 3rd capped error = 500%
+    expect(tool.cappedMdape!).toBeLessThanOrEqual(500);
+    expect(tool.mdape!).toBeGreaterThan(tool.cappedMdape!);
+  });
+
+  it("recommendation includes bias direction for systematic overestimation", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: 20 } }),
+          makeEstimate({ id: "e2", tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: 15 } }),
+          makeEstimate({ id: "e3", tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: 10 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e2", actualHours: 0.5, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 0.3, reportedAt: "2026-01-10T00:00:00Z" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    const tool = report.byTool["pert_estimate"];
+    expect(tool.recommendation).toContain("systematic overestimation");
+  });
+
+  it("recommendation shows well-calibrated for small bias", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 5 } }),
+          makeEstimate({ id: "e2", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 4 } }),
+          makeEstimate({ id: "e3", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 6 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 5.1, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e2", actualHours: 3.9, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 6.2, reportedAt: "2026-01-10T00:00:00Z" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    const tool = report.byTool["pert_estimate"];
+    expect(tool.recommendation).toContain("well-calibrated");
+  });
+
+  it("byTaskType recommendation includes bias direction", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", inputs: { task_type: "migration" }, outputs: { estimatedHours: 5 } }),
+          makeEstimate({ id: "e2", inputs: { task_type: "migration" }, outputs: { estimatedHours: 3 } }),
+          makeEstimate({ id: "e3", inputs: { task_type: "migration" }, outputs: { estimatedHours: 4 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 10, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e2", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 9, reportedAt: "2026-01-10T00:00:00Z" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    const type = report.byTaskType["migration"];
+    expect(type.recommendation).toContain("systematic underestimation");
+  });
+});

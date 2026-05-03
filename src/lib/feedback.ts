@@ -5,6 +5,15 @@ import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
 
+function biasLabel(bias: number | null): string {
+  if (bias === null) return "";
+  if (bias > 2) return "systematic underestimation";
+  if (bias > 0.5) return "mild underestimation";
+  if (bias > -0.5) return "well-calibrated";
+  if (bias > -3) return "mild overestimation";
+  return "systematic overestimation";
+}
+
 export interface EstimateRecord {
   id: string;
   tool: string;
@@ -283,8 +292,8 @@ export interface FeedbackHealthReport {
   matchedPairs: number;
   seedRecordsFiltered: number;
   matchRate: number;
-  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; bias: number | null; recommendation: string }>;
-  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; bias: number | null; recommendation: string }>;
+  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; cappedMdape: number | null; bias: number | null; recommendation: string }>;
+  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; cappedMdape: number | null; bias: number | null; recommendation: string }>;
   selfImprovement: {
     readyTypes: string[];
     callsUntilUpdate: number;
@@ -352,16 +361,17 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     const metrics = matched.length >= 2 ? computeAccuracyMetrics(matched) : null;
     const pairs = matched.length;
     let recommendation: string;
+    const bl = biasLabel(metrics?.bias ?? null);
     if (pairs === 0) {
       recommendation = "No matched pairs. Record actuals to start calibration.";
     } else if (pairs < 3) {
       recommendation = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
     } else if (pairs < 10) {
-      recommendation = `Sufficient for calibration (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Collect more to improve reliability.`;
+      recommendation = `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}). Collect more to improve reliability.`;
     } else {
-      recommendation = `Good coverage (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Review outliers if MdAPE > 50%.`;
+      recommendation = `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
     }
-    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, bias: metrics?.bias ?? null, recommendation };
+    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, cappedMdape: metrics?.cappedMdape ?? null, bias: metrics?.bias ?? null, recommendation };
   }
 
   // By task type — group the pre-matched records
@@ -383,16 +393,17 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     const metrics = records.length >= 2 ? computeAccuracyMetrics(records) : null;
     const pairs = records.length;
     let typeRec: string;
+    const tbl = biasLabel(metrics?.bias ?? null);
     if (pairs === 0) {
       typeRec = "No matched pairs. Use this task type in estimates and record actuals.";
     } else if (pairs < 3) {
       typeRec = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
     } else if (pairs < 10) {
-      typeRec = `Sufficient for calibration (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Collect more to improve reliability.`;
+      typeRec = `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${tbl}). Collect more to improve reliability.`;
     } else {
-      typeRec = `Good coverage (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Review outliers if MdAPE > 50%.`;
+      typeRec = `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${tbl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
     }
-    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, bias: metrics?.bias ?? null, recommendation: typeRec };
+    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, cappedMdape: metrics?.cappedMdape ?? null, bias: metrics?.bias ?? null, recommendation: typeRec };
   }
 
   // Self-improvement readiness: types with 5+ matched records

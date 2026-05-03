@@ -315,6 +315,8 @@ export interface AccuracyMetrics {
   readonly mape: number;
   /** Median Absolute Percentage Error — robust to outliers. */
   readonly mdape: number;
+  /** MdAPE with individual errors capped at 500% — avoids extreme outliers inflating the median. */
+  readonly cappedMdape: number;
   /** Mean bias (positive = underestimation, negative = overestimation). */
   readonly bias: number;
   /** Variance of the bias distribution. */

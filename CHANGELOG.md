@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-05-03
+
+### Added
+- `cappedMdape` in `AccuracyMetrics` — caps individual percentage errors at 500% before computing the median, giving a more useful metric when extreme outliers exist
+- `cappedMdape` field in feedback health `byTool` and `byTaskType` entries — exposes the outlier-robust accuracy metric per breakdown
+- `biasLabel` helper — qualitative bias direction labels (systematic overestimation, mild overestimation, well-calibrated, mild underestimation, systematic underestimation)
+- Recommendations in feedback health now show `capped MdAPE` and bias direction label instead of raw MdAPE alone
+- 4 tests for cappedMdape (1), bias direction in recommendations (2), well-calibrated label (1)
+
+### Changed
+- 887 tests (was 883)
+
 ## [0.1.13] - 2026-05-03
 
 ### Added

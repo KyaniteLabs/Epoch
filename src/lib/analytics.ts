@@ -274,12 +274,12 @@ export function referenceClassEstimate(
 
 export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMetrics {
   if (records.length === 0) {
-    return { mape: 0, mdape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
+    return { mape: 0, mdape: 0, cappedMdape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
   }
 
   const validRecords = records.filter(r => r.actualHours > 0);
   if (validRecords.length === 0) {
-    return { mape: 0, mdape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
+    return { mape: 0, mdape: 0, cappedMdape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
   }
 
   const errors = validRecords.map(r => Math.abs(r.actualHours - r.estimatedHours) / r.actualHours);
@@ -290,6 +290,13 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
   const mdape = sorted.length % 2 === 0
     ? ((sorted[mid - 1]! + sorted[mid]!) / 2) * 100
     : (sorted[mid] ?? 0) * 100;
+
+  // Capped MdAPE: clamp individual errors at 500% before taking median.
+  const CAP = 5.0;
+  const capped = errors.map(e => Math.min(e, CAP)).sort((a, b) => a - b);
+  const cappedMdape = capped.length % 2 === 0
+    ? ((capped[mid - 1]! + capped[mid]!) / 2) * 100
+    : (capped[mid] ?? 0) * 100;
 
   const biases = validRecords.map(r => r.actualHours - r.estimatedHours);
   const bias = biases.reduce((a, b) => a + b, 0) / biases.length;
@@ -311,6 +318,7 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
   return {
     mape: Math.round(mape * 10) / 10,
     mdape: Math.round(mdape * 10) / 10,
+    cappedMdape: Math.round(cappedMdape * 10) / 10,
     bias: Math.round(bias * 10) / 10,
     variance: Math.round(variance * 10) / 10,
     sample_size: validRecords.length,
