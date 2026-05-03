@@ -216,6 +216,16 @@ export function cocomoEstimate(params: {
 }
 
 export function criticalPath(tasks: CpmTask[]): ToolResult<CpmResult> {
+  if (tasks.length === 0) {
+    return {
+      ok: false,
+      error: {
+        isError: true,
+        message: "Task list must not be empty.",
+        retryHint: "Provide at least one task for critical path analysis.",
+      },
+    };
+  }
   const taskMap = new Map<string, CpmTask>();
   for (const t of tasks) {
     if (taskMap.has(t.name)) {
@@ -372,6 +382,14 @@ export function monteCarloSim(
   iterations: number,
   seed?: number,
 ): MonteCarloResult {
+  if (iterations <= 0) {
+    return {
+      p10: "0", p50: "0", p80: "0", p95: "0",
+      criticalPathProbability: 0,
+      riskEvents: [{ description: "Iterations must be >= 1.", probability: 1, impactDays: 0 }],
+      humanReadable: "Error: Iterations must be a positive number.",
+    };
+  }
   for (const task of tasks) {
     if (!(task.optimistic <= task.mostLikely && task.mostLikely <= task.pessimistic)) {
       return {

@@ -178,7 +178,8 @@ function extractEstimatedHours(outputs: Record<string, unknown>): number | null 
     if (unit === "days") return outputs["expected"] * 8;
     if (unit === "weeks") return outputs["expected"] * 40;
     if (unit === "months") return outputs["expected"] * 160;
-    return outputs["expected"] as number; // assume hours when unit is missing or unrecognized
+    if (!unit) return outputs["expected"]; // no unit field — assume hours
+    return null; // unrecognized unit — skip to avoid corrupting calibration
   }
   if (typeof outputs["personMonthsLlmAdjusted"] === "number") {
     return outputs["personMonthsLlmAdjusted"] * 160;
@@ -266,8 +267,9 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     }
   }
   for (const r of allMatched) {
-    if (!toolRecords.has(r.tool)) toolRecords.set(r.tool, []);
-    toolRecords.get(r.tool)!.push(r);
+    const toolKey = r.tool ?? "unknown";
+    if (!toolRecords.has(toolKey)) toolRecords.set(toolKey, []);
+    toolRecords.get(toolKey)!.push(r);
   }
 
   const byTool: FeedbackHealthReport["byTool"] = {};

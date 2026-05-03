@@ -935,9 +935,7 @@ describe("estimation — criticalPath stress", () => {
 
   it("handles empty task list", () => {
     const result = criticalPath([]);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.data.total_duration).toBe(-Infinity); // max of empty set
+    expect(result.ok).toBe(false);
   });
 });
 

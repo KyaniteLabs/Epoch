@@ -298,6 +298,11 @@ describe("criticalPath", () => {
     expect(result.error.message).toContain("Circular");
   });
 
+  it("returns error for empty tasks array", () => {
+    const result = criticalPath([]);
+    expect(result.ok).toBe(false);
+  });
+
   it("handles single task", () => {
     const result = criticalPath([
       { name: "Solo", duration: 7, predecessors: [] },
@@ -394,6 +399,14 @@ describe("monteCarloSim", () => {
     ], 1, 42);
     expect(result.p10).toBe(result.p50);
     expect(result.p50).toBe(result.p95);
+  });
+
+  it("returns error result for zero iterations", () => {
+    const result = monteCarloSim([
+      { name: "Task", optimistic: 1, mostLikely: 3, pessimistic: 8 },
+    ], 0, 42);
+    expect(result.riskEvents.length).toBeGreaterThan(0);
+    expect(result.riskEvents[0]!.description).toContain("Iterations");
   });
 });
 
