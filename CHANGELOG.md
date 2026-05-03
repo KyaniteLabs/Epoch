@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adaptive window sizing in `accuracy-trend` to avoid tiny last windows
 - Task type inference for estimation tools — explicit lookup replaces fragile `includes()` matching
 - Feedback health output schema updated to include `matchedPairs` and `humanReadable` fields
+- Global correction factor clamped to [0.1, 3.0] — was unclamped, could return 0 from zero-actual records
+- Zero-actual records filtered from all correction factor computation paths
+- Task-type correction factors now require minimum 3 records (was unguarded)
+- Benchmark merge rounds min_ms/max_ms to avoid floating-point artifacts (e.g., 13.995 → 14.0)
 
 ### Changed
 - Calibration data seeded across all 7 estimation tools (238 matched pairs, was 0)
