@@ -207,6 +207,24 @@ describe("getCalibrationData", () => {
     mockExistsSync.mockReturnValue(false);
     expect(getCalibrationData()).toEqual([]);
   });
+
+  it("filters out actuals under 0.1 hours as seed artifacts", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "e1" }) + "\n" + makeEstimate({ id: "e2" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({ estimateId: "e1", actualHours: 0.02, reportedAt: new Date().toISOString() }) + "\n"
+          + JSON.stringify({ estimateId: "e2", actualHours: 5, reportedAt: new Date().toISOString() }) + "\n";
+      }
+      return "";
+    });
+
+    const data = getCalibrationData();
+    expect(data).toHaveLength(1);
+    expect(data[0]!.actualHours).toBe(5);
+  });
 });
 
 // ---- extractEstimatedHours (tested via getCalibrationData) ----

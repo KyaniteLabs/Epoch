@@ -150,6 +150,7 @@ export function matchEstimatesToActuals(
 
     const act = actualsMap.get(est.id);
     if (!act) continue;
+    if (act.actualHours < 0.1) continue;
 
     const estHours = extractEstimatedHours(est.outputs);
     if (estHours === null) continue;
