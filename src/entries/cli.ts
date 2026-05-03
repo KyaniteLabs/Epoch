@@ -25,6 +25,18 @@ function parseJsonArg(raw: string, flagName: string): unknown {
   }
 }
 
+/** Safe parseFloat that exits on NaN instead of propagating silently. */
+function safeFloat(flagName: string): (value: string) => number {
+  return (value: string) => {
+    const n = Number.parseFloat(value);
+    if (Number.isNaN(n)) {
+      process.stderr.write(`Error: --${flagName} must be a number, got "${value}"\n`);
+      process.exit(1);
+    }
+    return n;
+  };
+}
+
 /** Resolve output format from root options, applying --pretty override. */
 function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
   if (rootOpts.pretty === true) return "table";
@@ -142,14 +154,14 @@ export function createCliProgram(): Command {
     .description("Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.")
     .requiredOption("--operation <op>", "Time math operation to perform")
     .option("--date <d>", "ISO date string (add_days, diff)")
-    .option("--days <n>", "Number of days (add_days, add_business_days)", parseFloat)
+    .option("--days <n>", "Number of days (add_days, add_business_days)", safeFloat("days"))
     .option("--start-date <d>", "ISO date string for start date (add_business_days)")
     .option("--country <code>", "ISO-3166-1-alpha-2 country code (add_business_days, default US)")
     .option("--end-date <d>", "ISO date string for end date (diff)")
     .option("--timestamp <ts>", "ISO timestamp string (convert_tz)")
     .option("--target-tz <tz>", "IANA timezone string (convert_tz)")
     .option("--duration-string <s>", "Natural language duration string (parse_nl)")
-    .option("--milliseconds <n>", "Duration in milliseconds (format_duration)", parseFloat)
+    .option("--milliseconds <n>", "Duration in milliseconds (format_duration)", safeFloat("milliseconds"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -179,7 +191,7 @@ export function createCliProgram(): Command {
     .command("add-business-days")
     .description("Adds N business days to a start date, skipping weekends and holidays.")
     .requiredOption("--start-date <d>", "ISO date string for the start date")
-    .requiredOption("--days <n>", "Number of business days to add", parseFloat)
+    .requiredOption("--days <n>", "Number of business days to add", safeFloat("days"))
     .option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
@@ -224,9 +236,9 @@ export function createCliProgram(): Command {
   program
     .command("pert-estimate")
     .description("Computes a PERT three-point estimate with expected value, standard deviation, and confidence intervals.")
-    .requiredOption("--optimistic <n>", "Best-case duration", parseFloat)
-    .requiredOption("--most-likely <n>", "Most probable duration", parseFloat)
-    .requiredOption("--pessimistic <n>", "Worst-case duration", parseFloat)
+    .requiredOption("--optimistic <n>", "Best-case duration", safeFloat("optimistic"))
+    .requiredOption("--most-likely <n>", "Most probable duration", safeFloat("most-likely"))
+    .requiredOption("--pessimistic <n>", "Worst-case duration", safeFloat("pessimistic"))
     .option("--unit <unit>", "Time unit (hours|days|weeks|months)", "hours")
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
@@ -248,12 +260,12 @@ export function createCliProgram(): Command {
   program
     .command("cocomo-estimate")
     .description("Estimates effort using a COCOMO II model adjusted for LLM-assisted workflows.")
-    .requiredOption("--kloc <n>", "Estimated thousands of lines of code", parseFloat)
-    .option("--reasoning-complexity <n>", "Reasoning complexity multiplier (0.5-2.0)", parseFloat)
-    .option("--context-completeness <n>", "Context completeness multiplier (0.5-2.0)", parseFloat)
-    .option("--transformation-impact <n>", "Transformation impact multiplier (0.5-2.0)", parseFloat)
-    .option("--iterative-cycles <n>", "Iteration overhead multiplier (0.5-2.0)", parseFloat)
-    .option("--human-oversight <n>", "Human review overhead multiplier (0.5-2.0)", parseFloat)
+    .requiredOption("--kloc <n>", "Estimated thousands of lines of code", safeFloat("kloc"))
+    .option("--reasoning-complexity <n>", "Reasoning complexity multiplier (0.5-2.0)", safeFloat("reasoning-complexity"))
+    .option("--context-completeness <n>", "Context completeness multiplier (0.5-2.0)", safeFloat("context-completeness"))
+    .option("--transformation-impact <n>", "Transformation impact multiplier (0.5-2.0)", safeFloat("transformation-impact"))
+    .option("--iterative-cycles <n>", "Iteration overhead multiplier (0.5-10.0)", safeFloat("iterative-cycles"))
+    .option("--human-oversight <n>", "Human review overhead multiplier (0.5-2.0)", safeFloat("human-oversight"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -280,10 +292,10 @@ export function createCliProgram(): Command {
   program
     .command("sprint-forecast")
     .description("Forecasts sprints needed to clear a backlog based on historical velocity.")
-    .requiredOption("--backlog-points <n>", "Total backlog story points", parseFloat)
+    .requiredOption("--backlog-points <n>", "Total backlog story points", safeFloat("backlog-points"))
     .requiredOption("--velocity-history <csv>", "Comma-separated velocity values per sprint")
-    .option("--sprint-length-days <n>", "Calendar days in one sprint", parseFloat)
-    .option("--hours-per-sprint <n>", "Productive engineering hours per sprint", parseFloat)
+    .option("--sprint-length-days <n>", "Calendar days in one sprint", safeFloat("sprint-length-days"))
+    .option("--hours-per-sprint <n>", "Productive engineering hours per sprint", safeFloat("hours-per-sprint"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -334,7 +346,7 @@ export function createCliProgram(): Command {
     .command("monte-carlo-schedule")
     .description("Runs a Monte Carlo simulation on a task list with three-point estimates.")
     .requiredOption("--tasks <json>", "Task array as JSON")
-    .option("--iterations <n>", "Number of simulation iterations", parseFloat)
+    .option("--iterations <n>", "Number of simulation iterations", safeFloat("iterations"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -353,7 +365,7 @@ export function createCliProgram(): Command {
     .command("reference-class-estimate")
     .description("Estimates effort using reference-class forecasting from historical data.")
     .requiredOption("--task-type <type>", "Category of work (feature|bugfix|refactor|migration|infrastructure|documentation|testing|design)")
-    .requiredOption("--complexity <n>", "Complexity 1-5", parseFloat)
+    .requiredOption("--complexity <n>", "Complexity 1-5", safeFloat("complexity"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -373,7 +385,7 @@ export function createCliProgram(): Command {
     .command("calibrate-estimates")
     .description("Calibrates estimation accuracy using historical team data.")
     .requiredOption("--team-id <id>", "Team identifier")
-    .option("--period-days <n>", "Lookback window in calendar days", parseFloat)
+    .option("--period-days <n>", "Lookback window in calendar days", safeFloat("period-days"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -388,9 +400,9 @@ export function createCliProgram(): Command {
   program
     .command("token-time-bridge")
     .description("Estimates wall-clock time from token count and LLM model parameters.")
-    .requiredOption("--tokens <n>", "Total number of tokens", parseFloat)
+    .requiredOption("--tokens <n>", "Total number of tokens", safeFloat("tokens"))
     .requiredOption("--model <model>", "LLM model identifier")
-    .option("--tool-calls <n>", "Number of expected tool calls", parseFloat)
+    .option("--tool-calls <n>", "Number of expected tool calls", safeFloat("tool-calls"))
     .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
@@ -414,9 +426,9 @@ export function createCliProgram(): Command {
   program
     .command("token-cost-estimate")
     .description("Estimates wall-clock time AND dollar cost from token count and LLM model.")
-    .requiredOption("--tokens <n>", "Total number of tokens", parseFloat)
+    .requiredOption("--tokens <n>", "Total number of tokens", safeFloat("tokens"))
     .requiredOption("--model <model>", "LLM model identifier")
-    .option("--tool-calls <n>", "Number of expected tool calls", parseFloat)
+    .option("--tool-calls <n>", "Number of expected tool calls", safeFloat("tool-calls"))
     .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
@@ -431,8 +443,8 @@ export function createCliProgram(): Command {
   program
     .command("compare-models")
     .description("Compares all LLM models side-by-side for a given token budget.")
-    .requiredOption("--tokens <n>", "Token count to estimate", parseFloat)
-    .option("--tool-calls <n>", "Number of tool calls", parseFloat)
+    .requiredOption("--tokens <n>", "Token count to estimate", safeFloat("tokens"))
+    .option("--tool-calls <n>", "Number of tool calls", safeFloat("tool-calls"))
     .option("--reasoning-depth <depth>", "Reasoning depth (shallow|moderate|deep)")
     .option("--sort-by <field>", "Sort by cost or time", "cost")
     .action(async (opts, cmd) => {
@@ -452,7 +464,7 @@ export function createCliProgram(): Command {
     .command("accuracy-trend")
     .description("Tracks estimation accuracy over time with sliding-window MAPE.")
     .option("--team-id <id>", "Team identifier")
-    .option("--window-size <n>", "Records per sliding window", parseFloat)
+    .option("--window-size <n>", "Records per sliding window", safeFloat("window-size"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
@@ -466,7 +478,7 @@ export function createCliProgram(): Command {
   program
     .command("schedule-risk")
     .description("Assesses schedule risk using historical accuracy data.")
-    .requiredOption("--estimated-hours <n>", "Estimated effort in hours", parseFloat)
+    .requiredOption("--estimated-hours <n>", "Estimated effort in hours", safeFloat("estimated-hours"))
     .option("--task-type <type>", "Task type for accuracy lookup")
     .option("--team-id <id>", "Team identifier")
     .action(async (opts, cmd) => {
@@ -500,7 +512,7 @@ export function createCliProgram(): Command {
     .command("record-actual")
     .description("Records actual hours for a previous estimate to improve future accuracy.")
     .requiredOption("--estimate-id <id>", "ID of the estimate to update")
-    .requiredOption("--actual-hours <n>", "Actual hours spent", parseFloat)
+    .requiredOption("--actual-hours <n>", "Actual hours spent", safeFloat("actual-hours"))
     .option("--notes <text>", "Optional context about what affected the actual time")
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);

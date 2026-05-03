@@ -111,16 +111,30 @@ export function getCalibrationData(
   windowDays?: number,
   tool?: string,
 ): HistoricalRecord[] {
-  const estimates = readLines<EstimateRecord>(ESTIMATES_FILE);
-  const actuals = readLines<ActualRecord>(ACTUALS_FILE);
+  return matchEstimatesToActuals(
+    readLines<EstimateRecord>(ESTIMATES_FILE),
+    readLines<ActualRecord>(ACTUALS_FILE),
+    { teamId, taskType, windowDays, tool },
+  );
+}
 
+export function matchEstimatesToActuals(
+  estimates: EstimateRecord[],
+  actuals: ActualRecord[],
+  filters?: {
+    teamId?: string;
+    taskType?: TaskType;
+    windowDays?: number;
+    tool?: string;
+  },
+): HistoricalRecord[] {
   const actualsMap = new Map<string, ActualRecord>();
   for (const a of actuals) {
     actualsMap.set(a.estimateId, a);
   }
 
-  const cutoff = windowDays
-    ? new Date(Date.now() - windowDays * 86_400_000).toISOString()
+  const cutoff = filters?.windowDays
+    ? new Date(Date.now() - filters.windowDays * 86_400_000).toISOString()
     : "0000";
 
   const records: HistoricalRecord[] = [];
@@ -136,16 +150,16 @@ export function getCalibrationData(
 
     const type = (est.inputs["task_type"] as string) ?? inferTaskType(est.tool);
 
-    if (taskType && type !== taskType) continue;
-    if (teamId && est.inputs["team_id"] !== teamId) continue;
-    if (tool && est.tool !== tool) continue;
+    if (filters?.taskType && type !== filters.taskType) continue;
+    if (filters?.teamId && est.inputs["team_id"] !== filters.teamId) continue;
+    if (filters?.tool && est.tool !== filters.tool) continue;
 
     records.push({
       taskType: type,
       estimatedHours: estHours,
       actualHours: act.actualHours,
       tool: est.tool,
-      ...(teamId && { teamId }),
+      ...(filters?.teamId && { teamId: filters.teamId }),
       completedAt: act.reportedAt,
     });
   }
@@ -238,26 +252,33 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     ? Math.round((actualIds.size / totalEstimates) * 1000) / 10
     : 0;
 
-  // By tool
+  // Compute all matched records once (no re-reads)
+  const allMatched = matchEstimatesToActuals(estimates, actuals);
+
+  // By tool — group the pre-matched records
   const toolEstimates = new Map<string, number>();
   const toolActuals = new Map<string, number>();
+  const toolRecords = new Map<string, HistoricalRecord[]>();
   for (const e of estimates) {
     toolEstimates.set(e.tool, (toolEstimates.get(e.tool) ?? 0) + 1);
     if (actualIds.has(e.id)) {
       toolActuals.set(e.tool, (toolActuals.get(e.tool) ?? 0) + 1);
     }
   }
+  for (const r of allMatched) {
+    if (!toolRecords.has(r.tool)) toolRecords.set(r.tool, []);
+    toolRecords.get(r.tool)!.push(r);
+  }
 
   const byTool: FeedbackHealthReport["byTool"] = {};
   for (const [tool, count] of toolEstimates) {
-    const matched = getCalibrationData(undefined, undefined, undefined, tool);
+    const matched = toolRecords.get(tool) ?? [];
     const mape = matched.length >= 2 ? computeAccuracyMetrics(matched).mape : null;
     byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, mape };
   }
 
-  // By task type
+  // By task type — group the pre-matched records
   const typeGroups = new Map<string, HistoricalRecord[]>();
-  const allMatched = getCalibrationData();
   for (const r of allMatched) {
     if (!typeGroups.has(r.taskType)) typeGroups.set(r.taskType, []);
     typeGroups.get(r.taskType)!.push(r);

@@ -168,6 +168,8 @@ const businessDayOutput = {
   },
 } satisfies Record<string, unknown>;
 
+const feedbackTokenField = { type: "string", description: "Token for recording actual hours via record_actual" };
+
 const pertOutput = {
   type: "object",
   properties: {
@@ -182,6 +184,7 @@ const pertOutput = {
     unit: { type: "string", enum: ["hours", "days", "weeks", "months"] },
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
     humanReadable: { type: "string", description: "Human-readable summary" },
+    feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
 
@@ -193,6 +196,7 @@ const cocomoOutput = {
     personMonthsLlmAdjusted: { type: "number" },
     effortMultipliers: { type: "object", additionalProperties: { type: "number" } },
     assumptions: { type: "array", items: { type: "string" } },
+    feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
 
@@ -207,6 +211,7 @@ const sprintOutput = {
     totalHours: { type: "number" },
     completionDays: { type: "number" },
     sprintLengthDays: { type: "number" },
+    feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
 
@@ -240,6 +245,7 @@ const monteCarloOutput = {
       },
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
+    feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
 
@@ -261,6 +267,7 @@ const tokenTimeOutput = {
       },
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
+    feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
 
@@ -272,6 +279,7 @@ const referenceClassOutput = {
     correctionFactor: { type: "number" },
     sampleSize: { type: "number" },
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
+    feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
 
