@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Duration validation in `criticalPath` — rejects zero, negative, and NaN durations with descriptive error messages
 - Self-reference detection in `criticalPath` — rejects tasks that list themselves as predecessors
-- 4 tests for CPM input validation (zero duration, negative duration, self-referencing predecessor, NaN duration)
+- Velocity validation in `sprintForecast` — rejects negative and NaN velocity values with index-specific error messages
+- Null guard on `completedAt` in feedback matching — handles actuals with `completedAt` instead of `reportedAt`
+- 7 tests for CPM input validation (4) and sprint velocity validation (2) and completedAt fallback (1)
+
+### Fixed
+- `matchEstimatesToActuals` sort crash when actual records lack `reportedAt` field — now falls back to `completedAt` or empty string
 
 ### Changed
-- 877 tests (was 873)
+- 880 tests (was 873)
 
 ## [0.1.12] - 2026-05-03
 

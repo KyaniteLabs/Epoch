@@ -92,6 +92,20 @@ export function sprintForecast(params: {
     };
   }
 
+  for (let i = 0; i < velocityHistory.length; i++) {
+    const v = velocityHistory[i];
+    if (!(v >= 0) || !Number.isFinite(v)) {
+      return {
+        ok: false,
+        error: {
+          isError: true,
+          message: `velocity_history[${i}] is invalid: ${v}. Each velocity must be a non-negative finite number.`,
+          retryHint: "Provide non-negative numeric velocity values for each sprint.",
+        },
+      };
+    }
+  }
+
   if (backlogPoints <= 0) {
     return {
       ok: false,

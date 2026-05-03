@@ -286,6 +286,24 @@ describe("sprintForecast", () => {
     expect(result.data.estimatedTokenCost).toBeGreaterThan(0);
     expect(result.data.estimatedTokenCost).toBeCloseTo(result.data.totalHours * 50000, -4);
   });
+
+  it("returns error for negative velocity values", () => {
+    const result = sprintForecast({
+      backlogPoints: 30, velocityHistory: [10, -5], sprintLengthDays: 14, hoursPerSprint: 100,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) return;
+    expect(result.error.message).toContain("velocity_history[1]");
+  });
+
+  it("returns error for NaN velocity values", () => {
+    const result = sprintForecast({
+      backlogPoints: 30, velocityHistory: [10, NaN], sprintLengthDays: 14, hoursPerSprint: 100,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) return;
+    expect(result.error.message).toContain("velocity_history[1]");
+  });
 });
 
 describe("cocomoEstimate", () => {
