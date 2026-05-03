@@ -38,6 +38,7 @@ export function computeAccuracyTrend(params?: {
     const window: AccuracyWindow = {
       period: `Window 1 (estimates 1-${sorted.length})`,
       mape: metrics.mape,
+      mdape: metrics.mdape,
       bias: metrics.bias,
       sampleSize: sorted.length,
     };
@@ -68,18 +69,20 @@ export function computeAccuracyTrend(params?: {
     windows.push({
       period: `Window ${windowIndex} (estimates ${startEstimate}-${endEstimate})`,
       mape: metrics.mape,
+      mdape: metrics.mdape,
       bias: metrics.bias,
       sampleSize: windowRecords.length,
     });
   }
 
-  // Determine overall trend: compare first window MAPE to last window MAPE
-  const firstMape = windows[0]?.mape ?? 0;
+  // Determine overall trend: compare first window MdAPE to last window MdAPE
+  const firstMdape = windows[0]?.mdape ?? 0;
+  const lastMdape = windows[windows.length - 1]?.mdape ?? 0;
   const lastMape = windows[windows.length - 1]?.mape ?? 0;
   let overallTrend: AccuracyTrend["overallTrend"] = "stable";
-  if (lastMape < firstMape * 0.85) {
+  if (lastMdape < firstMdape * 0.85) {
     overallTrend = "improving";
-  } else if (lastMape > firstMape * 1.15) {
+  } else if (lastMdape > firstMdape * 1.15) {
     overallTrend = "degrading";
   }
 

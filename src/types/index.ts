@@ -348,6 +348,7 @@ export interface ModelComparison {
 export interface AccuracyWindow {
   readonly period: string;
   readonly mape: number;
+  readonly mdape: number;
   readonly bias: number;
   readonly sampleSize: number;
 }

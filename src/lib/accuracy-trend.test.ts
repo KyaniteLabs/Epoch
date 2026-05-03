@@ -47,7 +47,7 @@ describe("computeAccuracyTrend", () => {
     expect(result.industryBaselineMape).toBe(25);
   });
 
-  it("computes MAPE per window", () => {
+  it("computes MAPE and MdAPE per window", () => {
     // 100 records with 50% error -> should produce 2 windows of 50
     const records = makeRecords(100, () => 50);
     mockGetCalibrationData.mockReturnValue(records);
@@ -57,6 +57,7 @@ describe("computeAccuracyTrend", () => {
     for (const w of result.windows) {
       expect(w.sampleSize).toBeGreaterThan(0);
       expect(w.mape).toBeGreaterThan(0);
+      expect(w.mdape).toBeGreaterThan(0);
     }
   });
 
