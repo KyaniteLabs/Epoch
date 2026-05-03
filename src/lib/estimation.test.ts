@@ -277,6 +277,15 @@ describe("sprintForecast", () => {
     if (!result.ok) return;
     expect(result.data.velocityCv).toBe(0);
   });
+
+  it("includes estimatedTokenCost (totalHours × 50000)", () => {
+    const result = sprintForecast({
+      backlogPoints: 30, velocityHistory: [10, 12, 11], sprintLengthDays: 14, hoursPerSprint: 100,
+    });
+    if (!result.ok) return;
+    expect(result.data.estimatedTokenCost).toBeGreaterThan(0);
+    expect(result.data.estimatedTokenCost).toBeCloseTo(result.data.totalHours * 50000, -4);
+  });
 });
 
 describe("cocomoEstimate", () => {

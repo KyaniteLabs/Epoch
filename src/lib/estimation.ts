@@ -162,6 +162,7 @@ export function sprintForecast(params: {
       sprintLengthDays,
       confidence,
       velocityCv,
+      estimatedTokenCost: Math.round(totalHours * 50000 * 100) / 100,
     },
   };
 }
@@ -492,6 +493,7 @@ export function monteCarloSim(
     p80: String(Math.round(p(0.8) * 100) / 100),
     p95: String(Math.round(p(0.95) * 100) / 100),
     estimatedHours: Math.round(p50Val * 8 * 100) / 100,
+    estimatedCost: Math.round(p50Val * 8 * 50000 * 100) / 100,
     criticalPathProbability: Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100) / 100,
     converged,
     riskEvents,

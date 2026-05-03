@@ -150,6 +150,8 @@ export interface SprintForecastResult {
   readonly confidence: "low" | "medium" | "high";
   /** Coefficient of variation of velocity history (0 if single sprint). */
   readonly velocityCv: number;
+  /** Estimated AI token cost (50k tokens/hour × totalHours). */
+  readonly estimatedTokenCost: number;
 }
 
 // ---- Token-Time Bridge Layer ----------------------------------------------

@@ -217,6 +217,7 @@ const sprintOutput = {
     sprintLengthDays: { type: "number" },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     velocityCv: { type: "number" },
+    estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × totalHours)" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
