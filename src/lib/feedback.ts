@@ -202,11 +202,24 @@ function extractEstimatedHours(outputs: Record<string, unknown>): number | null 
   return null;
 }
 
+const TOOL_TASK_TYPE_FALLBACK: Record<string, string> = {
+  pert_estimate: "feature",
+  cocomo_estimate: "feature",
+  sprint_forecast: "feature",
+  reference_class_estimate: "feature",
+  monte_carlo_schedule: "feature",
+  critical_path: "feature",
+  token_time_bridge: "infrastructure",
+  token_cost_estimate: "infrastructure",
+  calibrate_estimates: "feature",
+  schedule_risk: "feature",
+  feedback_health: "feature",
+  accuracy_trend: "feature",
+  compare_models: "feature",
+};
+
 function inferTaskType(tool: string): string {
-  if (tool.includes("pert") || tool.includes("cocomo") || tool.includes("sprint")) return "feature";
-  if (tool.includes("token")) return "infrastructure";
-  if (tool.includes("calibrate") || tool.includes("reference")) return "testing";
-  return "feature";
+  return TOOL_TASK_TYPE_FALLBACK[tool] ?? "feature";
 }
 
 // ---- Batch Operations -------------------------------------------------------
