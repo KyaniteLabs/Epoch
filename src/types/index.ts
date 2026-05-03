@@ -356,8 +356,8 @@ export interface AccuracyTrend {
   readonly currentMape: number;
   readonly industryBaselineMape: number;
   readonly improvementVsIndustry: number;
-  readonly totalEstimates: number;
-  readonly totalWithActuals: number;
+  readonly totalEstimates: number; // total matched estimate-actual pairs analyzed
+  readonly totalWithActuals: number; // same as totalEstimates (all records are matched)
   readonly humanReadable: string;
 }
 

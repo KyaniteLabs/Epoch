@@ -85,6 +85,12 @@ export function recordEstimate(
 }
 
 export function recordActual(estimateId: string, actualHours: number, notes?: string): boolean {
+  // Reject duplicates — last-write-wins silently corrupts calibration
+  const existing = readLines<ActualRecord>(ACTUALS_FILE);
+  if (existing.some((a) => a.estimateId === estimateId)) {
+    return false;
+  }
+
   const record: ActualRecord = {
     estimateId,
     actualHours,

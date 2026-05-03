@@ -6,11 +6,12 @@ import { batchRecordActuals, getFeedbackHealthReport } from "./feedback.js";
 // ---------------------------------------------------------------------------
 
 describe("batchRecordActuals", () => {
+  const ts = Date.now();
   it("records all entries successfully", () => {
     const result = batchRecordActuals([
-      { estimateId: "batch-test-001", actualHours: 4.0, notes: "Quick fix" },
-      { estimateId: "batch-test-002", actualHours: 12.5, notes: "Took longer" },
-      { estimateId: "batch-test-003", actualHours: 8.0 },
+      { estimateId: `batch-test-001-${ts}`, actualHours: 4.0, notes: "Quick fix" },
+      { estimateId: `batch-test-002-${ts}`, actualHours: 12.5, notes: "Took longer" },
+      { estimateId: `batch-test-003-${ts}`, actualHours: 8.0 },
     ]);
     expect(result.total).toBe(3);
     expect(result.succeeded).toBe(3);
@@ -20,16 +21,15 @@ describe("batchRecordActuals", () => {
 
   it("handles single entry", () => {
     const result = batchRecordActuals([
-      { estimateId: "batch-single-001", actualHours: 6.0 },
+      { estimateId: `batch-single-001-${ts}`, actualHours: 6.0 },
     ]);
     expect(result.total).toBe(1);
     expect(result.succeeded).toBe(1);
   });
 
   it("respects max 500 entries (caller responsibility)", () => {
-    // The schema enforces max 500, but the function itself accepts any array
     const entries = Array.from({ length: 3 }, (_, i) => ({
-      estimateId: `batch-max-${i}`,
+      estimateId: `batch-max-${i}-${ts}`,
       actualHours: i + 1,
     }));
     const result = batchRecordActuals(entries);

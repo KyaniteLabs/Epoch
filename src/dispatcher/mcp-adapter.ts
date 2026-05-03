@@ -5,9 +5,9 @@
 // ---------------------------------------------------------------------------
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { z } from "zod";
 import { TOOL_REGISTRY, type ToolDefinition } from "./tool-registry.js";
 import { dispatch } from "./index.js";
+import { z } from "zod";
 
 const READ_ONLY_ANNOTATIONS = {
   readOnlyHint: true,
@@ -29,8 +29,12 @@ export function registerAllMcpTools(server: McpServer): void {
   for (const [name, def] of TOOL_REGISTRY) {
     const annotations = WRITE_TOOLS.has(name) ? WRITE_ANNOTATIONS : READ_ONLY_ANNOTATIONS;
 
-    // Extract ZodRawShape from the ZodObject schema — MCP SDK expects raw shape, not z.object()
-    const shape = (def.inputSchema as z.ZodObject<z.ZodRawShape>).shape;
+    // Extract ZodRawShape — unwrap ZodEffects/ZodBranded to reach the inner ZodObject
+    let schema: z.ZodTypeAny = def.inputSchema as z.ZodTypeAny;
+    while (schema instanceof z.ZodEffects || schema instanceof z.ZodBranded) {
+      schema = schema instanceof z.ZodEffects ? schema.innerType() : schema.unwrap();
+    }
+    const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
 
     // Bounded cast: MCP SDK validates via Zod before calling handler,
     // so Record<string, unknown> is safe here.

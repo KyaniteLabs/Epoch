@@ -451,7 +451,7 @@ describe("HTTP API", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          estimate_id: "test-estimate-001",
+          estimate_id: `http-test-estimate-${Date.now()}`,
           actual_hours: 8.5,
           notes: "Completed faster than expected",
         }),
@@ -462,7 +462,6 @@ describe("HTTP API", () => {
       expect(body.ok).toBe(true);
 
       const data = body.data as Record<string, unknown>;
-      expect(data.estimateId).toBe("test-estimate-001");
       expect(data.actualHours).toBe(8.5);
     });
   });

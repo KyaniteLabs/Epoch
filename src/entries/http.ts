@@ -507,7 +507,7 @@ export function createApiApp(): Hono {
     const estimateId = body["estimate_id"] as string | undefined;
     const actualHours = body["actual_hours"] as number | undefined;
 
-    if (!estimateId || actualHours === undefined || actualHours <= 0) {
+    if (!estimateId || actualHours === undefined || !Number.isFinite(actualHours) || actualHours <= 0) {
       return c.json({
         ok: false,
         error: {
@@ -546,7 +546,7 @@ export function createApiApp(): Hono {
 
     const rawEntries = (body["entries"] as Array<Record<string, unknown>>).slice(0, 500);
     const entries = rawEntries
-      .filter((e) => typeof e["estimate_id"] === "string" && e["estimate_id"] !== "" && typeof e["actual_hours"] === "number" && (e["actual_hours"] as number) > 0)
+      .filter((e) => typeof e["estimate_id"] === "string" && e["estimate_id"] !== "" && typeof e["actual_hours"] === "number" && Number.isFinite(e["actual_hours"] as number) && (e["actual_hours"] as number) > 0)
       .map((e) => ({
         estimateId: e["estimate_id"] as string,
         actualHours: e["actual_hours"] as number,

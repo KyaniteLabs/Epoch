@@ -11,7 +11,7 @@ export function computeAccuracyTrend(params?: {
   const records = getCalibrationData(params?.teamId);
 
   const totalEstimates = records.length;
-  const totalWithActuals = records.length;
+  const totalWithActuals = records.length; // records are already matched pairs from getCalibrationData
 
   if (records.length === 0) {
     const industryBaseline = getEstimationResearch().expertEstimatesWithinPercent;
