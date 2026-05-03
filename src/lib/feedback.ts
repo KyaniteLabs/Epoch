@@ -199,6 +199,9 @@ function extractEstimatedHours(outputs: Record<string, unknown>): number | null 
   if (typeof outputs["correctedEstimate"] === "number") {
     return outputs["correctedEstimate"];
   }
+  if (typeof outputs["total_duration"] === "number") {
+    return outputs["total_duration"] * 8;
+  }
   return null;
 }
 
