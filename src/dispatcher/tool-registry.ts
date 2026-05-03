@@ -297,7 +297,7 @@ const calibrateOutput = {
 const accuracyTrendOutput = {
   type: "object",
   properties: {
-    windows: { type: "array", items: { type: "object", properties: { startIndex: { type: "number" }, endIndex: { type: "number" }, mape: { type: "number" }, sampleSize: { type: "number" } } } },
+    windows: { type: "array", items: { type: "object", properties: { period: { type: "string" }, mape: { type: "number" }, bias: { type: "number" }, sampleSize: { type: "number" } } } },
     overallTrend: { type: "string", enum: ["improving", "degrading", "stable"] },
     currentMape: { type: "number" },
     industryBaselineMape: { type: "number" },
@@ -820,6 +820,12 @@ Each entry pairs an estimate ID with the actual hours spent.`,
         actualHours: e.actual_hours,
         notes: e.notes,
       })));
+      if (result.succeeded === 0 && result.failed > 0) {
+        return {
+          ok: false as const,
+          error: { isError: true, message: `All ${result.total} entries failed to record.`, retryHint: "Ensure ~/.epoch/ directory is writable." },
+        };
+      }
       return { ok: true as const, data: result };
     },
   ),

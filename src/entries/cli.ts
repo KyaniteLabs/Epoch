@@ -561,7 +561,7 @@ export function createCliProgram(): Command {
 
   program
     .command("cocomo-ground-truth")
-    .description("Validate COCOMO models against 240 real historical projects.")
+    .description("Validate COCOMO models against real historical projects with known effort.")
     .option("--dataset-filter <names>", "Comma-separated dataset names to include")
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
