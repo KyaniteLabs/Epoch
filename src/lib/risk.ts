@@ -26,31 +26,34 @@ export function scheduleRisk(params: {
 
   const records = getCalibrationData(teamId, taskType);
 
+  let mdape: number;
   let mape: number;
   let sampleSize: number;
 
   if (records.length >= 5) {
     const metrics = computeAccuracyMetrics(records);
+    mdape = metrics.mdape;
     mape = metrics.mape;
     sampleSize = metrics.sample_size;
   } else {
     const profile = getDeveloperProfileGradient(params.aiNative ?? 1.0);
+    mdape = profile.estimationMape;
     mape = profile.estimationMape;
     sampleSize = records.length;
   }
 
-  // Confidence intervals using normal approximation
+  // Confidence intervals using normal approximation with MdAPE (robust to outliers)
   const p50 = Math.round(estimatedHours * 10) / 10;
-  const p80 = Math.round(estimatedHours * (1 + 0.842 * mape / 100) * 10) / 10;
-  const p95 = Math.round(estimatedHours * (1 + 1.645 * mape / 100) * 10) / 10;
+  const p80 = Math.round(estimatedHours * (1 + 0.842 * mdape / 100) * 10) / 10;
+  const p95 = Math.round(estimatedHours * (1 + 1.645 * mdape / 100) * 10) / 10;
 
-  // Risk level based on MAPE
+  // Risk level based on MdAPE
   let riskLevel: RiskLevel;
-  if (mape < 20) {
+  if (mdape < 20) {
     riskLevel = "low";
-  } else if (mape <= 35) {
+  } else if (mdape <= 35) {
     riskLevel = "medium";
-  } else if (mape <= 50) {
+  } else if (mdape <= 50) {
     riskLevel = "high";
   } else {
     riskLevel = "critical";
@@ -60,6 +63,7 @@ export function scheduleRisk(params: {
   const recommendation = getRecommendation(riskLevel);
 
   const mapeRounded = Math.round(mape * 10) / 10;
+  const mdapeRounded = Math.round(mdape * 10) / 10;
 
   return {
     estimatedHours: p50,
@@ -70,7 +74,7 @@ export function scheduleRisk(params: {
       sampleSize,
     },
     recommendation,
-    humanReadable: buildHumanReadable(riskLevel, mapeRounded, p50, p80, p95, sampleSize, recommendation),
+    humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation),
   };
 }
 
@@ -90,6 +94,7 @@ function getRecommendation(riskLevel: RiskLevel): string {
 
 function buildHumanReadable(
   riskLevel: RiskLevel,
+  mdape: number,
   mape: number,
   p50: number,
   p80: number,
@@ -97,5 +102,5 @@ function buildHumanReadable(
   sampleSize: number,
   recommendation: string,
 ): string {
-  return `Schedule risk: ${riskLevel}. MAPE: ${mape}% (based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
+  return `Schedule risk: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
 }

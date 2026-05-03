@@ -61,7 +61,7 @@ describe("scheduleRisk", () => {
     expect(result.riskLevel).toBeDefined();
   });
 
-  it("confidence intervals widen with higher MAPE", () => {
+  it("confidence intervals widen with higher MdAPE", () => {
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 10));
     const lowRisk = scheduleRisk({ estimatedHours: 40 });
 
@@ -94,5 +94,32 @@ describe("scheduleRisk", () => {
     mockGetCalibrationData.mockReturnValue([]);
     const result = scheduleRisk({ estimatedHours: 40, aiNative: 0.0 });
     expect(result.historicalAccuracy.mape).toBe(25);
+  });
+
+  it("risk level uses MdAPE (outlier-robust)", () => {
+    // 5 records with 10% error, 5 records with 10% error, but one massive outlier
+    // Using actual-based APE: |actual-est|/actual
+    // 9 records: est=10, actual=11 → APE=9.09%
+    // 1 outlier: est=10, actual=510 → APE=98.04%
+    const records = makeRecords(9, 10);
+    records.push({
+      taskType: "feature",
+      estimatedHours: 10,
+      actualHours: 510,
+      completedAt: new Date(2026, 0, 10).toISOString(),
+    });
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = scheduleRisk({ estimatedHours: 20 });
+    // MdAPE is median of ~9% values, so risk should be low (<20)
+    expect(result.riskLevel).toBe("low");
+    // MAPE pulled up by outlier but MdAPE stays low
+    expect(result.humanReadable).toContain("MdAPE:");
+  });
+
+  it("humanReadable includes MdAPE", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const result = scheduleRisk({ estimatedHours: 20 });
+    expect(result.humanReadable).toContain("MdAPE:");
+    expect(result.humanReadable).toContain("MAPE:");
   });
 });
