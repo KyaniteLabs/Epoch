@@ -287,3 +287,81 @@ describe("monte_carlo_schedule edge cases", () => {
     }
   });
 });
+
+describe("pert_estimate reference class cross-check", () => {
+  it("includes referenceClassCrossCheck when ai_native >= 0.7 and task_type provided", () => {
+    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const result = tool.handler({
+      optimistic: 2,
+      most_likely: 6,
+      pessimistic: 20,
+      unit: "hours",
+      ai_native: 1.0,
+      task_type: "feature",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.referenceClassCrossCheck).toBeDefined();
+      const xref = data.referenceClassCrossCheck as Record<string, unknown>;
+      expect(xref.estimate).toBeDefined();
+      expect(typeof xref.estimate).toBe("number");
+      expect(xref.scope).toBeDefined();
+      expect(xref.baselineSource).toBeDefined();
+    }
+  });
+
+  it("omits cross-check when task_type is not provided", () => {
+    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const result = tool.handler({
+      optimistic: 2,
+      most_likely: 4,
+      pessimistic: 8,
+      unit: "hours",
+      ai_native: 1.0,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.referenceClassCrossCheck).toBeUndefined();
+    }
+  });
+
+  it("omits cross-check when ai_native < 0.7", () => {
+    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const result = tool.handler({
+      optimistic: 2,
+      most_likely: 4,
+      pessimistic: 8,
+      unit: "hours",
+      ai_native: 0.5,
+      task_type: "feature",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.referenceClassCrossCheck).toBeUndefined();
+    }
+  });
+
+  it("includes recommendation when reference class is much lower than PERT", () => {
+    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    // Large PERT spread: expected=10.67h, but AI-native feature/small baseline is 0.5h
+    const result = tool.handler({
+      optimistic: 3,
+      most_likely: 8,
+      pessimistic: 24,
+      unit: "hours",
+      ai_native: 1.0,
+      task_type: "feature",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      if (data.recommendation) {
+        expect(data.recommendation as string).toContain("reference_class_estimate");
+        expect(data.recommendation as string).toContain("feature");
+      }
+    }
+  });
+});

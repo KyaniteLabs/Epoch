@@ -26,6 +26,7 @@ import {
   calibrateEstimates,
   tokenTimeBridge,
   getScopeGuide,
+  inferScopeFromComplexity,
 } from "../lib/analytics.js";
 import { getCalibrationData, recordActual, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
@@ -185,6 +186,8 @@ const pertOutput = {
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
     riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Estimation risk based on spread between optimistic and pessimistic" },
     humanReadable: { type: "string", description: "Human-readable summary" },
+    referenceClassCrossCheck: { type: "object", description: "Reference class estimate for comparison (AI-native only)", properties: { estimate: { type: "number" }, scope: { type: "string" }, baselineSource: { type: "string" }, sampleSize: { type: "number" } } },
+    recommendation: { type: "string", description: "When reference class disagrees significantly with PERT, explains which to trust" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;
@@ -434,14 +437,33 @@ Use when estimating task duration with uncertain outcomes.`,
       const profile = getDeveloperProfileGradient(p.ai_native);
       const result = pertEstimate(p.optimistic, p.most_likely, p.pessimistic, p.unit);
       if (!result.ok) return result;
-      return {
-        ok: true as const,
-        data: {
-          ...result.data,
-          developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
-          adjustedEstimate: Math.round(result.data.expected * profile.correctionFactor * 100) / 100,
-        },
+
+      const data: Record<string, unknown> = {
+        ...result.data,
+        developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+        adjustedEstimate: Math.round(result.data.expected * profile.correctionFactor * 100) / 100,
       };
+
+      // Cross-check with reference class for AI-native workflows
+      if (p.ai_native >= 0.7 && p.task_type) {
+        const scope = inferScopeFromComplexity(
+          result.data.expected <= 1 ? 1 : result.data.expected <= 4 ? 2 : result.data.expected <= 8 ? 3 : result.data.expected <= 20 ? 4 : 5,
+        );
+        const records = getCalibrationData(undefined, p.task_type, 90, "reference_class_estimate");
+        const refResult = referenceClassEstimate(records, p.task_type, 3, scope, true);
+        const refEstimate = Math.round(refResult.correctedEstimate * 100) / 100;
+        data.referenceClassCrossCheck = {
+          estimate: refEstimate,
+          scope,
+          baselineSource: refResult.baselineSource,
+          sampleSize: refResult.sampleSize,
+        };
+        if (refEstimate < result.data.expected * 0.5) {
+          data.recommendation = `For AI-native ${p.task_type} work, reference_class_estimate (${refEstimate}h) is typically more accurate than PERT (${result.data.expected}h). AI agents finish local-prep tasks 3-10x faster than PERT pessimistic scenarios suggest.`;
+        }
+      }
+
+      return { ok: true as const, data };
     },
   ),
 
