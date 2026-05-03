@@ -187,6 +187,8 @@ export interface MonteCarloResult {
   readonly p80: string;
   /** 95th-percentile completion date (conservative). */
   readonly p95: string;
+  /** Median estimate converted to hours (p50 × 8). Enables feedback token. */
+  readonly estimatedHours: number;
   /** Probability the critical path will be met (0-1). */
   readonly criticalPathProbability: number;
   /** Identified risk events and their characteristics. */

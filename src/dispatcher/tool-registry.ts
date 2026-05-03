@@ -245,6 +245,7 @@ const monteCarloOutput = {
       },
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
+    estimatedHours: { type: "number", description: "Median estimate in hours (p50 × 8)" },
     feedbackToken: feedbackTokenField,
   },
 } satisfies Record<string, unknown>;

@@ -408,6 +408,16 @@ describe("monteCarloSim", () => {
     expect(result.riskEvents.length).toBeGreaterThan(0);
     expect(result.riskEvents[0]!.description).toContain("Iterations");
   });
+
+  it("includes estimatedHours (p50 days × 8)", () => {
+    const result = monteCarloSim([
+      { name: "Task", optimistic: 2, mostLikely: 5, pessimistic: 10 },
+    ], 1000, 42);
+    expect(result.estimatedHours).toBeGreaterThan(0);
+    // p50 is a string in days; estimatedHours should be approximately p50 * 8
+    const p50Days = parseFloat(result.p50);
+    expect(Math.abs(result.estimatedHours - p50Days * 8)).toBeLessThan(1);
+  });
 });
 
 describe("pertEstimate edge cases", () => {

@@ -458,6 +458,7 @@ export function monteCarloSim(
     p50: String(Math.round(p50Val * 100) / 100),
     p80: String(Math.round(p(0.8) * 100) / 100),
     p95: String(Math.round(p(0.95) * 100) / 100),
+    estimatedHours: Math.round(p50Val * 8 * 100) / 100,
     criticalPathProbability: Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100) / 100,
     riskEvents,
     humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days. Probability of meeting p80 target: ${Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100)}%.`,
