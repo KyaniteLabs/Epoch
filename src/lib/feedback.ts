@@ -276,6 +276,7 @@ export interface FeedbackHealthReport {
   totalEstimates: number;
   totalActuals: number;
   matchedPairs: number;
+  seedRecordsFiltered: number;
   matchRate: number;
   byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
   byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
@@ -304,6 +305,24 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   // Compute all matched records once (no re-reads)
   const allMatched = matchEstimatesToActuals(estimates, actuals);
+
+  // Count seed records filtered from accuracy computation
+  const actualsMap = new Map<string, ActualRecord>();
+  for (const a of actuals) actualsMap.set(a.estimateId, a);
+  const estSet = new Set(estimates.map(e => e.id));
+  let seedRecordsFiltered = 0;
+  for (const a of actuals) {
+    if (!estSet.has(a.estimateId)) continue;
+    if (a.actualHours < MINIMUM_ACTUAL_HOURS) { seedRecordsFiltered++; continue; }
+    if (isSeedRecord(a)) { seedRecordsFiltered++; continue; }
+  }
+  // Also count extreme ratio records
+  for (const e of estimates) {
+    const act = actualsMap.get(e.id);
+    if (!act || act.actualHours < MINIMUM_ACTUAL_HOURS || isSeedRecord(act)) continue;
+    const estHours = extractEstimatedHours(e.outputs);
+    if (estHours !== null && act.actualHours / estHours < MIN_RATIO) seedRecordsFiltered++;
+  }
 
   // By tool — group the pre-matched records
   const toolEstimates = new Map<string, number>();
@@ -388,15 +407,18 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const typesWithData = Object.entries(byTaskType).filter(([, v]) => v.matchedPairs > 0).length;
   const mdapeLabel = overallMdape !== null ? `${Math.round(overallMdape)}%` : "N/A";
 
+  const seedLabel = seedRecordsFiltered > 0 ? ` (${seedRecordsFiltered} seed records filtered)` : "";
+
   return {
     totalEstimates,
     totalActuals,
     matchedPairs: allMatched.length,
+    seedRecordsFiltered,
     matchRate,
     byTool,
     byTaskType,
     selfImprovement: { readyTypes, callsUntilUpdate },
     dataQuality: { overallMdape, outlierRatio, recommendation },
-    humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%. ${recommendation}`,
+    humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
   };
 }

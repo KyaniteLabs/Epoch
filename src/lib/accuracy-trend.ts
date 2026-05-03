@@ -130,10 +130,11 @@ function buildHumanReadable(
       ? `${Math.abs(improvementVsIndustry)}% worse than industry baseline (${industryBaseline}%)`
       : `equal to industry baseline (${industryBaseline}%)`;
 
-  const mapeValues = windows.map(w => w.mape);
+  const lastMdape = windows[windows.length - 1]?.mdape ?? 0;
+  const mdapeValues = windows.map(w => w.mdape);
   const windowSummary = windows.length === 1
-    ? `1 window with MAPE ${windows[0]?.mape ?? 0}%`
-    : `${windows.length} windows, MAPE range: ${mapeValues.length > 0 ? Math.min(...mapeValues) : 0}% to ${mapeValues.length > 0 ? Math.max(...mapeValues) : 0}%`;
+    ? `1 window (MdAPE: ${lastMdape}%, MAPE: ${windows[0]?.mape ?? 0}%)`
+    : `${windows.length} windows, MdAPE range: ${Math.min(...mdapeValues)}% to ${Math.max(...mdapeValues)}%`;
 
-  return `Accuracy trend is ${trendLabel}. Current MAPE: ${currentMape}%, ${vsIndustry}. ${windowSummary} across ${windows.reduce((sum, w) => sum + w.sampleSize, 0)} estimates.`;
+  return `Accuracy trend is ${trendLabel}. Current MdAPE: ${lastMdape}% (MAPE: ${currentMape}%), ${vsIndustry}. ${windowSummary} across ${windows.reduce((sum, w) => sum + w.sampleSize, 0)} estimates.`;
 }
