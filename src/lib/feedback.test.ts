@@ -441,10 +441,13 @@ describe("getFeedbackHealthReport", () => {
     const report = getFeedbackHealthReport();
     expect(report.totalEstimates).toBe(3);
     expect(report.totalActuals).toBe(3);
+    expect(report.matchedPairs).toBe(3);
     expect(report.byTool["pert_estimate"]).toBeDefined();
     expect(report.byTool["pert_estimate"]!.mdape).toBeDefined();
+    expect(report.byTool["pert_estimate"]!.matchedPairs).toBe(2);
     expect(report.byTaskType["feature"]).toBeDefined();
     expect(report.byTaskType["feature"]!.mdape).toBeDefined();
+    expect(report.byTaskType["feature"]!.matchedPairs).toBe(2);
   });
 
   it("returns null mape/mdape with fewer than 2 matches", () => {
@@ -462,6 +465,27 @@ describe("getFeedbackHealthReport", () => {
     const report = getFeedbackHealthReport();
     expect(report.byTool["pert_estimate"]!.mape).toBeNull();
     expect(report.byTool["pert_estimate"]!.mdape).toBeNull();
+    expect(report.matchedPairs).toBe(1);
+  });
+
+  it("matchedPairs is less than totalActuals when some feedback has no matching estimate", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "e1" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          makeActual({ estimateId: "e1", actualHours: 5 }),
+          makeActual({ estimateId: "orphan-no-match", actualHours: 8 }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.totalActuals).toBe(2);
+    expect(report.matchedPairs).toBe(1);
   });
 
   it("dataQuality has recommendation when data is insufficient", () => {
