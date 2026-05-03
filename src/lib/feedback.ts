@@ -24,6 +24,9 @@ const DEFAULT_DATA_DIR = join(homedir(), ".epoch");
 const ESTIMATES_FILE = "estimates.jsonl";
 const ACTUALS_FILE = "feedback.jsonl";
 
+/** Actuals below this threshold (15 min) are excluded as seed/test artifacts. */
+const MINIMUM_ACTUAL_HOURS = 0.25;
+
 function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;
 }
@@ -150,7 +153,7 @@ export function matchEstimatesToActuals(
 
     const act = actualsMap.get(est.id);
     if (!act) continue;
-    if (act.actualHours < 0.1) continue;
+    if (act.actualHours < MINIMUM_ACTUAL_HOURS) continue;
 
     const estHours = extractEstimatedHours(est.outputs);
     if (estHours === null) continue;

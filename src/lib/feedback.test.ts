@@ -208,15 +208,16 @@ describe("getCalibrationData", () => {
     expect(getCalibrationData()).toEqual([]);
   });
 
-  it("filters out actuals under 0.1 hours as seed artifacts", () => {
+  it("filters out actuals under 0.25 hours as seed artifacts", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return makeEstimate({ id: "e1" }) + "\n" + makeEstimate({ id: "e2" }) + "\n";
+        return makeEstimate({ id: "e1" }) + "\n" + makeEstimate({ id: "e2" }) + "\n" + makeEstimate({ id: "e3" }) + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return JSON.stringify({ estimateId: "e1", actualHours: 0.02, reportedAt: new Date().toISOString() }) + "\n"
-          + JSON.stringify({ estimateId: "e2", actualHours: 5, reportedAt: new Date().toISOString() }) + "\n";
+        return JSON.stringify({ estimateId: "e1", actualHours: 0.1, reportedAt: new Date().toISOString() }) + "\n"
+          + JSON.stringify({ estimateId: "e2", actualHours: 0.2, reportedAt: new Date().toISOString() }) + "\n"
+          + JSON.stringify({ estimateId: "e3", actualHours: 5, reportedAt: new Date().toISOString() }) + "\n";
       }
       return "";
     });
