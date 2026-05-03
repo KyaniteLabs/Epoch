@@ -294,6 +294,20 @@ const calibrateOutput = {
   },
 } satisfies Record<string, unknown>;
 
+const accuracyTrendOutput = {
+  type: "object",
+  properties: {
+    windows: { type: "array", items: { type: "object", properties: { startIndex: { type: "number" }, endIndex: { type: "number" }, mape: { type: "number" }, sampleSize: { type: "number" } } } },
+    overallTrend: { type: "string", enum: ["improving", "degrading", "stable"] },
+    currentMape: { type: "number" },
+    industryBaselineMape: { type: "number" },
+    improvementVsIndustry: { type: "number" },
+    totalEstimates: { type: "number" },
+    totalWithActuals: { type: "number" },
+    humanReadable: { type: "string" },
+  },
+} satisfies Record<string, unknown>;
+
 const timeMathOutput = {
   type: "object",
   description: "Varies by operation. Returns temporal, duration, or date diff data.",
@@ -661,7 +675,7 @@ Computes sliding-window MAPE and compares against industry baseline (25%).
 Shows whether your estimates are improving, degrading, or stable.
 Industry research shows estimation accuracy does NOT improve with experience (Cao 2022) — self-correcting systems like Epoch can buck this trend.`,
     accuracyTrendSchema,
-    calibrateOutput,
+    accuracyTrendOutput,
     (input) => {
       const p = accuracyTrendSchema.parse(input);
       return {
