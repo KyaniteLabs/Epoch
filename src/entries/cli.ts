@@ -366,19 +366,21 @@ export function createCliProgram(): Command {
     .description("Estimates effort using reference-class forecasting from historical data.")
     .requiredOption("--task-type <type>", "Category of work (feature|bugfix|refactor|migration|infrastructure|documentation|testing|design)")
     .requiredOption("--complexity <n>", "Complexity 1-5", safeFloat("complexity"))
+    .option("--scope <scope>", "Scope band (small|medium|large|xl)")
+    .option("--team-id <id>", "Team identifier for calibration lookup")
+    .option("--ai-native <ratio>", "AI-native ratio 0.0-1.0 (default: 0.0)", safeFloat("ai-native"))
     .action(async (opts, cmd) => {
       const rootOpts = getRootOpts(cmd);
       const format = resolveFormat(rootOpts);
       const quiet = isQuiet(rootOpts);
-      await runAndExit(
-        "reference_class_estimate",
-        {
-          task_type: opts.taskType,
-          complexity: opts.complexity,
-        },
-        format,
-        quiet,
-      );
+      const input: Record<string, unknown> = {
+        task_type: opts.taskType,
+        complexity: opts.complexity,
+      };
+      if (opts.scope) input.scope = opts.scope;
+      if (opts.teamId) input.team_id = opts.teamId;
+      if (opts.aiNative !== undefined) input.ai_native = opts.aiNative;
+      await runAndExit("reference_class_estimate", input, format, quiet);
     });
 
   program

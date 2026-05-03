@@ -559,7 +559,7 @@ Prioritize this over algorithmic models when historical data is available.`,
             underestimationBias: profile.underestimationBias,
             correctionFactor: profile.correctionFactor,
           },
-          adjustedEstimate: Math.round(result.rawEstimate * profile.correctionFactor * 10) / 10,
+          adjustedEstimate: Math.round(result.rawEstimate * profile.correctionFactor * 100) / 100,
           note: records.length >= 5
             ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
             : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
