@@ -496,6 +496,7 @@ describe("getFeedbackHealthReport", () => {
     expect(report.dataQuality.overallMdape).toBeNull();
     expect(report.dataQuality.outlierRatio).toBe(0);
     expect(report.dataQuality.recommendation).toContain("Insufficient data");
+    expect(report.dataQuality.dataCompletenessScore).toBe(0);
   });
 
   it("dataQuality computes overallMdape and outlierRatio with 5+ records", () => {
@@ -613,6 +614,26 @@ describe("getFeedbackHealthReport", () => {
     const report = getFeedbackHealthReport();
     expect(report.byTaskType["testing"]!.recommendation).toContain("Sufficient for calibration");
     expect(report.byTaskType["testing"]!.recommendation).toContain("MdAPE:");
+  });
+
+  it("dataCompletenessScore is > 0 with matched pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return Array.from({ length: 6 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, inputs: { task_type: "feature" }, outputs: { expected: 10, unit: "hours" } })
+        ).join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return Array.from({ length: 6 }, (_, i) =>
+          makeActual({ estimateId: `e${i}`, actualHours: 10 + i! })
+        ).join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(report.dataQuality.dataCompletenessScore).toBeGreaterThan(0);
+    expect(report.dataQuality.dataCompletenessScore).toBeLessThanOrEqual(100);
   });
 });
 

@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `estimatedCost` in monte_carlo_schedule output — estimates AI token cost at p50 (50k tokens/hour × estimatedHours)
 - `recommendation` in feedback_health byTool entries — actionable per-tool guidance (needs data, sufficient, good coverage)
 - `recommendation` in feedback_health byTaskType entries — same per-task-type actionable guidance
-- 6 tests for MC estimated cost (1), per-tool recommendations (3), and per-task-type recommendations (2)
+- `dataCompletenessScore` in feedback_health dataQuality — 0-100 score from tool coverage (40%), type coverage (30%), pair count (30%)
+- 7 tests for MC estimated cost (1), per-tool recommendations (3), per-task-type recommendations (2), and data completeness score (1)
 
 ### Changed
-- 868 tests (was 862)
+- 869 tests (was 862)
 
 ## [0.1.11] - 2026-05-03
 

@@ -293,6 +293,7 @@ export interface FeedbackHealthReport {
     overallMdape: number | null;
     outlierRatio: number;
     recommendation: string;
+    dataCompletenessScore: number;
   };
   humanReadable: string;
 }
@@ -434,6 +435,19 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const typesWithData = Object.entries(byTaskType).filter(([, v]) => v.matchedPairs > 0).length;
   const mdapeLabel = overallMdape !== null ? `${Math.round(overallMdape)}%` : "N/A";
 
+  // Data completeness score (0-100): tool coverage (40) + type coverage (30) + pair count (30)
+  const estimationTools = ["pert_estimate", "cocomo_estimate", "sprint_forecast", "critical_path", "monte_carlo_schedule", "token_time_bridge", "schedule_risk", "reference_class_estimate"];
+  const toolsCalibrated = estimationTools.filter(t => (byTool[t]?.matchedPairs ?? 0) >= 3).length;
+  const toolScore = Math.round((toolsCalibrated / estimationTools.length) * 40);
+
+  const allTaskTypes = Object.keys(byTaskType);
+  const typesCalibrated = allTaskTypes.filter(t => (byTaskType[t]?.matchedPairs ?? 0) >= 3).length;
+  const typeScore = allTaskTypes.length > 0 ? Math.round((typesCalibrated / allTaskTypes.length) * 30) : 0;
+
+  const pairScore = Math.min(30, Math.round((allMatched.length / 100) * 30));
+
+  const dataCompletenessScore = toolScore + typeScore + pairScore;
+
   const seedLabel = seedRecordsFiltered > 0 ? ` (${seedRecordsFiltered} seed records filtered)` : "";
 
   return {
@@ -445,7 +459,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     byTool,
     byTaskType,
     selfImprovement: { readyTypes, callsUntilUpdate },
-    dataQuality: { overallMdape, outlierRatio, recommendation },
+    dataQuality: { overallMdape, outlierRatio, recommendation, dataCompletenessScore },
     humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
   };
 }
