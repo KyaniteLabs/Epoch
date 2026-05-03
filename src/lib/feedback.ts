@@ -300,6 +300,7 @@ export interface FeedbackHealthReport {
   };
   dataQuality: {
     overallMdape: number | null;
+    overallCappedMdape: number | null;
     outlierRatio: number;
     recommendation: string;
     dataCompletenessScore: number;
@@ -416,27 +417,29 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   // Data quality: overall MdAPE and outlier ratio across all matched records
   let overallMdape: number | null = null;
+  let overallCappedMdape: number | null = null;
   let outlierRatio = 0;
   let recommendation: string;
 
   if (allMatched.length >= 5) {
     const metrics = computeAccuracyMetrics(allMatched);
     overallMdape = metrics.mdape;
+    overallCappedMdape = metrics.cappedMdape;
 
-    // Outliers: records where MAPE > 3× MdAPE
-    const outlierThreshold = metrics.mdape * 3;
+    // Outliers: records where MAPE > 3× cappedMdape
+    const outlierThreshold = metrics.cappedMdape * 3;
     const outliers = allMatched.filter(r => {
       const err = Math.abs(r.actualHours - r.estimatedHours) / r.actualHours * 100;
       return err > outlierThreshold;
     });
     outlierRatio = Math.round(outliers.length / allMatched.length * 1000) / 10;
 
-    if (overallMdape < 25) {
-      recommendation = "Data quality is good. MdAPE below 25% indicates reliable estimates.";
-    } else if (overallMdape < 50) {
+    if (overallCappedMdape < 25) {
+      recommendation = "Data quality is good. Capped MdAPE below 25% indicates reliable estimates.";
+    } else if (overallCappedMdape < 50) {
       recommendation = "Data quality is moderate. Consider filtering outlier records or collecting more matched pairs.";
     } else {
-      recommendation = "Data quality needs improvement. High MdAPE suggests systematic estimation bias. Review seed data for human/AI baseline mismatches.";
+      recommendation = "Data quality needs improvement. High capped MdAPE suggests systematic estimation bias. Review seed data for human/AI baseline mismatches.";
     }
   } else {
     recommendation = "Insufficient data for quality assessment. Need at least 5 matched estimate-actual pairs.";
@@ -445,6 +448,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const toolsWithData = Object.entries(byTool).filter(([, v]) => v.matchedPairs > 0).length;
   const typesWithData = Object.entries(byTaskType).filter(([, v]) => v.matchedPairs > 0).length;
   const mdapeLabel = overallMdape !== null ? `${Math.round(overallMdape)}%` : "N/A";
+  const cappedLabel = overallCappedMdape !== null ? `${Math.round(overallCappedMdape)}%` : "N/A";
 
   // Data completeness score (0-100): tool coverage (40) + type coverage (30) + pair count (30)
   const estimationTools = ["pert_estimate", "cocomo_estimate", "sprint_forecast", "critical_path", "monte_carlo_schedule", "token_time_bridge", "schedule_risk", "reference_class_estimate"];
@@ -470,7 +474,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     byTool,
     byTaskType,
     selfImprovement: { readyTypes, callsUntilUpdate },
-    dataQuality: { overallMdape, outlierRatio, recommendation, dataCompletenessScore },
-    humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
+    dataQuality: { overallMdape, overallCappedMdape, outlierRatio, recommendation, dataCompletenessScore },
+    humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
   };
 }
