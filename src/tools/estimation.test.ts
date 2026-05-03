@@ -243,8 +243,10 @@ describe("monte_carlo_schedule edge cases", () => {
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);
     if (r1.ok && r2.ok) {
-      expect(r1.data.p50).toBe(r2.data.p50);
-      expect(r1.data.p95).toBe(r2.data.p95);
+      const d1 = r1.data as Record<string, unknown>;
+      const d2 = r2.data as Record<string, unknown>;
+      expect(d1.p50).toBe(d2.p50);
+      expect(d1.p95).toBe(d2.p95);
     }
   });
 
@@ -276,9 +278,10 @@ describe("monte_carlo_schedule edge cases", () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const p10 = parseFloat(result.data.p10);
-      const p50 = parseFloat(result.data.p50);
-      const p95 = parseFloat(result.data.p95);
+      const data = result.data as Record<string, unknown>;
+      const p10 = parseFloat(data.p10 as string);
+      const p50 = parseFloat(data.p50 as string);
+      const p95 = parseFloat(data.p95 as string);
       expect(p10).toBeLessThan(p50);
       expect(p50).toBeLessThan(p95);
       // P50 should be close to most_likely for triangular distribution

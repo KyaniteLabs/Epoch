@@ -72,7 +72,7 @@ describe("dispatch", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.data.total_duration).toBe(3);
+    expect((result.data as Record<string, unknown>).total_duration).toBe(3);
   });
 
   it("dispatches temporal tools without feedbackToken", async () => {

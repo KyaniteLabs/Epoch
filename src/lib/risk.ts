@@ -19,7 +19,9 @@ export function scheduleRisk(params: {
       estimatedHours: 0,
       riskLevel: "critical" as RiskLevel,
       confidenceIntervals: { p50: 0, p80: 0, p95: 0 },
-      historicalAccuracy: { mape: 0, sampleSize: 0 },
+      historicalAccuracy: { mape: 0, mdape: 0, sampleSize: 0 },
+      estimatedTokenCost: 0,
+      cappedMdape: 0,
       recommendation: "Invalid estimated hours. Provide a positive number.",
       humanReadable: "Cannot assess risk: estimated hours is zero or invalid.",
     };
