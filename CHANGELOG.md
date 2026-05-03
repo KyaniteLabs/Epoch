@@ -20,14 +20,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Empty `NODE_AUTH_TOKEN` in release workflow — now uses `secrets.NPM_TOKEN`
 - Hardcoded private IP in canary-runner for LM Studio — now defaults to `localhost:1234`
 - Rate limiter map grew indefinitely under moderate load — added probabilistic expired entry cleanup
+- `getFeedbackHealthReport` re-reads JSONL files N+3 times — extracted `matchEstimatesToActuals`, now reads once
+- `feedbackToken` missing from OpenAPI output schemas — added to 6 estimation tool schemas
+- CLI `parseFloat` silently produces NaN on invalid input — replaced with `safeFloat` wrapper (exits with error)
+- `--iterative-cycles` help text showed range 0.5-2.0 but schema allows 0.5-10.0 — fixed
+- TypeScript TS2345: `r.tool` (string|undefined) used as Map key — added null guard
+- `criticalPath` returned `-Infinity` for empty tasks array — now returns proper error
+- `monteCarloSim` returned success with zeroed percentiles for iterations<=0 — now returns error
+- `extractEstimatedHours` assumed hours for unrecognized unit — now returns null (skips record)
+- Self-improvement engine had race condition on concurrent `updateReferenceDatabase` — added mutex flag
+- `accuracy-trend` `Math.min/max` on empty arrays produced Infinity — added guard
+- 3 tools registered in tool-registry but missing from CLI (cocomo_ground_truth, batch_record_actuals, feedback_health) — added
+- Tool counts stale across README, package.json, tool-registry comment — updated 21→24
 
 ### Added
 - 9 canary surface tests for previously untested tools (token_cost_estimate, compare_models, accuracy_trend, schedule_risk, calibrate_estimates, cocomo_validate, get_pending_estimates, feedback_health)
 - 15 tests for `formatters.ts` (previously zero coverage)
 - Lint step in CI workflow
+- 3 CLI commands: `batch-record-actuals`, `feedback-health`, `cocomo-ground-truth`
+- 2 tests for empty criticalPath and zero monteCarlo iterations
 
 ### Changed
-- Test count: 544 → 731
+- Test count: 544 → 738
 
 ## [0.1.2] - 2026-05-02
 

@@ -188,10 +188,13 @@ describe("CLI tests", () => {
       "cocomo-validate",
       "record-actual",
       "get-pending-estimates",
+      "batch-record-actuals",
+      "feedback-health",
+      "cocomo-ground-truth",
       "list-tools",
     ];
 
-    it("registers all 22 commands (21 tools + list-tools)", () => {
+    it("registers all 25 commands (24 tools + list-tools)", () => {
       const program = createCliProgram();
       const commandNames = program.commands.map((c) => c.name());
       for (const name of EXPECTED_COMMANDS) {

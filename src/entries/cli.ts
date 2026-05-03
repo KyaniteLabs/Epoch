@@ -537,6 +537,43 @@ export function createCliProgram(): Command {
       await runAndExit("get_pending_estimates", { limit: opts.limit }, format, quiet);
     });
 
+  program
+    .command("batch-record-actuals")
+    .description("Record actual hours for multiple estimates at once.")
+    .requiredOption("--entries <json>", "JSON array of {estimate_id, actual_hours, notes?} objects")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const entries = parseJsonArg(opts.entries, "entries");
+      await runAndExit("batch_record_actuals", { entries }, format, quiet);
+    });
+
+  program
+    .command("feedback-health")
+    .description("Health report on the estimation feedback loop.")
+    .action(async (_opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      await runAndExit("feedback_health", {}, format, quiet);
+    });
+
+  program
+    .command("cocomo-ground-truth")
+    .description("Validate COCOMO models against 240 real historical projects.")
+    .option("--dataset-filter <names>", "Comma-separated dataset names to include")
+    .action(async (opts, cmd) => {
+      const rootOpts = getRootOpts(cmd);
+      const format = resolveFormat(rootOpts);
+      const quiet = isQuiet(rootOpts);
+      const input: Record<string, unknown> = {};
+      if (opts.datasetFilter !== undefined) {
+        input.dataset_filter = opts.datasetFilter.split(",").map((s: string) => s.trim());
+      }
+      await runAndExit("cocomo_ground_truth", input, format, quiet);
+    });
+
   // ---- Utility commands -------------------------------------------------------
 
   program

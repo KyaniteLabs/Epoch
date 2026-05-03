@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Tool Registry
-// Maps all 21 tool names to handler functions and Zod input schemas.
+// Maps all 24 tool names to handler functions and Zod input schemas.
 // Translates between snake_case schema fields and camelCase lib params.
 // ---------------------------------------------------------------------------
 
@@ -729,7 +729,7 @@ Reports MAPE, MMRE, PRED(25), PRED(50), bias per model, with breakdowns by datas
     },
   ),
 
-  // -- Feedback tools (2) ----------------------------------------------------
+  // -- Feedback tools (4) ----------------------------------------------------
 
   tool(
     "record_actual",

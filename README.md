@@ -1,6 +1,6 @@
 # Epoch -- Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-687-brightgreen.svg)]()
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-738-brightgreen.svg)]()
 
 **Epoch helps AI agents understand time.**
 
@@ -45,7 +45,7 @@ Claude (using Epoch):
 
 ## Why Epoch?
 
-Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 21 tools any AI can call -- so your assistant stops guessing and starts calculating.
+Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 24 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
 **Accuracy note:** Reference class baselines are built from 39 real AI-native tasks across 4 repositories. With correct complexity calibration, estimates fall within 25% of actuals ~67% of the time (vs ~25% for unaided human experts per Jorgensen 2004). Accuracy improves as teams submit estimated-vs-actual feedback through the self-improvement engine.
 
@@ -95,7 +95,7 @@ Everything below is for developers who want to understand the internals, use the
 
 ## Architecture
 
-Five-layer design with 21 tools for time estimation, scheduling, and cost analysis:
+Five-layer design with 24 tools for time estimation, scheduling, and cost analysis:
 
 | Layer | Purpose | Tools |
 |-------|---------|-------|
@@ -493,7 +493,7 @@ See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for guidelines on data format
 
 ## Surfaces
 
-Epoch exposes the same 21 tools through three interfaces:
+Epoch exposes the same 24 tools through three interfaces:
 
 | Surface | Transport | Use Case |
 |---------|-----------|----------|
