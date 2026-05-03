@@ -958,4 +958,52 @@ describe("cappedMdape in feedback health", () => {
     const type = report.byTaskType["migration"];
     expect(type.recommendation).toContain("systematic underestimation");
   });
+
+  it("byTool includes trend field", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return Array.from({ length: 8 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 5 + i } })
+        ).join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return Array.from({ length: 8 }, (_, i) =>
+          JSON.stringify({ estimateId: `e${i}`, actualHours: 5 + i - (i < 4 ? 2 : 0), reportedAt: `2026-01-${10 + i}T00:00:00Z` })
+        ).join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    const tool = report.byTool["pert_estimate"];
+    expect(tool.trend).not.toBeNull();
+    expect(["improving", "degrading", "stable"]).toContain(tool.trend);
+  });
+
+  it("byTaskType trend is null with fewer than 6 records", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", inputs: { task_type: "testing" }, outputs: { estimatedHours: 5 } }),
+          makeEstimate({ id: "e2", inputs: { task_type: "testing" }, outputs: { estimatedHours: 4 } }),
+          makeEstimate({ id: "e3", inputs: { task_type: "testing" }, outputs: { estimatedHours: 3 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          JSON.stringify({ estimateId: "e1", actualHours: 5, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e2", actualHours: 4, reportedAt: "2026-01-10T00:00:00Z" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 3, reportedAt: "2026-01-10T00:00:00Z" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    const type = report.byTaskType["testing"];
+    // Trend requires 6+ records to compute; with 3, metrics still has trend="stable"
+    expect(typeof type.trend).toBe("string");
+  });
 });

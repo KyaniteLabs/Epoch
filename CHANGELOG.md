@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - 887 tests (was 883)
 
+## [0.1.15] - 2026-05-03
+
+### Added
+- `trend` field in feedback health `byTool` and `byTaskType` entries — shows accuracy trajectory (improving/degrading/stable) per breakdown
+- 2 tests for trend field (byTool with 8 records, byTaskType with 3 records)
+
+### Changed
+- 889 tests (was 887)
+
 ## [0.1.13] - 2026-05-03
 
 ### Added
