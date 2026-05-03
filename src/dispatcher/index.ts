@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Main Dispatch Function
-// Routes tool calls to registered handlers with schema validation.
+// Routes tool calls to registered handlers.
 // Records telemetry and triggers self-improvement.
 // ---------------------------------------------------------------------------
 
@@ -30,39 +30,19 @@ export async function dispatch(
     };
   }
 
-  const parsed = definition.inputSchema.safeParse(rawInput);
-
-  if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((issue) => {
-        const path = issue.path.join(".");
-        return path ? `${path}: ${issue.message}` : issue.message;
-      })
-      .join("; ");
-
-    return {
-      ok: false,
-      error: {
-        isError: true,
-        message: `Validation error: ${issues}`,
-        retryHint: `Check the input schema for "${toolName}".`,
-      },
-    };
-  }
-
   const startMs = performance.now();
 
   try {
-    const result = definition.handler(parsed.data as Record<string, unknown>);
+    const result = definition.handler(rawInput);
     const elapsedMs = performance.now() - startMs;
 
     const telemetry = getTelemetry();
-    telemetry.record(toolName, elapsedMs, result.ok, parsed.data);
+    telemetry.record(toolName, elapsedMs, result.ok, rawInput);
 
     if (result.ok) {
       const data = (result as { ok: true; data: unknown }).data;
       if (data && typeof data === "object") {
-        const estimateId = recordEstimate(toolName, parsed.data, data as Record<string, unknown>);
+        const estimateId = recordEstimate(toolName, rawInput, data as Record<string, unknown>);
         const d = data as Record<string, unknown>;
         if (hasHourEstimate(d)) {
           d.feedbackToken = estimateId;
@@ -75,7 +55,7 @@ export async function dispatch(
     return result;
   } catch (err: unknown) {
     const elapsedMs = performance.now() - startMs;
-    getTelemetry().record(toolName, elapsedMs, false, parsed.data);
+    getTelemetry().record(toolName, elapsedMs, false, rawInput);
     notifyToolCall();
 
     const message =
