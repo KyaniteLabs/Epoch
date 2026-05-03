@@ -60,6 +60,16 @@ export function tokenCostEstimate(params: {
 
   const { promptTokens, completionTokens } = timeMapping.breakdown;
 
+  if (!Number.isFinite(promptTokens) || !Number.isFinite(completionTokens)) {
+    return {
+      tokens: params.tokens, model: params.model,
+      estimatedSeconds: 0, estimatedMinutes: 0,
+      estimatedCost: 0, costBreakdown: { inputCost: 0, outputCost: 0, toolCallOverheadCost: 0 },
+      timeBreakdown: timeMapping.breakdown, confidence: timeMapping.confidence, urgency: timeMapping.urgency,
+      humanReadable: `Cost estimate unavailable for ${params.model} — calibration data issue.`,
+    };
+  }
+
   const inputCost = round4((promptTokens * costInput) / 1_000_000);
   const outputCost = round4((completionTokens * costOutput) / 1_000_000);
   const toolCallOverheadCost = round4(

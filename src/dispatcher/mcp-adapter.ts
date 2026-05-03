@@ -23,7 +23,7 @@ const WRITE_ANNOTATIONS = {
   openWorldHint: false,
 } as const;
 
-const WRITE_TOOLS = new Set(["record_actual"]);
+const WRITE_TOOLS = new Set(["record_actual", "batch_record_actuals"]);
 
 export function registerAllMcpTools(server: McpServer): void {
   for (const [name, def] of TOOL_REGISTRY) {

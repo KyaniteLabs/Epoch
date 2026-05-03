@@ -56,7 +56,7 @@ export function getDeveloperProfileGradient(aiRatio: number): DeveloperProfile {
 
   // Correction factor: human=1.8, AI-native=from reference DB (default 1.07)
   const humanCF = 1.8;
-  const aiCF = getGlobalCorrectionFactor();
+  const aiCF = Math.max(0.5, getGlobalCorrectionFactor());
 
   return {
     mode,

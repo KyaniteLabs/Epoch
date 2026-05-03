@@ -12,6 +12,18 @@ export function scheduleRisk(params: {
   aiNative?: number;
 }): ScheduleRiskAssessment {
   const { estimatedHours, taskType, teamId } = params;
+
+  if (!estimatedHours || !Number.isFinite(estimatedHours) || estimatedHours <= 0) {
+    return {
+      estimatedHours: 0,
+      riskLevel: "critical" as RiskLevel,
+      confidenceIntervals: { p50: 0, p80: 0, p95: 0 },
+      historicalAccuracy: { mape: 0, sampleSize: 0 },
+      recommendation: "Invalid estimated hours. Provide a positive number.",
+      humanReadable: "Cannot assess risk: estimated hours is zero or invalid.",
+    };
+  }
+
   const records = getCalibrationData(teamId, taskType);
 
   let mape: number;
