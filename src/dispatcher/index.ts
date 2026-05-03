@@ -76,6 +76,7 @@ export async function dispatch(
 const HOUR_FIELDS = [
   "expected", "totalHours", "estimatedHours", "estimatedMinutes",
   "estimatedSeconds", "personMonthsLlmAdjusted", "correctedEstimate",
+  "total_duration",
 ] as const;
 
 function hasHourEstimate(data: Record<string, unknown>): boolean {

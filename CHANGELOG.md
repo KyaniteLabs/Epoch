@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `matchedPairs` count in feedback health report — top-level and per-tool/per-taskType, distinguishing quality-filtered pairs from raw actuals
+- `total_duration` hour extraction in feedback matching — enables calibration for `critical_path` estimates
+- Explicit tool-to-task-type lookup table replacing fuzzy string matching (`reference_class_estimate` no longer misclassified as "testing")
+- Task type label in `schedule_risk` humanReadable output (e.g., "Schedule risk for feature: low")
+- `scripts/self-improve.ts` utility for running self-improvement outside MCP server context
+- 4 tests for matchedPairs field and orphan feedback handling
+- 2 tests for task type label in schedule risk output
+
+### Fixed
+- `calibrateEstimates` correction factor computed as `median(actual/estimated)` ratio instead of broken `1 + MdAPE/100` formula
+- Adaptive window sizing in `accuracy-trend` to avoid tiny last windows
+- Task type inference for estimation tools — explicit lookup replaces fragile `includes()` matching
+
+### Changed
+- Calibration data seeded across all 7 estimation tools (238 matched pairs, was 0)
+- Global correction factor updated to 0.75 (was 0.70)
+- 812 tests (was 809)
+
 ## [0.1.4] - 2026-05-03
 
 ### Added
