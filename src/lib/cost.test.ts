@@ -188,4 +188,35 @@ describe("compareModels", () => {
     expect(tiers.has("standard")).toBe(true);
     expect(tiers.has("premium")).toBe(true);
   });
+
+  it("human-readable output is a formatted table", () => {
+    const result = compareModels({
+      tokens: 10000, toolCalls: 0, reasoningDepth: "shallow",
+    });
+    expect(result.humanReadable).toContain("Model");
+    expect(result.humanReadable).toContain("Time (min)");
+    expect(result.humanReadable).toContain("Cost ($)");
+    expect(result.humanReadable).toContain("Tier");
+    // Should have at least 12 data rows + 2 header rows
+    const lines = result.humanReadable.split("\n");
+    expect(lines.length).toBeGreaterThanOrEqual(14);
+  });
+
+  it("premium model costs more than fast model", () => {
+    const premium = tokenCostEstimate({
+      tokens: 100000, model: "claude-opus-4-20250514", toolCalls: 0, reasoningDepth: "moderate",
+    });
+    const fast = tokenCostEstimate({
+      tokens: 100000, model: "gemini-2.0-flash", toolCalls: 0, reasoningDepth: "moderate",
+    });
+    expect(premium.estimatedCost).toBeGreaterThan(fast.estimatedCost);
+  });
+
+  it("inherits urgency and confidence from time bridge", () => {
+    const result = tokenCostEstimate({
+      tokens: 25000, model: "gpt-4o-mini", toolCalls: 1, reasoningDepth: "shallow",
+    });
+    expect(["short", "medium", "long"]).toContain(result.urgency);
+    expect(["likely", "optimistic", "pessimistic"]).toContain(result.confidence);
+  });
 });
