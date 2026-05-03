@@ -360,6 +360,23 @@ describe("calibrateEstimates", () => {
     expect(result.correctionFactor).toBeGreaterThan(0);
     expect(result.accuracyTrend).toBe("stable");
   });
+
+  it("uses MdAPE for correction factor (robust to outliers)", () => {
+    // 5 good estimates + 1 extreme outlier
+    const records: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 9, completedAt: "2026-01-01" },   // 11.1%
+      { taskType: "feature", estimatedHours: 10, actualHours: 11, completedAt: "2026-02-01" },  // 9.1%
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-03-01" },  // 0%
+      { taskType: "feature", estimatedHours: 10, actualHours: 8, completedAt: "2026-04-01" },   // 25%
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-05-01" },  // 16.7%
+      { taskType: "feature", estimatedHours: 10, actualHours: 0.01, completedAt: "2026-06-01" },// 99900% outlier
+    ];
+    const result = calibrateEstimates("team-a", 90, 5, records);
+    // MdAPE-based CF should be small (~1.1), not inflated by the outlier
+    expect(result.correctionFactor).toBeLessThan(1.5);
+    // Recommendations should include MdAPE
+    expect(result.recommendations.some(r => r.includes("MdAPE"))).toBe(true);
+  });
 });
 
 describe("computeAccuracyMetrics MdAPE", () => {

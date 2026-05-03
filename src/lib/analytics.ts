@@ -331,13 +331,13 @@ export function calibrateEstimates(
 
   if (data.length >= minimumSamples) {
     const metrics = computeAccuracyMetrics(data);
-    const correctionFactor = metrics.mape > 0
-      ? Math.round((1 + metrics.mape / 100) * 100) / 100
+    const correctionFactor = metrics.mdape > 0
+      ? Math.round((1 + metrics.mdape / 100) * 100) / 100
       : getGlobalCorrectionFactor();
 
     const recs = [
       `Computed from ${data.length} historical records over ${periodDays} days.`,
-      `MAPE: ${metrics.mape}%, bias: ${metrics.bias > 0 ? "underestimation" : "overestimation"} (${metrics.bias}).`,
+      `MAPE: ${metrics.mape}%, MdAPE: ${metrics.mdape}%, bias: ${metrics.bias > 0 ? "underestimation" : "overestimation"} (${metrics.bias}).`,
       `Accuracy trend: ${metrics.trend}.`,
     ];
     if (metrics.trend === "degrading") {
