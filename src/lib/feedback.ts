@@ -284,7 +284,7 @@ export interface FeedbackHealthReport {
   seedRecordsFiltered: number;
   matchRate: number;
   byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; recommendation: string }>;
-  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
+  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; recommendation: string }>;
   selfImprovement: {
     readyTypes: string[];
     callsUntilUpdate: number;
@@ -380,7 +380,18 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   for (const [type, count] of typeEstimateCounts) {
     const records = typeGroups.get(type) ?? [];
     const metrics = records.length >= 2 ? computeAccuracyMetrics(records) : null;
-    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: records.length, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
+    const pairs = records.length;
+    let typeRec: string;
+    if (pairs === 0) {
+      typeRec = "No matched pairs. Use this task type in estimates and record actuals.";
+    } else if (pairs < 3) {
+      typeRec = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
+    } else if (pairs < 10) {
+      typeRec = `Sufficient for calibration (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Collect more to improve reliability.`;
+    } else {
+      typeRec = `Good coverage (${pairs} pairs, MdAPE: ${metrics?.mdape?.toFixed(1) ?? "N/A"}%). Review outliers if MdAPE > 50%.`;
+    }
+    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, recommendation: typeRec };
   }
 
   // Self-improvement readiness: types with 5+ matched records

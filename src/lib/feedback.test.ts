@@ -449,6 +449,7 @@ describe("getFeedbackHealthReport", () => {
     expect(report.byTaskType["feature"]).toBeDefined();
     expect(report.byTaskType["feature"]!.mdape).toBeDefined();
     expect(report.byTaskType["feature"]!.matchedPairs).toBe(2);
+    expect(report.byTaskType["feature"]!.recommendation).toContain("Only 2 matched pairs");
   });
 
   it("returns null mape/mdape with fewer than 2 matches", () => {
@@ -576,6 +577,42 @@ describe("getFeedbackHealthReport", () => {
     const report = getFeedbackHealthReport();
     expect(report.byTool["pert_estimate"]!.recommendation).toContain("Sufficient for calibration");
     expect(report.byTool["pert_estimate"]!.recommendation).toContain("MdAPE:");
+  });
+
+  it("byTaskType includes recommendation for types with 0 pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "e1", inputs: { task_type: "migration" }, outputs: { expected: 5, unit: "hours" } }) + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(report.byTaskType["migration"]!.recommendation).toContain("No matched pairs");
+  });
+
+  it("byTaskType includes recommendation with MdAPE for types with 3+ pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } }),
+          makeEstimate({ id: "e2", inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } }),
+          makeEstimate({ id: "e3", inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          makeActual({ estimateId: "e1", actualHours: 12 }),
+          makeActual({ estimateId: "e2", actualHours: 8 }),
+          makeActual({ estimateId: "e3", actualHours: 11 }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(report.byTaskType["testing"]!.recommendation).toContain("Sufficient for calibration");
+    expect(report.byTaskType["testing"]!.recommendation).toContain("MdAPE:");
   });
 });
 
