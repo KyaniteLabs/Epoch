@@ -446,6 +446,14 @@ export function monteCarloSim(
   iterations: number,
   seed?: number,
 ): MonteCarloResult {
+  if (tasks.length === 0) {
+    return {
+      p10: "0", p50: "0", p80: "0", p95: "0",
+      criticalPathProbability: 0,
+      riskEvents: [{ description: "Task list must not be empty.", probability: 1, impactDays: 0 }],
+      humanReadable: "Error: Provide at least one task for Monte Carlo simulation.",
+    };
+  }
   if (iterations <= 0) {
     return {
       p10: "0", p50: "0", p80: "0", p95: "0",

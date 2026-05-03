@@ -696,6 +696,12 @@ describe("monteCarloSim", () => {
     ], 1000, 99);
     expect(typeof result.converged).toBe("boolean");
   });
+
+  it("returns error for empty task list", () => {
+    const result = monteCarloSim([], 1000, 42);
+    expect(result.p50).toBe("0");
+    expect(result.humanReadable).toContain("at least one task");
+  });
 });
 
 describe("pertEstimate edge cases", () => {
