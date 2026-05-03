@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `inferScopeFromComplexity` was a stub always returning "medium" — now maps complexity 1-2→small, 3→medium, 4→large, 5→xl
+- Task-type correction factors in self-improve engine were unclamped (could produce 15x multipliers) — now clamped to [0.5, 3.0]
+- `computeAccuracyMetrics` reported inflated `sample_size` including zero-actual records — now uses valid records count
+- Trend computation in `computeAccuracyMetrics` split all records instead of valid records — fixed
+- `batch-record-actuals` HTTP endpoint bypassed Zod schema validation — now validates types and filters invalid entries
+- `record-actual` endpoint accepted `actualHours: 0` — now requires positive values
+- `record-actual` validation error response missing `isError: true` field — added
+- `record-actual` returned `ok: true` with `recorded: false` on write failure — now returns proper error
+- Stale `llms.txt`: tool count 24→21, wrong param names (`window_days`→`window_size`, `planned_hours`→`estimated_hours`)
+- Empty `NODE_AUTH_TOKEN` in release workflow — now uses `secrets.NPM_TOKEN`
+- Hardcoded private IP in canary-runner for LM Studio — now defaults to `localhost:1234`
+- Rate limiter map grew indefinitely under moderate load — added probabilistic expired entry cleanup
+
+### Added
+- 9 canary surface tests for previously untested tools (token_cost_estimate, compare_models, accuracy_trend, schedule_risk, calibrate_estimates, cocomo_validate, get_pending_estimates, feedback_health)
+- 15 tests for `formatters.ts` (previously zero coverage)
+- Lint step in CI workflow
+
+### Changed
+- Test count: 544 → 731
+
 ## [0.1.2] - 2026-05-02
 
 ### Fixed
