@@ -72,6 +72,8 @@ export function scheduleRisk(params: {
   const taskLabel = taskType ? ` for ${taskType}` : "";
   const complexityLabel = complexity ? ` (complexity ${complexity})` : "";
 
+  const taskTypeBreakdown = computeTaskTypeBreakdown(teamId);
+
   return {
     estimatedHours: p50,
     riskLevel,
@@ -81,6 +83,7 @@ export function scheduleRisk(params: {
       mdape: mdapeRounded,
       sampleSize,
     },
+    taskTypeBreakdown,
     recommendation,
     humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel, complexityLabel),
   };
@@ -98,6 +101,31 @@ function getRecommendation(riskLevel: RiskLevel): string {
       return "Critical risk. Break down the task and re-estimate each component.";
     default: return assertNever(riskLevel);
   }
+}
+
+function computeTaskTypeBreakdown(teamId?: string): Record<string, { riskLevel: RiskLevel; mdape: number; sampleSize: number }> {
+  const allRecords = getCalibrationData(teamId);
+  const byType = new Map<string, typeof allRecords>();
+  for (const r of allRecords) {
+    const type = r.taskType ?? "unknown";
+    const arr = byType.get(type) ?? [];
+    arr.push(r);
+    byType.set(type, arr);
+  }
+
+  const result: Record<string, { riskLevel: RiskLevel; mdape: number; sampleSize: number }> = {};
+  for (const [type, records] of byType) {
+    if (records.length < 3) continue;
+    const metrics = computeAccuracyMetrics(records);
+    const mdape = metrics.mdape;
+    let riskLevel: RiskLevel;
+    if (mdape < 20) riskLevel = "low";
+    else if (mdape <= 35) riskLevel = "medium";
+    else if (mdape <= 50) riskLevel = "high";
+    else riskLevel = "critical";
+    result[type] = { riskLevel, mdape: Math.round(mdape * 10) / 10, sampleSize: metrics.sample_size };
+  }
+  return result;
 }
 
 function buildHumanReadable(

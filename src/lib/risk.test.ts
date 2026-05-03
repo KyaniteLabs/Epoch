@@ -166,4 +166,35 @@ describe("scheduleRisk", () => {
     const result = scheduleRisk({ estimatedHours: 20 });
     expect(result.humanReadable).not.toContain("complexity");
   });
+
+  it("includes taskTypeBreakdown with multiple task types", () => {
+    const records = [
+      ...makeRecords(5, 10), // feature, low risk (mdape ~10)
+      ...Array.from({ length: 5 }, (_, i) => ({
+        taskType: "bugfix",
+        estimatedHours: 10,
+        actualHours: Math.round(10 * 3.0 * 10) / 10, // 200% over → actual=30, error=|30-10|/30=66.7% → critical
+        completedAt: new Date(2026, 0, i + 1).toISOString(),
+      })),
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = scheduleRisk({ estimatedHours: 20 });
+    expect(result.taskTypeBreakdown).toBeDefined();
+    expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
+    expect(result.taskTypeBreakdown!["feature"]!.riskLevel).toBe("low");
+    expect(result.taskTypeBreakdown!["bugfix"]).toBeDefined();
+    expect(result.taskTypeBreakdown!["bugfix"]!.riskLevel).toBe("critical");
+  });
+
+  it("omits task types with fewer than 3 records from breakdown", () => {
+    const records = [
+      ...makeRecords(5, 20),
+      { taskType: "migration", estimatedHours: 10, actualHours: 15, completedAt: new Date().toISOString() },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+    const result = scheduleRisk({ estimatedHours: 20 });
+    expect(result.taskTypeBreakdown).toBeDefined();
+    expect(result.taskTypeBreakdown!["migration"]).toBeUndefined();
+    expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
+  });
 });
