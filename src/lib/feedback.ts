@@ -246,6 +246,11 @@ export interface FeedbackHealthReport {
     readyTypes: string[];
     callsUntilUpdate: number;
   };
+  dataQuality: {
+    overallMdape: number | null;
+    outlierRatio: number;
+    recommendation: string;
+  };
 }
 
 export function getFeedbackHealthReport(): FeedbackHealthReport {
@@ -313,6 +318,34 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   const callsUntilUpdate = Math.max(0, 100 - totalEstimates);
 
+  // Data quality: overall MdAPE and outlier ratio across all matched records
+  let overallMdape: number | null = null;
+  let outlierRatio = 0;
+  let recommendation: string;
+
+  if (allMatched.length >= 5) {
+    const metrics = computeAccuracyMetrics(allMatched);
+    overallMdape = metrics.mdape;
+
+    // Outliers: records where MAPE > 3× MdAPE
+    const outlierThreshold = metrics.mdape * 3;
+    const outliers = allMatched.filter(r => {
+      const err = Math.abs(r.actualHours - r.estimatedHours) / r.actualHours * 100;
+      return err > outlierThreshold;
+    });
+    outlierRatio = Math.round(outliers.length / allMatched.length * 1000) / 10;
+
+    if (overallMdape < 25) {
+      recommendation = "Data quality is good. MdAPE below 25% indicates reliable estimates.";
+    } else if (overallMdape < 50) {
+      recommendation = "Data quality is moderate. Consider filtering outlier records or collecting more matched pairs.";
+    } else {
+      recommendation = "Data quality needs improvement. High MdAPE suggests systematic estimation bias. Review seed data for human/AI baseline mismatches.";
+    }
+  } else {
+    recommendation = "Insufficient data for quality assessment. Need at least 5 matched estimate-actual pairs.";
+  }
+
   return {
     totalEstimates,
     totalActuals,
@@ -320,5 +353,6 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     byTool,
     byTaskType,
     selfImprovement: { readyTypes, callsUntilUpdate },
+    dataQuality: { overallMdape, outlierRatio, recommendation },
   };
 }

@@ -438,4 +438,40 @@ describe("getFeedbackHealthReport", () => {
     expect(report.byTool["pert_estimate"]!.mape).toBeNull();
     expect(report.byTool["pert_estimate"]!.mdape).toBeNull();
   });
+
+  it("dataQuality has recommendation when data is insufficient", () => {
+    mockReadFileSync.mockReturnValue("");
+    const report = getFeedbackHealthReport();
+    expect(report.dataQuality.overallMdape).toBeNull();
+    expect(report.dataQuality.outlierRatio).toBe(0);
+    expect(report.dataQuality.recommendation).toContain("Insufficient data");
+  });
+
+  it("dataQuality computes overallMdape and outlierRatio with 5+ records", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return Array.from({ length: 6 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, inputs: { task_type: "feature" }, outputs: { expected: 10, unit: "hours" } })
+        ).join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          makeActual({ estimateId: "e0", actualHours: 11 }),
+          makeActual({ estimateId: "e1", actualHours: 9 }),
+          makeActual({ estimateId: "e2", actualHours: 10.5 }),
+          makeActual({ estimateId: "e3", actualHours: 12 }),
+          makeActual({ estimateId: "e4", actualHours: 500 }), // outlier
+          makeActual({ estimateId: "e5", actualHours: 8 }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.dataQuality.overallMdape).not.toBeNull();
+    expect(report.dataQuality.overallMdape).toBeGreaterThan(0);
+    expect(report.dataQuality.outlierRatio).toBeGreaterThan(0);
+    expect(report.dataQuality.recommendation).toBeTruthy();
+  });
 });

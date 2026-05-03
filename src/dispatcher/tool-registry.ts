@@ -837,7 +837,7 @@ Each entry pairs an estimate ID with the actual hours spent.`,
 Shows total estimates, actuals, match rate, MAPE by tool and task type,
 and self-improvement readiness (which types have enough data for auto-calibration).`,
     feedbackHealthSchema,
-    { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" }, dataQuality: { type: "object" } } } satisfies Record<string, unknown>,
     () => {
       return { ok: true as const, data: getFeedbackHealthReport() };
     },
