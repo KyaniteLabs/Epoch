@@ -182,7 +182,7 @@ export const sprintForecastSchema = z.object({
       "Total story points or effort units remaining in the backlog."
     ),
   velocity_history: z
-    .array(z.coerce.number().nonnegative().describe("Velocity in points for a single sprint (0 = no completed work)."))
+    .array(z.coerce.number().positive().describe("Velocity in points for a single sprint (must be > 0)."))
     .min(1)
     .describe(
       "Historical velocities from completed sprints. Minimum 1 data point; 3+ recommended for meaningful forecasts."

@@ -119,6 +119,17 @@ export function sprintForecast(params: {
   const conversionFactor = hoursPerSprint / avgVelocity;
   const totalHours = backlogPoints * conversionFactor;
 
+  if (!Number.isFinite(totalHours) || !Number.isFinite(requiredSprints)) {
+    return {
+      ok: false,
+      error: {
+        isError: true,
+        message: "Sprint forecast produced non-finite result. Check inputs for Infinity or extreme values.",
+        retryHint: "Use reasonable values for backlog_points, hours_per_sprint, and velocity_history.",
+      },
+    };
+  }
+
   let pessimisticSprints: number;
   if (velocityHistory.length > 1) {
     const meanV = avgVelocity;
