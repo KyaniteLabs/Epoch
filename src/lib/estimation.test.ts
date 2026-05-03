@@ -324,6 +324,17 @@ describe("criticalPath", () => {
     if (!result.ok) return;
     expect(result.data.merge_bias_adjustment).toBeGreaterThan(0);
   });
+
+  it("includes estimatedHours (total_duration × 8)", () => {
+    const result = criticalPath([
+      { name: "A", duration: 3, predecessors: [] },
+      { name: "B", duration: 5, predecessors: ["A"] },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.estimatedHours).toBeGreaterThan(0);
+    expect(Math.abs(result.data.estimatedHours - result.data.total_duration * 8)).toBeLessThan(1);
+  });
 });
 
 describe("monteCarloSim", () => {

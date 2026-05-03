@@ -271,6 +271,8 @@ export interface CpmResult {
   readonly total_duration: number;
   /** Cumulative merge-bias adjustment applied. */
   readonly merge_bias_adjustment: number;
+  /** Total duration converted to hours (total_duration × 8). Enables feedback token. */
+  readonly estimatedHours: number;
 }
 
 // ---- Monte Carlo Task Input -----------------------------------------------

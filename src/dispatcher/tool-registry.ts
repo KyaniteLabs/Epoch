@@ -222,6 +222,7 @@ const criticalPathOutput = {
     slack_per_task: { type: "object", additionalProperties: { type: "number" } },
     total_duration: { type: "number" },
     merge_bias_adjustment: { type: "number" },
+    estimatedHours: { type: "number", description: "Total duration in hours (total_duration × 8)" },
   },
 } satisfies Record<string, unknown>;
 
