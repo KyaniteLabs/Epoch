@@ -526,6 +526,42 @@ describe("criticalPath", () => {
     expect(result.data.estimatedTokenCost).toBeGreaterThan(0);
     expect(result.data.estimatedTokenCost).toBe(result.data.estimatedHours * 50000);
   });
+
+  it("returns error for zero duration task", () => {
+    const result = criticalPath([
+      { name: "A", duration: 0, predecessors: [] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) return;
+    expect(result.error.message).toContain("invalid duration");
+  });
+
+  it("returns error for negative duration task", () => {
+    const result = criticalPath([
+      { name: "A", duration: -2, predecessors: [] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) return;
+    expect(result.error.message).toContain("invalid duration");
+  });
+
+  it("returns error for self-referencing predecessor", () => {
+    const result = criticalPath([
+      { name: "A", duration: 3, predecessors: ["A"] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) return;
+    expect(result.error.message).toContain("itself");
+  });
+
+  it("returns error for NaN duration", () => {
+    const result = criticalPath([
+      { name: "A", duration: NaN, predecessors: [] },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) return;
+    expect(result.error.message).toContain("invalid duration");
+  });
 });
 
 describe("monteCarloSim", () => {

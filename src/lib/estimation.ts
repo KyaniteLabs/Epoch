@@ -266,10 +266,30 @@ export function criticalPath(tasks: CpmTask[]): ToolResult<CpmResult> {
         },
       };
     }
+    if (!(t.duration > 0) || !Number.isFinite(t.duration)) {
+      return {
+        ok: false,
+        error: {
+          isError: true,
+          message: `Task "${t.name}" has invalid duration: ${t.duration}.`,
+          retryHint: "Each task must have a positive, finite duration.",
+        },
+      };
+    }
     taskMap.set(t.name, t);
   }
 
   for (const t of tasks) {
+    if (t.predecessors.includes(t.name)) {
+      return {
+        ok: false,
+        error: {
+          isError: true,
+          message: `Task "${t.name}" references itself as a predecessor.`,
+          retryHint: "Remove self-references from predecessor lists.",
+        },
+      };
+    }
     for (const p of t.predecessors) {
       if (!taskMap.has(p)) {
         return {

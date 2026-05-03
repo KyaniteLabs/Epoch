@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-05-03
+
+### Added
+- Duration validation in `criticalPath` — rejects zero, negative, and NaN durations with descriptive error messages
+- Self-reference detection in `criticalPath` — rejects tasks that list themselves as predecessors
+- 4 tests for CPM input validation (zero duration, negative duration, self-referencing predecessor, NaN duration)
+
+### Changed
+- 877 tests (was 873)
+
 ## [0.1.12] - 2026-05-03
 
 ### Added
