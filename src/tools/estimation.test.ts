@@ -144,3 +144,146 @@ describe("estimation tools via registry", () => {
     }
   });
 });
+
+describe("sprint_forecast edge cases", () => {
+  it("rejects empty velocity history at schema level", () => {
+    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    expect(() => tool.handler({
+      backlog_points: 50,
+      velocity_history: [],
+      sprint_length_days: 14,
+      hours_per_sprint: 80,
+    })).toThrow();
+  });
+
+  it("rejects zero backlog at schema level", () => {
+    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    expect(() => tool.handler({
+      backlog_points: 0,
+      velocity_history: [10, 12],
+      sprint_length_days: 14,
+      hours_per_sprint: 80,
+    })).toThrow();
+  });
+
+  it("rejects all-zero velocity at schema level", () => {
+    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    expect(() => tool.handler({
+      backlog_points: 50,
+      velocity_history: [0, 0, 0],
+      sprint_length_days: 14,
+      hours_per_sprint: 80,
+    })).toThrow();
+  });
+
+  it("computes pessimistic sprints with variance", () => {
+    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const result = tool.handler({
+      backlog_points: 100,
+      velocity_history: [20, 25, 22, 23, 18],
+      sprint_length_days: 14,
+      hours_per_sprint: 280,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect((data.pessimisticSprints as number)).toBeGreaterThan(data.requiredSprints as number);
+      expect(data.totalHours as number).toBeGreaterThan(0);
+      expect(data.completionDays as number).toBeGreaterThan(0);
+    }
+  });
+
+  it("falls back to 1.5x when only one velocity data point", () => {
+    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const result = tool.handler({
+      backlog_points: 100,
+      velocity_history: [25],
+      sprint_length_days: 14,
+      hours_per_sprint: 200,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      const required = data.requiredSprints as number;
+      const pessimistic = data.pessimisticSprints as number;
+      expect(pessimistic).toBeCloseTo(required * 1.5, 0);
+    }
+  });
+});
+
+describe("monte_carlo_schedule edge cases", () => {
+  it("rejects zero iterations at schema level", () => {
+    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    expect(() => tool.handler({
+      tasks: [{ name: "T1", optimistic: 1, most_likely: 3, pessimistic: 8 }],
+      iterations: 0,
+    })).toThrow();
+  });
+
+  it("rejects optimistic > most_likely at schema level", () => {
+    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    expect(() => tool.handler({
+      tasks: [{ name: "Bad", optimistic: 10, most_likely: 3, pessimistic: 15 }],
+      iterations: 100,
+    })).toThrow();
+  });
+
+  it("produces deterministic results with same seed", () => {
+    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const input = {
+      tasks: [
+        { name: "A", optimistic: 2, most_likely: 5, pessimistic: 10 },
+        { name: "B", optimistic: 3, most_likely: 7, pessimistic: 15 },
+      ],
+      iterations: 500,
+      seed: 123,
+    };
+    const r1 = tool.handler(input);
+    const r2 = tool.handler(input);
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    if (r1.ok && r2.ok) {
+      expect(r1.data.p50).toBe(r2.data.p50);
+      expect(r1.data.p95).toBe(r2.data.p95);
+    }
+  });
+
+  it("reports risk events for high-variance tasks", () => {
+    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const result = tool.handler({
+      tasks: [
+        { name: "Stable", optimistic: 4, most_likely: 5, pessimistic: 6 },
+        { name: "Risky", optimistic: 1, most_likely: 5, pessimistic: 30 },
+      ],
+      iterations: 1000,
+      seed: 42,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      const risks = data.riskEvents as Array<{ description: string }>;
+      expect(risks.length).toBeGreaterThan(0);
+      expect(risks[0]!.description).toContain("Risky");
+    }
+  });
+
+  it("single task produces valid percentiles", () => {
+    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const result = tool.handler({
+      tasks: [{ name: "Solo", optimistic: 1, most_likely: 2, pessimistic: 5 }],
+      iterations: 10000,
+      seed: 99,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const p10 = parseFloat(result.data.p10);
+      const p50 = parseFloat(result.data.p50);
+      const p95 = parseFloat(result.data.p95);
+      expect(p10).toBeLessThan(p50);
+      expect(p50).toBeLessThan(p95);
+      // P50 should be close to most_likely for triangular distribution
+      expect(p50).toBeGreaterThan(1.5);
+      expect(p50).toBeLessThan(4);
+    }
+  });
+});
