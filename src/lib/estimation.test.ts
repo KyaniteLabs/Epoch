@@ -612,6 +612,14 @@ describe("monteCarloSim", () => {
     expect(Math.abs(result.estimatedHours - p50Days * 8)).toBeLessThan(1);
   });
 
+  it("includes estimatedCost (estimatedHours × 50000)", () => {
+    const result = monteCarloSim([
+      { name: "Task", optimistic: 2, mostLikely: 5, pessimistic: 10 },
+    ], 1000, 42);
+    expect(result.estimatedCost).toBeGreaterThan(0);
+    expect(result.estimatedCost).toBeCloseTo(result.estimatedHours * 50000, -3);
+  });
+
   it("reports convergence for high iteration count", () => {
     const result = monteCarloSim([
       { name: "Task", optimistic: 2, mostLikely: 5, pessimistic: 10 },
