@@ -31,7 +31,7 @@ const telemetry = {
   environment: {
     GLM_AUTH_TOKEN: !!process.env.GLM_AUTH_TOKEN,
     MINIMAX_API_KEY: !!process.env.MINIMAX_API_KEY,
-    LM_STUDIO_URL: process.env.LM_STUDIO_URL || "http://100.66.225.85:1234",
+    LM_STUDIO_URL: process.env.LM_STUDIO_URL || "http://localhost:1234",
   },
 };
 
@@ -889,7 +889,7 @@ async function runAnthropicWithTools(baseURL, authToken, model, toolDefs, task) 
 
 // ---- LM Studio model management ---------------------------------------------
 
-const LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://100.66.225.85:1234";
+const LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
 
 async function lmStudioLoad(modelId) {
   const res = await fetch(`${LM_STUDIO_URL}/api/v1/models/load`, {
@@ -1286,7 +1286,6 @@ async function main() {
   const allResults = [];
 
   // ---- Phase 0: Epoch Surface Tests ----------------------------------------
-  console.log(`\n--- Phase 0: Epoch Surface Tests (API directly, ${13} tools) ---`);
   const surfaceTests = [
     { name: "get_current_time", body: { timezone: "Asia/Tokyo" }, validate: (d) => d.timezone === "Asia/Tokyo" && /\d{1,2}:\d{2}/.test(d.humanReadable) },
     { name: "pert_estimate", body: { optimistic: 2, most_likely: 5, pessimistic: 20, unit: "hours" }, validate: (d) => d.expected > 5 && d.confidence95.length === 2 },
@@ -1301,7 +1300,17 @@ async function main() {
     { name: "critical_path", body: { tasks: [{ name: "design", duration: 5, predecessors: [] }, { name: "build", duration: 10, predecessors: ["design"] }] }, validate: (d) => d.total_duration === 15 },
     { name: "reference_class_estimate", body: { task_type: "feature", complexity: 1.5 }, validate: (d) => d.correctedEstimate > 0 },
     { name: "time_math", body: { operation: "diff", operands: { date: "2026-05-01", end_date: "2026-05-31" } }, validate: (d) => d.days === 30 },
+    // -- Previously untested surface tests --
+    { name: "token_cost_estimate", body: { tokens: 100000, model: "claude-sonnet-4-20250514", reasoning_depth: "deep" }, validate: (d) => d.estimatedSeconds > 0 && d.estimatedCost > 0 },
+    { name: "compare_models", body: { tokens: 100000, tool_calls: 20, reasoning_depth: "deep" }, validate: (d) => Array.isArray(d.models) && d.models.length > 1 },
+    { name: "accuracy_trend", body: { team_id: "canary-test", window_size: 10 }, validate: (d) => typeof d.mape === "number" && typeof d.trend === "string" },
+    { name: "schedule_risk", body: { estimated_hours: 80, task_type: "feature" }, validate: (d) => d.riskMultiplier > 0 && typeof d.riskLevel === "string" },
+    { name: "calibrate_estimates", body: { team_id: "canary-test", period_days: 90, minimum_samples: 5 }, validate: (d) => typeof d.mape === "number" && typeof d.sample_size === "number" },
+    { name: "cocomo_validate", body: { kloc: 10, actual_person_months: 12, project_type: "organic" }, validate: (d) => d.estimatedMonths > 0 && typeof d.deviationPercent === "number" },
+    { name: "get_pending_estimates", body: {}, validate: (d) => typeof d === "object" },
+    { name: "feedback_health", body: {}, validate: (d) => typeof d.totalEstimates === "number" && typeof d.matchedRecords === "number" },
   ];
+  console.log(`\n--- Phase 0: Epoch Surface Tests (API directly, ${surfaceTests.length} tools) ---`);
 
   for (const test of surfaceTests) {
     process.stdout.write(`  ${test.name}... `);

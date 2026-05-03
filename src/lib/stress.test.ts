@@ -1266,8 +1266,9 @@ describe("analytics — computeAccuracyMetrics stress", () => {
       { taskType: "feature", estimatedHours: 10, actualHours: 0, completedAt: "2026-01-01" },
     ];
     const result = computeAccuracyMetrics(records);
-    // Records with 0 actual are filtered out
-    expect(result.sample_size).toBe(1);
+    // Records with 0 actual are filtered out, sample_size reflects valid records only
+    expect(result.sample_size).toBe(0);
+    expect(result.mape).toBe(0);
   });
 
   it("computes metrics for perfect estimates", () => {

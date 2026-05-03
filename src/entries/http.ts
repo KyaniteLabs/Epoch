@@ -28,7 +28,7 @@ const LLMSTXT = `# Epoch
 > Time Estimation MCP Server — structured temporal reasoning for AI agents
 
 ## Overview
-Epoch provides 24 tools across 5 layers for accurate time estimation.
+Epoch provides 21 tools across 5 layers for accurate time estimation.
 All tools are accessed via POST /v1/tools/{tool_name} with JSON request bodies.
 All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"isError": true, "message": "...", "retryHint": "..."}}
 
@@ -134,13 +134,13 @@ Compares all LLM models side-by-side for a given token budget.
 
 ### accuracy_trend
 Tracks estimation accuracy over time with sliding-window MAPE.
-- Input: {"team_id": "alpha", "window_days": 30, "minimum_samples": 5}
+- Input: {"team_id": "alpha", "window_size": 50, "minimum_samples": 5}
 - Output: {"teamId": "alpha", "mape": 0.18, "trend": "improving", "sampleSize": 12, "windowDays": 30, "humanReadable": "Accuracy trend for team alpha: MAPE 18% (improving) over 30 days with 12 samples."}
 
 ### schedule_risk
 Assesses schedule risk using historical accuracy data.
-- Input: {"planned_hours": 80, "confidence_level": 0.9, "team_id": "alpha"}
-- Output: {"plannedHours": 80, "adjustedHours": 96, "riskMultiplier": 1.2, "confidenceLevel": 0.9, "riskLevel": "medium", "humanReadable": "Schedule risk: 80h planned -> 96h adjusted (medium risk, 90% confidence)."}
+- Input: {"estimated_hours": 80, "confidence_level": 0.9, "team_id": "alpha"}
+- Output: {"estimatedHours": 80, "adjustedHours": 96, "riskMultiplier": 1.2, "confidenceLevel": 0.9, "riskLevel": "medium", "humanReadable": "Schedule risk: 80h planned -> 96h adjusted (medium risk, 90% confidence)."}
 
 ### cocomo_validate
 Validates COCOMO estimation model against historical projects.
@@ -391,6 +391,10 @@ export function createApiApp(): Hono {
       for (const [key, val] of requestCounts) {
         if (now > val.resetAt) requestCounts.delete(key);
       }
+    } else if (requestCounts.size > 0 && Math.random() < 0.01) {
+      for (const [key, val] of requestCounts) {
+        if (now > val.resetAt) requestCounts.delete(key);
+      }
     }
 
     const entry = requestCounts.get(ip);
@@ -503,11 +507,12 @@ export function createApiApp(): Hono {
     const estimateId = body["estimate_id"] as string | undefined;
     const actualHours = body["actual_hours"] as number | undefined;
 
-    if (!estimateId || actualHours === undefined || actualHours < 0) {
+    if (!estimateId || actualHours === undefined || actualHours <= 0) {
       return c.json({
         ok: false,
         error: {
-          message: "Requires estimate_id (string) and actual_hours (non-negative number).",
+          isError: true,
+          message: "Requires estimate_id (string) and actual_hours (positive number).",
           retryHint: "POST {estimate_id: '...', actual_hours: 8.5, notes: 'optional'}",
         },
       }, 400);
@@ -515,7 +520,13 @@ export function createApiApp(): Hono {
 
     const notes = body["notes"] as string | undefined;
     const success = recordActual(estimateId, actualHours, notes);
-    return c.json({ ok: success, data: { estimateId, actualHours, recorded: success } });
+    if (!success) {
+      return c.json({
+        ok: false,
+        error: { isError: true, message: "Failed to record actual. Estimate ID may not exist.", retryHint: "Check estimate_id and try again." },
+      }, 500);
+    }
+    return c.json({ ok: true, data: { estimateId, actualHours, recorded: true } });
   });
 
   app.get("/v1/feedback/pending", (c) => {
@@ -526,21 +537,30 @@ export function createApiApp(): Hono {
 
   app.post("/v1/feedback/batch-record-actuals", async (c) => {
     const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || !Array.isArray(body["entries"])) {
+    if (!body || typeof body !== "object" || !Array.isArray(body["entries"]) || (body["entries"] as unknown[]).length === 0) {
       return c.json({
         ok: false,
-        error: { isError: true, message: "Requires entries array (1–500 items).", retryHint: "POST {entries: [{estimate_id: '...', actual_hours: 8.5}]}" },
+        error: { isError: true, message: "Requires entries array (1–500 items) with estimate_id (string) and actual_hours (positive number) per entry.", retryHint: "POST {entries: [{estimate_id: '...', actual_hours: 8.5}]}" },
       }, 400);
     }
 
-    const entries = (body["entries"] as Array<Record<string, unknown>>).slice(0, 500);
-    const result = batchRecordActuals(
-      entries.map((e) => ({
-        estimateId: String(e["estimate_id"] ?? ""),
-        actualHours: Number(e["actual_hours"] ?? 0),
+    const rawEntries = (body["entries"] as Array<Record<string, unknown>>).slice(0, 500);
+    const entries = rawEntries
+      .filter((e) => typeof e["estimate_id"] === "string" && e["estimate_id"] !== "" && typeof e["actual_hours"] === "number" && (e["actual_hours"] as number) > 0)
+      .map((e) => ({
+        estimateId: e["estimate_id"] as string,
+        actualHours: e["actual_hours"] as number,
         notes: e["notes"] as string | undefined,
-      })),
-    );
+      }));
+
+    if (entries.length === 0) {
+      return c.json({
+        ok: false,
+        error: { isError: true, message: "No valid entries after filtering. Each entry needs estimate_id (non-empty string) and actual_hours (positive number).", retryHint: "Check that estimate_id is a non-empty string and actual_hours is a positive number." },
+      }, 400);
+    }
+
+    const result = batchRecordActuals(entries);
     return c.json({ ok: true, data: result });
   });
 

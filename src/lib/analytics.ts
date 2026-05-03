@@ -19,7 +19,10 @@ const COMPLEXITY_MULTIPLIER: Record<number, number> = {
 };
 
 export function inferScopeFromComplexity(complexity: number): ScopeSignal {
-  return "medium";
+  if (complexity <= 2) return "small";
+  if (complexity <= 3) return "medium";
+  if (complexity <= 4) return "large";
+  return "xl";
 }
 
 export function getScopeGuide(taskType: TaskType): string | null {
@@ -260,7 +263,7 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
 
   const validRecords = records.filter(r => r.actualHours > 0);
   if (validRecords.length === 0) {
-    return { mape: 0, bias: 0, variance: 0, sample_size: records.length, trend: "stable" };
+    return { mape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
   }
 
   const errors = validRecords.map(r => Math.abs(r.actualHours - r.estimatedHours) / r.actualHours);
@@ -273,10 +276,10 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
   const variance = biases.reduce((sum, b) => sum + (b - meanBias) ** 2, 0) / biases.length;
 
   let trend: AccuracyMetrics["trend"] = "stable";
-  if (records.length >= 6) {
-    const half = Math.floor(records.length / 2);
-    const firstHalf = records.slice(0, half);
-    const secondHalf = records.slice(half);
+  if (validRecords.length >= 6) {
+    const half = Math.floor(validRecords.length / 2);
+    const firstHalf = validRecords.slice(0, half);
+    const secondHalf = validRecords.slice(half);
     const mapeFirst = avgPercentageError(firstHalf);
     const mapeSecond = avgPercentageError(secondHalf);
     if (mapeSecond < mapeFirst * 0.85) trend = "improving";
@@ -287,7 +290,7 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
     mape: Math.round(mape * 10) / 10,
     bias: Math.round(bias * 10) / 10,
     variance: Math.round(variance * 10) / 10,
-    sample_size: records.length,
+    sample_size: validRecords.length,
     trend,
   };
 }

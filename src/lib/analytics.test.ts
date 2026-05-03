@@ -171,16 +171,21 @@ describe("referenceClassEstimate scope signal", () => {
     expect(c3.rawEstimate).toBeCloseTo(6.0, 0);
   });
 
-  it("defaults to medium scope when not provided", () => {
+  it("infers scope from complexity when not provided", () => {
     const c1 = referenceClassEstimate([], "feature", 1);
+    const c2 = referenceClassEstimate([], "feature", 2);
     const c3 = referenceClassEstimate([], "feature", 3);
-    expect(c1.scopeUsed).toBe("medium");
+    const c4 = referenceClassEstimate([], "feature", 4);
+    const c5 = referenceClassEstimate([], "feature", 5);
+    expect(c1.scopeUsed).toBe("small");
     expect(c1.scopeInferred).toBe(true);
+    expect(c2.scopeUsed).toBe("small");
     expect(c3.scopeUsed).toBe("medium");
-    expect(c3.scopeInferred).toBe(true);
+    expect(c4.scopeUsed).toBe("large");
+    expect(c5.scopeUsed).toBe("xl");
   });
 
-  it("applies complexity multiplier on medium default", () => {
+  it("applies complexity multiplier on inferred scope", () => {
     const c1 = referenceClassEstimate([], "feature", 1);
     const c3 = referenceClassEstimate([], "feature", 3);
     const c5 = referenceClassEstimate([], "feature", 5);
