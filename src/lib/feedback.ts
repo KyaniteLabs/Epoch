@@ -245,9 +245,10 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
 export interface FeedbackHealthReport {
   totalEstimates: number;
   totalActuals: number;
+  matchedPairs: number;
   matchRate: number;
-  byTool: Record<string, { estimates: number; actuals: number; mape: number | null; mdape: number | null }>;
-  byTaskType: Record<string, { estimates: number; actuals: number; mape: number | null; mdape: number | null }>;
+  byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
+  byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null }>;
   selfImprovement: {
     readyTypes: string[];
     callsUntilUpdate: number;
@@ -293,7 +294,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   for (const [tool, count] of toolEstimates) {
     const matched = toolRecords.get(tool) ?? [];
     const metrics = matched.length >= 2 ? computeAccuracyMetrics(matched) : null;
-    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
+    byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: matched.length, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
   }
 
   // By task type — group the pre-matched records
@@ -313,7 +314,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   for (const [type, count] of typeEstimateCounts) {
     const records = typeGroups.get(type) ?? [];
     const metrics = records.length >= 2 ? computeAccuracyMetrics(records) : null;
-    byTaskType[type] = { estimates: count, actuals: records.length, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
+    byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: records.length, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null };
   }
 
   // Self-improvement readiness: types with 5+ matched records
@@ -355,6 +356,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   return {
     totalEstimates,
     totalActuals,
+    matchedPairs: allMatched.length,
     matchRate,
     byTool,
     byTaskType,
