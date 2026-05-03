@@ -28,37 +28,40 @@ export function scheduleRisk(params: {
   const records = getCalibrationData(teamId, taskType);
 
   let mdape: number;
+  let cappedMdape: number;
   let mape: number;
   let sampleSize: number;
 
   if (records.length >= 5) {
     const metrics = computeAccuracyMetrics(records);
     mdape = metrics.mdape;
+    cappedMdape = metrics.cappedMdape;
     mape = metrics.mape;
     sampleSize = metrics.sample_size;
   } else {
     const profile = getDeveloperProfileGradient(params.aiNative ?? 1.0);
     mdape = profile.estimationMape;
+    cappedMdape = profile.estimationMape;
     mape = profile.estimationMape;
     sampleSize = records.length;
   }
 
-  // Confidence intervals using normal approximation with MdAPE (robust to outliers)
+  // Confidence intervals using cappedMdape (outlier-robust) for intervals and risk level
   // Complexity scaling: higher complexity widens intervals (cone of uncertainty)
   const complexityFactor = complexity && complexity >= 4
     ? 1 + (complexity - 3) * 0.1  // complexity 4 → 1.1, 5 → 1.2
     : 1;
   const p50 = Math.round(estimatedHours * 10) / 10;
-  const p80 = Math.round(estimatedHours * (1 + 0.842 * mdape / 100 * complexityFactor) * 10) / 10;
-  const p95 = Math.round(estimatedHours * (1 + 1.645 * mdape / 100 * complexityFactor) * 10) / 10;
+  const p80 = Math.round(estimatedHours * (1 + 0.842 * cappedMdape / 100 * complexityFactor) * 10) / 10;
+  const p95 = Math.round(estimatedHours * (1 + 1.645 * cappedMdape / 100 * complexityFactor) * 10) / 10;
 
-  // Risk level based on MdAPE
+  // Risk level based on cappedMdape (outlier-robust)
   let riskLevel: RiskLevel;
-  if (mdape < 20) {
+  if (cappedMdape < 20) {
     riskLevel = "low";
-  } else if (mdape <= 35) {
+  } else if (cappedMdape <= 35) {
     riskLevel = "medium";
-  } else if (mdape <= 50) {
+  } else if (cappedMdape <= 50) {
     riskLevel = "high";
   } else {
     riskLevel = "critical";
@@ -69,6 +72,7 @@ export function scheduleRisk(params: {
 
   const mapeRounded = Math.round(mape * 10) / 10;
   const mdapeRounded = Math.round(mdape * 10) / 10;
+  const cappedMdapeRounded = Math.round(cappedMdape * 10) / 10;
   const taskLabel = taskType ? ` for ${taskType}` : "";
   const complexityLabel = complexity ? ` (complexity ${complexity})` : "";
 
@@ -84,9 +88,10 @@ export function scheduleRisk(params: {
       mdape: mdapeRounded,
       sampleSize,
     },
+    cappedMdape: cappedMdapeRounded,
     taskTypeBreakdown,
     recommendation,
-    humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel, complexityLabel),
+    humanReadable: buildHumanReadable(riskLevel, cappedMdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel, complexityLabel),
   };
 }
 
@@ -118,7 +123,7 @@ function computeTaskTypeBreakdown(teamId?: string): Record<string, { riskLevel: 
   for (const [type, records] of byType) {
     if (records.length < 3) continue;
     const metrics = computeAccuracyMetrics(records);
-    const mdape = metrics.mdape;
+    const mdape = metrics.cappedMdape;
     let riskLevel: RiskLevel;
     if (mdape < 20) riskLevel = "low";
     else if (mdape <= 35) riskLevel = "medium";

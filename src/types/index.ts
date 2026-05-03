@@ -411,6 +411,7 @@ export interface ScheduleRiskAssessment {
     readonly mdape: number;
     readonly sampleSize: number;
   };
+  readonly cappedMdape: number;
   readonly recommendation: string;
   /** Risk level breakdown by task type from historical data. */
   readonly taskTypeBreakdown?: Readonly<Record<string, { readonly riskLevel: RiskLevel; readonly mdape: number; readonly sampleSize: number }>>;

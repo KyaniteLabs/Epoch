@@ -201,6 +201,7 @@ export function referenceClassEstimate(
   scopeUsed: string;
   scopeInferred: boolean;
   confidence: ConfidenceLevel;
+  estimatedTokenCost: number;
 } {
   const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
 
