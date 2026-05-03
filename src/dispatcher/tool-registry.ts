@@ -708,6 +708,7 @@ Uses industry baseline (25% MAPE) when no historical data is available.`,
           taskType: p.task_type,
           teamId: p.team_id,
           aiNative: p.ai_native,
+          complexity: p.complexity,
         }),
       };
     },

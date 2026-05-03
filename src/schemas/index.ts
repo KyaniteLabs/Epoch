@@ -419,6 +419,12 @@ export const scheduleRiskSchema = z.object({
   team_id: brandedString("Team")
     .describe("Optional team identifier to scope historical data.")
     .optional(),
+  complexity: z
+    .number()
+    .min(1)
+    .max(5)
+    .describe("Task complexity from 1 (trivial) to 5 (extreme). Higher complexity widens confidence intervals.")
+    .optional(),
   ai_native: aiNativeGradient,
 });
 

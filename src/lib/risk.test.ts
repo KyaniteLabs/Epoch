@@ -135,4 +135,35 @@ describe("scheduleRisk", () => {
     expect(result.humanReadable).not.toContain("for ");
     expect(result.humanReadable).toContain("Schedule risk:");
   });
+
+  it("high complexity widens confidence intervals", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const normal = scheduleRisk({ estimatedHours: 40 });
+    const complex = scheduleRisk({ estimatedHours: 40, complexity: 5 });
+
+    expect(complex.confidenceIntervals.p95).toBeGreaterThan(normal.confidenceIntervals.p95);
+    expect(complex.confidenceIntervals.p80).toBeGreaterThan(normal.confidenceIntervals.p80);
+    // p50 (median) stays the same regardless of complexity
+    expect(complex.confidenceIntervals.p50).toBe(normal.confidenceIntervals.p50);
+  });
+
+  it("low complexity (1-3) does not widen intervals", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const normal = scheduleRisk({ estimatedHours: 40 });
+    const simple = scheduleRisk({ estimatedHours: 40, complexity: 2 });
+
+    expect(simple.confidenceIntervals.p95).toBe(normal.confidenceIntervals.p95);
+  });
+
+  it("humanReadable includes complexity label when provided", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const result = scheduleRisk({ estimatedHours: 20, complexity: 4 });
+    expect(result.humanReadable).toContain("complexity 4");
+  });
+
+  it("humanReadable omits complexity label when not provided", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(10, 30));
+    const result = scheduleRisk({ estimatedHours: 20 });
+    expect(result.humanReadable).not.toContain("complexity");
+  });
 });

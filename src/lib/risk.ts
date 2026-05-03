@@ -10,8 +10,9 @@ export function scheduleRisk(params: {
   taskType?: TaskType;
   teamId?: string;
   aiNative?: number;
+  complexity?: number;
 }): ScheduleRiskAssessment {
-  const { estimatedHours, taskType, teamId } = params;
+  const { estimatedHours, taskType, teamId, complexity } = params;
 
   if (!estimatedHours || !Number.isFinite(estimatedHours) || estimatedHours <= 0) {
     return {
@@ -43,9 +44,13 @@ export function scheduleRisk(params: {
   }
 
   // Confidence intervals using normal approximation with MdAPE (robust to outliers)
+  // Complexity scaling: higher complexity widens intervals (cone of uncertainty)
+  const complexityFactor = complexity && complexity >= 4
+    ? 1 + (complexity - 3) * 0.1  // complexity 4 → 1.1, 5 → 1.2
+    : 1;
   const p50 = Math.round(estimatedHours * 10) / 10;
-  const p80 = Math.round(estimatedHours * (1 + 0.842 * mdape / 100) * 10) / 10;
-  const p95 = Math.round(estimatedHours * (1 + 1.645 * mdape / 100) * 10) / 10;
+  const p80 = Math.round(estimatedHours * (1 + 0.842 * mdape / 100 * complexityFactor) * 10) / 10;
+  const p95 = Math.round(estimatedHours * (1 + 1.645 * mdape / 100 * complexityFactor) * 10) / 10;
 
   // Risk level based on MdAPE
   let riskLevel: RiskLevel;
@@ -65,6 +70,7 @@ export function scheduleRisk(params: {
   const mapeRounded = Math.round(mape * 10) / 10;
   const mdapeRounded = Math.round(mdape * 10) / 10;
   const taskLabel = taskType ? ` for ${taskType}` : "";
+  const complexityLabel = complexity ? ` (complexity ${complexity})` : "";
 
   return {
     estimatedHours: p50,
@@ -72,10 +78,11 @@ export function scheduleRisk(params: {
     confidenceIntervals: { p50, p80, p95 },
     historicalAccuracy: {
       mape: mapeRounded,
+      mdape: mdapeRounded,
       sampleSize,
     },
     recommendation,
-    humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel),
+    humanReadable: buildHumanReadable(riskLevel, mdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel, complexityLabel),
   };
 }
 
@@ -103,6 +110,7 @@ function buildHumanReadable(
   sampleSize: number,
   recommendation: string,
   taskLabel: string,
+  complexityLabel: string,
 ): string {
-  return `Schedule risk${taskLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
+  return `Schedule risk${taskLabel}${complexityLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
 }
