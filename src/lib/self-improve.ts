@@ -246,7 +246,7 @@ function mergeBenchmark(existing: ToolBenchmark, stat: { p50Ms: number; p95Ms: n
 function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, number> {
   const grouped = new Map<string, number[]>();
   for (const r of records) {
-    if (r.estimatedHours <= 0) continue;
+    if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
     const arr = grouped.get(r.taskType) ?? [];
     arr.push(r.actualHours / r.estimatedHours);
     grouped.set(r.taskType, arr);
@@ -254,6 +254,7 @@ function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, n
 
   const factors: Record<string, number> = {};
   for (const [type, ratios] of grouped) {
+    if (ratios.length < 3) continue;
     ratios.sort((a, b) => a - b);
     const mid = Math.floor(ratios.length / 2);
     const median = ratios.length % 2 === 0
@@ -267,7 +268,7 @@ function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, n
 
 function computeGlobalCorrection(records: HistoricalRecord[]): number {
   if (records.length === 0) return 1.07;
-  const valid = records.filter((r) => r.estimatedHours > 0);
+  const valid = records.filter((r) => r.estimatedHours > 0 && r.actualHours > 0);
   if (valid.length === 0) return 1.07;
   const ratios = valid.map((r) => r.actualHours / r.estimatedHours);
   ratios.sort((a, b) => a - b);
@@ -275,13 +276,13 @@ function computeGlobalCorrection(records: HistoricalRecord[]): number {
   const median = ratios.length % 2 === 0
     ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
     : (ratios[mid] ?? 1.07);
-  return Math.round(median * 100) / 100;
+  return Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
 }
 
 function computeToolCorrectionFactors(records: HistoricalRecord[]): Record<string, Record<string, number>> {
   const grouped = new Map<string, Map<string, number[]>>();
   for (const r of records) {
-    if (r.estimatedHours <= 0) continue;
+    if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
     const tool = r.tool ?? "unknown";
     if (!grouped.has(tool)) grouped.set(tool, new Map());
     const taskMap = grouped.get(tool)!;
