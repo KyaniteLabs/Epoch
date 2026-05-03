@@ -458,4 +458,21 @@ describe("referenceClassEstimate AI-native baselines", () => {
     // medium feature = 2.0h base; c1=2.0*0.7=1.4, c3=2.0*1.0=2.0, c5=2.0*1.5=3.0
     expect(c3.rawEstimate).toBeCloseTo(2.0, 0);
   });
+
+  it("migration task type has valid baselines", () => {
+    const result = referenceClassEstimate([], "migration", 3, "medium", true);
+    expect(result.rawEstimate).toBeGreaterThan(0);
+    expect(result.correctionFactor).toBe(1.0);
+    expect(result.scopeUsed).toBe("medium");
+    // AI-native migration medium = 2.5h * 1.0 = 2.5
+    expect(result.rawEstimate).toBeCloseTo(2.5, 0);
+  });
+
+  it("design task type has valid baselines", () => {
+    const result = referenceClassEstimate([], "design", 3, "large", true);
+    expect(result.rawEstimate).toBeGreaterThan(0);
+    expect(result.correctionFactor).toBe(1.0);
+    // AI-native design large = 6.0h * 1.0 = 6.0
+    expect(result.rawEstimate).toBeCloseTo(6.0, 0);
+  });
 });

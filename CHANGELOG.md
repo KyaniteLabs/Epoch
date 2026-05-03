@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- MdAPE (Median Absolute Percentage Error) in accuracy metrics — robust to outliers where MAPE is inflated by extreme seed data
+- AI-native scope baselines derived from 139 matched estimate-actual pairs (0.1–5h vs human 4–17h)
+- Correction factor floor lowered from 0.5 to 0.1 (AI-native work finishes at 0.06–0.43x of human estimates)
+- 10 tests for MdAPE computation and AI-native baseline logic
+- 10 tests for sprint_forecast and monte_carlo_schedule edge cases (schema validation, deterministic seeds, risk events)
+- 6 tests for MCP adapter (ZodEffects unwrap, tool registration, read/write annotations)
+- 6 tests for dispatcher routing (unknown tools, validation, feedbackToken propagation)
+- NaN guards on `actual_hours` in HTTP endpoint
+- Duplicate actual prevention in `recordActual`
+- Self-improvement engine writes reference database to `~/.epoch/` instead of source tree
+
+### Changed
+- `referenceClassEstimate` accepts `aiNative` flag to use AI-native baselines with CF=1.0 (avoids double correction)
+- Feedback health report includes `mdape` alongside `mape` for both by-tool and by-task-type breakdowns
+- Test count: 738 → 769
+
 ### Fixed
 - `inferScopeFromComplexity` was a stub always returning "medium" — now maps complexity 1-2→small, 3→medium, 4→large, 5→xl
 - Task-type correction factors in self-improve engine were unclamped (could produce 15x multipliers) — now clamped to [0.5, 3.0]
