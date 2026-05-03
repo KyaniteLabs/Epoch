@@ -21,6 +21,8 @@ import {
   recordActual,
   getPendingEstimates,
   getCalibrationData,
+  batchRecordActuals,
+  getFeedbackHealthReport,
 } from "./feedback.js";
 
 const mockExistsSync = vi.mocked(existsSync);
@@ -313,5 +315,127 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       return "";
     });
     expect(getCalibrationData()).toEqual([]);
+  });
+});
+
+// ---- recordActual duplicate rejection ----
+
+describe("recordActual duplicate rejection", () => {
+  it("rejects duplicate estimateId", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "est-1" }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActual("est-1", 15, "duplicate attempt");
+    expect(result).toBe(false);
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("accepts new estimateId", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "est-1" }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActual("est-2", 8);
+    expect(result).toBe(true);
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+  });
+});
+
+// ---- batchRecordActuals ----
+
+describe("batchRecordActuals", () => {
+  it("records multiple actuals", () => {
+    mockReadFileSync.mockReturnValue("");
+
+    const result = batchRecordActuals([
+      { estimateId: "a1", actualHours: 5 },
+      { estimateId: "a2", actualHours: 10, notes: "done" },
+    ]);
+    expect(result.succeeded).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.total).toBe(2);
+  });
+
+  it("reports failures for duplicates", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "dup" }) + "\n";
+      }
+      return "";
+    });
+
+    const result = batchRecordActuals([
+      { estimateId: "dup", actualHours: 5 },
+      { estimateId: "new", actualHours: 10 },
+    ]);
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.errors).toHaveLength(1);
+  });
+
+  it("handles empty batch", () => {
+    const result = batchRecordActuals([]);
+    expect(result.total).toBe(0);
+    expect(result.succeeded).toBe(0);
+  });
+});
+
+// ---- getFeedbackHealthReport ----
+
+describe("getFeedbackHealthReport", () => {
+  it("returns health report with by-tool and by-task-type MdAPE", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { expected: 5, unit: "hours" } }),
+          makeEstimate({ id: "e2", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 3, unit: "hours" } }),
+          makeEstimate({ id: "e3", tool: "reference_class_estimate", inputs: { task_type: "feature" }, outputs: { correctedEstimate: 8 } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          makeActual({ estimateId: "e1", actualHours: 6 }),
+          makeActual({ estimateId: "e2", actualHours: 4 }),
+          makeActual({ estimateId: "e3", actualHours: 10 }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.totalEstimates).toBe(3);
+    expect(report.totalActuals).toBe(3);
+    expect(report.byTool["pert_estimate"]).toBeDefined();
+    expect(report.byTool["pert_estimate"]!.mdape).toBeDefined();
+    expect(report.byTaskType["feature"]).toBeDefined();
+    expect(report.byTaskType["feature"]!.mdape).toBeDefined();
+  });
+
+  it("returns null mape/mdape with fewer than 2 matches", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "e1" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "e1" }) + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.byTool["pert_estimate"]!.mape).toBeNull();
+    expect(report.byTool["pert_estimate"]!.mdape).toBeNull();
   });
 });
