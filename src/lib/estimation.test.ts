@@ -156,6 +156,31 @@ describe("sprintForecast", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it("computes optimistic sprints from velocity variance", () => {
+    const result = sprintForecast({
+      backlogPoints: 50,
+      velocityHistory: [10, 20, 15, 25],
+      sprintLengthDays: 14,
+      hoursPerSprint: 200,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.optimisticSprints).toBeLessThan(result.data.requiredSprints);
+    expect(result.data.optimisticSprints).toBeGreaterThan(0);
+  });
+
+  it("optimistic sprints uses 0.75x fallback with single velocity", () => {
+    const result = sprintForecast({
+      backlogPoints: 30,
+      velocityHistory: [10],
+      sprintLengthDays: 14,
+      hoursPerSprint: 100,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.optimisticSprints).toBeCloseTo(result.data.requiredSprints * 0.75, 0);
+  });
 });
 
 describe("cocomoEstimate", () => {
@@ -428,6 +453,20 @@ describe("monteCarloSim", () => {
     // p50 is a string in days; estimatedHours should be approximately p50 * 8
     const p50Days = parseFloat(result.p50);
     expect(Math.abs(result.estimatedHours - p50Days * 8)).toBeLessThan(1);
+  });
+
+  it("reports convergence for high iteration count", () => {
+    const result = monteCarloSim([
+      { name: "Task", optimistic: 2, mostLikely: 5, pessimistic: 10 },
+    ], 50000, 42);
+    expect(result.converged).toBe(true);
+  });
+
+  it("includes converged field in result", () => {
+    const result = monteCarloSim([
+      { name: "Task", optimistic: 1, mostLikely: 3, pessimistic: 8 },
+    ], 1000, 99);
+    expect(typeof result.converged).toBe("boolean");
   });
 });
 

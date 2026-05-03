@@ -1,6 +1,6 @@
 # Epoch — Time Estimation MCP Server
 
-> @puenteworks/epoch v0.1.8 — 24 structured tools for grounded time estimation
+> @puenteworks/epoch v0.1.9 — 24 structured tools for grounded time estimation
 
 ## What
 
@@ -195,4 +195,4 @@ Health report on the feedback loop.
 
 ## Data
 
-Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 842 tests, 30 test files.
+Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 846 tests, 30 test files.

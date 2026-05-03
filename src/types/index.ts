@@ -128,6 +128,8 @@ export interface SprintForecastResult {
   readonly averageVelocity: number;
   /** Number of sprints required at average velocity. */
   readonly requiredSprints: number;
+  /** Lower-bound sprint count (optimistic velocity). */
+  readonly optimisticSprints: number;
   /** Upper-bound sprint count (pessimistic velocity). */
   readonly pessimisticSprints: number;
   /** Estimated hours per story point. */
@@ -191,6 +193,8 @@ export interface MonteCarloResult {
   readonly estimatedHours: number;
   /** Probability the critical path will be met (0-1). */
   readonly criticalPathProbability: number;
+  /** Whether p50 converged (difference between first and second half < 5%). */
+  readonly converged: boolean;
   /** Identified risk events and their characteristics. */
   readonly riskEvents: readonly RiskEvent[];
   /** Human-readable summary (e.g. "Median (p50): 7.99 days. Conservative (p95): 12.81 days."). */
@@ -383,6 +387,7 @@ export interface ScheduleRiskAssessment {
   };
   readonly historicalAccuracy: {
     readonly mape: number;
+    readonly mdape: number;
     readonly sampleSize: number;
   };
   readonly recommendation: string;

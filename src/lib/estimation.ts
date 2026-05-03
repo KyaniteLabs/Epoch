@@ -131,13 +131,16 @@ export function sprintForecast(params: {
   }
 
   let pessimisticSprints: number;
+  let optimisticSprints: number;
   if (velocityHistory.length > 1) {
     const meanV = avgVelocity;
     const variance = velocityHistory.reduce((sum, v) => sum + (v - meanV) ** 2, 0) / (velocityHistory.length - 1);
     const stdV = Math.sqrt(variance);
     pessimisticSprints = backlogPoints / Math.max(avgVelocity - stdV, 0.1);
+    optimisticSprints = backlogPoints / (avgVelocity + stdV);
   } else {
     pessimisticSprints = requiredSprints * 1.5;
+    optimisticSprints = requiredSprints * 0.75;
   }
 
   return {
@@ -146,6 +149,7 @@ export function sprintForecast(params: {
       backlogPoints,
       averageVelocity: Math.round(avgVelocity * 10) / 10,
       requiredSprints: Math.round(requiredSprints * 10) / 10,
+      optimisticSprints: Math.round(optimisticSprints * 10) / 10,
       pessimisticSprints: Math.round(pessimisticSprints * 10) / 10,
       hoursPerPoint: Math.round(conversionFactor * 100) / 100,
       totalHours: Math.round(totalHours * 10) / 10,
@@ -422,6 +426,12 @@ export function monteCarloSim(
   const durations: number[] = [];
   const taskOverruns = new Map<string, number>();
 
+  // Track running median at two checkpoints for convergence detection
+  const quarterRuns: number[] = [];
+  const threeQuarterRuns: number[] = [];
+  const checkpoint1 = Math.floor(iterations * 0.25);
+  const checkpoint2 = Math.floor(iterations * 0.75);
+
   for (let i = 0; i < iterations; i++) {
     let total = 0;
     for (const task of tasks) {
@@ -433,6 +443,8 @@ export function monteCarloSim(
       }
     }
     durations.push(total);
+    if (i === checkpoint1) quarterRuns.push(...durations);
+    if (i === checkpoint2) threeQuarterRuns.push(...durations);
   }
 
   durations.sort((a, b) => a - b);
@@ -454,6 +466,13 @@ export function monteCarloSim(
   const p50Val = p(0.5);
   const criticalTarget = p(0.8);
 
+  // Convergence: compare running p50 at 25% vs 75% of iterations
+  quarterRuns.sort((a, b) => a - b);
+  threeQuarterRuns.sort((a, b) => a - b);
+  const earlyP50 = quarterRuns.length > 0 ? quarterRuns[Math.floor(quarterRuns.length * 0.5)] ?? 0 : p50Val;
+  const lateP50 = threeQuarterRuns.length > 0 ? threeQuarterRuns[Math.floor(threeQuarterRuns.length * 0.5)] ?? 0 : p50Val;
+  const converged = p50Val > 0 ? Math.abs(earlyP50 - lateP50) / p50Val < 0.10 : true;
+
   return {
     p10: String(Math.round(p(0.1) * 100) / 100),
     p50: String(Math.round(p50Val * 100) / 100),
@@ -461,6 +480,7 @@ export function monteCarloSim(
     p95: String(Math.round(p(0.95) * 100) / 100),
     estimatedHours: Math.round(p50Val * 8 * 100) / 100,
     criticalPathProbability: Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100) / 100,
+    converged,
     riskEvents,
     humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days. Probability of meeting p80 target: ${Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100)}%.`,
   };

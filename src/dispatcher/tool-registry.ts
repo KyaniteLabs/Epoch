@@ -206,6 +206,7 @@ const sprintOutput = {
     backlogPoints: { type: "number" },
     averageVelocity: { type: "number" },
     requiredSprints: { type: "number" },
+    optimisticSprints: { type: "number" },
     pessimisticSprints: { type: "number" },
     hoursPerPoint: { type: "number" },
     totalHours: { type: "number" },
@@ -234,6 +235,7 @@ const monteCarloOutput = {
     p80: { type: "string", description: "80th percentile" },
     p95: { type: "string", description: "95th percentile (conservative)" },
     criticalPathProbability: { type: "number" },
+    converged: { type: "boolean", description: "Whether p50 converged between iteration halves" },
     riskEvents: {
       type: "array",
       items: {
