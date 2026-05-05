@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PublicBenchmark",
+  "description": "Aggregated, anonymized estimation benchmark published by Epoch. Contains no individual records — only statistical summaries by task type.",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "total_records", "unique_contributors", "by_task_type"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this benchmark was generated"
+    },
+    "source": {
+      "type": "string",
+      "description": "Data sources included in this benchmark"
+    },
+    "total_records": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of estimate/actual pairs in the dataset"
+    },
+    "unique_contributors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of distinct anonymized contributors"
+    },
+    "by_task_type": {
+      "type": "object",
+      "description": "Aggregated statistics grouped by task type",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sample_count", "median_estimated_hours", "median_actual_hours", "median_ratio"],
+        "properties": {
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "median_estimated_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "median_actual_hours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "median_ratio": {
+            "type": "number",
+            "description": "Median of actual/estimated ratio"
+          },
+          "mean_ratio": {
+            "type": "number",
+            "description": "Mean of actual/estimated ratio"
+          },
+          "p25_ratio": {
+            "type": "number",
+            "description": "25th percentile of actual/estimated ratio"
+          },
+          "p75_ratio": {
+            "type": "number",
+            "description": "75th percentile of actual/estimated ratio"
+          },
+          "complexity_breakdown": {
+            "type": "object",
+            "description": "Optional breakdown by complexity level",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "sample_count": { "type": "integer" },
+                "median_ratio": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "by_tool": {
+      "type": "object",
+      "description": "Aggregated statistics grouped by estimation tool",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sample_count", "median_ratio"],
+        "properties": {
+          "sample_count": { "type": "integer" },
+          "median_ratio": { "type": "number" }
+        }
+      }
+    }
+  }
+}

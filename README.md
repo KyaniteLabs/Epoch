@@ -611,6 +611,25 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
 | `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per IP (HTTP only) |
 | `EPOCH_SOURCE` | _(none)_ | Project/source tag attached to estimate records |
+| `EPOCH_TELEMETRY` | `0` | Set to `1` to enable anonymous telemetry. See [Telemetry & Privacy](#telemetry--privacy). |
+
+## Telemetry & Privacy
+
+Epoch can share **anonymized** estimate/actual pairs to improve accuracy for all users. This is **off by default** and requires explicit opt-in.
+
+```bash
+epoch telemetry enable     # Opt in (shows exactly what will be shared)
+epoch telemetry preview    # Preview anonymized data before enabling
+epoch telemetry status     # Show current settings
+epoch telemetry disable    # Opt out
+epoch telemetry export     # Export all local data as anonymized JSON
+```
+
+**What is shared:** task type, complexity, tool name, estimated hours, actual hours, ratio, date (YYYY-MM-DD only).
+
+**What is NEVER shared:** project names, notes, team IDs, IP addresses, timestamps with time-of-day, source code, descriptions.
+
+See [Privacy Policy](docs/PRIVACY.md) and [Telemetry Documentation](docs/TELEMETRY.md) for full details.
 
 ## License
 
