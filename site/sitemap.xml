@@ -7,15 +7,39 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://kyanitelabs.github.io/Epoch/docs/PRIVACY.md</loc>
+    <loc>https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md</loc>
     <lastmod>2026-05-05</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://kyanitelabs.github.io/Epoch/docs/TELEMETRY.md</loc>
+    <loc>https://github.com/KyaniteLabs/Epoch/blob/main/docs/TELEMETRY.md</loc>
     <lastmod>2026-05-05</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://github.com/KyaniteLabs/Epoch/blob/main/docs/llms.txt</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://github.com/KyaniteLabs/Epoch/blob/main/CONTRIBUTING-data.md</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://github.com/KyaniteLabs/Epoch/blob/main/README.md</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://kyanitelabs.github.io/Epoch/llms-full.txt</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>

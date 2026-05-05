@@ -1,0 +1,242 @@
+# Epoch — AI Agent Time Estimation Server
+
+> Epoch is an MCP (Model Context Protocol) server providing 24 structured tools for
+> time estimation, cost analysis, and schedule risk assessment. Built for AI agents
+> (Claude, GPT, Gemini) and developer workflows.
+
+Keywords: mcp-server, time-estimation, pert, cocomo-ii, monte-carlo, cost-estimation,
+sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, windsurf, llm
+
+Install: claude mcp add epoch -- npx @puenteworks/epoch
+npm: https://www.npmjs.com/package/@puenteworks/epoch
+GitHub: https://github.com/KyaniteLabs/Epoch
+
+---
+
+# Epoch — Time Estimation MCP Server
+
+> @puenteworks/epoch v0.2.1 — 24 structured tools for grounded time estimation
+
+## What
+
+Epoch is a Model Context Protocol (MCP) server that gives AI agents data-driven time estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into callable tools with built-in feedback loops for self-improvement.
+
+## Why
+
+AI agents cannot perceive time. Events 10 tokens apart have identical encodings whether 1 second or 1 hour apart. LLMs replicate and amplify human optimism bias through agentic overconfidence. Epoch solves this by providing structured external tools — not prompt hacks — that give AI grounded temporal reasoning.
+
+A UPenn negotiation study showed 4% deal closure under wall-clock time limits vs 99% under turn-based limits. Injecting explicit time state into prompts produced an 8x improvement. Epoch makes time legible to LLMs through 24 callable tools.
+
+## Architecture
+
+Six layers, 24 tools:
+
+| Layer | Tools | Purpose |
+|-------|-------|---------|
+| Temporal (6) | get_current_time, convert_timezone, parse_duration, time_math, add_business_days, count_business_days | Time grounding, timezone, calendar math |
+| Estimation (5) | pert_estimate, cocomo_estimate, sprint_forecast, critical_path, monte_carlo_schedule | Algorithmic time/effort estimation |
+| Analytics (4) | reference_class_estimate, calibrate_estimates, token_time_bridge, token_cost_estimate | Data-driven estimation from history |
+| Validation (3) | cocomo_validate, cocomo_ground_truth, accuracy_trend | Model validation and accuracy tracking |
+| Risk (2) | schedule_risk, compare_models | Schedule risk and model comparison |
+| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals |
+
+## Tool Reference
+
+### Layer 1 — Temporal
+
+#### get_current_time
+Returns current date/time in any IANA timezone.
+- `timezone` (string, default "UTC") — IANA timezone identifier
+
+#### convert_timezone
+Converts an ISO-8601 timestamp to a target timezone.
+- `timestamp` (string, required) — ISO-8601 timestamp
+- `target_tz` (string, required) — Target IANA timezone
+
+#### parse_duration
+Parses "2h30m", "1d6h", "45m" into seconds.
+- `duration_string` (string, required) — Duration string
+
+#### time_math
+Compound time operations: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.
+- `operation` (string, required) — Operation name
+- `operands` (object) — Operation-specific parameters
+
+#### add_business_days
+Adds N business days, skipping weekends and holidays.
+- `start_date` (string, required) — ISO date
+- `days` (number, required) — Business days to add
+- `country` (string, default "US") — ISO-3166 country code (US, UK, FR, DE, JP)
+
+#### count_business_days
+Counts business days between two dates.
+- `start_date` (string, required) — ISO date
+- `end_date` (string, required) — ISO date
+- `country` (string, default "US") — ISO-3166 country code
+
+### Layer 2 — Estimation
+
+#### pert_estimate
+PERT three-point estimation (O + 4M + P) / 6.
+- `optimistic` (number, required) — Best-case duration
+- `most_likely` (number, required) — Most probable duration
+- `pessimistic` (number, required) — Worst-case duration
+- `unit` (enum: hours|days|weeks|months, default "hours")
+- Returns: expected, stdDeviation, confidence95, confidence99, urgencyCategory, feedbackToken
+
+#### cocomo_estimate
+COCOMO II with LLM-specific cost drivers.
+- `kloc` (number, required) — Thousands of lines of code
+- `reasoning_complexity` (number, default 1.0, range 0.5-2.0)
+- `context_completeness` (number, default 1.0, range 0.5-2.0)
+- `transformation_impact` (number, default 1.0, range 0.5-2.0)
+- `iterative_cycles` (number, default 1.0, range 0.5-10.0)
+- `human_oversight` (number, default 1.0, range 0.5-2.0)
+- Returns: personMonthsNominal, personMonthsLlmAdjusted, effortMultipliers, feedbackToken
+
+#### sprint_forecast
+Sprint completion forecast from velocity history.
+- `backlog_points` (number, required) — Total backlog story points
+- `velocity_history` (number[], required) — Past sprint velocities
+- `sprint_length_days` (number, default 14)
+- `hours_per_sprint` (number, default 300)
+- Returns: requiredSprints, pessimisticSprints, completionDays, feedbackToken
+
+#### critical_path
+CPM with merge-bias adjustment.
+- `tasks` (array of {name, duration, predecessors}, required)
+- Returns: critical_path, slack_per_task, total_duration, merge_bias_adjustment
+
+#### monte_carlo_schedule
+Monte Carlo simulation for schedule risk.
+- `tasks` (array of {name, optimistic, mostLikely, pessimistic}, required)
+- `iterations` (number, default 10000)
+- `seed` (number, optional) — For reproducibility
+- Returns: p10, p50, p80, p95, riskEvents, feedbackToken
+
+### Layer 3 — Analytics
+
+#### reference_class_estimate
+Reference class forecasting with historical correction.
+- `task_type` (enum: feature|bugfix|refactor|migration|infrastructure|documentation|testing|design, required)
+- `complexity` (number 1-5, required)
+- `scope` (enum: small|medium|large|xl, optional) — Inferred from complexity if omitted
+- `team_id` (string, optional)
+- `ai_native` (number 0.0-1.0, default 0.0) — AI-native ratio; values >= 0.7 use AI-native scope baselines
+- Returns: rawEstimate, correctedEstimate, correctionFactor, sampleSize, scopeUsed, adjustedEstimate, developerProfile, feedbackToken
+
+#### calibrate_estimates
+Compute team-specific correction factors.
+- `team_id` (string, required)
+- `period_days` (number, default 90)
+- `window_size` (number, default 5)
+- Returns: correctionFactor, accuracyTrend, recommendations
+
+#### token_time_bridge
+Map token budgets to wall-clock time for 12 LLM models.
+- `tokens` (number, required)
+- `model` (string, required) — Model identifier
+- `tool_calls` (number, default 0)
+- `reasoning_depth` (enum: shallow|moderate|deep, default "moderate")
+- Returns: estimatedSeconds, estimatedMinutes, confidence, breakdown, feedbackToken
+
+#### token_cost_estimate
+Token-to-time AND dollar cost estimation.
+- `tokens` (number, required)
+- `model` (string, required)
+- `tool_calls` (number, default 0)
+- `reasoning_depth` (enum, default "moderate")
+- Returns: time + cost breakdown, feedbackToken
+
+### Layer 4 — Validation
+
+#### cocomo_validate
+Validate COCOMO against 195 historical projects.
+- `dataset_filter` (string[], optional) — Datasets to include
+
+#### cocomo_ground_truth
+Validate 6 COCOMO variants against 240 projects.
+- `dataset_filter` (string[], optional)
+
+#### accuracy_trend
+Sliding-window accuracy tracking vs industry baseline.
+- `window_size` (number, default 50)
+- `team_id` (string, optional)
+- Returns: windows, overallTrend, currentMape, improvementVsIndustry
+
+### Layer 5 — Risk
+
+#### schedule_risk
+Schedule risk assessment from historical accuracy.
+- `estimated_hours` (number, required)
+- `task_type` (string, optional)
+- `team_id` (string, optional)
+- Returns: riskLevel, confidenceIntervals, recommendations
+
+#### compare_models
+Side-by-side model comparison for a token budget.
+- `tokens` (number, required)
+- `tool_calls` (number, default 0)
+- `reasoning_depth` (enum, default "moderate")
+- Returns: ranked model list with time and cost estimates
+
+### Layer 6 — Feedback
+
+#### record_actual
+Record actual hours for a previous estimate.
+- `estimate_id` (string, required) — From feedbackToken in estimate response
+- `actual_hours` (number, required, must be > 0)
+- `notes` (string, optional)
+
+#### get_pending_estimates
+List estimates awaiting actuals.
+- `limit` (number, default 20, max 100)
+
+#### batch_record_actuals
+Bulk feedback submission (1-500 entries).
+- `entries` (array of {estimate_id, actual_hours, notes?}, required)
+
+#### feedback_health
+Health report on the feedback loop.
+- No parameters
+- Returns: totalEstimates, totalActuals, matchRate, byTool, byTaskType, selfImprovement
+
+## Interfaces
+
+- **MCP**: `npx @puenteworks/epoch` (stdio transport) — Claude Code, Cursor, VS Code, Windsurf
+- **CLI**: `npx epoch <command> [options]`
+- **HTTP**: `http://localhost:3000/v1/tools/<tool-name>` (POST with JSON body)
+- **AI Manifest**: `/.well-known/ai-plugin.json`
+- **OpenAPI**: `/openapi.json` (OpenAPI 3.1 spec)
+
+## Quick Start
+
+1. Install: `claude mcp add epoch -- npx @puenteworks/epoch`
+2. Ask any time question: "How long will a 15K LOC project take?"
+3. Get grounded estimates with PERT, COCOMO II, Monte Carlo, and more
+
+## Self-Improvement
+
+Every estimate generates a feedback token. Record actual hours via `record_actual` and Epoch auto-calibrates correction factors across task types, complexity levels, and tools. After 5+ matched pairs per task type, self-improvement kicks in automatically.
+
+## Telemetry
+
+Epoch can optionally share anonymized estimate/actual pairs to improve accuracy for all users.
+Telemetry is OFF by default. Enable with: `epoch telemetry enable`
+
+What is shared: task_type, complexity, tool, estimated_hours, actual_hours, ratio, date (YYYY-MM-DD only).
+What is NOT shared: project names, notes, team IDs, IP addresses, timestamps with time-of-day.
+
+Environment variables:
+- `EPOCH_TELEMETRY` — set to "1" to enable, "0" to disable
+- `PORT` — HTTP server port (default 3000)
+- `EPOCH_RATE_LIMIT` — Requests per minute (default 60)
+- `EPOCH_DATA_DIR` — Data directory (default ~/.epoch)
+- `EPOCH_TRUST_PROXY` — Trust x-forwarded-for header (default 0)
+
+## Data
+
+Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 896 tests passing, 97% statement coverage.
+
+Privacy: https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md
+Telemetry: https://github.com/KyaniteLabs/Epoch/blob/main/docs/TELEMETRY.md

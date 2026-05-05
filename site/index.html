@@ -3,20 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Epoch — Time Estimation for AI Agents</title>
-  <meta name="description" content="Give AI agents the ability to estimate timelines, calculate costs, and predict deadlines. 24 tools. One command.">
+  <title>Epoch — Time Estimation for AI Agents | 24 MCP Tools</title>
+  <meta name="description" content="Stop guessing timelines. Get data-driven estimates your AI can actually use. 24 MCP tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, and cost estimation. 30-second install.">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="Epoch — Time Estimation for AI Agents">
-  <meta property="og:description" content="Give AI the ability to estimate timelines, calculate costs, and predict deadlines. 24 tools. One command.">
+  <meta property="og:title" content="Epoch — Stop Guessing Timelines">
+  <meta property="og:description" content="24 MCP tools that give AI agents data-driven time estimates. PERT, COCOMO II, Monte Carlo, sprint forecasting. Works with Claude, Cursor, and any MCP client.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://kyanitelabs.github.io/Epoch/">
+  <meta property="og:site_name" content="Epoch">
+  <meta property="og:locale" content="en_US">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Epoch — Time Estimation for AI Agents">
-  <meta name="twitter:description" content="Give AI the ability to estimate timelines, calculate costs, and predict deadlines. 24 tools. One command.">
+  <meta name="twitter:title" content="Epoch — Stop Guessing Timelines">
+  <meta name="twitter:description" content="24 MCP tools that give AI agents data-driven time estimates. 30-second install.">
+  <meta name="twitter:site" content="@KyaniteLabs">
 
   <!-- SEO Meta Tags -->
-  <meta name="keywords" content="MCP server, time estimation, AI agent, PERT, COCOMO II, Monte Carlo, Claude Code, cost estimation, sprint forecasting, project planning, LLM tools, token cost, schedule risk">
+  <meta name="keywords" content="MCP server, time estimation, AI agent, PERT, COCOMO II, Monte Carlo, Claude Code, cost estimation, sprint forecasting, project planning, LLM tools, token cost, schedule risk, Cursor, Windsurf, VS Code, software estimation">
   <link rel="canonical" href="https://kyanitelabs.github.io/Epoch/">
   <meta name="robots" content="index, follow">
   <meta name="author" content="Kyanite Labs">
@@ -63,18 +66,26 @@
       },
       {
         "@type": "Question",
-        "name": "What estimation methods does Epoch use?",
+        "name": "Does Epoch work with Cursor, Windsurf, and VS Code?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Epoch uses PERT three-point estimation, COCOMO II, Monte Carlo simulation, reference class forecasting, critical path method, and sprint velocity forecasting."
+          "text": "Yes. Epoch works with any MCP-compatible client including Claude Code, Cursor, Windsurf, VS Code, and any tool supporting the Model Context Protocol."
         }
       },
       {
         "@type": "Question",
-        "name": "Does Epoch work with AI agents other than Claude?",
+        "name": "Is Epoch really free?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Epoch works with any MCP-compatible client including Cursor, VS Code, Windsurf, and any tool supporting the Model Context Protocol."
+          "text": "Yes. Epoch is MIT-licensed open source. Free forever. No usage limits, no API keys required, no lock-in."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does it slow down my AI?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. Epoch runs as an external MCP tool. Tool calls add milliseconds, not seconds. Your AI calls the tools only when it needs an estimate."
         }
       },
       {
@@ -84,8 +95,77 @@
           "@type": "Answer",
           "text": "Epoch has a self-improvement engine that records estimate-vs-actual feedback, computes correction factors per task type and complexity, and automatically applies them to future estimates."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "What estimation methods does Epoch use?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Epoch uses PERT three-point estimation, COCOMO II, Monte Carlo simulation, reference class forecasting, critical path method, and sprint velocity forecasting."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What if my team is remote across timezones?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Epoch has full timezone support with IANA timezone conversion, holiday-aware business day calculations for 5 countries (US, UK, FR, DE, JP), and date arithmetic built in."
+        }
       }
     ]
+  }
+  </script>
+
+  <!-- JSON-LD: HowTo -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "Install and Use Epoch for AI Time Estimation",
+    "description": "Get data-driven time estimates from your AI agent in 30 seconds.",
+    "totalTime": "PT30S",
+    "step": [
+      {
+        "@type": "HowToStep",
+        "name": "Install Epoch",
+        "text": "Run: claude mcp add epoch -- npx @puenteworks/epoch",
+        "position": 1
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Ask a time question",
+        "text": "Ask your AI any time question: 'How long will this project take?' or 'What's the PERT estimate for this sprint?'",
+        "position": 2
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Get grounded estimates",
+        "text": "Receive data-driven estimates using PERT, COCOMO II, Monte Carlo, and other proven methods.",
+        "position": 3
+      }
+    ]
+  }
+  </script>
+
+  <!-- JSON-LD: Organization -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Kyanite Labs",
+    "url": "https://github.com/KyaniteLabs",
+    "logo": "https://kyanitelabs.github.io/Epoch/",
+    "sameAs": ["https://github.com/KyaniteLabs"]
+  }
+  </script>
+
+  <!-- JSON-LD: WebSite -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Epoch",
+    "url": "https://kyanitelabs.github.io/Epoch/"
   }
   </script>
 
@@ -406,6 +486,62 @@
       transform: translateY(0);
     }
 
+    .pain-item {
+      padding: 20px 24px;
+      border-radius: 12px;
+      background: rgba(255,77,106,0.03);
+      border: 1px solid rgba(255,77,106,0.08);
+      transition: border-color 200ms ease-out;
+    }
+    .pain-item:hover {
+      border-color: rgba(255,77,106,0.15);
+    }
+
+    .value-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      transition: border-color 200ms ease-out, box-shadow 200ms ease-out;
+    }
+    .value-card:hover {
+      border-color: rgba(0,229,160,0.2);
+      box-shadow: 0 8px 32px rgba(0,229,160,0.06);
+    }
+
+    .faq-item {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 200ms ease-out;
+    }
+    .faq-item:hover {
+      border-color: rgba(0,229,160,0.15);
+    }
+    .faq-question {
+      padding: 20px 24px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+    }
+    .faq-answer {
+      padding: 0 24px 20px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .guarantee-card {
+      background: linear-gradient(135deg, rgba(0,229,160,0.04), rgba(0,184,212,0.02));
+      border: 1px solid rgba(0,229,160,0.15);
+      border-radius: 20px;
+      padding: 32px;
+      text-align: center;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .card-hover:hover { transform: none; }
       .cta-primary:hover { transform: none; }
@@ -475,26 +611,29 @@
   </nav>
 
   <main id="main">
-    <!-- Hero -->
+    <!-- 1. HERO HOOK -->
     <section class="hero-mesh grid-pattern relative pt-36 pb-32 px-6" style="min-height: 90vh; display: flex; align-items: center;">
       <div class="max-w-5xl mx-auto text-center relative z-10">
         <div class="inline-flex items-center gap-2 mb-8 badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
           <span class="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
-          MCP Server &middot; Open Source &middot; MIT
+          Open Source &middot; MIT License &middot; 896 Tests
         </div>
-        <h1 class="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] mb-8">
-          AI can write code.<br>
-          <span class="glow-text">But it can't tell time.</span>
+        <h1 class="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] mb-4">
+          Stop guessing<br>
+          <span class="glow-text">timelines.</span>
         </h1>
-        <p class="text-lg md:text-xl text-muted max-w-2xl mx-auto mb-12 leading-relaxed">
-          Epoch gives AI agents the ability to estimate timelines, calculate costs, and predict deadlines &mdash; with one command.
+        <p class="text-2xl md:text-3xl font-bold text-fg/80 mb-4">
+          Get data-driven estimates your AI can actually use.
+        </p>
+        <p class="text-base md:text-lg text-muted max-w-2xl mx-auto mb-12 leading-relaxed">
+          24 MCP tools. 30-second install. Works with Claude, Cursor, Windsurf, and any MCP client.
         </p>
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <a href="#quickstart" class="cta-primary">
-            Get Started in 30 Seconds
+            Install Epoch &mdash; It's Free
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </a>
-          <a href="#demo" class="cta-secondary">See it in action</a>
+          <a href="#demo" class="cta-secondary">See the demo</a>
         </div>
 
         <div class="max-w-lg mx-auto terminal" style="box-shadow: 0 0 60px rgba(0,229,160,0.06);">
@@ -513,76 +652,116 @@
 
     <div class="section-line"></div>
 
-    <!-- Problem / Solution -->
+    <!-- 2. PAIN AMPLIFICATION -->
     <section id="why" class="py-28 px-6">
-      <div class="max-w-7xl mx-auto">
-        <div class="text-center mb-20 reveal">
-          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">The Problem</p>
-          <h2 class="text-4xl md:text-5xl font-bold mb-6">AI agents hallucinate timelines</h2>
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-16 reveal">
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Sound Familiar?</p>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">You've tried everything else</h2>
           <p class="text-muted max-w-2xl mx-auto leading-relaxed text-lg">
-            They're incredibly powerful. They write code, debug systems, automate workflows. But ask "how long will this take?" and they guess &mdash; badly.
+            Your AI is powerful. But when it comes to "how long will this take?" &mdash; it guesses. Badly.
           </p>
         </div>
-        <div class="grid md:grid-cols-2 gap-8 lg:gap-12 reveal">
+        <div class="grid md:grid-cols-3 gap-6 mb-12 reveal">
+          <div class="pain-item">
+            <p class="text-danger font-semibold mb-2">Asking AI directly</p>
+            <p class="text-muted text-sm leading-relaxed">"This will take 2 hours." Two days later, you're still waiting. LLMs hallucinate timelines because they can't perceive time.</p>
+          </div>
+          <div class="pain-item">
+            <p class="text-danger font-semibold mb-2">Prompt engineering</p>
+            <p class="text-muted text-sm leading-relaxed">You craft the perfect estimation prompt. It works once. The next time, it gives a completely different answer. Inconsistent and unreliable.</p>
+          </div>
+          <div class="pain-item">
+            <p class="text-danger font-semibold mb-2">Gut feelings</p>
+            <p class="text-muted text-sm leading-relaxed">Software projects run 2&ndash;10x over estimate. LLMs replicate and amplify human optimism bias. The result: agentic overconfidence.</p>
+          </div>
+        </div>
+        <div class="text-center reveal">
+          <div class="inline-flex items-center gap-3 px-6 py-4 rounded-2xl" style="background: var(--surface); border: 1px solid var(--border);">
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422A12.083 12.083 0 0119 12.77V19l-7 4-7-4v-6.23a12.083 12.083 0 011.84-2.192L12 14z"/></svg>
+            </div>
+            <p class="text-sm text-muted text-left leading-relaxed">
+              <strong class="text-fg">Research backs this up:</strong> A UPenn study showed 4% deal closure under wall-clock limits vs 99% under turn-based limits. Injecting explicit time state produced an <strong class="text-accent">8x improvement</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-line"></div>
+
+    <!-- 3. ORIGIN STORY / THE SOLUTION -->
+    <section class="py-28 px-6">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-16 reveal">
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">The Solution</p>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">40 years of estimation research,<br>packaged for AI</h2>
+          <p class="text-muted max-w-2xl mx-auto leading-relaxed text-lg">
+            We studied PERT, COCOMO II, Monte Carlo, reference class forecasting &mdash; every major estimation method &mdash; and distilled them into 24 structured tools that AI agents can call like functions.
+          </p>
+        </div>
+        <div class="grid md:grid-cols-2 gap-8 reveal">
           <div class="p-8 rounded-2xl" style="background: linear-gradient(135deg, rgba(255,77,106,0.04), rgba(255,77,106,0.01)); border: 1px solid rgba(255,77,106,0.1);">
             <div class="badge mb-6" style="background: rgba(255,77,106,0.08); border: 1px solid rgba(255,77,106,0.15); color: #FF4D6A;">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
               Without Epoch
             </div>
-            <p class="text-fg/80 text-lg leading-relaxed mb-6">
-              Your AI confidently says <em>"this will take 2 hours."</em> Two days later, you're still waiting.
-            </p>
             <ul class="space-y-4">
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-danger mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                <span>AI agents estimate in token budgets, not minutes</span>
+                <span>AI estimates in token budgets, not minutes</span>
               </li>
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-danger mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                <span>Events 10 tokens apart have identical encodings whether 1 second or 1 hour apart</span>
+                <span>Events 10 tokens apart are identical whether 1 second or 1 hour apart</span>
               </li>
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-danger mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
-                <span>LLMs replicate and amplify human optimism bias through agentic overconfidence</span>
+                <span>No feedback loop &mdash; the same errors repeat forever</span>
               </li>
             </ul>
           </div>
-
           <div class="p-8 rounded-2xl glow-border" style="background: linear-gradient(135deg, rgba(0,229,160,0.04), rgba(0,184,212,0.02)); border: 1px solid rgba(0,229,160,0.1);">
             <div class="badge mb-6" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15); color: #00E5A0;">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
               With Epoch
             </div>
-            <p class="text-fg/80 text-lg leading-relaxed mb-6">
-              Epoch gives AI <strong class="text-fg">grounded estimates</strong> using 40+ years of software engineering research, packaged into 24 callable tools.
-            </p>
             <ul class="space-y-4">
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                <span>Structured external tools &mdash; not prompt hacks</span>
+                <span><strong class="text-fg">Grounded estimates</strong> using proven algorithms, not guesses</span>
               </li>
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                <span>24 MCP tools covering time, dates, estimation, analytics, and cost</span>
+                <span><strong class="text-fg">30-second install</strong>, zero config, no API keys</span>
               </li>
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                <span>Works with Claude, Cursor, VS Code, and any MCP client</span>
+                <span><strong class="text-fg">Self-improving</strong> &mdash; gets more accurate with every estimate</span>
               </li>
             </ul>
           </div>
         </div>
-
-        <div class="mt-12 p-6 rounded-2xl reveal" style="background: var(--surface); border: 1px solid var(--border);">
-          <div class="flex items-start gap-4">
-            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422A12.083 12.083 0 0119 12.77V19l-7 4-7-4v-6.23a12.083 12.083 0 011.84-2.192L12 14z"/></svg>
+        <!-- Value Equation -->
+        <div class="mt-12 p-8 rounded-2xl text-center reveal" style="background: var(--surface); border: 1px solid var(--border);">
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">The Value Equation</p>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div>
+              <p class="text-fg font-bold mb-1">Dream Outcome</p>
+              <p class="text-muted text-sm">Estimates your team trusts</p>
             </div>
             <div>
-              <p class="text-fg font-semibold text-sm mb-1">Research-backed approach</p>
-              <p class="text-muted text-sm leading-relaxed">
-                A UPenn negotiation study showed 4% deal closure under wall-clock time limits vs 99% under turn-based limits. Injecting explicit time state into prompts produced an 8x improvement. Epoch makes time legible to LLMs through structured external tools.
-              </p>
+              <p class="text-fg font-bold mb-1">Perceived Likelihood</p>
+              <p class="text-muted text-sm">COCOMO II, PERT, Monte Carlo &mdash; proven methods</p>
+            </div>
+            <div>
+              <p class="text-fg font-bold mb-1">Time Delay</p>
+              <p class="text-muted text-sm">30-second install, instant results</p>
+            </div>
+            <div>
+              <p class="text-fg font-bold mb-1">Effort</p>
+              <p class="text-muted text-sm">AI calls the tools automatically, zero config</p>
             </div>
           </div>
         </div>
@@ -591,7 +770,7 @@
 
     <div class="section-line"></div>
 
-    <!-- Demo -->
+    <!-- 4. LIVE DEMO -->
     <section id="demo" class="py-28 px-6">
       <div class="max-w-4xl mx-auto">
         <div class="text-center mb-16 reveal">
@@ -646,12 +825,12 @@
 
     <div class="section-line"></div>
 
-    <!-- 5-Layer Architecture -->
+    <!-- 5. VALUE STACK -->
     <section id="features" class="py-28 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="text-center mb-16 reveal">
-          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Architecture</p>
-          <h2 class="text-4xl md:text-5xl font-bold mb-6">5 layers of temporal intelligence</h2>
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">What You Get</p>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">24 tools. 6 layers. One install.</h2>
           <p class="text-muted max-w-2xl mx-auto leading-relaxed text-lg">
             From basic time operations to Monte Carlo simulation. Each layer builds on the last.
           </p>
@@ -661,7 +840,7 @@
             <div class="layer-badge">L1</div>
             <div class="flex-1">
               <h3 class="font-semibold text-lg mb-1">Time & Dates</h3>
-              <p class="text-muted text-sm">Current time in any timezone, timezone conversion, duration parsing, date arithmetic</p>
+              <p class="text-muted text-sm">Never calculate timezone offsets again. Current time, conversion, duration parsing, date arithmetic.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
               <span class="tool-tag">get_current_time</span>
@@ -674,7 +853,7 @@
             <div class="layer-badge">L2</div>
             <div class="flex-1">
               <h3 class="font-semibold text-lg mb-1">Business Days & Holidays</h3>
-              <p class="text-muted text-sm">Working day calculations, holiday awareness (US, UK, FR, DE, JP), urgency classification</p>
+              <p class="text-muted text-sm">Holiday-aware scheduling for 5 countries (US, UK, FR, DE, JP). Skip weekends automatically.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
               <span class="tool-tag">add_business_days</span>
@@ -684,8 +863,8 @@
           <div class="layer-bar">
             <div class="layer-badge">L3</div>
             <div class="flex-1">
-              <h3 class="font-semibold text-lg mb-1">How Long Will It Take?</h3>
-              <p class="text-muted text-sm">PERT three-point estimation, COCOMO II (LLM-adapted), sprint velocity, critical path method</p>
+              <h3 class="font-semibold text-lg mb-1">Estimation Engine</h3>
+              <p class="text-muted text-sm">PERT three-point, COCOMO II (LLM-adapted), sprint velocity, critical path method.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
               <span class="tool-tag">pert_estimate</span>
@@ -697,8 +876,8 @@
           <div class="layer-bar">
             <div class="layer-badge">L4</div>
             <div class="flex-1">
-              <h3 class="font-semibold text-lg mb-1">Getting Better Over Time</h3>
-              <p class="text-muted text-sm">Reference class forecasting, estimation accuracy tracking, historical data calibration</p>
+              <h3 class="font-semibold text-lg mb-1">Self-Improving</h3>
+              <p class="text-muted text-sm">Reference class forecasting, calibration from historical data. Gets more accurate with every estimate.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
               <span class="tool-tag">reference_class_estimate</span>
@@ -709,11 +888,25 @@
             <div class="layer-badge">L5</div>
             <div class="flex-1">
               <h3 class="font-semibold text-lg mb-1">Cost & Risk</h3>
-              <p class="text-muted text-sm">Monte Carlo simulation, token-to-time bridge, planning fallacy correction, team velocity calibration</p>
+              <p class="text-muted text-sm">Monte Carlo simulation, token-to-time bridge for 12 LLM models, model comparison, schedule risk.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
-              <span class="tool-tag">token_time_bridge</span>
               <span class="tool-tag">monte_carlo_schedule</span>
+              <span class="tool-tag">token_time_bridge</span>
+              <span class="tool-tag">token_cost_estimate</span>
+              <span class="tool-tag">compare_models</span>
+            </div>
+          </div>
+          <div class="layer-bar">
+            <div class="layer-badge" style="background: linear-gradient(135deg, rgba(255,184,0,0.1), rgba(255,184,0,0.05)); border-color: rgba(255,184,0,0.2); color: #FFB800;">FB</div>
+            <div class="flex-1">
+              <h3 class="font-semibold text-lg mb-1">Feedback Loop</h3>
+              <p class="text-muted text-sm">Close the loop with real data. Record actual hours, track accuracy, auto-correct future estimates.</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+              <span class="tool-tag">record_actual</span>
+              <span class="tool-tag">batch_record_actuals</span>
+              <span class="tool-tag">feedback_health</span>
             </div>
           </div>
         </div>
@@ -722,7 +915,7 @@
 
     <div class="section-line"></div>
 
-    <!-- Metrics -->
+    <!-- 6. SOCIAL PROOF (Real Signals) -->
     <section class="py-28 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6 reveal">
@@ -743,88 +936,22 @@
             <div class="text-sm text-muted font-medium">Model Calibrations</div>
           </div>
         </div>
-      </div>
-    </section>
-
-    <div class="section-line"></div>
-
-    <!-- Tool Reference -->
-    <section id="tools" class="py-28 px-6">
-      <div class="max-w-7xl mx-auto">
-        <div class="text-center mb-16 reveal">
-          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Full Reference</p>
-          <h2 class="text-4xl md:text-5xl font-bold mb-6">All 24 tools, one API</h2>
-          <p class="text-muted max-w-2xl mx-auto leading-relaxed">
-            Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations.
-          </p>
-        </div>
-        <div class="rounded-2xl overflow-hidden reveal" style="background: var(--surface); border: 1px solid var(--border);">
-          <table class="w-full text-sm">
-            <thead>
-              <tr style="background: var(--surface2);">
-                <th class="px-5 py-4 font-mono font-semibold text-accent text-left">Tool</th>
-                <th class="px-5 py-4 font-semibold text-fg/80 text-left">Description</th>
-                <th class="px-5 py-4 font-semibold text-fg/80 text-left hidden md:table-cell">Layer</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">get_current_time</td><td class="px-5 py-3 text-muted">Current time in any IANA timezone</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">convert_timezone</td><td class="px-5 py-3 text-muted">Convert ISO-8601 between timezones</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">parse_duration</td><td class="px-5 py-3 text-muted">Parse "2h30m" into structured seconds</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">time_math</td><td class="px-5 py-3 text-muted">6 operations: add_days, diff, format_duration, add_hours, add_minutes, add_weeks</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">add_business_days</td><td class="px-5 py-3 text-muted">Add N working days, skipping weekends and holidays (5 countries)</td><td class="px-5 py-3 text-muted hidden md:table-cell">L2</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">count_business_days</td><td class="px-5 py-3 text-muted">Count working days between two dates</td><td class="px-5 py-3 text-muted hidden md:table-cell">L2</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">pert_estimate</td><td class="px-5 py-3 text-muted">Three-point PERT Beta distribution: E = (O+4M+P)/6</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_estimate</td><td class="px-5 py-3 text-muted">COCOMO II with 5 LLM-adapted cost drivers</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">sprint_forecast</td><td class="px-5 py-3 text-muted">Sprint velocity forecasting with variance-based pessimistic estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">critical_path</td><td class="px-5 py-3 text-muted">CPM with forward/backward pass and merge bias</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-5 py-3 text-muted">Monte Carlo simulation with seeded PRNG, P10-P95 percentiles</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">reference_class_estimate</td><td class="px-5 py-3 text-muted">Reference class forecasting with industry correction factors</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">calibrate_estimates</td><td class="px-5 py-3 text-muted">Team-specific correction factor calibration from historical data</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-5 py-3 text-muted">Map token budgets to wall-clock time for 12 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_cost_estimate</td><td class="px-5 py-3 text-muted">Token cost estimation with input/output breakdown</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">compare_models</td><td class="px-5 py-3 text-muted">Side-by-side comparison across 12 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">accuracy_trend</td><td class="px-5 py-3 text-muted">Sliding-window MAPE tracking over time</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">schedule_risk</td><td class="px-5 py-3 text-muted">Confidence intervals using team MdAPE</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">record_actual</td><td class="px-5 py-3 text-muted">Submit actual hours for a previous estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">feedback_health</td><td class="px-5 py-3 text-muted">Comprehensive feedback data quality report</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <div class="section-line"></div>
-
-    <!-- Self-Improvement -->
-    <section class="py-28 px-6">
-      <div class="max-w-5xl mx-auto reveal">
-        <div class="text-center mb-16">
-          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Self-Improving</p>
-          <h2 class="text-4xl md:text-5xl font-bold mb-6">Gets better the more you use it</h2>
-          <p class="text-muted max-w-2xl mx-auto leading-relaxed text-lg">
-            Every estimate generates a feedback token. Record actual hours and Epoch auto-calibrates correction factors across task types, complexity levels, and tools.
-          </p>
-        </div>
-        <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-3">
-          <div class="p-6 rounded-2xl card-hover text-center min-w-[140px]">
-            <div class="metric-value text-3xl mb-2">369</div>
-            <div class="text-xs text-muted font-medium">Matched Pairs</div>
+        <div class="flex flex-wrap items-center justify-center gap-4 mt-10 reveal">
+          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            MIT License
           </div>
-          <svg class="w-8 h-8 text-accent/30 rotate-90 md:rotate-0 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <div class="p-6 rounded-2xl card-hover text-center min-w-[140px]">
-            <div class="metric-value text-3xl mb-2">6</div>
-            <div class="text-xs text-muted font-medium">Projects</div>
+          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            Open Source
           </div>
-          <svg class="w-8 h-8 text-accent/30 rotate-90 md:rotate-0 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <div class="p-6 rounded-2xl card-hover text-center min-w-[140px]">
-            <div class="metric-value text-3xl mb-2">8</div>
-            <div class="text-xs text-muted font-medium">Task Types</div>
+          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            5,800+ Calibration Samples
           </div>
-          <svg class="w-8 h-8 text-accent/30 rotate-90 md:rotate-0 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          <div class="p-6 rounded-2xl card-hover text-center min-w-[140px]">
-            <div class="text-accent text-3xl font-bold font-mono mb-2">Auto</div>
-            <div class="text-xs text-muted font-medium">Correction</div>
+          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+            30 Test Files
           </div>
         </div>
       </div>
@@ -832,14 +959,14 @@
 
     <div class="section-line"></div>
 
-    <!-- Transparent by Design -->
+    <!-- 8. TRANSPARENCY / GUARANTEE -->
     <section class="py-28 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="text-center mb-16 reveal">
-          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Privacy First</p>
-          <h2 class="text-4xl md:text-5xl font-bold mb-6">Transparent by design</h2>
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">The Guarantee</p>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">Free forever. Open source. No lock-in.</h2>
           <p class="text-muted max-w-2xl mx-auto leading-relaxed text-lg">
-            Every data point is documented. Every record is anonymized. Telemetry is off by default.
+            The code is public. Audit it yourself. Telemetry is off by default. Every data point is documented.
           </p>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 reveal">
@@ -875,7 +1002,7 @@
 
     <div class="section-line"></div>
 
-    <!-- Three Surfaces -->
+    <!-- 9. THREE SURFACES -->
     <section class="py-28 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="text-center mb-16 reveal">
@@ -934,7 +1061,55 @@
 
     <div class="section-line"></div>
 
-    <!-- Quick Start -->
+    <!-- 10. TOOL REFERENCE TABLE -->
+    <section id="tools" class="py-28 px-6">
+      <div class="max-w-7xl mx-auto">
+        <div class="text-center mb-16 reveal">
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Full Reference</p>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">All 24 tools, one API</h2>
+          <p class="text-muted max-w-2xl mx-auto leading-relaxed">
+            Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations.
+          </p>
+        </div>
+        <div class="rounded-2xl overflow-hidden reveal" style="background: var(--surface); border: 1px solid var(--border);">
+          <table class="w-full text-sm">
+            <thead>
+              <tr style="background: var(--surface2);">
+                <th class="px-5 py-4 font-mono font-semibold text-accent text-left">Tool</th>
+                <th class="px-5 py-4 font-semibold text-fg/80 text-left">Description</th>
+                <th class="px-5 py-4 font-semibold text-fg/80 text-left hidden md:table-cell">Layer</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">get_current_time</td><td class="px-5 py-3 text-muted">Current time in any IANA timezone</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">convert_timezone</td><td class="px-5 py-3 text-muted">Convert ISO-8601 between timezones</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">parse_duration</td><td class="px-5 py-3 text-muted">Parse "2h30m" into structured seconds</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">time_math</td><td class="px-5 py-3 text-muted">6 operations: add_days, diff, format_duration, add_hours, add_minutes, add_weeks</td><td class="px-5 py-3 text-muted hidden md:table-cell">L1</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">add_business_days</td><td class="px-5 py-3 text-muted">Add N working days, skipping weekends and holidays (5 countries)</td><td class="px-5 py-3 text-muted hidden md:table-cell">L2</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">count_business_days</td><td class="px-5 py-3 text-muted">Count working days between two dates</td><td class="px-5 py-3 text-muted hidden md:table-cell">L2</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">pert_estimate</td><td class="px-5 py-3 text-muted">Three-point PERT Beta distribution: E = (O+4M+P)/6</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_estimate</td><td class="px-5 py-3 text-muted">COCOMO II with 5 LLM-adapted cost drivers</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">sprint_forecast</td><td class="px-5 py-3 text-muted">Sprint velocity forecasting with variance-based pessimistic estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">critical_path</td><td class="px-5 py-3 text-muted">CPM with forward/backward pass and merge bias</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-5 py-3 text-muted">Monte Carlo simulation with seeded PRNG, P10-P95 percentiles</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">reference_class_estimate</td><td class="px-5 py-3 text-muted">Reference class forecasting with industry correction factors</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">calibrate_estimates</td><td class="px-5 py-3 text-muted">Team-specific correction factor calibration from historical data</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-5 py-3 text-muted">Map token budgets to wall-clock time for 12 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_cost_estimate</td><td class="px-5 py-3 text-muted">Token cost estimation with input/output breakdown</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">compare_models</td><td class="px-5 py-3 text-muted">Side-by-side comparison across 12 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">accuracy_trend</td><td class="px-5 py-3 text-muted">Sliding-window MAPE tracking over time</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">schedule_risk</td><td class="px-5 py-3 text-muted">Confidence intervals using team MdAPE</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">record_actual</td><td class="px-5 py-3 text-muted">Submit actual hours for a previous estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">feedback_health</td><td class="px-5 py-3 text-muted">Comprehensive feedback data quality report</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-line"></div>
+
+    <!-- 11. QUICK START -->
     <section id="quickstart" class="py-28 px-6 hero-mesh">
       <div class="max-w-3xl mx-auto relative z-10">
         <div class="text-center mb-16 reveal">
@@ -992,9 +1167,9 @@
         </div>
 
         <div class="mt-16 text-center reveal">
-          <p class="text-muted text-sm mb-5">That's it. Three steps.</p>
+          <p class="text-muted text-sm mb-5">30 seconds. No API keys. No config.</p>
           <a href="https://github.com/KyaniteLabs/Epoch" class="cta-primary">
-            View on GitHub
+            Install Epoch &mdash; It's Free
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10"/></svg>
           </a>
         </div>
@@ -1003,7 +1178,63 @@
 
     <div class="section-line"></div>
 
-    <!-- Tech Stack -->
+    <!-- 13. FAQ -->
+    <section id="faq" class="py-28 px-6">
+      <div class="max-w-3xl mx-auto">
+        <div class="text-center mb-16 reveal">
+          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">FAQ</p>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">Common questions</h2>
+        </div>
+        <div class="space-y-4 reveal">
+          <div class="faq-item">
+            <div class="faq-question">
+              <span>Does it work with Cursor, Windsurf, and VS Code?</span>
+              <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <div class="faq-answer">Yes. Epoch works with any MCP-compatible client including Claude Code, Cursor, Windsurf, VS Code, and any tool supporting the Model Context Protocol. The same 24 tools are available everywhere.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">
+              <span>Is it really free?</span>
+              <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <div class="faq-answer">Yes. Epoch is MIT-licensed open source. Free forever. No usage limits, no API keys required, no lock-in. The code is public &mdash; you can audit it, fork it, or self-host.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">
+              <span>Does it slow down my AI?</span>
+              <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <div class="faq-answer">No. Epoch runs as an external MCP tool. Tool calls add milliseconds, not seconds. Your AI calls the tools only when it needs an estimate &mdash; the rest of the time, it runs exactly as before.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">
+              <span>What if my team is remote across timezones?</span>
+              <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <div class="faq-answer">Epoch has full timezone support with IANA timezone conversion, holiday-aware business day calculations for 5 countries (US, UK, FR, DE, JP), and date arithmetic built in. Ask "how many business days between New York and Tokyo deadlines?" and get an accurate answer.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">
+              <span>What estimation methods does Epoch use?</span>
+              <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <div class="faq-answer">PERT three-point estimation, COCOMO II (with LLM-adapted cost drivers), Monte Carlo simulation, reference class forecasting, critical path method, and sprint velocity forecasting. Each method has been calibrated against historical project data.</div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">
+              <span>How does self-improvement work?</span>
+              <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <div class="faq-answer">Every estimate generates a feedback token. Record the actual hours when the work is done, and Epoch auto-calibrates correction factors for that task type and complexity. After 5+ matched pairs per task type, self-improvement kicks in automatically. More data = better estimates.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-line"></div>
+
+    <!-- 14. TECH STACK -->
     <section class="py-28 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="text-center mb-12 reveal">

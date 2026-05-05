@@ -1,0 +1,16 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Epoch",
+  "name_for_model": "epoch",
+  "description_for_human": "Time estimation tools for accurate scheduling and planning.",
+  "description_for_model": "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 24 tools across 5 layers.",
+  "api": {
+    "type": "openapi",
+    "url": "https://kyanitelabs.github.io/Epoch/openapi.json"
+  },
+  "auth": { "type": "none" },
+  "legal_info_url": "https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE",
+  "logo_url": "https://kyanitelabs.github.io/Epoch/",
+  "contact_email": "https://github.com/KyaniteLabs/Epoch/issues",
+  "url": "https://kyanitelabs.github.io/Epoch/"
+}

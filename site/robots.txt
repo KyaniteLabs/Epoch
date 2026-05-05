@@ -1,3 +1,26 @@
 User-agent: *
 Allow: /
+
+# AI Crawlers - Explicit Allow
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
 Sitemap: https://kyanitelabs.github.io/Epoch/sitemap.xml
