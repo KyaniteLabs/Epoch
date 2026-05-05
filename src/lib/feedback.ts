@@ -98,13 +98,21 @@ export function recordEstimate(
     estimatedAt: new Date().toISOString(),
     ...(source && { source }),
   };
-  appendLine(ESTIMATES_FILE, record);
+  appendLine(isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE, record);
   return id;
 }
 
 export type RecordActualResult =
   | { ok: true }
-  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" };
+  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" };
+
+/** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
+const DRY_RUN_FILE = "feedback.dry-run.jsonl";
+const DRY_RUN_ESTIMATES_FILE = "estimates.dry-run.jsonl";
+
+function isDryRun(): boolean {
+  return process.env["EPOCH_DRY_RUN"] === "1" || process.env["EPOCH_DRY_RUN"] === "true";
+}
 
 export function recordActual(estimateId: string, actualHours: number, notes?: string): boolean {
   const result = recordActualDetailed(estimateId, actualHours, notes);
@@ -113,6 +121,9 @@ export function recordActual(estimateId: string, actualHours: number, notes?: st
 
 export function recordActualDetailed(estimateId: string, actualHours: number, notes?: string): RecordActualResult {
   if (actualHours < MINIMUM_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
+
+  // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
+  if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
 
   // Reject duplicates — last-write-wins silently corrupts calibration
   const existing = readLines<ActualRecord>(ACTUALS_FILE);
@@ -126,7 +137,10 @@ export function recordActualDetailed(estimateId: string, actualHours: number, no
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
   };
-  const written = appendLine(ACTUALS_FILE, record);
+
+  // Dry-run mode: write to separate file so tests never touch production data
+  const targetFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
+  const written = appendLine(targetFile, record);
   return written ? { ok: true } : { ok: false, reason: "write_failed" };
 }
 
@@ -167,6 +181,14 @@ const SYNTHETIC_PREFIXES = [
   "sample-",
   "fake-",
 ];
+
+/** Check if a bare ID string matches a synthetic prefix pattern. */
+function isSyntheticId(id: string): boolean {
+  for (const prefix of SYNTHETIC_PREFIXES) {
+    if (id.startsWith(prefix)) return true;
+  }
+  return false;
+}
 
 function isSeedRecord(act: ActualRecord): boolean {
   const id = act.estimateId ?? "";
