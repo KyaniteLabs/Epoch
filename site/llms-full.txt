@@ -5,7 +5,8 @@
 > (Claude, GPT, Gemini) and developer workflows.
 
 Keywords: mcp-server, time-estimation, pert, cocomo-ii, monte-carlo, cost-estimation,
-sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, windsurf, llm
+sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, codex-cli,
+cline, zed, windsurf, llm
 
 Install: claude mcp add epoch -- npx @puenteworks/epoch
 npm: https://www.npmjs.com/package/@puenteworks/epoch
@@ -203,7 +204,7 @@ Health report on the feedback loop.
 
 ## Interfaces
 
-- **MCP**: `npx @puenteworks/epoch` (stdio transport) — Claude Code, Cursor, VS Code, Windsurf
+- **MCP**: `npx @puenteworks/epoch` (stdio transport) — Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code
 - **CLI**: `npx epoch <command> [options]`
 - **HTTP**: `http://localhost:3000/v1/tools/<tool-name>` (POST with JSON body)
 - **AI Manifest**: `/.well-known/ai-plugin.json`
