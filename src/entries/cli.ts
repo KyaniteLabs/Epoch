@@ -586,6 +586,168 @@ export function createCliProgram(): Command {
       process.exit(0);
     });
 
+  // ---- Telemetry commands ----------------------------------------------------
+
+  const telemetryCmd = program.command("telemetry").description("Manage anonymous telemetry settings");
+
+  telemetryCmd
+    .command("status")
+    .description("Show current telemetry configuration and history")
+    .action(async () => {
+      const { loadConfig } = await import("../lib/config.js");
+      const config = loadConfig();
+      const envVal = process.env["EPOCH_TELEMETRY"];
+      const source = envVal ? "env var" : "config file";
+      process.stdout.write(JSON.stringify({
+        enabled: config.telemetry.enabled || envVal === "1" || envVal === "true",
+        source,
+        endpoint: config.telemetry.endpoint || "(not configured)",
+        lastSubmissionAt: config.telemetry.lastSubmissionAt,
+        totalRecordsSubmitted: config.telemetry.lastSubmissionRecordCount,
+        installationId: config.telemetry.installationId || "(not generated yet)",
+      }, null, 2) + "\n");
+      process.exit(0);
+    });
+
+  telemetryCmd
+    .command("preview")
+    .description("Preview anonymized data that would be shared")
+    .action(async () => {
+      const { extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
+      const records = extractAnonymizedRecords();
+      const summary = {
+        totalRecords: records.length,
+        fields: Object.keys(records[0] ?? {}),
+        strippedFields: ["estimateId", "source", "notes", "teamId", "time-of-day"],
+        sample: records.slice(0, 5),
+      };
+      process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+      process.exit(0);
+    });
+
+  telemetryCmd
+    .command("export")
+    .option("--output <path>", "Output file path")
+    .description("Export all anonymized data to a JSON file")
+    .action(async (opts) => {
+      const { exportToFile } = await import("../lib/telemetry-submit.js");
+      const path = exportToFile(opts.output);
+      process.stdout.write(JSON.stringify({ ok: true, path, message: "Anonymized data exported." }) + "\n");
+      process.exit(0);
+    });
+
+  telemetryCmd
+    .command("enable")
+    .option("--yes", "Skip confirmation prompt")
+    .description("Opt in to anonymous telemetry sharing")
+    .action(async (opts) => {
+      const { saveConfig, loadConfig } = await import("../lib/config.js");
+      const { extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
+
+      if (!opts.yes) {
+        const records = extractAnonymizedRecords();
+        console.log("Epoch Anonymous Telemetry — Informed Consent");
+        console.log("");
+        console.log("What IS shared:");
+        console.log("  - Task type (feature, bugfix, refactor, etc.)");
+        console.log("  - Complexity rating (1-5)");
+        console.log("  - Tool used (pert_estimate, cocomo_estimate, etc.)");
+        console.log("  - Estimated hours and actual hours");
+        console.log("  - Ratio (actual/estimated)");
+        console.log("  - Date (YYYY-MM-DD only)");
+        console.log("");
+        console.log("What is NOT shared:");
+        console.log("  - No project names, descriptions, or notes");
+        console.log("  - No team identifiers or company information");
+        console.log("  - No IP addresses or timestamps with time-of-day");
+        console.log("  - No source code or task descriptions");
+        console.log("");
+        console.log(`A random installation ID is used to deduplicate submissions.`);
+        console.log(`This ID cannot be used to identify you.`);
+        console.log("");
+        console.log(`Records available: ${records.length}`);
+        console.log("");
+        console.log("Network submission is not yet active. Data stays local until an endpoint is configured.");
+        console.log("Type 'yes' to confirm:");
+
+        const { createInterface } = await import("node:readline");
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        const answer: string = await new Promise((res) => rl.question("> ", res));
+        rl.close();
+        if (answer.toLowerCase() !== "yes" && answer.toLowerCase() !== "y") {
+          console.log("Cancelled.");
+          process.exit(0);
+        }
+      }
+
+      const config = loadConfig();
+      config.telemetry.enabled = true;
+      saveConfig(config);
+      process.stdout.write(JSON.stringify({ ok: true, message: "Telemetry enabled. Use 'epoch telemetry preview' to see what will be shared." }) + "\n");
+      process.exit(0);
+    });
+
+  telemetryCmd
+    .command("disable")
+    .description("Opt out of anonymous telemetry sharing")
+    .action(async () => {
+      const { saveConfig, loadConfig } = await import("../lib/config.js");
+      const config = loadConfig();
+      config.telemetry.enabled = false;
+      saveConfig(config);
+      process.stdout.write(JSON.stringify({ ok: true, message: "Telemetry disabled." }) + "\n");
+      process.exit(0);
+    });
+
+  telemetryCmd
+    .command("delete-data")
+    .option("--confirm", "Skip confirmation")
+    .description("Instructions for deleting your telemetry data")
+    .action(async (opts) => {
+      const { loadConfig } = await import("../lib/config.js");
+      const config = loadConfig();
+      const id = config.telemetry.installationId || "(not generated)";
+      console.log("To delete your telemetry data:");
+      console.log("");
+      console.log("1. Delete local data:");
+      console.log("   rm -rf ~/.epoch/estimates.jsonl ~/.epoch/feedback.jsonl ~/.epoch/telemetry.jsonl");
+      console.log("");
+      console.log("2. Delete config:");
+      console.log("   rm ~/.epoch/config.json");
+      console.log("");
+      console.log(`3. Your installation ID: ${id}`);
+      console.log("   (When a server endpoint is configured, this ID can be used to request remote deletion.)");
+      process.exit(0);
+    });
+
+  program
+    .command("share-data")
+    .description("Export anonymized data for community contribution")
+    .option("--output <path>", "Output file path")
+    .action(async (opts) => {
+      const { exportToFile, extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
+      const records = extractAnonymizedRecords();
+
+      if (records.length === 0) {
+        process.stdout.write(JSON.stringify({ ok: false, message: "No data to share. Use Epoch for a few tasks first, then run this again." }) + "\n");
+        process.exit(1);
+      }
+
+      const path = exportToFile(opts.output);
+      process.stdout.write(JSON.stringify({
+        ok: true,
+        path,
+        recordCount: records.length,
+        nextSteps: [
+          "1. Review the exported file to verify anonymization",
+          "2. Fork https://github.com/KyaniteLabs/Epoch",
+          "3. Copy the file to data/community/",
+          "4. Open a pull request",
+        ],
+      }, null, 2) + "\n");
+      process.exit(0);
+    });
+
   // ---- Utility commands -------------------------------------------------------
 
   program

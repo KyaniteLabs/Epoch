@@ -201,6 +201,28 @@ Health report on the feedback loop.
 - **CLI**: `npx epoch <command> [options]`
 - **HTTP**: `http://localhost:3000/api/<tool-name>` (POST with JSON body)
 
+## Telemetry
+
+Epoch can optionally share anonymized estimate/actual pairs to improve accuracy for all users.
+Telemetry is OFF by default. Enable with: epoch telemetry enable
+
+What is shared: task_type, complexity, tool, estimated_hours, actual_hours, ratio, date (YYYY-MM-DD only).
+What is NOT shared: project names, notes, team IDs, IP addresses, timestamps with time-of-day.
+
+Commands:
+- epoch telemetry enable -- opt in with informed consent
+- epoch telemetry disable -- opt out
+- epoch telemetry preview -- preview anonymized data before enabling
+- epoch telemetry status -- show current config and history
+- epoch telemetry export -- export all local data as anonymized JSON
+- epoch telemetry delete-data -- instructions for deleting your data
+- epoch share-data -- export anonymized data for community contribution
+
+Environment variables:
+- EPOCH_TELEMETRY -- set to "1" to enable, "0" to disable (overrides config file)
+
+Privacy: docs/PRIVACY.md | Telemetry: docs/TELEMETRY.md
+
 ## Environment Variables
 
 - `PORT` — HTTP server port (default 3000)

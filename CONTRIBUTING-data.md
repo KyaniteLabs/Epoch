@@ -45,6 +45,18 @@ Our goal: build the most accurate open-source estimation database, powered by th
 - Use a `contributor_id` as a pseudonym (e.g., a hash of your GitHub username).
 - We will reject any PR that contains PII.
 
+### Legal Compliance
+
+- **Data controller:** Kyanite Labs
+- **Legal basis:** Explicit consent (opt-in via `epoch telemetry enable`)
+- **Right of access:** `epoch telemetry export` provides a complete copy of your anonymized data
+- **Right to deletion:** `epoch telemetry delete-data` provides instructions; you may also `rm -rf ~/.epoch/` to remove all local data
+- **Right to object:** `epoch telemetry disable` opts out of all data sharing
+- **Data processor:** Self-hosted infrastructure. No third-party analytics services.
+- **Cross-border transfers:** None. Data is stored locally and transmitted only to user-configured endpoints.
+- **Retention:** Local data retained until user deletes it. Published aggregated statistics cannot be reversed to individual records.
+- **Contact:** GitHub Issues at https://github.com/KyaniteLabs/Epoch/issues
+
 ## How to Submit
 
 ### 1. Fork the repo
