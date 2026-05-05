@@ -9,9 +9,9 @@ describe("batchRecordActuals", () => {
   const ts = Date.now();
   it("records all entries successfully", () => {
     const result = batchRecordActuals([
-      { estimateId: `batch-test-001-${ts}`, actualHours: 4.0, notes: "Quick fix" },
-      { estimateId: `batch-test-002-${ts}`, actualHours: 12.5, notes: "Took longer" },
-      { estimateId: `batch-test-003-${ts}`, actualHours: 8.0 },
+      { estimateId: `fb-batch-001-${ts}`, actualHours: 4.0, notes: "Quick fix" },
+      { estimateId: `fb-batch-002-${ts}`, actualHours: 12.5, notes: "Took longer" },
+      { estimateId: `fb-batch-003-${ts}`, actualHours: 8.0 },
     ]);
     expect(result.total).toBe(3);
     expect(result.succeeded).toBe(3);
@@ -21,7 +21,7 @@ describe("batchRecordActuals", () => {
 
   it("handles single entry", () => {
     const result = batchRecordActuals([
-      { estimateId: `batch-single-001-${ts}`, actualHours: 6.0 },
+      { estimateId: `fb-single-001-${ts}`, actualHours: 6.0 },
     ]);
     expect(result.total).toBe(1);
     expect(result.succeeded).toBe(1);
@@ -29,12 +29,27 @@ describe("batchRecordActuals", () => {
 
   it("respects max 500 entries (caller responsibility)", () => {
     const entries = Array.from({ length: 3 }, (_, i) => ({
-      estimateId: `batch-max-${i}-${ts}`,
+      estimateId: `fb-max-${i}-${ts}`,
       actualHours: i + 1,
     }));
     const result = batchRecordActuals(entries);
     expect(result.total).toBe(3);
     expect(result.succeeded).toBe(3);
+  });
+
+  it("rejects synthetic estimate IDs", () => {
+    const result = batchRecordActuals([
+      { estimateId: `test-should-reject-${ts}`, actualHours: 4.0 },
+      { estimateId: `batch-test-should-reject-${ts}`, actualHours: 8.0 },
+      { estimateId: `seed-should-reject-${ts}`, actualHours: 2.0 },
+    ]);
+    expect(result.total).toBe(3);
+    expect(result.succeeded).toBe(0);
+    expect(result.failed).toBe(3);
+    expect(result.errors).toHaveLength(3);
+    for (const err of result.errors) {
+      expect(err).toContain("Failed to record");
+    }
   });
 });
 

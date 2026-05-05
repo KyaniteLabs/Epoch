@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://kyanitelabs.github.io/Epoch/sitemap.xml

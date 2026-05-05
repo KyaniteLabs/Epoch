@@ -1,3 +1,18 @@
+# Epoch — AI Agent Time Estimation Server
+
+> Epoch is an MCP (Model Context Protocol) server providing 24 structured tools for
+> time estimation, cost analysis, and schedule risk assessment. Built for AI agents
+> (Claude, GPT, Gemini) and developer workflows.
+
+Keywords: mcp-server, time-estimation, pert, cocomo-ii, monte-carlo, cost-estimation,
+sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, llm
+
+Install: claude mcp add epoch -- npx @puenteworks/epoch
+npm: https://www.npmjs.com/package/@puenteworks/epoch
+GitHub: https://github.com/KyaniteLabs/Epoch
+
+---
+
 # Epoch — Time Estimation MCP Server
 
 > @puenteworks/epoch v0.1.9 — 24 structured tools for grounded time estimation
