@@ -25,7 +25,7 @@
   "bugs": {
     "url": "https://github.com/KyaniteLabs/Epoch/issues"
   },
-  "homepage": "https://github.com/KyaniteLabs/Epoch#readme",
+  "homepage": "https://kyanitelabs.github.io/Epoch/",
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
