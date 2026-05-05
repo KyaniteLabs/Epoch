@@ -20,6 +20,8 @@ export interface EstimateRecord {
   inputs: Record<string, unknown>;
   outputs: Record<string, unknown>;
   estimatedAt: string;
+  /** Project or source that generated this estimate (e.g. "epoch", "liminal", "github_pipeline"). */
+  source?: string;
 }
 
 export interface ActualRecord {
@@ -85,6 +87,7 @@ export function recordEstimate(
   tool: string,
   inputs: Record<string, unknown>,
   outputs: Record<string, unknown>,
+  source?: string,
 ): string {
   const id = randomUUID();
   const record: EstimateRecord = {
@@ -93,6 +96,7 @@ export function recordEstimate(
     inputs,
     outputs,
     estimatedAt: new Date().toISOString(),
+    ...(source && { source }),
   };
   appendLine(ESTIMATES_FILE, record);
   return id;
@@ -150,10 +154,27 @@ export function getCalibrationData(
   );
 }
 
+/** Prefixes that indicate synthetic/test/batch data, not real estimates. */
+const SYNTHETIC_PREFIXES = [
+  "seed-",
+  "test-",
+  "batch-test-",
+  "batch-max-",
+  "batch-single-",
+  "synth-",
+  "demo-",
+  "example-",
+  "sample-",
+  "fake-",
+];
+
 function isSeedRecord(act: ActualRecord): boolean {
-  if (act.estimateId.startsWith("seed-")) return true;
+  const id = act.estimateId ?? "";
+  for (const prefix of SYNTHETIC_PREFIXES) {
+    if (id.startsWith(prefix)) return true;
+  }
   const notes = (act.notes ?? "").toLowerCase();
-  return notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed");
+  return notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed") || notes.includes("test data");
 }
 
 export function matchEstimatesToActuals(

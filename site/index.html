@@ -4,16 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Epoch — Time Estimation for AI Agents</title>
-  <meta name="description" content="Give AI agents the ability to estimate timelines, calculate costs, and predict deadlines. 19 tools. One command.">
+  <meta name="description" content="Give AI agents the ability to estimate timelines, calculate costs, and predict deadlines. 24 tools. One command.">
 
   <!-- Open Graph -->
   <meta property="og:title" content="Epoch — Time Estimation for AI Agents">
-  <meta property="og:description" content="Give AI the ability to estimate timelines, calculate costs, and predict deadlines. 19 tools. One command.">
+  <meta property="og:description" content="Give AI the ability to estimate timelines, calculate costs, and predict deadlines. 24 tools. One command.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://kyanitelabs.github.io/Epoch/">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Epoch — Time Estimation for AI Agents">
-  <meta name="twitter:description" content="Give AI the ability to estimate timelines, calculate costs, and predict deadlines. 19 tools. One command.">
+  <meta name="twitter:description" content="Give AI the ability to estimate timelines, calculate costs, and predict deadlines. 24 tools. One command.">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -310,7 +310,7 @@
             </div>
             <div class="space-y-5">
               <p class="text-foreground/80 text-lg leading-relaxed">
-                Epoch gives AI <strong>grounded estimates</strong> using 40+ years of software engineering research, packaged into 19 tools any AI can call.
+                Epoch gives AI <strong>grounded estimates</strong> using 40+ years of software engineering research, packaged into 24 tools any AI can call.
               </p>
               <p class="text-foreground/60 leading-relaxed">
                 Instead of hallucinating timelines, your agent calls a function. The function returns a data-driven estimate built on COCOMO II, PERT analysis, reference class forecasting, and Monte Carlo simulation.
@@ -322,7 +322,7 @@
                 </li>
                 <li class="flex items-start gap-3">
                   <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                  <span>19 MCP tools covering time, dates, estimation, analytics, and cost</span>
+                  <span>24 MCP tools covering time, dates, estimation, analytics, and cost</span>
                 </li>
                 <li class="flex items-start gap-3">
                   <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
@@ -533,7 +533,7 @@
     <section id="tools" class="py-24 px-6 border-t border-border">
       <div class="max-w-6xl mx-auto">
         <div class="text-center mb-12">
-          <h2 class="text-3xl md:text-4xl font-bold mb-4">All 19 tools, one API</h2>
+          <h2 class="text-3xl md:text-4xl font-bold mb-4">All 24 tools, one API</h2>
           <p class="text-foreground/60 max-w-2xl mx-auto leading-relaxed">
             Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations. Accessible through MCP, CLI, and REST.
           </p>
@@ -562,6 +562,12 @@
               <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">reference_class_estimate</td><td class="px-4 py-3 text-foreground/70">Reference class forecasting with industry correction factors</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L4</td></tr>
               <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">calibrate_estimates</td><td class="px-4 py-3 text-foreground/70">Team-specific correction factor calibration from historical data</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L4</td></tr>
               <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-4 py-3 text-foreground/70">Map token budgets to wall-clock time for 12 LLM models</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">token_cost_estimate</td><td class="px-4 py-3 text-foreground/70">Token cost estimation with input/output breakdown</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">compare_models</td><td class="px-4 py-3 text-foreground/70">Side-by-side comparison across 12 LLM models</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">accuracy_trend</td><td class="px-4 py-3 text-foreground/70">Sliding-window MAPE tracking over time</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">schedule_risk</td><td class="px-4 py-3 text-foreground/70">Confidence intervals using team MdAPE</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">L5</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">record_actual</td><td class="px-4 py-3 text-foreground/70">Submit actual hours for a previous estimate</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">Feedback</td></tr>
+              <tr class="tool-row"><td class="px-4 py-3 font-mono text-accent whitespace-nowrap">feedback_health</td><td class="px-4 py-3 text-foreground/70">Comprehensive feedback data quality report</td><td class="px-4 py-3 text-foreground/50 hidden md:table-cell">Feedback</td></tr>
             </tbody>
           </table>
         </div>
@@ -573,20 +579,51 @@
       <div class="max-w-6xl mx-auto">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div class="metric-card rounded-xl p-6 text-center">
-            <div class="text-4xl font-bold text-accent font-mono">129</div>
+            <div class="text-4xl font-bold text-accent font-mono">896</div>
             <div class="text-sm text-foreground/60 mt-2">Tests Passing</div>
           </div>
           <div class="metric-card rounded-xl p-6 text-center">
-            <div class="text-4xl font-bold text-accent font-mono">87%</div>
+            <div class="text-4xl font-bold text-accent font-mono">97%</div>
             <div class="text-sm text-foreground/60 mt-2">Statement Coverage</div>
           </div>
           <div class="metric-card rounded-xl p-6 text-center">
-            <div class="text-4xl font-bold text-accent font-mono">19</div>
+            <div class="text-4xl font-bold text-accent font-mono">24</div>
             <div class="text-sm text-foreground/60 mt-2">MCP Tools</div>
           </div>
           <div class="metric-card rounded-xl p-6 text-center">
             <div class="text-4xl font-bold text-accent font-mono">12</div>
             <div class="text-sm text-foreground/60 mt-2">Model Calibrations</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Self-Improvement -->
+    <section class="py-24 px-6 border-t border-border">
+      <div class="max-w-4xl mx-auto text-center">
+        <h2 class="text-3xl md:text-4xl font-bold mb-4">Gets better the more you use it</h2>
+        <p class="text-foreground/60 max-w-2xl mx-auto leading-relaxed mb-12">
+          Every estimate generates a feedback token. Record actual hours and Epoch auto-calibrates correction factors across task types, complexity levels, and tools.
+        </p>
+        <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6">
+          <div class="metric-card rounded-xl px-6 py-4 text-center">
+            <div class="text-2xl font-bold text-accent font-mono">369</div>
+            <div class="text-xs text-foreground/50 mt-1">Matched Pairs</div>
+          </div>
+          <svg class="w-6 h-6 text-accent rotate-90 md:rotate-0 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <div class="metric-card rounded-xl px-6 py-4 text-center">
+            <div class="text-2xl font-bold text-accent font-mono">6</div>
+            <div class="text-xs text-foreground/50 mt-1">Projects</div>
+          </div>
+          <svg class="w-6 h-6 text-accent rotate-90 md:rotate-0 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <div class="metric-card rounded-xl px-6 py-4 text-center">
+            <div class="text-2xl font-bold text-accent font-mono">8</div>
+            <div class="text-xs text-foreground/50 mt-1">Task Types</div>
+          </div>
+          <svg class="w-6 h-6 text-accent rotate-90 md:rotate-0 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <div class="metric-card rounded-xl px-6 py-4 text-center">
+            <div class="text-2xl font-bold text-accent font-mono">Auto</div>
+            <div class="text-xs text-foreground/50 mt-1">Correction</div>
           </div>
         </div>
       </div>
@@ -598,7 +635,7 @@
         <div class="text-center mb-12">
           <h2 class="text-3xl md:text-4xl font-bold mb-4">Three surfaces, one API</h2>
           <p class="text-foreground/60 max-w-2xl mx-auto leading-relaxed">
-            All 19 tools are accessible through MCP, CLI, and REST API. Use whichever fits your workflow.
+            All 24 tools are accessible through MCP, CLI, and REST API. Use whichever fits your workflow.
           </p>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -717,7 +754,7 @@
           </div>
           <div class="metric-card rounded-xl p-5 text-center">
             <div class="font-mono font-semibold text-foreground">Vitest 3.x</div>
-            <div class="text-xs text-foreground/50 mt-1">129 tests, v8 coverage</div>
+            <div class="text-xs text-foreground/50 mt-1">896 tests, v8 coverage</div>
           </div>
         </div>
       </div>

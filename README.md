@@ -47,7 +47,7 @@ Claude (using Epoch):
 
 Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 24 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
-**Accuracy note:** Reference class baselines are built from 39 real AI-native tasks across 4 repositories. With correct complexity calibration, estimates fall within 25% of actuals ~67% of the time (vs ~25% for unaided human experts per Jorgensen 2004). Accuracy improves as teams submit estimated-vs-actual feedback through the self-improvement engine.
+**Accuracy note:** Reference class baselines are built from 268 real AI-native tasks across 6 repositories (epoch, liminal, github_pipeline, dev-archaeology, and others). With correct complexity calibration, estimates fall within 25% of actuals ~67% of the time. Accuracy improves as teams submit estimated-vs-actual feedback through the self-improvement engine.
 
 ## What is MCP?
 
@@ -61,7 +61,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 claude mcp add epoch -- npx @puenteworks/epoch
 ```
 
-That's it. Your AI assistant now has 21 time estimation tools.
+That's it. Your AI assistant now has 24 time estimation tools.
 
 Or add it to your project's `.mcp.json`:
 
@@ -95,7 +95,7 @@ Everything below is for developers who want to understand the internals, use the
 
 ## Architecture
 
-Five-layer design with 24 tools for time estimation, scheduling, and cost analysis:
+Six-layer design with 24 tools for time estimation, scheduling, cost analysis, and feedback:
 
 | Layer | Purpose | Tools |
 |-------|---------|-------|
@@ -104,6 +104,7 @@ Five-layer design with 24 tools for time estimation, scheduling, and cost analys
 | **3. Estimation** | PERT, COCOMO II, sprint, CPM, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
 | **4. Analytics** | Reference class, calibration, token-time bridge | `reference_class_estimate`, `calibrate_estimates`, `token_time_bridge` |
 | **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate` |
+| **6. Feedback** | Record actuals, track pending estimates, batch operations, health checks | `record_actual`, `get_pending_estimates`, `batch_record_actuals`, `feedback_health` |
 
 ## Tool Reference
 
@@ -485,6 +486,16 @@ Estimated vs Actual -> Correction Factor -> Better Estimates -> Repeat
 
 The engine detects systematic biases (chronic under-estimation, accuracy degradation) and surfaces actionable recommendations.
 
+## Data Pipeline
+
+Epoch collects and processes estimation data across all your projects to improve accuracy over time:
+
+- **Cross-project data ingestion:** Epoch collects estimate/actual pairs from all your projects, building a shared reference database that improves baseline accuracy for every team.
+- **Auto-recording:** Use `scripts/auto-record-actual.mjs` to automatically record actual time against pending estimates -- no manual data entry required.
+- **Source tagging:** Set `EPOCH_SOURCE=<project-name>` to tag estimates by project. This enables per-project accuracy tracking while contributing to the shared reference pool.
+- **Community data:** Contribute anonymized data via `data/community/` to help improve baselines for all users. See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for format and privacy requirements.
+- **Self-improvement triggers:** The engine recalibrates automatically every 100 tool calls and every 24 hours, whichever comes first.
+
 ## Community Data
 
 Help improve Epoch by contributing anonymized estimation data. Community contributions expand the reference database, improve baseline accuracy for all users, and help calibrate AI-native vs human estimation modes.
@@ -599,6 +610,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |
 | `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
 | `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per IP (HTTP only) |
+| `EPOCH_SOURCE` | _(none)_ | Project/source tag attached to estimate records |
 
 ## License
 

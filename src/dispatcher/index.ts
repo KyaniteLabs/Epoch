@@ -42,7 +42,7 @@ export async function dispatch(
     if (result.ok) {
       const data = (result as { ok: true; data: unknown }).data;
       if (data && typeof data === "object") {
-        const estimateId = recordEstimate(toolName, rawInput, data as Record<string, unknown>);
+        const estimateId = recordEstimate(toolName, rawInput, data as Record<string, unknown>, resolveSource());
         const d = data as Record<string, unknown>;
         if (hasHourEstimate(d)) {
           d.feedbackToken = estimateId;
@@ -72,6 +72,11 @@ export async function dispatch(
 }
 
 // ---- Helpers ----------------------------------------------------------------
+
+/** Resolve source project from env var or package.json. */
+function resolveSource(): string | undefined {
+  return process.env["EPOCH_SOURCE"];
+}
 
 const HOUR_FIELDS = [
   "expected", "totalHours", "estimatedHours", "estimatedMinutes",
