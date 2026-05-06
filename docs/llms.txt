@@ -15,7 +15,7 @@ GitHub: https://github.com/KyaniteLabs/Epoch
 
 # Epoch — Time Estimation MCP Server
 
-> @puenteworks/epoch v0.1.9 — 24 structured tools for grounded time estimation
+> @puenteworks/epoch v0.2.1 — 24 structured tools for grounded time estimation
 
 ## What
 

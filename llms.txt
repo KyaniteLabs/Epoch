@@ -1,0 +1,23 @@
+# Epoch
+
+> Time estimation MCP server for AI agents.
+
+Epoch gives AI agents 24 structured tools for grounded time estimation, calendar math, PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, token-to-time mapping, model cost comparison, schedule risk, and feedback-based calibration.
+
+## Use cases
+- AI agent time estimation
+- PERT and COCOMO II estimates
+- Monte Carlo schedule simulation
+- Sprint forecasting and critical path analysis
+- Business-day and timezone calculations
+- LLM token cost and model comparison
+- Estimate calibration from actuals
+
+## Key paths
+- `README.md`: public overview and quick start
+- `docs/llms.txt`: expanded AI-readable tool reference
+- `src/`: MCP server, CLI, REST API, and estimation engines
+- `package.json`: npm package metadata for `@puenteworks/epoch`
+
+## Keywords
+time estimation MCP server, AI agent planning, PERT estimate, COCOMO II, Monte Carlo schedule, sprint forecasting, token cost estimate, model cost comparison, schedule risk analysis, business day calculator, Model Context Protocol, Claude Code time tools, Cursor MCP server.
