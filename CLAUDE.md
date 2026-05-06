@@ -37,7 +37,7 @@ External contributor opens issue
   → Auto-triage promotes to: agent-ready label
   → Pipeline picks up → creates fix PR
 
-Owner/member (Pastorsimon1798) opens issue
+Owner/member (simongonzalezdc) opens issue
   → Auto-triage detects member author
   → Promotes directly to agent-ready (skips triage)
   → Pipeline picks up → creates fix PR
