@@ -44,7 +44,7 @@ The full payload sent to the telemetry endpoint:
 {
   "schema_version": 1,
   "installation_id": "550e8400-e29b-41d4-a716-446655440000",
-  "epoch_version": "0.2.1",
+  "epoch_version": "0.2.2",
   "records": [
     { "task_type": "feature", "complexity": 3, "tool": "pert_estimate", "estimated_hours": 8.5, "actual_hours": 12.0, "ratio": 1.41, "date": "2026-05-01" }
   ],
@@ -115,7 +115,14 @@ Opts in to telemetry with informed consent. The command:
 1. Displays exactly what data will be shared
 2. Shows a sample of the anonymized data
 3. Asks for explicit confirmation
-4. Saves the opt-in setting to `~/.epoch/config.json`
+4. Optionally saves the receiver URL from `--endpoint`
+5. Saves the opt-in setting to `~/.epoch/config.json`
+
+Use `--endpoint <url>` when you already know the receiver:
+
+```bash
+epoch telemetry enable --endpoint https://your-server.example.com/v1/telemetry
+```
 
 ### `epoch telemetry disable`
 
@@ -133,9 +140,36 @@ Displays current telemetry configuration:
 
 - Whether telemetry is enabled or disabled
 - Endpoint URL
+- Whether the endpoint is usable or still unset/placeholder
 - Number of records queued for next submission
 - Timestamp of last successful submission
 - Installation ID
+
+### `epoch telemetry set-endpoint`
+
+Configures the telemetry receiver without changing the opt-in setting:
+
+```bash
+epoch telemetry set-endpoint --endpoint https://your-server.example.com/v1/telemetry
+```
+
+Endpoints must use HTTPS, except localhost receivers used for local development.
+
+### `epoch telemetry submit`
+
+Submits the queued anonymized records to the configured endpoint:
+
+```bash
+epoch telemetry submit
+```
+
+You can also set the endpoint immediately before submitting:
+
+```bash
+epoch telemetry submit --endpoint https://your-server.example.com/v1/telemetry
+```
+
+Successful submissions update `lastSubmissionAt` and `totalRecordsSubmitted` in `epoch telemetry status`. Failed submissions leave records queued locally.
 
 ### `epoch telemetry export`
 
@@ -202,6 +236,16 @@ X-Epoch-Version: <epoch_version from payload>
 | `400 Bad Request` | Invalid payload or schema version mismatch |
 | `429 Too Many Requests` | Rate limit exceeded. Body: `{ "retry_after_seconds": <seconds> }` |
 
+Epoch's built-in HTTP server includes a local receiver for this contract:
+
+```bash
+EPOCH_TRANSPORT=http EPOCH_PORT=3099 node dist/index.js
+epoch telemetry set-endpoint --endpoint http://localhost:3099/v1/telemetry
+epoch telemetry submit
+```
+
+The built-in receiver verifies the signature and stores aggregate receipt metadata in `~/.epoch/telemetry-receipts.jsonl`; it does not duplicate raw telemetry records into the receipt log.
+
 **Verification steps (server-side):**
 
 1. Parse the JSON body
@@ -214,8 +258,11 @@ X-Epoch-Version: <epoch_version from payload>
 ### Configuring a custom endpoint
 
 ```bash
-# Set via CLI
+# Set via CLI while enabling telemetry
 epoch telemetry enable --endpoint https://your-server.example.com/v1/telemetry
+
+# Or set/update independently
+epoch telemetry set-endpoint --endpoint https://your-server.example.com/v1/telemetry
 
 # Or set in config.json directly
 # ~/.epoch/config.json:
@@ -227,6 +274,7 @@ epoch telemetry enable --endpoint https://your-server.example.com/v1/telemetry
 | Variable | Values | Description |
 |----------|--------|-------------|
 | `EPOCH_TELEMETRY` | `0` or `1` | Overrides config file. `0` disables telemetry, `1` enables it (requires prior consent). |
+| `EPOCH_TELEMETRY_ENDPOINT` | URL | Overrides the configured telemetry receiver endpoint for status/submission. |
 
 The environment variable takes precedence over the config file setting.
 

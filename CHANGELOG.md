@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-05-07
+
+### Added
+- Added `epoch telemetry set-endpoint` to configure a telemetry receiver without changing opt-in state.
+- Added `epoch telemetry submit` to manually send queued anonymized telemetry to the configured endpoint.
+- Added `--endpoint` support to `epoch telemetry enable` and `epoch telemetry submit`.
+- Added a built-in `POST /v1/telemetry` HTTP receiver that verifies HMAC signatures and writes aggregate receipt metadata to `~/.epoch/telemetry-receipts.jsonl`.
+- Added `EPOCH_TELEMETRY_ENDPOINT` override support for status and submission flows.
+
+### Changed
+- `epoch telemetry status` now reports endpoint usability, queued anonymized record count, endpoint source, `lastSubmissionAt`, and `totalRecordsSubmitted`.
+- Telemetry docs now describe local receiver testing, endpoint configuration, and receipt metadata.
+
+### Fixed
+- Placeholder telemetry endpoints such as `https://example.com/v1/telemetry` are now treated as not configured.
+- Telemetry submission now fails clearly when no usable endpoint exists instead of pretending the placeholder endpoint is real.
+
 ## [0.2.1] - 2026-05-07
 
 ### Changed
@@ -14,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the stale `NPM_TOKEN` release workflow environment hook so npm trusted publishing can use OIDC.
 
 ### Notes
-- `@kyanitelabs/epoch@0.2.1` is the current npm `latest` release.
-- Future releases must bump the version before publishing; npm will reject republishing `0.2.1`.
+- `@kyanitelabs/epoch@0.2.1` was the first Kyanite-scoped npm release.
+- Future releases must bump the version before publishing; npm will reject republishing an existing version.
 
 ## [0.2.0] - 2026-05-03
 

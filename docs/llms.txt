@@ -15,7 +15,7 @@ GitHub: https://github.com/KyaniteLabs/Epoch
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.2.1 — 24 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.2.2 — 24 structured tools for grounded time estimation
 
 ## What
 
@@ -214,12 +214,15 @@ Commands:
 - epoch telemetry disable -- opt out
 - epoch telemetry preview -- preview anonymized data before enabling
 - epoch telemetry status -- show current config and history
+- epoch telemetry set-endpoint -- configure a receiver endpoint
+- epoch telemetry submit -- submit queued anonymized telemetry
 - epoch telemetry export -- export all local data as anonymized JSON
 - epoch telemetry delete-data -- instructions for deleting your data
 - epoch share-data -- export anonymized data for community contribution
 
 Environment variables:
 - EPOCH_TELEMETRY -- set to "1" to enable, "0" to disable (overrides config file)
+- EPOCH_TELEMETRY_ENDPOINT -- override the configured receiver endpoint
 
 Privacy: docs/PRIVACY.md | Telemetry: docs/TELEMETRY.md
 

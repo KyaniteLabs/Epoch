@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { getCalibrationData } from "./feedback.js";
-import { loadConfig, saveConfig, getInstallationId } from "./config.js";
+import { loadConfig, saveConfig, getInstallationId, isUsableTelemetryEndpoint } from "./config.js";
 
 export interface AnonymizedRecord {
   task_type: string;
@@ -41,18 +41,21 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
   const windowDays = sinceDate
     ? Math.ceil((Date.now() - new Date(sinceDate).getTime()) / 86_400_000) + 1
     : undefined;
+  const sinceMs = sinceDate ? new Date(sinceDate).getTime() : undefined;
 
   const historical = getCalibrationData(undefined, undefined, windowDays);
 
-  return historical.map((rec): AnonymizedRecord => ({
-    task_type: rec.taskType,
-    complexity: rec.complexity ?? null,
-    tool: rec.tool ?? "unknown",
-    estimated_hours: Math.round(rec.estimatedHours * 100) / 100,
-    actual_hours: Math.round(rec.actualHours * 100) / 100,
-    ratio: Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
-    date: rec.completedAt.slice(0, 10),
-  }));
+  return historical
+    .filter((rec) => sinceMs === undefined || new Date(rec.completedAt).getTime() > sinceMs)
+    .map((rec): AnonymizedRecord => ({
+      task_type: rec.taskType,
+      complexity: rec.complexity ?? null,
+      tool: rec.tool ?? "unknown",
+      estimated_hours: Math.round(rec.estimatedHours * 100) / 100,
+      actual_hours: Math.round(rec.actualHours * 100) / 100,
+      ratio: Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
+      date: rec.completedAt.slice(0, 10),
+    }));
 }
 
 export function buildPayload(records: AnonymizedRecord[]): SubmissionPayload {
@@ -87,6 +90,10 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
     return { ok: false, recordCount: 0, error: "no endpoint configured" };
   }
 
+  if (!isUsableTelemetryEndpoint(config.telemetry.endpoint)) {
+    return { ok: false, recordCount: 0, error: "placeholder endpoint configured" };
+  }
+
   const lastSub = config.telemetry.lastSubmissionAt;
   if (lastSub) {
     const hoursSinceLast = (Date.now() - new Date(lastSub).getTime()) / 3_600_000;
@@ -102,7 +109,7 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 
   const capped = records.slice(0, 100);
   const payload = buildPayload(capped);
-  const signature = signPayload(payload, config.telemetry.installationId);
+  const signature = signPayload(payload, payload.installation_id);
 
   try {
     const response = await fetch(config.telemetry.endpoint, {
@@ -119,6 +126,7 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
       return { ok: false, recordCount: 0, error: `server returned ${response.status}` };
     }
 
+    config.telemetry.installationId = payload.installation_id;
     config.telemetry.lastSubmissionAt = new Date().toISOString();
     config.telemetry.lastSubmissionRecordCount += capped.length;
     saveConfig(config);
@@ -137,7 +145,7 @@ export function maybeSubmitTelemetry(): void {
   if (_callCount % 100 !== 0) return;
 
   const config = loadConfig();
-  if (!config.telemetry.enabled || !config.telemetry.endpoint) return;
+  if (!config.telemetry.enabled || !isUsableTelemetryEndpoint(config.telemetry.endpoint)) return;
 
   const lastSub = config.telemetry.lastSubmissionAt;
   if (lastSub) {

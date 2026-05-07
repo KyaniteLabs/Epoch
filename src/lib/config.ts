@@ -23,6 +23,11 @@ const DEFAULT_CONFIG: EpochConfig = {
   },
 };
 
+const PLACEHOLDER_TELEMETRY_ENDPOINTS = new Set([
+  "https://example.com",
+  "https://example.com/v1/telemetry",
+]);
+
 function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? join(homedir(), ".epoch");
 }
@@ -40,14 +45,19 @@ export function loadConfig(): EpochConfig {
   try {
     const raw = readFileSync(configPath(), "utf-8");
     const parsed = JSON.parse(raw) as Partial<EpochConfig>;
+    const endpointOverride = process.env["EPOCH_TELEMETRY_ENDPOINT"]?.trim();
     return {
       telemetry: {
         ...DEFAULT_CONFIG.telemetry,
         ...parsed?.telemetry,
+        ...(endpointOverride ? { endpoint: endpointOverride } : {}),
       },
     };
   } catch {
-    return structuredClone(DEFAULT_CONFIG);
+    const config = structuredClone(DEFAULT_CONFIG);
+    const endpointOverride = process.env["EPOCH_TELEMETRY_ENDPOINT"]?.trim();
+    if (endpointOverride) config.telemetry.endpoint = endpointOverride;
+    return config;
   }
 }
 
@@ -74,4 +84,13 @@ export function getInstallationId(): string {
   config.telemetry.installationId = id;
   saveConfig(config);
   return id;
+}
+
+export function isPlaceholderTelemetryEndpoint(endpoint: string): boolean {
+  const normalized = endpoint.trim().replace(/\/+$/, "");
+  return PLACEHOLDER_TELEMETRY_ENDPOINTS.has(normalized);
+}
+
+export function isUsableTelemetryEndpoint(endpoint: string): boolean {
+  return endpoint.trim().length > 0 && !isPlaceholderTelemetryEndpoint(endpoint);
 }

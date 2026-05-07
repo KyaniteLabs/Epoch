@@ -4,8 +4,11 @@
 // tool dispatch, and output formatting.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { Command } from "commander";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createCliProgram } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
 
@@ -41,6 +44,8 @@ vi.mock("../version.js", () => ({
 }));
 
 // ---- Helpers ----------------------------------------------------------------
+
+const TEST_DIR = join(tmpdir(), `epoch-cli-test-${Date.now()}`);
 
 /** Captured writes to stdout/stderr and exit codes. */
 interface Capture {
@@ -249,6 +254,17 @@ describe("CLI tests", () => {
         .filter((o) => o.required)
         .map((o) => o.long);
       expect(requiredFlags).toContain("--tasks");
+    });
+
+    it("telemetry exposes endpoint configuration and submit subcommands", () => {
+      const program = createCliProgram();
+      const telemetry = program.commands.find((c) => c.name() === "telemetry")!;
+      const subcommands = telemetry.commands.map((c) => c.name());
+      const enable = telemetry.commands.find((c) => c.name() === "enable")!;
+
+      expect(subcommands).toContain("set-endpoint");
+      expect(subcommands).toContain("submit");
+      expect(enable.options.map((o) => o.long)).toContain("--endpoint");
     });
   });
 
@@ -573,6 +589,78 @@ describe("CLI tests", () => {
       const tools = JSON.parse(output) as Array<{ name: string; description: string }>;
       expect(tools.length).toBeGreaterThan(0);
       expect(capture.exitCode).toBe(0);
+    });
+  });
+
+  describe("CLI telemetry commands", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      mkdirSync(TEST_DIR, { recursive: true });
+      process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+      delete process.env["EPOCH_TELEMETRY"];
+      delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
+    });
+
+    afterEach(() => {
+      delete process.env["EPOCH_DATA_DIR"];
+      delete process.env["EPOCH_TELEMETRY"];
+      delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
+      try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ok */ }
+    });
+
+    it("sets endpoint while enabling telemetry", async () => {
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, [
+        "telemetry",
+        "enable",
+        "--yes",
+        "--endpoint",
+        "https://collector.example.net/v1/telemetry",
+      ]);
+
+      const output = JSON.parse(capture.stdout.join("")) as { ok: boolean; endpoint: string };
+      expect(capture.exitCode).toBe(0);
+      expect(output.ok).toBe(true);
+      expect(output.endpoint).toBe("https://collector.example.net/v1/telemetry");
+    });
+
+    it("rejects non-HTTPS telemetry endpoints except localhost", async () => {
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, [
+        "telemetry",
+        "set-endpoint",
+        "--endpoint",
+        "http://collector.example.net/v1/telemetry",
+      ]);
+
+      expect(capture.exitCode).toBe(1);
+      expect(capture.stderr.join("")).toContain("https://");
+    });
+
+    it("reports placeholder endpoint as not configured in telemetry status", async () => {
+      const { saveConfig } = await import("../lib/config.js");
+      saveConfig({
+        telemetry: {
+          enabled: true,
+          endpoint: "https://example.com/v1/telemetry",
+          lastSubmissionAt: null,
+          lastSubmissionRecordCount: 0,
+          installationId: "test-id",
+        },
+      });
+
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, ["telemetry", "status"]);
+      const output = JSON.parse(capture.stdout.join("")) as {
+        endpoint: string;
+        endpointConfigured: boolean;
+        queuedRecords: number;
+      };
+
+      expect(capture.exitCode).toBe(0);
+      expect(output.endpoint).toBe("(not configured)");
+      expect(output.endpointConfigured).toBe(false);
+      expect(typeof output.queuedRecords).toBe("number");
     });
   });
 });
