@@ -1,6 +1,6 @@
 # Epoch -- Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@puenteworks/epoch.svg)](https://www.npmjs.com/package/@puenteworks/epoch) [![Tests](https://img.shields.io/badge/tests-896-brightgreen.svg)]()
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![Tests](https://img.shields.io/badge/tests-896-brightgreen.svg)]()
 
 **Epoch helps AI agents understand time.**
 
@@ -58,7 +58,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 **30-second setup -- works in Claude Code, Cursor, VS Code, and Windsurf:**
 
 ```bash
-claude mcp add epoch -- npx @puenteworks/epoch
+claude mcp add epoch -- npx @kyanitelabs/epoch
 ```
 
 That's it. Your AI assistant now has 24 time estimation tools.
@@ -70,7 +70,7 @@ Or add it to your project's `.mcp.json`:
   "mcpServers": {
     "epoch": {
       "command": "npx",
-      "args": ["@puenteworks/epoch"]
+      "args": ["@kyanitelabs/epoch"]
     }
   }
 }
