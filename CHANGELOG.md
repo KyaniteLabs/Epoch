@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-07
+
+### Changed
+- Renamed the canonical published package to `@kyanitelabs/epoch`.
+- Updated README, site install examples, LLM discovery docs, package metadata, and AGENTS identity to use the Kyanite Labs npm scope.
+- Pointed package metadata at the GitHub Pages landing page.
+- Removed the stale `NPM_TOKEN` release workflow environment hook so npm trusted publishing can use OIDC.
+
+### Notes
+- `@kyanitelabs/epoch@0.2.1` is the current npm `latest` release.
+- Future releases must bump the version before publishing; npm will reject republishing `0.2.1`.
+
+## [0.2.0] - 2026-05-03
+
+### Added
+- Expanded Epoch to 24 structured tools across temporal reasoning, estimation, analytics, cost, risk, profiles, feedback, and calibration.
+- Added the feedback loop surface: `feedbackToken` on estimation outputs, pending-estimate listing, batch actual recording, feedback health, and self-improvement support.
+- Added AI-native reference baselines, scope signals, task-type calibration, complexity-aware correction factors, MdAPE/capped MdAPE reporting, trend detection, and data completeness scoring.
+- Added token-cost outputs across estimation and risk tools.
+- Added `docs/llms.txt` for AI-agent discovery.
+
+### Fixed
+- Hardened JSONL feedback handling, NaN/empty-array guards, critical path validation, schedule risk validation, duplicate actual rejection, and schema/output consistency across CLI, HTTP, and MCP paths.
+- Routed MCP tools through the dispatcher so telemetry, feedback recording, schemas, and output formatting share one implementation path.
+- Rebuilt public reference baselines from task-level data and removed misleading synthetic-data accuracy claims.
+
+### Changed
+- Switched to the ESM `tsup` build pipeline.
+- Raised test coverage substantially across tools, dispatch, CLI, HTTP, calibration, and telemetry-adjacent code paths.
+
 ## [0.1.14] - 2026-05-03
 
 ### Added

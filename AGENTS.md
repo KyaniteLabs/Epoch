@@ -1,7 +1,7 @@
 # Epoch — Time Estimation MCP Server
 
 ## Identity
-`@kyanitelabs/epoch` — Structured external time representations for LLMs. 19 tools across 5 layers (estimation, temporal, analytics, cost, risk).
+`@kyanitelabs/epoch` — Structured external time representations for LLMs. 24 tools across 6 layers (temporal, estimation, analytics, cost, risk, feedback).
 
 ## Stack
 TypeScript | vitest | tsup | zod | MCP SDK
