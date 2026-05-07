@@ -7,15 +7,15 @@
 Keywords: mcp-server, time-estimation, pert, cocomo-ii, monte-carlo, cost-estimation,
 sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, llm
 
-Install: claude mcp add epoch -- npx @puenteworks/epoch
-npm: https://www.npmjs.com/package/@puenteworks/epoch
+Install: claude mcp add epoch -- npx @kyanitelabs/epoch
+npm: https://www.npmjs.com/package/@kyanitelabs/epoch
 GitHub: https://github.com/KyaniteLabs/Epoch
 
 ---
 
 # Epoch — Time Estimation MCP Server
 
-> @puenteworks/epoch v0.2.1 — 24 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.2.1 — 24 structured tools for grounded time estimation
 
 ## What
 
@@ -197,7 +197,7 @@ Health report on the feedback loop.
 
 ## Interfaces
 
-- **MCP**: `npx @puenteworks/epoch` (stdio transport)
+- **MCP**: `npx @kyanitelabs/epoch` (stdio transport)
 - **CLI**: `npx epoch <command> [options]`
 - **HTTP**: `http://localhost:3000/api/<tool-name>` (POST with JSON body)
 
