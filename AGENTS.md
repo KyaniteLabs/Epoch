@@ -16,7 +16,7 @@ TypeScript | vitest | tsup | zod | MCP SDK
 ```
 src/index.ts          — MCP server entry (stdio transport)
 src/dispatcher/       — Tool registry + routing
-  tool-registry.ts    — 19 tool definitions, schema bindings
+  tool-registry.ts    — 24 tool definitions, schema bindings
   formatters.ts       — Output formatting helpers
 src/schemas/
   index.ts            — Zod schemas for all tools

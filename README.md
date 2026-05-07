@@ -612,6 +612,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per IP (HTTP only) |
 | `EPOCH_SOURCE` | _(none)_ | Project/source tag attached to estimate records |
 | `EPOCH_TELEMETRY` | `0` | Set to `1` to enable anonymous telemetry. See [Telemetry & Privacy](#telemetry--privacy). |
+| `EPOCH_TELEMETRY_ENDPOINT` | _(none)_ | Override the configured telemetry receiver endpoint for status/submission. |
 
 ## Telemetry & Privacy
 
@@ -621,6 +622,8 @@ Epoch can share **anonymized** estimate/actual pairs to improve accuracy for all
 epoch telemetry enable     # Opt in (shows exactly what will be shared)
 epoch telemetry preview    # Preview anonymized data before enabling
 epoch telemetry status     # Show current settings
+epoch telemetry set-endpoint --endpoint https://your-server.example.com/v1/telemetry
+epoch telemetry submit     # Submit queued anonymized records to the configured endpoint
 epoch telemetry disable    # Opt out
 epoch telemetry export     # Export all local data as anonymized JSON
 ```

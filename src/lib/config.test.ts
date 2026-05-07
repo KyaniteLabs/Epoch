@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -9,11 +9,13 @@ beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
   process.env["EPOCH_DATA_DIR"] = TEST_DIR;
   delete process.env["EPOCH_TELEMETRY"];
+  delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
 });
 
 afterEach(() => {
   delete process.env["EPOCH_DATA_DIR"];
   delete process.env["EPOCH_TELEMETRY"];
+  delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
   try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ok */ }
 });
 
@@ -66,11 +68,27 @@ describe("loadConfig", () => {
     expect(config.telemetry.endpoint).toBe("");
     expect(config.telemetry.lastSubmissionRecordCount).toBe(0);
   });
+
+  it("allows EPOCH_TELEMETRY_ENDPOINT to override config endpoint", async () => {
+    const { loadConfig, saveConfig } = await import("./config.js");
+    saveConfig({
+      telemetry: {
+        enabled: true,
+        endpoint: "https://configured.example.com/v1/telemetry",
+        lastSubmissionAt: null,
+        lastSubmissionRecordCount: 0,
+        installationId: "test-uuid",
+      },
+    });
+    process.env["EPOCH_TELEMETRY_ENDPOINT"] = "https://env.example.com/v1/telemetry";
+
+    expect(loadConfig().telemetry.endpoint).toBe("https://env.example.com/v1/telemetry");
+  });
 });
 
 describe("saveConfig", () => {
   it("writes valid JSON to config file", async () => {
-    const { saveConfig, loadConfig } = await import("./config.js");
+    const { saveConfig } = await import("./config.js");
     saveConfig({
       telemetry: {
         enabled: false,
@@ -164,5 +182,15 @@ describe("getInstallationId", () => {
       telemetry: { enabled: false, endpoint: "", lastSubmissionAt: null, lastSubmissionRecordCount: 0, installationId: "existing-id" },
     });
     expect(getInstallationId()).toBe("existing-id");
+  });
+});
+
+describe("telemetry endpoint helpers", () => {
+  it("rejects example.com placeholders as usable telemetry endpoints", async () => {
+    const { isPlaceholderTelemetryEndpoint, isUsableTelemetryEndpoint } = await import("./config.js");
+
+    expect(isPlaceholderTelemetryEndpoint("https://example.com/v1/telemetry")).toBe(true);
+    expect(isUsableTelemetryEndpoint("https://example.com/v1/telemetry")).toBe(false);
+    expect(isUsableTelemetryEndpoint("https://collector.example.net/v1/telemetry")).toBe(true);
   });
 });

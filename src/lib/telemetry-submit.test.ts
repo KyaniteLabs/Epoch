@@ -1,19 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { existsSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createHmac } from "node:crypto";
+import { existsSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const TEST_DIR = join(tmpdir(), `epoch-tel-sub-test-${Date.now()}`);
+const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
   process.env["EPOCH_DATA_DIR"] = TEST_DIR;
   delete process.env["EPOCH_TELEMETRY"];
+  delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
 });
 
 afterEach(() => {
+  globalThis.fetch = ORIGINAL_FETCH;
   delete process.env["EPOCH_DATA_DIR"];
   delete process.env["EPOCH_TELEMETRY"];
+  delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
   try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ok */ }
 });
 
@@ -64,6 +69,20 @@ describe("extractAnonymizedRecords", () => {
       const expected = Math.round((rec.actual_hours / rec.estimated_hours) * 10000) / 10000;
       expect(rec.ratio).toBe(expected);
     }
+  });
+
+  it("excludes records at or before the exact submission cutoff", async () => {
+    const { recordEstimate, recordActual } = await import("./feedback.js");
+    const estimateId = recordEstimate(
+      "pert_estimate",
+      { task_type: "feature", complexity: 3 },
+      { expected: 2, unit: "hours" },
+    );
+    recordActual(estimateId, 3);
+    const cutoff = new Date(Date.now() + 1_000).toISOString();
+
+    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+    expect(extractAnonymizedRecords(cutoff)).toHaveLength(0);
   });
 });
 
@@ -126,12 +145,29 @@ describe("submitTelemetry", () => {
     expect(result.error).toContain("no endpoint");
   });
 
+  it("returns error when endpoint is the example.com placeholder", async () => {
+    const { saveConfig } = await import("./config.js");
+    saveConfig({
+      telemetry: {
+        enabled: true,
+        endpoint: "https://example.com/v1/telemetry",
+        lastSubmissionAt: null,
+        lastSubmissionRecordCount: 0,
+        installationId: "test-id",
+      },
+    });
+    const { submitTelemetry } = await import("./telemetry-submit.js");
+    const result = await submitTelemetry();
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("placeholder endpoint");
+  });
+
   it("returns error when rate limited", async () => {
     const { saveConfig } = await import("./config.js");
     saveConfig({
       telemetry: {
         enabled: true,
-        endpoint: "https://example.com",
+        endpoint: "https://collector.example.net",
         lastSubmissionAt: new Date().toISOString(),
         lastSubmissionRecordCount: 0,
         installationId: "test-id",
@@ -141,6 +177,43 @@ describe("submitTelemetry", () => {
     const result = await submitTelemetry();
     expect(result.ok).toBe(false);
     expect(result.error).toContain("rate limited");
+  });
+
+  it("signs first-time submissions with the generated installation ID", async () => {
+    const { saveConfig, loadConfig } = await import("./config.js");
+    const { recordEstimate, recordActual } = await import("./feedback.js");
+    const estimateId = recordEstimate(
+      "pert_estimate",
+      { task_type: "feature", complexity: 3 },
+      { expected: 2, unit: "hours" },
+    );
+    recordActual(estimateId, 3);
+    saveConfig({
+      telemetry: {
+        enabled: true,
+        endpoint: "https://collector.example.net/v1/telemetry",
+        lastSubmissionAt: null,
+        lastSubmissionRecordCount: 0,
+        installationId: "",
+      },
+    });
+
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = String(init?.body ?? "");
+      const payload = JSON.parse(body) as { installation_id: string };
+      const headers = init?.headers as Record<string, string>;
+      const expected = createHmac("sha256", payload.installation_id).update(body).digest("hex");
+      expect(payload.installation_id).toHaveLength(36);
+      expect(headers["X-Epoch-Signature"]).toBe(expected);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    const { submitTelemetry } = await import("./telemetry-submit.js");
+    const result = await submitTelemetry();
+
+    expect(result).toEqual({ ok: true, recordCount: 1 });
+    expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(1);
+    expect(loadConfig().telemetry.installationId).toHaveLength(36);
   });
 });
 

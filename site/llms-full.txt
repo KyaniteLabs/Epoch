@@ -16,7 +16,7 @@ GitHub: https://github.com/KyaniteLabs/Epoch
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.2.1 — 24 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.2.2 — 24 structured tools for grounded time estimation
 
 ## What
 
@@ -230,6 +230,7 @@ What is NOT shared: project names, notes, team IDs, IP addresses, timestamps wit
 
 Environment variables:
 - `EPOCH_TELEMETRY` — set to "1" to enable, "0" to disable
+- `EPOCH_TELEMETRY_ENDPOINT` — override the configured telemetry receiver endpoint
 - `PORT` — HTTP server port (default 3000)
 - `EPOCH_RATE_LIMIT` — Requests per minute (default 60)
 - `EPOCH_DATA_DIR` — Data directory (default ~/.epoch)

@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
 import { recordActual, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
+import { receiveTelemetry } from "../lib/telemetry-receiver.js";
 import type { ToolResult } from "../types/index.js";
 import type { z } from "zod";
 import { getVersion } from "../version.js";
@@ -17,7 +18,7 @@ const AI_PLUGIN_MANIFEST = {
   description_for_human:
     "Time estimation tools for accurate scheduling and planning.",
   description_for_model:
-    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 24 tools across 5 layers. Works with Claude Code, Cursor, Codex CLI, Cline, Zed, and any MCP client.",
+    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 24 tools across 6 layers. Works with Claude Code, Cursor, Codex CLI, Cline, Zed, and any MCP client.",
   api: { type: "openapi", url: "/openapi.json" },
   auth: { type: "none" },
   legal_info_url:
@@ -28,7 +29,7 @@ const LLMSTXT = `# Epoch
 > Time Estimation MCP Server — structured temporal reasoning for AI agents
 
 ## Overview
-Epoch provides 24 tools across 5 layers for accurate time estimation.
+Epoch provides 24 tools across 6 layers for accurate time estimation.
 All tools are accessed via POST /v1/tools/{tool_name} with JSON request bodies.
 All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"isError": true, "message": "...", "retryHint": "..."}}
 
@@ -38,6 +39,7 @@ All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"is
 3. Estimation Algorithms — PERT, COCOMO II, Sprint Forecast, CPM, Monte Carlo
 4. Data Integration — reference class forecasting, calibration
 5. Advanced Analytics — token-to-time bridge, accuracy metrics
+6. Feedback & Telemetry — estimate-vs-actual feedback, anonymous telemetry receipt testing
 
 ## Supported Countries
 US, UK, FR, DE, JP (for holiday-aware business day calculations)
@@ -356,7 +358,7 @@ function buildOpenApiSpec(): Record<string, unknown> {
       title: "Epoch Time Estimation API",
       version: VERSION,
       description:
-        "Structured time estimation for LLMs and AI agents. 24 tools across 5 layers.",
+        "Structured time estimation for LLMs and AI agents. 24 tools across 6 layers.",
     },
     servers: [
       { url: "http://localhost:3000", description: "Local development" },
@@ -480,6 +482,24 @@ export function createApiApp(): Hono {
     return c.json(result, status);
   });
 
+  app.post("/v1/telemetry", async (c) => {
+    const contentLength = c.req.header("content-length");
+    if (contentLength && Number.parseInt(contentLength, 10) > 1_048_576) {
+      return c.json({ accepted: 0, deduplicated: 0, error: "payload too large" }, 400);
+    }
+
+    const rawBody = await c.req.text().catch(() => "");
+    const result = receiveTelemetry(rawBody, c.req.header("x-epoch-signature"));
+    if (!result.ok) {
+      return c.json(
+        { accepted: 0, deduplicated: 0, error: result.error ?? "telemetry rejected" },
+        result.status,
+      );
+    }
+
+    return c.json({ accepted: result.accepted, deduplicated: result.deduplicated });
+  });
+
   app.get("/.well-known/ai-plugin.json", (c) => {
     return c.json(AI_PLUGIN_MANIFEST);
   });
@@ -590,7 +610,7 @@ export function createApiApp(): Hono {
       error: {
         isError: true,
         message: `Not found: ${c.req.path}`,
-        retryHint: "Available endpoints: /health, /openapi.json, /llms.txt, /.well-known/ai-plugin.json, /v1/tools/{tool_name}, /v1/feedback/record-actual, /v1/feedback/pending",
+        retryHint: "Available endpoints: /health, /openapi.json, /llms.txt, /.well-known/ai-plugin.json, /v1/tools/{tool_name}, /v1/telemetry, /v1/feedback/record-actual, /v1/feedback/pending",
       },
     }, 404);
   });

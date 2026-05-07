@@ -590,18 +590,43 @@ export function createCliProgram(): Command {
 
   const telemetryCmd = program.command("telemetry").description("Manage anonymous telemetry settings");
 
+  function validateTelemetryEndpoint(endpoint: string): string {
+    const trimmed = endpoint.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed);
+    } catch {
+      throw new Error("--endpoint must be a valid URL");
+    }
+
+    const isLocalHttp = parsed.protocol === "http:"
+      && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+    if (parsed.protocol !== "https:" && !isLocalHttp) {
+      throw new Error("--endpoint must use https://, except for localhost receivers");
+    }
+
+    return trimmed;
+  }
+
   telemetryCmd
     .command("status")
     .description("Show current telemetry configuration and history")
     .action(async () => {
-      const { loadConfig } = await import("../lib/config.js");
+      const { loadConfig, isUsableTelemetryEndpoint } = await import("../lib/config.js");
+      const { extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
       const config = loadConfig();
       const envVal = process.env["EPOCH_TELEMETRY"];
+      const endpointEnvVal = process.env["EPOCH_TELEMETRY_ENDPOINT"];
       const source = envVal ? "env var" : "config file";
+      const endpointConfigured = isUsableTelemetryEndpoint(config.telemetry.endpoint);
+      const queuedRecords = extractAnonymizedRecords(config.telemetry.lastSubmissionAt ?? undefined).length;
       process.stdout.write(JSON.stringify({
         enabled: config.telemetry.enabled || envVal === "1" || envVal === "true",
         source,
-        endpoint: config.telemetry.endpoint || "(not configured)",
+        endpoint: endpointConfigured ? config.telemetry.endpoint : "(not configured)",
+        endpointSource: endpointEnvVal ? "env var" : "config file",
+        endpointConfigured,
+        queuedRecords,
         lastSubmissionAt: config.telemetry.lastSubmissionAt,
         totalRecordsSubmitted: config.telemetry.lastSubmissionRecordCount,
         installationId: config.telemetry.installationId || "(not generated yet)",
@@ -639,10 +664,22 @@ export function createCliProgram(): Command {
   telemetryCmd
     .command("enable")
     .option("--yes", "Skip confirmation prompt")
+    .option("--endpoint <url>", "Telemetry receiver URL")
     .description("Opt in to anonymous telemetry sharing")
     .action(async (opts) => {
       const { saveConfig, loadConfig } = await import("../lib/config.js");
       const { extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
+      let endpoint: string | undefined;
+
+      if (opts.endpoint) {
+        try {
+          endpoint = validateTelemetryEndpoint(opts.endpoint);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "invalid endpoint";
+          process.stderr.write(`${message}\n`);
+          process.exit(1);
+        }
+      }
 
       if (!opts.yes) {
         const records = extractAnonymizedRecords();
@@ -666,8 +703,11 @@ export function createCliProgram(): Command {
         console.log(`This ID cannot be used to identify you.`);
         console.log("");
         console.log(`Records available: ${records.length}`);
+        if (endpoint) {
+          console.log(`Endpoint: ${endpoint}`);
+        }
         console.log("");
-        console.log("Network submission is not yet active. Data stays local until an endpoint is configured.");
+        console.log("Data stays local until an endpoint is configured and submission runs.");
         console.log("Type 'yes' to confirm:");
 
         const { createInterface } = await import("node:readline");
@@ -682,9 +722,64 @@ export function createCliProgram(): Command {
 
       const config = loadConfig();
       config.telemetry.enabled = true;
+      if (endpoint) config.telemetry.endpoint = endpoint;
       saveConfig(config);
-      process.stdout.write(JSON.stringify({ ok: true, message: "Telemetry enabled. Use 'epoch telemetry preview' to see what will be shared." }) + "\n");
+      process.stdout.write(JSON.stringify({
+        ok: true,
+        endpoint: config.telemetry.endpoint || "(not configured)",
+        message: "Telemetry enabled. Use 'epoch telemetry preview' to see what will be shared.",
+      }) + "\n");
       process.exit(0);
+    });
+
+  telemetryCmd
+    .command("set-endpoint")
+    .requiredOption("--endpoint <url>", "Telemetry receiver URL")
+    .description("Configure the telemetry receiver endpoint")
+    .action(async (opts) => {
+      const { saveConfig, loadConfig } = await import("../lib/config.js");
+      let endpoint: string;
+      try {
+        endpoint = validateTelemetryEndpoint(opts.endpoint);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "invalid endpoint";
+        process.stderr.write(`${message}\n`);
+        process.exit(1);
+      }
+
+      const config = loadConfig();
+      config.telemetry.endpoint = endpoint;
+      saveConfig(config);
+      process.stdout.write(JSON.stringify({ ok: true, endpoint }) + "\n");
+      process.exit(0);
+    });
+
+  telemetryCmd
+    .command("submit")
+    .option("--endpoint <url>", "Telemetry receiver URL to save before submitting")
+    .description("Submit queued anonymized telemetry to the configured endpoint")
+    .action(async (opts) => {
+      const { saveConfig, loadConfig } = await import("../lib/config.js");
+      const { submitTelemetry } = await import("../lib/telemetry-submit.js");
+
+      if (opts.endpoint) {
+        let endpoint: string;
+        try {
+          endpoint = validateTelemetryEndpoint(opts.endpoint);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "invalid endpoint";
+          process.stderr.write(`${message}\n`);
+          process.exit(1);
+        }
+
+        const config = loadConfig();
+        config.telemetry.endpoint = endpoint;
+        saveConfig(config);
+      }
+
+      const result = await submitTelemetry();
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      process.exit(result.ok ? 0 : 1);
     });
 
   telemetryCmd
@@ -703,7 +798,7 @@ export function createCliProgram(): Command {
     .command("delete-data")
     .option("--confirm", "Skip confirmation")
     .description("Instructions for deleting your telemetry data")
-    .action(async (opts) => {
+    .action(async () => {
       const { loadConfig } = await import("../lib/config.js");
       const config = loadConfig();
       const id = config.telemetry.installationId || "(not generated)";

@@ -3,7 +3,8 @@
 // Covers rate limiter, tool dispatch, health, OpenAPI, feedback, error handling.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createHmac } from "node:crypto";
 import { createApiApp } from "./http.js";
 
 describe("HTTP API", () => {
@@ -171,6 +172,57 @@ describe("HTTP API", () => {
 
       const data = body.data as Record<string, unknown>;
       expect(data.totalSeconds).toBe(9000);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Telemetry receiver
+  // ---------------------------------------------------------------------------
+
+  describe("POST /v1/telemetry", () => {
+    it("accepts signed anonymized telemetry payloads", async () => {
+      const payload = {
+        schema_version: 1,
+        installation_id: "http-test-installation",
+        epoch_version: "0.2.2-test",
+        records: [{ task_type: "feature", complexity: 3, tool: "test", estimated_hours: 4, actual_hours: 5, ratio: 1.25, date: "2026-05-07" }],
+        generated_at: "2026-05-07T00:00:00.000Z",
+      };
+      const rawBody = JSON.stringify(payload);
+      const signature = createHmac("sha256", payload.installation_id).update(rawBody).digest("hex");
+
+      const res = await app.request("/v1/telemetry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Epoch-Signature": signature,
+        },
+        body: rawBody,
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.accepted).toBe(1);
+      expect(body.deduplicated).toBe(0);
+    });
+
+    it("rejects telemetry with invalid signatures", async () => {
+      const res = await app.request("/v1/telemetry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Epoch-Signature": "0".repeat(64),
+        },
+        body: JSON.stringify({
+          schema_version: 1,
+          installation_id: "http-test-installation",
+          epoch_version: "0.2.2-test",
+          records: [],
+          generated_at: "2026-05-07T00:00:00.000Z",
+        }),
+      });
+
+      expect(res.status).toBe(401);
     });
   });
 
