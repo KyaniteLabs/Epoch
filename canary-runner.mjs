@@ -462,7 +462,7 @@ const FAILURE_MODE_TASKS = [
     validate: (result) => {
       if (!result.ok) return { pass: false, detail: `Error: ${result.error?.message}` };
       const hasSeconds = result.data.estimatedSeconds > 0;
-      const hasConfidence = result.data.confidence === "optimistic";
+      const hasConfidence = typeof result.data.confidence === "string" && result.data.confidence.length > 0;
       return { pass: hasSeconds && hasConfidence, detail: `estimatedSeconds=${result.data.estimatedSeconds}, confidence=${result.data.confidence}, hasSeconds=${hasSeconds}, hasConfidence=${hasConfidence}` };
     },
   },
@@ -1303,12 +1303,12 @@ async function main() {
     // -- Previously untested surface tests --
     { name: "token_cost_estimate", body: { tokens: 100000, model: "claude-sonnet-4-20250514", reasoning_depth: "deep" }, validate: (d) => d.estimatedSeconds > 0 && d.estimatedCost > 0 },
     { name: "compare_models", body: { tokens: 100000, tool_calls: 20, reasoning_depth: "deep" }, validate: (d) => Array.isArray(d.models) && d.models.length > 1 },
-    { name: "accuracy_trend", body: { team_id: "canary-test", window_size: 10 }, validate: (d) => typeof d.mape === "number" && typeof d.trend === "string" },
-    { name: "schedule_risk", body: { estimated_hours: 80, task_type: "feature" }, validate: (d) => d.riskMultiplier > 0 && typeof d.riskLevel === "string" },
-    { name: "calibrate_estimates", body: { team_id: "canary-test", period_days: 90, minimum_samples: 5 }, validate: (d) => typeof d.mape === "number" && typeof d.sample_size === "number" },
-    { name: "cocomo_validate", body: { kloc: 10, actual_person_months: 12, project_type: "organic" }, validate: (d) => d.estimatedMonths > 0 && typeof d.deviationPercent === "number" },
+    { name: "accuracy_trend", body: { team_id: "canary-test", window_size: 10 }, validate: (d) => typeof d.currentMape === "number" && typeof d.overallTrend === "string" && Array.isArray(d.windows) },
+    { name: "schedule_risk", body: { estimated_hours: 80, task_type: "feature" }, validate: (d) => typeof d.riskLevel === "string" && d.confidenceIntervals?.p50 > 0 && d.confidenceIntervals?.p95 >= d.confidenceIntervals?.p50 },
+    { name: "calibrate_estimates", body: { team_id: "canary-test", period_days: 90, minimum_samples: 5 }, validate: (d) => typeof d.correctionFactor === "number" && typeof d.accuracyTrend === "string" && Array.isArray(d.recommendations) },
+    { name: "cocomo_validate", body: {}, validate: (d) => typeof d.projectsEvaluated === "number" && d.projectsEvaluated > 0 && typeof d.mape === "number" && typeof d.bias === "number" },
     { name: "get_pending_estimates", body: {}, validate: (d) => typeof d === "object" },
-    { name: "feedback_health", body: {}, validate: (d) => typeof d.totalEstimates === "number" && typeof d.matchedRecords === "number" },
+    { name: "feedback_health", body: {}, validate: (d) => typeof d.totalEstimates === "number" && typeof d.matchedPairs === "number" && typeof d.matchRate === "number" },
   ];
   console.log(`\n--- Phase 0: Epoch Surface Tests (API directly, ${surfaceTests.length} tools) ---`);
 
@@ -1457,6 +1457,15 @@ async function main() {
   const fs = await import("fs");
   fs.writeFileSync(REPORT_PATH, JSON.stringify(telemetry, null, 2));
   console.log(`\nReport written to ${REPORT_PATH} (${(fs.statSync(REPORT_PATH).size / 1024).toFixed(1)} KB)`);
+
+  const localSurfaceFailures = telemetry.surfaceTests.filter((r) => r.status !== "PASS");
+  const failureModeFailures = telemetry.failureModeTests.filter((r) => r.status !== "PASS");
+  if (localSurfaceFailures.length > 0 || failureModeFailures.length > 0) {
+    console.error(
+      `Canary local API gate failed: ${localSurfaceFailures.length} surface failures, ${failureModeFailures.length} failure-mode failures.`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main().catch(console.error);
