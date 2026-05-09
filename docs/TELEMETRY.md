@@ -236,6 +236,8 @@ When using the default Kyanite Labs endpoint, the following guarantees apply:
 
 You can run your own telemetry endpoint to keep all data within your infrastructure. The API contract is minimal:
 
+Epoch ships with a frozen baseline reference database. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); run `epoch reference-db-status` to see whether the active database is bundled or user-local, when it was generated, and how many correction factors are available.
+
 ### Endpoint Contract
 
 ```

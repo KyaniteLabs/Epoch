@@ -220,6 +220,7 @@ describe("CLI tests", () => {
       "cocomo-ground-truth",
       "list-tools",
       "self-improve",
+      "reference-db-status",
       "telemetry",
       "share-data",
     ];
@@ -611,6 +612,23 @@ describe("CLI tests", () => {
       const tools = JSON.parse(output) as Array<{ name: string; description: string }>;
       expect(tools.length).toBeGreaterThan(0);
       expect(capture.exitCode).toBe(0);
+    });
+  });
+
+  describe("CLI reference database status command", () => {
+    it("outputs active reference database provenance as JSON", async () => {
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, ["reference-db-status"]);
+
+      const output = JSON.parse(capture.stdout.join("")) as {
+        loaded: boolean;
+        sampleSize: number | null;
+        globalCorrectionFactor: number | null;
+      };
+      expect(capture.exitCode).toBe(0);
+      expect(typeof output.loaded).toBe("boolean");
+      expect(output).toHaveProperty("sampleSize");
+      expect(output).toHaveProperty("globalCorrectionFactor");
     });
   });
 

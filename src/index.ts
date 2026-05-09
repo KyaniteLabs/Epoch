@@ -45,6 +45,7 @@ export {
   submitTelemetry,
 } from "./lib/telemetry-submit.js";
 export { receiveTelemetry } from "./lib/telemetry-receiver.js";
+export { getReferenceDbStatus, type ReferenceDbStatus } from "./lib/self-improve.js";
 // Re-export types for consumers
 export type {
   UrgencyCategory,

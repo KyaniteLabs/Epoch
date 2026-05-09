@@ -5,11 +5,9 @@ import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 
-const REFERENCE_DB_PATH = resolveReferenceDbPath();
-
 function resolveReferenceDbPath(): string {
   // Prefer user data dir (survives npm updates, no git noise)
-  const userDataPath = join(homedir(), ".epoch", "reference-database.json");
+  const userDataPath = join(process.env["EPOCH_DATA_DIR"] ?? join(homedir(), ".epoch"), "reference-database.json");
   if (existsSync(userDataPath)) return userDataPath;
 
   // Dev: src/lib/self-improve.ts → src/data/reference-database.json
@@ -49,6 +47,18 @@ interface ReferenceDatabase {
   toolTaskCorrectionFactors: Record<string, Record<string, number>>;
   tokenTimeCalibration: Record<string, TokenCalibration>;
   globalCorrectionFactor: number;
+}
+
+export interface ReferenceDbStatus {
+  path: string | null;
+  loaded: boolean;
+  generatedAt: string | null;
+  sampleSize: number | null;
+  source: string | null;
+  globalCorrectionFactor: number | null;
+  taskTypeCorrectionFactorCount: number;
+  toolTaskCorrectionFactorCount: number;
+  complexityCorrectionFactorCount: number;
 }
 
 interface ToolBenchmark {
@@ -149,18 +159,28 @@ export async function updateReferenceDatabase(): Promise<void> {
 
 let _cachedDb: ReferenceDatabase | null | undefined;
 let _cachedDbAt = 0;
+let _cachedDbPath: string | null = null;
 const DB_CACHE_TTL = 60_000;
 
 export function loadReferenceDb(): ReferenceDatabase | null {
-  if (_cachedDb !== undefined && Date.now() - _cachedDbAt < DB_CACHE_TTL) return _cachedDb;
+  const referenceDbPath = resolveReferenceDbPath();
+  if (
+    _cachedDb !== undefined
+    && _cachedDbPath === referenceDbPath
+    && Date.now() - _cachedDbAt < DB_CACHE_TTL
+  ) {
+    return _cachedDb;
+  }
   try {
-    const content = readFileSync(REFERENCE_DB_PATH, "utf-8");
+    const content = readFileSync(referenceDbPath, "utf-8");
     _cachedDb = JSON.parse(content) as ReferenceDatabase;
     _cachedDbAt = Date.now();
+    _cachedDbPath = referenceDbPath;
     return _cachedDb;
   } catch {
     _cachedDb = null;
     _cachedDbAt = Date.now();
+    _cachedDbPath = referenceDbPath;
     return null;
   }
 }
@@ -168,6 +188,36 @@ export function loadReferenceDb(): ReferenceDatabase | null {
 export function invalidateReferenceDbCache(): void {
   _cachedDb = undefined;
   _cachedDbAt = 0;
+  _cachedDbPath = null;
+}
+
+export function getReferenceDbStatus(): ReferenceDbStatus {
+  const db = loadReferenceDb();
+  if (!db) {
+    return {
+      path: null,
+      loaded: false,
+      generatedAt: null,
+      sampleSize: null,
+      source: null,
+      globalCorrectionFactor: null,
+      taskTypeCorrectionFactorCount: 0,
+      toolTaskCorrectionFactorCount: 0,
+      complexityCorrectionFactorCount: 0,
+    };
+  }
+
+  return {
+    path: _cachedDbPath,
+    loaded: true,
+    generatedAt: db.generatedAt ?? null,
+    sampleSize: db.sampleSize ?? null,
+    source: db.source ?? null,
+    globalCorrectionFactor: db.globalCorrectionFactor ?? null,
+    taskTypeCorrectionFactorCount: Object.keys(db.taskTypeCorrectionFactors ?? {}).length,
+    toolTaskCorrectionFactorCount: Object.keys(db.toolTaskCorrectionFactors ?? {}).length,
+    complexityCorrectionFactorCount: Object.keys(db.complexityCorrectionFactors ?? {}).length,
+  };
 }
 
 export function getTaskTypeCorrectionFactor(taskType: TaskType): number {

@@ -25,6 +25,7 @@ import { getCalibrationData } from "./feedback.js";
 import { getTelemetry } from "./telemetry.js";
 import {
   loadReferenceDb,
+  getReferenceDbStatus,
   getTaskTypeCorrectionFactor,
   getToolTaskCorrectionFactor,
   getGlobalCorrectionFactor,
@@ -95,6 +96,51 @@ describe("loadReferenceDb", () => {
   it("returns null when JSON is malformed", () => {
     mockReadFileSync.mockReturnValue("not json{{{");
     expect(loadReferenceDb()).toBeNull();
+  });
+});
+
+describe("getReferenceDbStatus", () => {
+  it("reports active DB provenance and factor counts", () => {
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        source: "unit-test",
+        sampleSize: 42,
+        globalCorrectionFactor: 1.23,
+        taskTypeCorrectionFactors: { feature: 1.4, bugfix: 1.2 },
+        toolTaskCorrectionFactors: { pert_estimate: { feature: 1.5 } },
+        complexityCorrectionFactors: { feature: { 3: 1.4, 5: 1.8 } },
+      }),
+    );
+
+    expect(getReferenceDbStatus()).toMatchObject({
+      loaded: true,
+      generatedAt: "2026-01-01T00:00:00Z",
+      sampleSize: 42,
+      source: "unit-test",
+      globalCorrectionFactor: 1.23,
+      taskTypeCorrectionFactorCount: 2,
+      toolTaskCorrectionFactorCount: 1,
+      complexityCorrectionFactorCount: 1,
+    });
+    expect(getReferenceDbStatus().path).toEqual(expect.any(String));
+  });
+
+  it("reports unloaded status when DB cannot be read", () => {
+    mockReadFileSync.mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+
+    expect(getReferenceDbStatus()).toEqual({
+      path: null,
+      loaded: false,
+      generatedAt: null,
+      sampleSize: null,
+      source: null,
+      globalCorrectionFactor: null,
+      taskTypeCorrectionFactorCount: 0,
+      toolTaskCorrectionFactorCount: 0,
+      complexityCorrectionFactorCount: 0,
+    });
   });
 });
 

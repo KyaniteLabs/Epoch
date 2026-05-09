@@ -462,5 +462,6 @@
       "bugfix": 0.5,
       "documentation": 0.5
     }
-  }
+  },
+  "complexityCorrectionFactors": {}
 }

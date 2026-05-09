@@ -586,6 +586,15 @@ export function createCliProgram(): Command {
       process.exit(0);
     });
 
+  program
+    .command("reference-db-status")
+    .description("Show active reference database provenance and calibration freshness")
+    .action(async () => {
+      const { getReferenceDbStatus } = await import("../lib/self-improve.js");
+      process.stdout.write(JSON.stringify(getReferenceDbStatus(), null, 2) + "\n");
+      process.exit(0);
+    });
+
   // ---- Telemetry commands ----------------------------------------------------
 
   const telemetryCmd = program.command("telemetry").description("Manage anonymous telemetry settings");
