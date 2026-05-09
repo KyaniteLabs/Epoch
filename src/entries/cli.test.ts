@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { Command } from "commander";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createCliProgram } from "./cli.js";
@@ -121,6 +121,28 @@ function mockDispatchError(
     ok: false,
     error: { isError, message },
   });
+}
+
+function writeTelemetryFixtures(records: Array<{
+  id: string;
+  reportedAt: string;
+  actualHours: number;
+}>): void {
+  const estimates = records.map((record) => JSON.stringify({
+    id: record.id,
+    tool: "pert_estimate",
+    inputs: { task_type: "feature", complexity: 3 },
+    outputs: { expected: 4, unit: "hours" },
+    estimatedAt: "2026-05-07T00:00:00.000Z",
+  })).join("\n");
+  const actuals = records.map((record) => JSON.stringify({
+    estimateId: record.id,
+    actualHours: record.actualHours,
+    reportedAt: record.reportedAt,
+  })).join("\n");
+
+  writeFileSync(join(TEST_DIR, "estimates.jsonl"), `${estimates}\n`, "utf-8");
+  writeFileSync(join(TEST_DIR, "feedback.jsonl"), `${actuals}\n`, "utf-8");
 }
 
 // ---- Tests ------------------------------------------------------------------
@@ -637,6 +659,21 @@ describe("CLI tests", () => {
       expect(capture.stderr.join("")).toContain("https://");
     });
 
+    it("allows Tailscale private HTTP telemetry endpoints", async () => {
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, [
+        "telemetry",
+        "set-endpoint",
+        "--endpoint",
+        "http://100.66.225.85:3099/v1/telemetry",
+      ]);
+
+      const output = JSON.parse(capture.stdout.join("")) as { ok: boolean; endpoint: string };
+      expect(capture.exitCode).toBe(0);
+      expect(output.ok).toBe(true);
+      expect(output.endpoint).toBe("http://100.66.225.85:3099/v1/telemetry");
+    });
+
     it("reports placeholder endpoint as not configured in telemetry status", async () => {
       const { saveConfig } = await import("../lib/config.js");
       saveConfig({
@@ -661,6 +698,64 @@ describe("CLI tests", () => {
       expect(output.endpoint).toBe("(not configured)");
       expect(output.endpointConfigured).toBe(false);
       expect(typeof output.queuedRecords).toBe("number");
+    });
+
+    it("telemetry preview reports all records and queued records separately", async () => {
+      const { saveConfig } = await import("../lib/config.js");
+      writeTelemetryFixtures([
+        { id: "old-estimate", actualHours: 5, reportedAt: "2026-05-06T23:59:59.000Z" },
+        { id: "new-estimate", actualHours: 6, reportedAt: "2026-05-07T00:00:01.000Z" },
+      ]);
+      saveConfig({
+        telemetry: {
+          enabled: true,
+          endpoint: "https://collector.example.net/v1/telemetry",
+          lastSubmissionAt: "2026-05-07T00:00:00.000Z",
+          lastSubmissionRecordCount: 1,
+          installationId: "test-id",
+        },
+      });
+
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, ["telemetry", "preview"]);
+      const output = JSON.parse(capture.stdout.join("")) as {
+        totalRecords: number;
+        queuedRecords: number;
+        lastSubmissionAt: string | null;
+      };
+
+      expect(capture.exitCode).toBe(0);
+      expect(output.totalRecords).toBe(2);
+      expect(output.queuedRecords).toBe(1);
+      expect(output.lastSubmissionAt).toBe("2026-05-07T00:00:00.000Z");
+    });
+
+    it("telemetry status exposes last submission cutoff used for queued records", async () => {
+      const { saveConfig } = await import("../lib/config.js");
+      writeTelemetryFixtures([
+        { id: "old-estimate", actualHours: 5, reportedAt: "2026-05-06T23:59:59.000Z" },
+        { id: "new-estimate", actualHours: 6, reportedAt: "2026-05-07T00:00:01.000Z" },
+      ]);
+      saveConfig({
+        telemetry: {
+          enabled: true,
+          endpoint: "https://collector.example.net/v1/telemetry",
+          lastSubmissionAt: "2026-05-07T00:00:00.000Z",
+          lastSubmissionRecordCount: 1,
+          installationId: "test-id",
+        },
+      });
+
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, ["telemetry", "status"]);
+      const output = JSON.parse(capture.stdout.join("")) as {
+        lastSubmissionAt: string | null;
+        queuedRecords: number;
+      };
+
+      expect(capture.exitCode).toBe(0);
+      expect(output.lastSubmissionAt).toBe("2026-05-07T00:00:00.000Z");
+      expect(output.queuedRecords).toBe(1);
     });
   });
 });

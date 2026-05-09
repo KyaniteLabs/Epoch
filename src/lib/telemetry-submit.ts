@@ -76,7 +76,14 @@ export function signPayload(payload: SubmissionPayload, installationId: string):
 export interface SubmissionResult {
   ok: boolean;
   recordCount: number;
+  accepted?: number;
+  deduplicated?: number;
   error?: string;
+}
+
+interface ReceiverResponse {
+  accepted?: unknown;
+  deduplicated?: unknown;
 }
 
 export async function submitTelemetry(): Promise<SubmissionResult> {
@@ -126,12 +133,24 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
       return { ok: false, recordCount: 0, error: `server returned ${response.status}` };
     }
 
+    const body = await response.json().catch(() => ({})) as ReceiverResponse;
+    const accepted = typeof body.accepted === "number" && Number.isFinite(body.accepted)
+      ? body.accepted
+      : capped.length;
+    const deduplicated = typeof body.deduplicated === "number" && Number.isFinite(body.deduplicated)
+      ? body.deduplicated
+      : 0;
+
     config.telemetry.installationId = payload.installation_id;
     config.telemetry.lastSubmissionAt = new Date().toISOString();
     config.telemetry.lastSubmissionRecordCount += capped.length;
+    config.telemetry.lastSubmissionAcceptedCount = accepted;
+    config.telemetry.lastSubmissionDeduplicatedCount = deduplicated;
+    config.telemetry.totalRecordsAccepted += accepted;
+    config.telemetry.totalRecordsDeduplicated += deduplicated;
     saveConfig(config);
 
-    return { ok: true, recordCount: capped.length };
+    return { ok: true, recordCount: capped.length, accepted, deduplicated };
   } catch (err) {
     const message = err instanceof Error ? err.message : "network error";
     return { ok: false, recordCount: 0, error: message };

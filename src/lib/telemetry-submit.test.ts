@@ -211,9 +211,42 @@ describe("submitTelemetry", () => {
     const { submitTelemetry } = await import("./telemetry-submit.js");
     const result = await submitTelemetry();
 
-    expect(result).toEqual({ ok: true, recordCount: 1 });
+    expect(result).toEqual({ ok: true, recordCount: 1, accepted: 1, deduplicated: 0 });
     expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(1);
     expect(loadConfig().telemetry.installationId).toHaveLength(36);
+  });
+
+  it("records accepted and deduplicated counts returned by receiver", async () => {
+    const { saveConfig, loadConfig } = await import("./config.js");
+    const { recordEstimate, recordActual } = await import("./feedback.js");
+    const estimateId = recordEstimate(
+      "pert_estimate",
+      { task_type: "feature", complexity: 3 },
+      { expected: 2, unit: "hours" },
+    );
+    recordActual(estimateId, 3);
+    saveConfig({
+      telemetry: {
+        enabled: true,
+        endpoint: "https://collector.example.net/v1/telemetry",
+        lastSubmissionAt: null,
+        lastSubmissionRecordCount: 0,
+        installationId: "test-id",
+      },
+    });
+
+    globalThis.fetch = (async () => {
+      return new Response(JSON.stringify({ accepted: 0, deduplicated: 1 }), { status: 200 });
+    }) as typeof fetch;
+
+    const { submitTelemetry } = await import("./telemetry-submit.js");
+    const result = await submitTelemetry();
+
+    expect(result).toEqual({ ok: true, recordCount: 1, accepted: 0, deduplicated: 1 });
+    expect(loadConfig().telemetry.totalRecordsAccepted).toBe(0);
+    expect(loadConfig().telemetry.totalRecordsDeduplicated).toBe(1);
+    expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(0);
+    expect(loadConfig().telemetry.lastSubmissionDeduplicatedCount).toBe(1);
   });
 });
 
