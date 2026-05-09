@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${EPOCH_CONFIRM_OPS:-}" != "1" ]]; then
+  cat >&2 <<'MSG'
+This operational script enables Epoch telemetry and installs/updates a user launchd agent.
+Review the endpoint and interval first, then rerun with EPOCH_CONFIRM_OPS=1.
+MSG
+  exit 1
+fi
+
 ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:-http://100.66.225.85:3099/v1/telemetry}"
 INTERVAL_SECONDS="${EPOCH_TELEMETRY_INTERVAL_SECONDS:-3600}"
 LABEL="${EPOCH_TELEMETRY_LAUNCHD_LABEL:-com.kyanitelabs.epoch.telemetry-submit}"

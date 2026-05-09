@@ -190,6 +190,11 @@ For a private Mac mini receiver reachable through Tailscale, use the private end
 node scripts/backfill-telemetry.mjs --endpoint http://100.66.225.85:3099/v1/telemetry --dry-run
 ```
 
+Side-effecting operational helpers such as `scripts/configure-mac-mini-telemetry.sh`
+and `scripts/install-telemetry-launchd.sh` require `EPOCH_CONFIRM_OPS=1`. They can
+enable telemetry, submit queued records, or install a user launchd agent, so review
+`EPOCH_TELEMETRY_ENDPOINT` and `EPOCH_TELEMETRY_INTERVAL_SECONDS` before running them.
+
 ### `epoch telemetry export`
 
 Writes all anonymized data to a JSON file on disk. The output file contains the same `SubmissionPayload` format that would be sent to the endpoint. This is useful for:
