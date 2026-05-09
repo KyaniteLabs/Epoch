@@ -394,7 +394,7 @@ describe("HTTP API", () => {
       const spec = await res.json() as Record<string, unknown>;
 
       const paths = spec.paths as Record<string, unknown>;
-      const pathKeys = Object.keys(paths);
+      const pathKeys = Object.keys(paths).filter((path) => path.startsWith("/v1/tools/"));
 
       // Each tool has its own path: /v1/tools/{toolName}
       expect(pathKeys).toHaveLength(24);
@@ -405,12 +405,32 @@ describe("HTTP API", () => {
       }
     });
 
+    it("documents telemetry receiver endpoint", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const paths = spec.paths as Record<string, unknown>;
+      expect(paths["/v1/telemetry"]).toBeTruthy();
+    });
+
+    it("documents feedback endpoints", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const paths = spec.paths as Record<string, unknown>;
+      expect(paths["/v1/feedback/record-actual"]).toBeTruthy();
+      expect(paths["/v1/feedback/pending"]).toBeTruthy();
+      expect(paths["/v1/feedback/batch-record-actuals"]).toBeTruthy();
+      expect(paths["/v1/feedback/health"]).toBeTruthy();
+    });
+
     it("each tool path has a POST operation", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;
 
       const paths = spec.paths as Record<string, Record<string, unknown>>;
-      for (const [, pathObj] of Object.entries(paths)) {
+      for (const [path, pathObj] of Object.entries(paths)) {
+        if (!path.startsWith("/v1/tools/")) continue;
         expect(pathObj.post).toBeDefined();
         const post = pathObj.post as Record<string, unknown>;
         expect(post.operationId).toBeTruthy();

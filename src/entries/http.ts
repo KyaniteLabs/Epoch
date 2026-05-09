@@ -291,6 +291,146 @@ function withDescription(schema: JsonSchema, def: { description?: string }): Jso
 
 // ---- OpenAPI spec builder ---------------------------------------------------
 
+const telemetryPath = {
+  post: {
+    operationId: "receiveTelemetry",
+    summary: "Receive signed anonymized Epoch telemetry payloads.",
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["schema_version", "installation_id", "epoch_version", "records", "generated_at"],
+            properties: {
+              schema_version: { type: "integer", const: 1 },
+              installation_id: { type: "string" },
+              epoch_version: { type: "string" },
+              generated_at: { type: "string", format: "date-time" },
+              records: {
+                type: "array",
+                maxItems: 100,
+                items: {
+                  type: "object",
+                  required: ["task_type", "complexity", "tool", "estimated_hours", "actual_hours", "ratio", "date"],
+                  properties: {
+                    task_type: { type: "string" },
+                    complexity: { anyOf: [{ type: "number" }, { type: "null" }] },
+                    tool: { type: "string" },
+                    estimated_hours: { type: "number" },
+                    actual_hours: { type: "number" },
+                    ratio: { type: "number" },
+                    date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      "200": { description: "Accepted telemetry counts." },
+      "400": { description: "Invalid payload." },
+      "401": { description: "Missing or invalid signature." },
+    },
+  },
+} satisfies Record<string, unknown>;
+
+const feedbackRecordActualPath = {
+  post: {
+    operationId: "recordActualFeedback",
+    summary: "Record actual hours for a pending estimate.",
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["estimate_id", "actual_hours"],
+            properties: {
+              estimate_id: { type: "string" },
+              actual_hours: { type: "number", exclusiveMinimum: 0 },
+              notes: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      "200": { description: "Actual hours recorded." },
+      "400": { description: "Invalid feedback payload." },
+      "500": { description: "Estimate could not be updated." },
+    },
+  },
+} satisfies Record<string, unknown>;
+
+const feedbackPendingPath = {
+  get: {
+    operationId: "listPendingFeedback",
+    summary: "List estimates waiting for actual-hours feedback.",
+    parameters: [
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1, maximum: 200, default: 50 },
+      },
+    ],
+    responses: {
+      "200": { description: "Pending estimates." },
+    },
+  },
+} satisfies Record<string, unknown>;
+
+const feedbackBatchPath = {
+  post: {
+    operationId: "batchRecordActualFeedback",
+    summary: "Record actual hours for multiple pending estimates.",
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["entries"],
+            properties: {
+              entries: {
+                type: "array",
+                minItems: 1,
+                maxItems: 500,
+                items: {
+                  type: "object",
+                  required: ["estimate_id", "actual_hours"],
+                  properties: {
+                    estimate_id: { type: "string" },
+                    actual_hours: { type: "number", exclusiveMinimum: 0 },
+                    notes: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      "200": { description: "Batch feedback result." },
+      "400": { description: "Invalid batch payload." },
+    },
+  },
+} satisfies Record<string, unknown>;
+
+const feedbackHealthPath = {
+  get: {
+    operationId: "getFeedbackHealth",
+    summary: "Get feedback-loop health and calibration status.",
+    responses: {
+      "200": { description: "Feedback health report." },
+    },
+  },
+} satisfies Record<string, unknown>;
+
 function buildOpenApiSpec(): Record<string, unknown> {
   const tools = listTools();
   const paths: Record<string, unknown> = {};
@@ -351,6 +491,12 @@ function buildOpenApiSpec(): Record<string, unknown> {
       },
     };
   }
+
+  paths["/v1/telemetry"] = telemetryPath;
+  paths["/v1/feedback/record-actual"] = feedbackRecordActualPath;
+  paths["/v1/feedback/pending"] = feedbackPendingPath;
+  paths["/v1/feedback/batch-record-actuals"] = feedbackBatchPath;
+  paths["/v1/feedback/health"] = feedbackHealthPath;
 
   return {
     openapi: "3.1.0",
