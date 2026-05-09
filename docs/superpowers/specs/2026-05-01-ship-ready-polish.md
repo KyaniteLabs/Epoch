@@ -1,5 +1,7 @@
 # Epoch Ship-Ready Polish — Full Design Spec
 
+> **Historical archive:** This file preserves a 2026-05-01 planning snapshot. Tool counts and line references below are not the current release contract; use `README.md`, `docs/llms.txt`, `src/dispatcher/tool-registry.ts`, and `docs/plans/2026-05-09-epoch-audit-remediation-report.md` for current release truth.
+
 **Date:** 2026-05-01
 **Status:** Approved (9/10 sections; Section 5 — Test Coverage — deferred)
 **Scope:** Full deep clean + full expansion. "Most polished, most amazing repo."

@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${EPOCH_CONFIRM_OPS:-}" != "1" ]]; then
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" || "${EPOCH_DRY_RUN:-}" == "1" ]]; then
+  DRY_RUN=1
+fi
+
+if [[ "$DRY_RUN" != "1" && "${EPOCH_CONFIRM_OPS:-}" != "1" ]]; then
   cat >&2 <<'MSG'
 This operational script changes local Epoch telemetry configuration and submits queued telemetry.
 Review the endpoint first, then rerun with EPOCH_CONFIRM_OPS=1.
+Use --dry-run to inspect the resolved checkout and endpoint without changing anything.
 MSG
   exit 1
 fi
 
-ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:-http://100.66.225.85:3099/v1/telemetry}"
+ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:-}"
+if [[ -z "$ENDPOINT" ]]; then
+  echo "Set EPOCH_TELEMETRY_ENDPOINT to the telemetry receiver URL before running this script." >&2
+  exit 1
+fi
 
 candidate_dirs=(
   "$HOME/workspaces/kyanite-labs/Epoch"
@@ -42,6 +52,12 @@ fi
 
 cd "$repo"
 echo "Using Epoch checkout: $repo"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY RUN: would configure telemetry endpoint: $ENDPOINT"
+  echo "DRY RUN: would run telemetry preview, enable, status, and submit from $repo"
+  exit 0
+fi
 
 if [[ ! -f dist/index.js ]]; then
   echo "dist/index.js is missing; installing and building..."

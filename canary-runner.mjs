@@ -17,6 +17,7 @@
 
 const EPOCH_URL = process.env.EPOCH_URL || "http://localhost:3099";
 const REPORT_PATH = process.env.CANARY_REPORT || "canary-report.json";
+const LOCAL_ONLY = process.argv.includes("--local-only") || process.env.EPOCH_CANARY_LOCAL_ONLY === "1";
 
 // ---- Telemetry collector -----------------------------------------------------
 
@@ -32,6 +33,7 @@ const telemetry = {
     GLM_AUTH_TOKEN: !!process.env.GLM_AUTH_TOKEN,
     MINIMAX_API_KEY: !!process.env.MINIMAX_API_KEY,
     LM_STUDIO_URL: process.env.LM_STUDIO_URL || "http://localhost:1234",
+    localOnly: LOCAL_ONLY,
   },
 };
 
@@ -1364,60 +1366,64 @@ async function main() {
     }
   }
 
-  // ---- Phase 1: GLM --------------------------------------------------------
-  const glmToken = process.env.GLM_AUTH_TOKEN;
-  if (glmToken) {
-    const glmModels = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"];
-    for (const model of glmModels) {
-      await runProviderMatrix({ name: `GLM/${model}`, apiType: "anthropic", baseURL: "https://api.z.ai/api/anthropic/v1", authToken: glmToken, model }, toolDefs, allResults, allTasks);
-    }
+  if (LOCAL_ONLY) {
+    console.log("\n--local-only enabled — skipping external provider compatibility phases.");
   } else {
-    console.log("\nGLM_AUTH_TOKEN not set — skipping GLM providers");
-  }
-
-  // ---- Phase 2: Minimax ----------------------------------------------------
-  const minimaxKey = process.env.MINIMAX_API_KEY;
-  if (minimaxKey) {
-    const minimaxModels = ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"];
-
-    for (const model of minimaxModels) {
-      await runProviderMatrix({ name: `Minimax/${model}`, apiType: "openai", baseURL: "https://api.minimaxi.chat/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
+    // ---- Phase 1: GLM --------------------------------------------------------
+    const glmToken = process.env.GLM_AUTH_TOKEN;
+    if (glmToken) {
+      const glmModels = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"];
+      for (const model of glmModels) {
+        await runProviderMatrix({ name: `GLM/${model}`, apiType: "anthropic", baseURL: "https://api.z.ai/api/anthropic/v1", authToken: glmToken, model }, toolDefs, allResults, allTasks);
+      }
+    } else {
+      console.log("\nGLM_AUTH_TOKEN not set — skipping GLM providers");
     }
 
-    for (const model of minimaxModels) {
-      await runProviderMatrix({ name: `Minimax-Anthropic/${model}`, apiType: "anthropic", baseURL: "https://api.minimaxi.chat/anthropic/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
-    }
-  } else {
-    console.log("\nMINIMAX_API_KEY not set — skipping Minimax providers");
-  }
+    // ---- Phase 2: Minimax ----------------------------------------------------
+    const minimaxKey = process.env.MINIMAX_API_KEY;
+    if (minimaxKey) {
+      const minimaxModels = ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"];
 
-  // ---- Phase 3: LM Studio --------------------------------------------------
-  const jitModels = ["gemma-4-e2b-it", "lfm2-8b-a1b", "qwen3.5-2b"];
-  let preLoaded = [];
-  try { preLoaded = await lmStudioListLoaded(); } catch { preLoaded = []; }
+      for (const model of minimaxModels) {
+        await runProviderMatrix({ name: `Minimax/${model}`, apiType: "openai", baseURL: "https://api.minimaxi.chat/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
+      }
 
-  if (preLoaded.length >= 0) {
-    console.log(`\n--- LM Studio JIT Phase (pre-loaded: ${preLoaded.join(", ")}) ---`);
-    for (const modelId of jitModels) {
-      console.log(`\n  >> Loading ${modelId}...`);
-      try { await lmStudioLoad(modelId); console.log(`  >> Loaded ${modelId}`); }
-      catch (err) { console.log(`  >> SKIP ${modelId}: ${err.message}`); continue; }
-
-      await runProviderMatrix({ name: `LMStudio/${modelId}`, apiType: "openai", baseURL: `${LM_STUDIO_URL}/v1`, authToken: "lm-studio", model: modelId }, toolDefs, allResults, allTasks);
-
-      console.log(`  >> Unloading ${modelId}...`);
-      await lmStudioUnload(modelId);
-      console.log(`  >> Unloaded ${modelId}`);
+      for (const model of minimaxModels) {
+        await runProviderMatrix({ name: `Minimax-Anthropic/${model}`, apiType: "anthropic", baseURL: "https://api.minimaxi.chat/anthropic/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
+      }
+    } else {
+      console.log("\nMINIMAX_API_KEY not set — skipping Minimax providers");
     }
 
-    try {
-      const postLoaded = await lmStudioListLoaded();
-      const polluted = postLoaded.filter((m) => !preLoaded.includes(m));
-      if (polluted.length > 0) {
-        console.log(`\n  WARNING: Models left loaded: ${polluted.join(", ")}`);
-        for (const m of polluted) { await lmStudioUnload(m); console.log(`  Cleaned up: ${m}`); }
-      } else { console.log(`\n  LM Studio clean.`); }
-    } catch { console.log(`\n  LM Studio cleanup check failed (unreachable)`); }
+    // ---- Phase 3: LM Studio --------------------------------------------------
+    const jitModels = ["gemma-4-e2b-it", "lfm2-8b-a1b", "qwen3.5-2b"];
+    let preLoaded = [];
+    try { preLoaded = await lmStudioListLoaded(); } catch { preLoaded = []; }
+
+    if (preLoaded.length >= 0) {
+      console.log(`\n--- LM Studio JIT Phase (pre-loaded: ${preLoaded.join(", ")}) ---`);
+      for (const modelId of jitModels) {
+        console.log(`\n  >> Loading ${modelId}...`);
+        try { await lmStudioLoad(modelId); console.log(`  >> Loaded ${modelId}`); }
+        catch (err) { console.log(`  >> SKIP ${modelId}: ${err.message}`); continue; }
+
+        await runProviderMatrix({ name: `LMStudio/${modelId}`, apiType: "openai", baseURL: `${LM_STUDIO_URL}/v1`, authToken: "lm-studio", model: modelId }, toolDefs, allResults, allTasks);
+
+        console.log(`  >> Unloading ${modelId}...`);
+        await lmStudioUnload(modelId);
+        console.log(`  >> Unloaded ${modelId}`);
+      }
+
+      try {
+        const postLoaded = await lmStudioListLoaded();
+        const polluted = postLoaded.filter((m) => !preLoaded.includes(m));
+        if (polluted.length > 0) {
+          console.log(`\n  WARNING: Models left loaded: ${polluted.join(", ")}`);
+          for (const m of polluted) { await lmStudioUnload(m); console.log(`  Cleaned up: ${m}`); }
+        } else { console.log(`\n  LM Studio clean.`); }
+      } catch { console.log(`\n  LM Studio cleanup check failed (unreachable)`); }
+    }
   }
 
   // ---- Summaries -----------------------------------------------------------

@@ -184,16 +184,20 @@ node scripts/backfill-telemetry.mjs --endpoint https://your-server.example.com/v
 
 Always run `--dry-run` first. Dry-run mode validates and counts records without making network calls or updating `~/.epoch/config.json`. A real backfill updates telemetry status with submitted, accepted, and deduplicated counts returned by the receiver.
 
+`scripts/backfill-telemetry.mjs` is included in the npm package alongside this telemetry guide, so package consumers can run the same dry-run-first path from an installed package checkout.
+
 For a private Mac mini receiver reachable through Tailscale, use the private endpoint explicitly:
 
 ```bash
-node scripts/backfill-telemetry.mjs --endpoint http://100.66.225.85:3099/v1/telemetry --dry-run
+node scripts/backfill-telemetry.mjs --endpoint http://100.x.y.z:3099/v1/telemetry --dry-run
 ```
 
 Side-effecting operational helpers such as `scripts/configure-mac-mini-telemetry.sh`
 and `scripts/install-telemetry-launchd.sh` require `EPOCH_CONFIRM_OPS=1`. They can
 enable telemetry, submit queued records, or install a user launchd agent, so review
 `EPOCH_TELEMETRY_ENDPOINT` and `EPOCH_TELEMETRY_INTERVAL_SECONDS` before running them.
+Both helpers also support `--dry-run`, and neither has a built-in default receiver:
+set `EPOCH_TELEMETRY_ENDPOINT` explicitly for your own HTTPS, localhost, or private-network endpoint.
 
 ### `epoch telemetry export`
 
@@ -241,7 +245,7 @@ When using the default Kyanite Labs endpoint, the following guarantees apply:
 
 You can run your own telemetry endpoint to keep all data within your infrastructure. The API contract is minimal:
 
-Epoch ships with a frozen baseline reference database. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); run `epoch reference-db-status` to see whether the active database is bundled or user-local, when it was generated, and how many correction factors are available.
+Epoch ships with a verified baseline reference database. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); run `epoch reference-db-status` to see whether the active database is bundled or user-local, when it was generated, how many correction factors are available, and why any bundled factor family is not populated yet.
 
 ### Endpoint Contract
 

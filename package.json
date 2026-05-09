@@ -10,7 +10,10 @@
   },
   "files": [
     "dist",
-    "data"
+    "data",
+    "docs/PRIVACY.md",
+    "docs/TELEMETRY.md",
+    "scripts/backfill-telemetry.mjs"
   ],
   "exports": {
     ".": {
@@ -34,7 +37,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "canary": "node canary-runner.mjs"
+    "canary": "node canary-runner.mjs --local-only",
+    "canary:providers": "node canary-runner.mjs",
+    "verify:remediation": "node scripts/verify-remediation-closure.mjs"
   },
   "keywords": [
     "mcp",

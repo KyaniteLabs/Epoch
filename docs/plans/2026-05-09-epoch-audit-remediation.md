@@ -849,8 +849,8 @@ In `docs/TELEMETRY.md`, add a short “Backfill” section:
 Use this only after verifying the endpoint. It sends the same anonymized fields shown by `epoch telemetry preview` and reports submitted, accepted, and deduplicated counts.
 
 ```bash
-node scripts/backfill-telemetry.mjs --endpoint http://100.66.225.85:3099/v1/telemetry --dry-run
-node scripts/backfill-telemetry.mjs --endpoint http://100.66.225.85:3099/v1/telemetry
+node scripts/backfill-telemetry.mjs --endpoint http://100.x.y.z:3099/v1/telemetry --dry-run
+node scripts/backfill-telemetry.mjs --endpoint http://100.x.y.z:3099/v1/telemetry
 ```
 ```
 
@@ -971,7 +971,7 @@ Tested: pnpm exec vitest run src/lib/self-improve.test.ts src/entries/cli.test.t
 Choose one:
 
 A. **Bundle refreshed aggregate data**: regenerate `src/data/reference-database.json` from approved anonymized/calibrated records.
-B. **Keep package DB frozen**: document that package uses frozen baseline, and user-local `~/.epoch/reference-database.json` is the self-improving source.
+B. **Keep package DB as a verified baseline**: document that package uses a verified bundled baseline, and user-local `~/.epoch/reference-database.json` is the self-improving source.
 
 Preferred for this audit: A, but only if input data is anonymized and approved for repo inclusion. If not, choose B and make freshness status explicit.
 
@@ -992,7 +992,7 @@ Expected: `generatedAt` updates, sample size reflects approved dataset, complexi
 Add docs in `docs/TELEMETRY.md` or `README.md`:
 
 ```md
-Epoch ships with a frozen baseline reference database. Self-improvement writes an active user-local database to `~/.epoch/reference-database.json`; use `epoch reference-db-status` to see which database is active.
+Epoch ships with a verified baseline reference database. Self-improvement writes an active user-local database to `~/.epoch/reference-database.json`; use `epoch reference-db-status` to see which database is active and why any bundled factor family is not populated yet.
 ```
 
 **Step 3: Add freshness verifier**
