@@ -405,8 +405,9 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   }
   for (const r of allMatched) {
     const toolKey = r.tool ?? "unknown";
-    if (!toolRecords.has(toolKey)) toolRecords.set(toolKey, []);
-    toolRecords.get(toolKey)!.push(r);
+    const records = toolRecords.get(toolKey) ?? [];
+    records.push(r);
+    toolRecords.set(toolKey, records);
   }
 
   const byTool: FeedbackHealthReport["byTool"] = {};
@@ -431,8 +432,9 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   // By task type — group the pre-matched records
   const typeGroups = new Map<string, HistoricalRecord[]>();
   for (const r of allMatched) {
-    if (!typeGroups.has(r.taskType)) typeGroups.set(r.taskType, []);
-    typeGroups.get(r.taskType)!.push(r);
+    const records = typeGroups.get(r.taskType) ?? [];
+    records.push(r);
+    typeGroups.set(r.taskType, records);
   }
 
   const typeEstimateCounts = new Map<string, number>();

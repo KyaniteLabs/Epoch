@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { batchRecordActuals, getFeedbackHealthReport } from "./feedback.js";
 
 // ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ describe("getFeedbackHealthReport", () => {
     if (report.totalEstimates > 0) {
       const toolKeys = Object.keys(report.byTool);
       expect(toolKeys.length).toBeGreaterThan(0);
-      for (const [tool, data] of Object.entries(report.byTool)) {
+      for (const [, data] of Object.entries(report.byTool)) {
         expect(data.estimates).toBeGreaterThan(0);
         expect(typeof data.actuals).toBe("number");
       }

@@ -15,6 +15,7 @@ vi.mock("./supplementary-data.js", () => ({
 }));
 
 import { getCalibrationData } from "./feedback.js";
+import type { HistoricalRecord } from "./analytics.js";
 
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
 
@@ -141,8 +142,8 @@ describe("computeAccuracyTrend", () => {
       estimatedHours: 5 + i,
       actualHours: 4 + i,
       completedAt: i % 3 === 0 ? (undefined as unknown as string) : `2026-01-${10 + i}T00:00:00Z`,
-    }));
-    mockGetCalibrationData.mockReturnValue(records as any);
+    })) as unknown as HistoricalRecord[];
+    mockGetCalibrationData.mockReturnValue(records);
     const result = computeAccuracyTrend({ windowSize: 50 });
     expect(result.windows.length).toBeGreaterThanOrEqual(1);
     expect(result.overallTrend).toBeDefined();

@@ -289,14 +289,14 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
   const sorted = [...errors].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   const mdape = sorted.length % 2 === 0
-    ? ((sorted[mid - 1]! + sorted[mid]!) / 2) * 100
+    ? (((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2) * 100
     : (sorted[mid] ?? 0) * 100;
 
   // Capped MdAPE: clamp individual errors at 500% before taking median.
   const CAP = 5.0;
   const capped = errors.map(e => Math.min(e, CAP)).sort((a, b) => a - b);
   const cappedMdape = capped.length % 2 === 0
-    ? ((capped[mid - 1]! + capped[mid]!) / 2) * 100
+    ? (((capped[mid - 1] ?? 0) + (capped[mid] ?? 0)) / 2) * 100
     : (capped[mid] ?? 0) * 100;
 
   const biases = validRecords.map(r => r.actualHours - r.estimatedHours);

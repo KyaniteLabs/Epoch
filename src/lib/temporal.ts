@@ -124,7 +124,10 @@ export function parseDuration(durationString: string): ToolResult<DurationResult
   let match: RegExpExecArray | null;
 
   while ((match = TOKEN_RE.exec(input)) !== null) {
-    parts.push({ value: parseFloat(match[1]!), unit: match[2]! });
+    const value = match[1];
+    const unit = match[2];
+    if (!value || !unit) continue;
+    parts.push({ value: parseFloat(value), unit });
   }
 
   if (parts.length === 0) {

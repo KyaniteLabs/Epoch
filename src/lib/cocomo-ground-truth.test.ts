@@ -80,7 +80,7 @@ describe("cocomoValidateGroundTruth", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    for (const [name, info] of Object.entries(result.data.byDataset)) {
+    for (const [, info] of Object.entries(result.data.byDataset)) {
       expect(info.count).toBeGreaterThan(0);
       expect(info.bestModel).toBeTruthy();
       expect(info.bestMape).toBeGreaterThan(0);
@@ -93,7 +93,7 @@ describe("cocomoValidateGroundTruth", () => {
     if (!result.ok) return;
 
     expect(Object.keys(result.data.byType).length).toBeGreaterThan(0);
-    for (const [name, info] of Object.entries(result.data.byType)) {
+    for (const [, info] of Object.entries(result.data.byType)) {
       expect(info.count).toBeGreaterThan(0);
       expect(info.bestModel).toBeTruthy();
     }

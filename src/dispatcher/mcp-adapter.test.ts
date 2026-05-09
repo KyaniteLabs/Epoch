@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // Mock the MCP SDK
 const registeredTools: Array<{ name: string; shape: unknown; annotations: unknown }> = [];
@@ -6,7 +7,7 @@ const mockServer = {
   tool: vi.fn((name: string, _desc: string, shape: unknown, annotations: unknown, _handler: unknown) => {
     registeredTools.push({ name, shape, annotations });
   }),
-} as unknown as import("@modelcontextprotocol/sdk/server/mcp.js").McpServer;
+} as unknown as McpServer;
 
 // Mock feedback and telemetry to prevent side effects
 vi.mock("../lib/feedback.js", () => ({

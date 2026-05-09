@@ -21,6 +21,12 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_" },
       ],
+      "@typescript-eslint/no-non-null-assertion": "error",
+    },
+  },
+  {
+    files: ["src/**/*.test.ts"],
+    rules: {
       "@typescript-eslint/no-non-null-assertion": "warn",
     },
   },

@@ -41,8 +41,9 @@ export function cocomoValidate(params?: {
   const allBiases: number[] = [];
   const byType = new Map<string, { errors: number[]; biases: number[] }>();
 
-  const filteredDatasets = params?.datasetFilter
-    ? datasets.filter((d) => params.datasetFilter!.includes(d.name))
+  const datasetFilter = params?.datasetFilter;
+  const filteredDatasets = datasetFilter
+    ? datasets.filter((d) => datasetFilter.includes(d.name))
     : datasets;
 
   let projectsEvaluated = 0;
@@ -67,7 +68,8 @@ export function cocomoValidate(params?: {
       if (!byType.has(projectType)) {
         byType.set(projectType, { errors: [], biases: [] });
       }
-      const typeEntry = byType.get(projectType)!;
+      const typeEntry = byType.get(projectType);
+      if (!typeEntry) continue;
       typeEntry.errors.push(absError);
       typeEntry.biases.push(errorPercent);
     }

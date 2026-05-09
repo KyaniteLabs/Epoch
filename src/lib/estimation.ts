@@ -93,7 +93,7 @@ export function sprintForecast(params: {
   }
 
   for (let i = 0; i < velocityHistory.length; i++) {
-    const v = velocityHistory[i]!;
+    const v = velocityHistory[i] ?? Number.NaN;
     if (!(v >= 0) || !Number.isFinite(v)) {
       return {
         ok: false,

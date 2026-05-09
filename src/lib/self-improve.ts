@@ -347,8 +347,11 @@ function computeToolCorrectionFactors(records: HistoricalRecord[]): Record<strin
   for (const r of records) {
     if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
     const tool = r.tool ?? "unknown";
-    if (!grouped.has(tool)) grouped.set(tool, new Map());
-    const taskMap = grouped.get(tool)!;
+    let taskMap = grouped.get(tool);
+    if (!taskMap) {
+      taskMap = new Map();
+      grouped.set(tool, taskMap);
+    }
     const arr = taskMap.get(r.taskType) ?? [];
     arr.push(r.actualHours / r.estimatedHours);
     taskMap.set(r.taskType, arr);

@@ -45,7 +45,11 @@ function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
 
 /** Resolve root options from Commander command chain. */
 function getRootOpts(cmd: Command): Record<string, unknown> {
-  return cmd.parent!.opts() as Record<string, unknown>;
+  const parent = cmd.parent;
+  if (!parent) {
+    throw new Error("CLI command is missing its root command.");
+  }
+  return parent.opts() as Record<string, unknown>;
 }
 
 function isQuiet(rootOpts: Record<string, unknown>): boolean {

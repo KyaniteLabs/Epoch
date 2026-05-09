@@ -2,7 +2,6 @@ import type { TaskType, ScheduleRiskAssessment, RiskLevel } from "../types/index
 import { assertNever } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
 import { getCalibrationData } from "./feedback.js";
-import { getEstimationResearch } from "./supplementary-data.js";
 import { getDeveloperProfileGradient } from "./profiles.js";
 
 export function scheduleRisk(params: {
