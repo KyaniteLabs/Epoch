@@ -1,6 +1,41 @@
+import { pathToFileURL } from "node:url";
 import { startMcpServer } from "./entries/mcp.js";
 import { startHttpServer } from "./entries/http.js";
 import { runCli } from "./entries/cli.js";
+
+export {
+  cocomoEstimate,
+  criticalPath,
+  monteCarloSim,
+  pertEstimate,
+  sprintForecast,
+} from "./lib/estimation.js";
+export {
+  calibrateEstimates,
+  computeAccuracyMetrics,
+  referenceClassEstimate,
+  tokenTimeBridge,
+} from "./lib/analytics.js";
+export { compareModels, tokenCostEstimate } from "./lib/cost.js";
+export { scheduleRisk } from "./lib/risk.js";
+export {
+  batchRecordActuals,
+  getCalibrationData,
+  getFeedbackHealthReport,
+  getPendingEstimates,
+  recordActual,
+  recordActualDetailed,
+  recordEstimate,
+} from "./lib/feedback.js";
+export {
+  buildPayload,
+  extractAnonymizedRecords,
+  exportToFile,
+  maybeSubmitTelemetry,
+  signPayload,
+  submitTelemetry,
+} from "./lib/telemetry-submit.js";
+export { receiveTelemetry } from "./lib/telemetry-receiver.js";
 // Re-export types for consumers
 export type {
   UrgencyCategory,
@@ -51,4 +86,9 @@ function main(): void {
   });
 }
 
-main();
+const isEntrypoint = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isEntrypoint) {
+  main();
+}
