@@ -5,13 +5,26 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createApiApp } from "./http.js";
+
+const TEST_DIR = join(tmpdir(), `epoch-http-test-${process.pid}`);
 
 describe("HTTP API", () => {
   let app: ReturnType<typeof createApiApp>;
 
   beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+    mkdirSync(TEST_DIR, { recursive: true });
+    process.env["EPOCH_DATA_DIR"] = TEST_DIR;
     app = createApiApp();
+  });
+
+  afterEach(() => {
+    delete process.env["EPOCH_DATA_DIR"];
+    rmSync(TEST_DIR, { recursive: true, force: true });
   });
 
   // ---------------------------------------------------------------------------
