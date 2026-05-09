@@ -36,6 +36,8 @@ vi.mock("../lib/self-improve.js", () => ({
 
 import { registerAllMcpTools } from "./mcp-adapter.js";
 import { TOOL_REGISTRY } from "./tool-registry.js";
+import { defined } from "../test-support.js";
+
 
 describe("registerAllMcpTools", () => {
   beforeEach(() => {
@@ -56,18 +58,18 @@ describe("registerAllMcpTools", () => {
     // pert_estimate uses aiNativeGradient which wraps in ZodEffects
     const pert = registeredTools.find(t => t.name === "pert_estimate");
     expect(pert).toBeDefined();
-    expect(pert!.shape).toBeDefined();
-    expect(typeof pert!.shape).toBe("object");
+    expect(defined(pert).shape).toBeDefined();
+    expect(typeof defined(pert).shape).toBe("object");
     // Shape should have the core fields, not undefined from failed extraction
-    expect((pert!.shape as Record<string, unknown>).optimistic).toBeDefined();
-    expect((pert!.shape as Record<string, unknown>).most_likely).toBeDefined();
+    expect((defined(pert).shape as Record<string, unknown>).optimistic).toBeDefined();
+    expect((defined(pert).shape as Record<string, unknown>).most_likely).toBeDefined();
   });
 
   it("marks write tools with write annotations", () => {
     registerAllMcpTools(mockServer);
     const recordActual = registeredTools.find(t => t.name === "record_actual");
     expect(recordActual).toBeDefined();
-    expect(recordActual!.annotations).toEqual({
+    expect(defined(recordActual).annotations).toEqual({
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
@@ -79,7 +81,7 @@ describe("registerAllMcpTools", () => {
     registerAllMcpTools(mockServer);
     const getCurrentTime = registeredTools.find(t => t.name === "get_current_time");
     expect(getCurrentTime).toBeDefined();
-    expect(getCurrentTime!.annotations).toEqual({
+    expect(defined(getCurrentTime).annotations).toEqual({
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,

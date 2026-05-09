@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { batchRecordActuals, getFeedbackHealthReport } from "./feedback.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Feedback Batch + Health Report — Tests
@@ -97,7 +99,7 @@ describe("getFeedbackHealthReport", () => {
     for (const type of report.selfImprovement.readyTypes) {
       const typeData = report.byTaskType[type];
       expect(typeData).toBeDefined();
-      expect(typeData!.actuals).toBeGreaterThanOrEqual(5);
+      expect(defined(typeData).actuals).toBeGreaterThanOrEqual(5);
     }
   });
 });

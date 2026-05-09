@@ -6,6 +6,8 @@ import {
   criticalPath,
   monteCarloSim,
 } from "./estimation.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Layer 3: Estimation Algorithms
@@ -638,7 +640,7 @@ describe("monteCarloSim", () => {
       { name: "Bad", optimistic: 10, mostLikely: 5, pessimistic: 20 },
     ], 1000, 42);
     expect(result.riskEvents.length).toBeGreaterThan(0);
-    expect(result.riskEvents[0]!.description).toContain("Invalid estimates");
+    expect(defined(result.riskEvents[0]).description).toContain("Invalid estimates");
   });
 
   it("returns error result for invalid task ordering (mostLikely > pessimistic)", () => {
@@ -646,7 +648,7 @@ describe("monteCarloSim", () => {
       { name: "Bad2", optimistic: 1, mostLikely: 20, pessimistic: 5 },
     ], 1000, 42);
     expect(result.riskEvents.length).toBeGreaterThan(0);
-    expect(result.riskEvents[0]!.description).toContain("Invalid estimates");
+    expect(defined(result.riskEvents[0]).description).toContain("Invalid estimates");
   });
 
   it("produces same value for all percentiles with single iteration", () => {
@@ -662,7 +664,7 @@ describe("monteCarloSim", () => {
       { name: "Task", optimistic: 1, mostLikely: 3, pessimistic: 8 },
     ], 0, 42);
     expect(result.riskEvents.length).toBeGreaterThan(0);
-    expect(result.riskEvents[0]!.description).toContain("Iterations");
+    expect(defined(result.riskEvents[0]).description).toContain("Iterations");
   });
 
   it("includes estimatedHours (p50 days × 8)", () => {

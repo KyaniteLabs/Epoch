@@ -26,6 +26,8 @@ import {
   matchEstimatesToActuals,
 } from "./feedback.js";
 import type { ActualRecord, EstimateRecord } from "./feedback.js";
+import { defined } from "../test-support.js";
+
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
@@ -70,7 +72,7 @@ describe("recordEstimate", () => {
     const id = recordEstimate("pert_estimate", { optimistic: 5 }, { expected: 7 });
     expect(id).toBe("test-uuid-1234");
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
-    const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written.tool).toBe("pert_estimate");
     expect(written.inputs).toEqual({ optimistic: 5 });
     expect(written.outputs).toEqual({ expected: 7 });
@@ -91,7 +93,7 @@ describe("recordActual", () => {
     const result = recordActual("est-1", 12, "finished early");
     expect(result).toBe(true);
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
-    const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written.estimateId).toBe("est-1");
     expect(written.actualHours).toBe(12);
     expect(written.notes).toBe("finished early");
@@ -99,7 +101,7 @@ describe("recordActual", () => {
 
   it("omits notes when not provided", () => {
     recordActual("est-1", 8);
-    const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written).not.toHaveProperty("notes");
   });
 
@@ -127,8 +129,8 @@ describe("getPendingEstimates", () => {
 
     const pending = getPendingEstimates();
     expect(pending).toHaveLength(1);
-    expect(pending[0]!.id).toBe("e2");
-    expect(pending[0]!.hasActual).toBe(false);
+    expect(defined(pending[0]).id).toBe("e2");
+    expect(defined(pending[0]).hasActual).toBe(false);
   });
 
   it("returns empty when no estimates exist", () => {
@@ -166,9 +168,9 @@ describe("getCalibrationData", () => {
 
     const records = getCalibrationData();
     expect(records).toHaveLength(1);
-    expect(records[0]!.estimatedHours).toBe(10);
-    expect(records[0]!.actualHours).toBe(12);
-    expect(records[0]!.taskType).toBe("feature");
+    expect(defined(records[0]).estimatedHours).toBe(10);
+    expect(defined(records[0]).actualHours).toBe(12);
+    expect(defined(records[0]).taskType).toBe("feature");
   });
 
   it("filters by taskType", () => {
@@ -186,7 +188,7 @@ describe("getCalibrationData", () => {
 
     const records = getCalibrationData(undefined, "bugfix");
     expect(records).toHaveLength(1);
-    expect(records[0]!.taskType).toBe("bugfix");
+    expect(defined(records[0]).taskType).toBe("bugfix");
   });
 
   it("filters by tool", () => {
@@ -204,7 +206,7 @@ describe("getCalibrationData", () => {
 
     const records = getCalibrationData(undefined, undefined, undefined, "cocomo_estimate");
     expect(records).toHaveLength(1);
-    expect(records[0]!.tool).toBe("cocomo_estimate");
+    expect(defined(records[0]).tool).toBe("cocomo_estimate");
   });
 
   it("skips estimates without matching actuals", () => {
@@ -238,7 +240,7 @@ describe("getCalibrationData", () => {
 
     const data = getCalibrationData();
     expect(data).toHaveLength(1);
-    expect(data[0]!.actualHours).toBe(5);
+    expect(defined(data[0]).actualHours).toBe(5);
   });
 });
 
@@ -257,7 +259,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(20);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(20);
   });
 
   it("extracts estimatedHours", () => {
@@ -267,7 +269,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(15);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(15);
   });
 
   it("extracts estimatedMinutes and converts to hours", () => {
@@ -277,7 +279,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(2);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(2);
   });
 
   it("extracts estimatedSeconds and converts to hours", () => {
@@ -287,7 +289,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(1);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(1);
   });
 
   it("extracts expected with unit=days and converts", () => {
@@ -297,7 +299,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(40);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(40);
   });
 
   it("extracts expected with unit=weeks and converts", () => {
@@ -307,7 +309,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(80);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(80);
   });
 
   it("extracts expected with unit=months and converts", () => {
@@ -317,7 +319,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(160);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(160);
   });
 
   it("extracts personMonthsLlmAdjusted and converts", () => {
@@ -327,7 +329,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(80);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(80);
   });
 
   it("extracts correctedEstimate directly", () => {
@@ -337,7 +339,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(42);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(42);
   });
 
   it("skips records with unrecognized output format", () => {
@@ -451,12 +453,12 @@ describe("getFeedbackHealthReport", () => {
     expect(report.totalActuals).toBe(3);
     expect(report.matchedPairs).toBe(3);
     expect(report.byTool["pert_estimate"]).toBeDefined();
-    expect(report.byTool["pert_estimate"]!.mdape).toBeDefined();
-    expect(report.byTool["pert_estimate"]!.matchedPairs).toBe(2);
+    expect(defined(report.byTool["pert_estimate"]).mdape).toBeDefined();
+    expect(defined(report.byTool["pert_estimate"]).matchedPairs).toBe(2);
     expect(report.byTaskType["feature"]).toBeDefined();
-    expect(report.byTaskType["feature"]!.mdape).toBeDefined();
-    expect(report.byTaskType["feature"]!.matchedPairs).toBe(2);
-    expect(report.byTaskType["feature"]!.recommendation).toContain("Only 2 matched pairs");
+    expect(defined(report.byTaskType["feature"]).mdape).toBeDefined();
+    expect(defined(report.byTaskType["feature"]).matchedPairs).toBe(2);
+    expect(defined(report.byTaskType["feature"]).recommendation).toContain("Only 2 matched pairs");
   });
 
   it("returns null mape/mdape with fewer than 2 matches", () => {
@@ -472,8 +474,8 @@ describe("getFeedbackHealthReport", () => {
     });
 
     const report = getFeedbackHealthReport();
-    expect(report.byTool["pert_estimate"]!.mape).toBeNull();
-    expect(report.byTool["pert_estimate"]!.mdape).toBeNull();
+    expect(defined(report.byTool["pert_estimate"]).mape).toBeNull();
+    expect(defined(report.byTool["pert_estimate"]).mdape).toBeNull();
     expect(report.matchedPairs).toBe(1);
   });
 
@@ -543,7 +545,7 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTool["cocomo_estimate"]!.recommendation).toContain("No matched pairs");
+    expect(defined(report.byTool["cocomo_estimate"]).recommendation).toContain("No matched pairs");
   });
 
   it("byTool includes recommendation for tools with 1-2 pairs", () => {
@@ -558,8 +560,8 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Only 1 matched pair");
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Need 2 more");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Only 1 matched pair");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Need 2 more");
   });
 
   it("byTool includes recommendation with MdAPE for tools with 3+ pairs", () => {
@@ -583,8 +585,8 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Sufficient for calibration");
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("MdAPE:");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Sufficient for calibration");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("MdAPE:");
   });
 
   it("byTaskType includes recommendation for types with 0 pairs", () => {
@@ -596,7 +598,7 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTaskType["migration"]!.recommendation).toContain("No matched pairs");
+    expect(defined(report.byTaskType["migration"]).recommendation).toContain("No matched pairs");
   });
 
   it("byTaskType includes recommendation with MdAPE for types with 3+ pairs", () => {
@@ -619,8 +621,8 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTaskType["testing"]!.recommendation).toContain("Sufficient for calibration");
-    expect(report.byTaskType["testing"]!.recommendation).toContain("MdAPE:");
+    expect(defined(report.byTaskType["testing"]).recommendation).toContain("Sufficient for calibration");
+    expect(defined(report.byTaskType["testing"]).recommendation).toContain("MdAPE:");
   });
 
   it("byTool includes bias field", () => {
@@ -644,8 +646,8 @@ describe("getFeedbackHealthReport", () => {
     });
     const report = getFeedbackHealthReport();
     // bias = avg(actual - estimated) = avg(-2, 5, -2) = 0.33
-    expect(typeof report.byTool["pert_estimate"]!.bias).toBe("number");
-    expect(report.byTool["pert_estimate"]!.bias).toBeCloseTo(0.33, 1);
+    expect(typeof defined(report.byTool["pert_estimate"]).bias).toBe("number");
+    expect(defined(report.byTool["pert_estimate"]).bias).toBeCloseTo(0.33, 1);
   });
 
   it("byTaskType includes bias field", () => {
@@ -669,7 +671,7 @@ describe("getFeedbackHealthReport", () => {
     });
     const report = getFeedbackHealthReport();
     // bias = avg(3, 4, 2) = 3 — systematic underestimation
-    expect(report.byTaskType["bugfix"]!.bias).toBeGreaterThan(0);
+    expect(defined(report.byTaskType["bugfix"]).bias).toBeGreaterThan(0);
   });
 
   it("dataCompletenessScore is > 0 with matched pairs", () => {
@@ -682,7 +684,7 @@ describe("getFeedbackHealthReport", () => {
       }
       if (p.endsWith("feedback.jsonl")) {
         return Array.from({ length: 6 }, (_, i) =>
-          makeActual({ estimateId: `e${i}`, actualHours: 10 + i! })
+          makeActual({ estimateId: `e${i}`, actualHours: 10 + defined(i) })
         ).join("\n") + "\n";
       }
       return "";
@@ -701,7 +703,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(100);
+    expect(defined(result[0]).estimatedHours).toBe(100);
   });
 
   it("extracts hours from estimatedHours", () => {
@@ -709,7 +711,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 20, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(24);
+    expect(defined(result[0]).estimatedHours).toBe(24);
   });
 
   it("extracts hours from estimatedMinutes", () => {
@@ -717,7 +719,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 0.5, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBeCloseTo(0.5, 1);
+    expect(defined(result[0]).estimatedHours).toBeCloseTo(0.5, 1);
   });
 
   it("extracts hours from estimatedSeconds", () => {
@@ -725,7 +727,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(1);
+    expect(defined(result[0]).estimatedHours).toBe(1);
   });
 
   it("extracts hours from expected with unit=days", () => {
@@ -733,7 +735,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 40, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(40);
+    expect(defined(result[0]).estimatedHours).toBe(40);
   });
 
   it("extracts hours from expected with unit=weeks", () => {
@@ -741,7 +743,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(80);
+    expect(defined(result[0]).estimatedHours).toBe(80);
   });
 
   it("extracts hours from correctedEstimate", () => {
@@ -749,7 +751,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 12, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(15.5);
+    expect(defined(result[0]).estimatedHours).toBe(15.5);
   });
 
   it("extracts hours from total_duration (critical path)", () => {
@@ -757,7 +759,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 88, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(88);
+    expect(defined(result[0]).estimatedHours).toBe(88);
   });
 
   it("extracts hours from personMonthsLlmAdjusted", () => {
@@ -765,7 +767,7 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [{ estimateId: "e1", actualHours: 1312, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(8.2 * 160);
+    expect(defined(result[0]).estimatedHours).toBe(8.2 * 160);
   });
 
   it("skips estimates with no extractable hours", () => {
@@ -849,7 +851,7 @@ describe("matchEstimatesToActuals", () => {
     ];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.completedAt).toBe("2026-01-10T00:00:00Z");
+    expect(defined(result[0]).completedAt).toBe("2026-01-10T00:00:00Z");
   });
 });
 
@@ -881,14 +883,14 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["monte_carlo_schedule"]!;
+    const tool = defined(report.byTool["monte_carlo_schedule"]);
     expect(tool).toBeDefined();
     expect(tool.cappedMdape).not.toBeNull();
     // 5 records: 3 extreme outliers (2300-3233%) + 2 reasonable (7-11%).
     // Uncapped median picks 3rd sorted error ≈ 2300%+
     // Capped median picks 3rd capped error = 500%
-    expect(tool.cappedMdape!).toBeLessThanOrEqual(500);
-    expect(tool.mdape!).toBeGreaterThan(tool.cappedMdape!);
+    expect(defined(tool.cappedMdape)).toBeLessThanOrEqual(500);
+    expect(defined(tool.mdape)).toBeGreaterThan(defined(tool.cappedMdape));
   });
 
   it("recommendation includes bias direction for systematic overestimation", () => {
@@ -912,7 +914,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"]!;
+    const tool = defined(report.byTool["pert_estimate"]);
     expect(tool.recommendation).toContain("systematic overestimation");
   });
 
@@ -937,7 +939,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"]!;
+    const tool = defined(report.byTool["pert_estimate"]);
     expect(tool.recommendation).toContain("well-calibrated");
   });
 
@@ -962,7 +964,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const type = report.byTaskType["migration"]!;
+    const type = defined(report.byTaskType["migration"]);
     expect(type.recommendation).toContain("systematic underestimation");
   });
 
@@ -983,7 +985,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"]!;
+    const tool = defined(report.byTool["pert_estimate"]);
     expect(tool.trend).not.toBeNull();
     expect(["improving", "degrading", "stable"]).toContain(tool.trend);
   });
@@ -1009,7 +1011,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const type = report.byTaskType["testing"]!;
+    const type = defined(report.byTaskType["testing"]);
     // Trend requires 6+ records to compute; with 3, metrics still has trend="stable"
     expect(typeof type.trend).toBe("string");
   });

@@ -25,12 +25,6 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.test.ts"],
-    rules: {
-      "@typescript-eslint/no-non-null-assertion": "warn",
-    },
-  },
-  {
     ignores: ["dist/", "node_modules/", "coverage/", "*.config.*"],
   },
 );

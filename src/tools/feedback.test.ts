@@ -7,6 +7,8 @@ vi.mock("../lib/feedback.js", () => ({
 }));
 
 import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Tool Registry Tests — Feedback (record_actual, get_pending_estimates)
@@ -21,7 +23,7 @@ describe("feedback tools via registry", () => {
   // ---- record_actual ----
 
   it("record_actual returns recorded true on success", () => {
-    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const tool = defined(TOOL_REGISTRY.get("record_actual"));
     const result = tool.handler({
       estimate_id: "abc-123",
       actual_hours: 5.5,
@@ -36,7 +38,7 @@ describe("feedback tools via registry", () => {
   });
 
   it("record_actual passes optional notes", () => {
-    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const tool = defined(TOOL_REGISTRY.get("record_actual"));
     const result = tool.handler({
       estimate_id: "xyz-789",
       actual_hours: 3,
@@ -53,7 +55,7 @@ describe("feedback tools via registry", () => {
     const { recordActualDetailed } = await import("../lib/feedback.js");
     vi.mocked(recordActualDetailed).mockReturnValueOnce({ ok: false, reason: "duplicate" });
 
-    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const tool = defined(TOOL_REGISTRY.get("record_actual"));
     const result = tool.handler({
       estimate_id: "fail-case",
       actual_hours: 1,
@@ -65,7 +67,7 @@ describe("feedback tools via registry", () => {
     const { recordActualDetailed } = await import("../lib/feedback.js");
     vi.mocked(recordActualDetailed).mockReturnValueOnce({ ok: false, reason: "duplicate" });
 
-    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const tool = defined(TOOL_REGISTRY.get("record_actual"));
     const result = tool.handler({
       estimate_id: "dup-case",
       actual_hours: 2,
@@ -80,7 +82,7 @@ describe("feedback tools via registry", () => {
     const { recordActualDetailed } = await import("../lib/feedback.js");
     vi.mocked(recordActualDetailed).mockReturnValueOnce({ ok: false, reason: "below_threshold" });
 
-    const tool = TOOL_REGISTRY.get("record_actual")!;
+    const tool = defined(TOOL_REGISTRY.get("record_actual"));
     const result = tool.handler({
       estimate_id: "small-case",
       actual_hours: 0.1,
@@ -94,7 +96,7 @@ describe("feedback tools via registry", () => {
   // ---- get_pending_estimates ----
 
   it("get_pending_estimates returns empty list", () => {
-    const tool = TOOL_REGISTRY.get("get_pending_estimates")!;
+    const tool = defined(TOOL_REGISTRY.get("get_pending_estimates"));
     const result = tool.handler({ limit: 20 });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -110,14 +112,14 @@ describe("feedback tools via registry", () => {
       { id: "e2", tool: "cocomo_estimate", inputs: {}, outputs: {}, estimatedAt: "2025-01-02T00:00:00Z", hasActual: false },
     ]);
 
-    const tool = TOOL_REGISTRY.get("get_pending_estimates")!;
+    const tool = defined(TOOL_REGISTRY.get("get_pending_estimates"));
     const result = tool.handler({ limit: 10 });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data).toHaveProperty("count", 2);
       const estimates = (result.data as Record<string, unknown>).estimates as Array<Record<string, unknown>>;
-      expect(estimates[0]!.id).toBe("e1");
-      expect(estimates[1]!.id).toBe("e2");
+      expect(defined(estimates[0]).id).toBe("e1");
+      expect(defined(estimates[1]).id).toBe("e2");
     }
   });
 
@@ -128,7 +130,7 @@ describe("feedback tools via registry", () => {
       return [];
     });
 
-    const tool = TOOL_REGISTRY.get("get_pending_estimates")!;
+    const tool = defined(TOOL_REGISTRY.get("get_pending_estimates"));
     tool.handler({ limit: 20 });
   });
 });

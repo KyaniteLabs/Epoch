@@ -11,6 +11,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createCliProgram } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
+import { defined } from "../test-support.js";
+
 
 // ---- Sentinel error for process.exit mock -----------------------------------
 
@@ -176,7 +178,7 @@ describe("CLI tests", () => {
       const program = createCliProgram();
       const formatOption = program.options.find((o) => o.long === "--format");
       expect(formatOption).toBeDefined();
-      expect(formatOption!.argChoices).toEqual(["json", "table"]);
+      expect(defined(formatOption).argChoices).toEqual(["json", "table"]);
     });
 
     it("registers --pretty option", () => {
@@ -243,15 +245,15 @@ describe("CLI tests", () => {
 
     it("get-current-time has --timezone optional argument defaulting to UTC", () => {
       const program = createCliProgram();
-      const cmd = program.commands.find((c) => c.name() === "get-current-time")!;
+      const cmd = defined(program.commands.find((c) => c.name() === "get-current-time"));
       const tzOption = cmd.options.find((o) => o.long === "--timezone");
       expect(tzOption).toBeDefined();
-      expect(tzOption!.defaultValue).toBe("UTC");
+      expect(defined(tzOption).defaultValue).toBe("UTC");
     });
 
     it("convert-timezone has required --timestamp and --target-tz", () => {
       const program = createCliProgram();
-      const cmd = program.commands.find((c) => c.name() === "convert-timezone")!;
+      const cmd = defined(program.commands.find((c) => c.name() === "convert-timezone"));
       const requiredFlags = cmd.options
         .filter((o) => o.required)
         .map((o) => o.long);
@@ -261,7 +263,7 @@ describe("CLI tests", () => {
 
     it("pert-estimate has required --optimistic, --most-likely, --pessimistic", () => {
       const program = createCliProgram();
-      const cmd = program.commands.find((c) => c.name() === "pert-estimate")!;
+      const cmd = defined(program.commands.find((c) => c.name() === "pert-estimate"));
       const requiredFlags = cmd.options
         .filter((o) => o.required)
         .map((o) => o.long);
@@ -272,7 +274,7 @@ describe("CLI tests", () => {
 
     it("critical-path has required --tasks argument", () => {
       const program = createCliProgram();
-      const cmd = program.commands.find((c) => c.name() === "critical-path")!;
+      const cmd = defined(program.commands.find((c) => c.name() === "critical-path"));
       const requiredFlags = cmd.options
         .filter((o) => o.required)
         .map((o) => o.long);
@@ -281,9 +283,9 @@ describe("CLI tests", () => {
 
     it("telemetry exposes endpoint configuration and submit subcommands", () => {
       const program = createCliProgram();
-      const telemetry = program.commands.find((c) => c.name() === "telemetry")!;
+      const telemetry = defined(program.commands.find((c) => c.name() === "telemetry"));
       const subcommands = telemetry.commands.map((c) => c.name());
-      const enable = telemetry.commands.find((c) => c.name() === "enable")!;
+      const enable = defined(telemetry.commands.find((c) => c.name() === "enable"));
 
       expect(subcommands).toContain("set-endpoint");
       expect(subcommands).toContain("submit");
@@ -567,7 +569,7 @@ describe("CLI tests", () => {
         expect.objectContaining({ kloc: 10 }),
       );
       // Should NOT contain optional multipliers
-      const callArgs = (dispatch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Record<string, unknown>;
+      const callArgs = defined((dispatch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as Record<string, unknown>;
       expect(callArgs).not.toHaveProperty("reasoning_complexity");
       expect(callArgs).not.toHaveProperty("context_completeness");
     });

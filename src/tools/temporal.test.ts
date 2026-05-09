@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Tool Registry Tests — Layer 1 & 2 (Temporal + Calendar)
@@ -21,7 +23,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("get_current_time returns valid time data", () => {
-    const tool = TOOL_REGISTRY.get("get_current_time")!;
+    const tool = defined(TOOL_REGISTRY.get("get_current_time"));
     const result = tool.handler({ timezone: "UTC" });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -31,13 +33,13 @@ describe("temporal tools via registry", () => {
   });
 
   it("get_current_time returns error for invalid timezone", () => {
-    const tool = TOOL_REGISTRY.get("get_current_time")!;
+    const tool = defined(TOOL_REGISTRY.get("get_current_time"));
     const result = tool.handler({ timezone: "Invalid/TZ" });
     expect(result.ok).toBe(false);
   });
 
   it("convert_timezone converts correctly", () => {
-    const tool = TOOL_REGISTRY.get("convert_timezone")!;
+    const tool = defined(TOOL_REGISTRY.get("convert_timezone"));
     const result = tool.handler({
       timestamp: "2026-05-01T12:00:00Z",
       target_tz: "America/Los_Angeles",
@@ -49,7 +51,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("parse_duration parses valid durations", () => {
-    const tool = TOOL_REGISTRY.get("parse_duration")!;
+    const tool = defined(TOOL_REGISTRY.get("parse_duration"));
     const result = tool.handler({ duration_string: "2h30m" });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -58,7 +60,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("time_math add_days operation works", () => {
-    const tool = TOOL_REGISTRY.get("time_math")!;
+    const tool = defined(TOOL_REGISTRY.get("time_math"));
     const result = tool.handler({
       operation: "add_days",
       operands: { date: "2026-05-01", days: 5 },
@@ -71,7 +73,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("time_math diff operation works", () => {
-    const tool = TOOL_REGISTRY.get("time_math")!;
+    const tool = defined(TOOL_REGISTRY.get("time_math"));
     const result = tool.handler({
       operation: "diff",
       operands: { date: "2026-05-01T00:00:00Z", end_date: "2026-05-03T00:00:00Z" },
@@ -83,7 +85,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("time_math format_duration works", () => {
-    const tool = TOOL_REGISTRY.get("time_math")!;
+    const tool = defined(TOOL_REGISTRY.get("time_math"));
     const result = tool.handler({
       operation: "format_duration",
       operands: { milliseconds: 3600000 },
@@ -96,7 +98,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("time_math returns error for missing operands", () => {
-    const tool = TOOL_REGISTRY.get("time_math")!;
+    const tool = defined(TOOL_REGISTRY.get("time_math"));
     const result = tool.handler({
       operation: "add_days",
       operands: {},
@@ -105,7 +107,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("add_business_days returns a result", () => {
-    const tool = TOOL_REGISTRY.get("add_business_days")!;
+    const tool = defined(TOOL_REGISTRY.get("add_business_days"));
     const result = tool.handler({
       start_date: "2026-05-04",
       days: 5,
@@ -121,7 +123,7 @@ describe("temporal tools via registry", () => {
   });
 
   it("count_business_days returns a result", () => {
-    const tool = TOOL_REGISTRY.get("count_business_days")!;
+    const tool = defined(TOOL_REGISTRY.get("count_business_days"));
     const result = tool.handler({
       start_date: "2026-05-04",
       end_date: "2026-05-08",

@@ -33,6 +33,8 @@ import {
   invalidateReferenceDbCache,
 } from "./self-improve.js";
 import type { HistoricalRecord } from "./analytics.js";
+import { defined } from "../test-support.js";
+
 
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
@@ -83,7 +85,7 @@ describe("loadReferenceDb", () => {
   it("returns parsed DB when file exists and is valid JSON", () => {
     const db = loadReferenceDb();
     expect(db).not.toBeNull();
-    expect(db!.version).toBe("1.0.0");
+    expect(defined(db).version).toBe("1.0.0");
   });
 
   it("returns null when file read throws", () => {
@@ -281,7 +283,7 @@ describe("updateReferenceDatabase", () => {
     expect(mockWrite).toHaveBeenCalled();
 
     const writtenData = JSON.parse(
-      mockWrite.mock.calls[0]![1] as string,
+      defined(mockWrite.mock.calls[0])[1] as string,
     );
     // feature correction factor should be median of [1.2, 1.4, 1.5, 1.6, 1.8] = 1.5
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
@@ -301,7 +303,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Global = median of [1.5, 2.0, 1.0, 1.5, 1.5] sorted = [1.0, 1.5, 1.5, 1.5, 2.0] = 1.5
     expect(writtenData.globalCorrectionFactor).toBe(1.5);
@@ -318,7 +320,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Should keep the original globalCorrectionFactor since < 5 records
     expect(writtenData.globalCorrectionFactor).toBe(1.07);
@@ -341,7 +343,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // pert_estimate should have feature: 1.4
     expect(writtenData.toolTaskCorrectionFactors.pert_estimate.feature).toBe(1.4);
@@ -364,7 +366,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
   });
@@ -415,7 +417,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Weighted average: existing weight=10/20=0.5, new weight=10/20=0.5
     // p50 = (100*0.5 + 120*0.5) = 110
@@ -444,7 +446,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.toolExecutionBenchmarks["new-tool"]).toBeDefined();
     expect(writtenData.toolExecutionBenchmarks["new-tool"].p50_ms).toBe(50);
@@ -465,7 +467,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Valid ratios: 1.5, 2.0, 1.0 -> sorted: 1.0, 1.5, 2.0 -> median 1.5
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
@@ -486,7 +488,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // slow-tool / feature ratios: 5.0, 6.0, 3.5 -> sorted: 3.5, 5.0, 6.0 -> median 5.0 -> clamped 3.0
     expect(writtenData.toolTaskCorrectionFactors["slow-tool"].feature).toBe(3.0);
@@ -506,7 +508,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // fast-tool / feature ratios: 0.2, 0.1, 0.3 -> sorted: 0.1, 0.2, 0.3 -> median 0.2 -> clamped 0.2 (within 0.1 floor)
     expect(writtenData.toolTaskCorrectionFactors["fast-tool"].feature).toBe(0.2);
@@ -526,7 +528,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.toolTaskCorrectionFactors.unknown).toBeDefined();
     // ratios: 1.2, 1.4, 1.6, 1.8, 2.0 -> sorted median = 1.6
@@ -548,7 +550,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.complexityCorrectionFactors).toBeDefined();
     expect(writtenData.complexityCorrectionFactors.feature).toBeDefined();
@@ -571,7 +573,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // complexity 3 should not appear (only 2 records)
     expect(writtenData.complexityCorrectionFactors.bugfix?.[3]).toBeUndefined();

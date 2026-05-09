@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Tool Registry Tests — Layer 4-5 (Analytics)
@@ -22,7 +24,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("reference_class_estimate returns estimate", () => {
-    const tool = TOOL_REGISTRY.get("reference_class_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("reference_class_estimate"));
     const result = tool.handler({
       task_type: "feature",
       complexity: 3,
@@ -37,7 +39,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("reference_class_estimate with team_id returns note", () => {
-    const tool = TOOL_REGISTRY.get("reference_class_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("reference_class_estimate"));
     const result = tool.handler({
       task_type: "bugfix",
       complexity: 2,
@@ -50,7 +52,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("calibrate_estimates returns stub data", () => {
-    const tool = TOOL_REGISTRY.get("calibrate_estimates")!;
+    const tool = defined(TOOL_REGISTRY.get("calibrate_estimates"));
     const result = tool.handler({
       team_id: "team-a",
       period_days: 90,
@@ -65,7 +67,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("token_time_bridge estimates wall-clock time", () => {
-    const tool = TOOL_REGISTRY.get("token_time_bridge")!;
+    const tool = defined(TOOL_REGISTRY.get("token_time_bridge"));
     const result = tool.handler({
       tokens: 50000,
       model: "claude-sonnet-4-20250514",
@@ -83,7 +85,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("token_time_bridge handles unknown model", () => {
-    const tool = TOOL_REGISTRY.get("token_time_bridge")!;
+    const tool = defined(TOOL_REGISTRY.get("token_time_bridge"));
     const result = tool.handler({
       tokens: 1000,
       model: "gpt-4o-mini",
@@ -97,7 +99,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("compare_models returns model comparison", () => {
-    const tool = TOOL_REGISTRY.get("compare_models")!;
+    const tool = defined(TOOL_REGISTRY.get("compare_models"));
     const result = tool.handler({
       tokens: 50000,
       tool_calls: 5,
@@ -119,7 +121,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("accuracy_trend returns trend data", () => {
-    const tool = TOOL_REGISTRY.get("accuracy_trend")!;
+    const tool = defined(TOOL_REGISTRY.get("accuracy_trend"));
     const result = tool.handler({
       window_size: 50,
     });
@@ -134,7 +136,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("accuracy_trend with team_id returns team data", () => {
-    const tool = TOOL_REGISTRY.get("accuracy_trend")!;
+    const tool = defined(TOOL_REGISTRY.get("accuracy_trend"));
     const result = tool.handler({
       team_id: "team-bravo",
       window_size: 20,
@@ -146,7 +148,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("schedule_risk returns risk assessment", () => {
-    const tool = TOOL_REGISTRY.get("schedule_risk")!;
+    const tool = defined(TOOL_REGISTRY.get("schedule_risk"));
     const result = tool.handler({
       estimated_hours: 40,
       task_type: "feature",
@@ -170,7 +172,7 @@ describe("analytics tools via registry", () => {
   });
 
   it("schedule_risk with minimal inputs returns assessment", () => {
-    const tool = TOOL_REGISTRY.get("schedule_risk")!;
+    const tool = defined(TOOL_REGISTRY.get("schedule_risk"));
     const result = tool.handler({
       estimated_hours: 8,
     });

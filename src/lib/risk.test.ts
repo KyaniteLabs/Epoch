@@ -28,6 +28,8 @@ vi.mock("./profiles.js", () => ({
 }));
 
 import { getCalibrationData } from "./feedback.js";
+import { defined } from "../test-support.js";
+
 
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
 
@@ -191,10 +193,10 @@ describe("scheduleRisk", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = scheduleRisk({ estimatedHours: 20 });
     expect(result.taskTypeBreakdown).toBeDefined();
-    expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
-    expect(result.taskTypeBreakdown!["feature"]!.riskLevel).toBe("low");
-    expect(result.taskTypeBreakdown!["bugfix"]).toBeDefined();
-    expect(result.taskTypeBreakdown!["bugfix"]!.riskLevel).toBe("critical");
+    expect(defined(result.taskTypeBreakdown)["feature"]).toBeDefined();
+    expect(defined(defined(result.taskTypeBreakdown)["feature"]).riskLevel).toBe("low");
+    expect(defined(result.taskTypeBreakdown)["bugfix"]).toBeDefined();
+    expect(defined(defined(result.taskTypeBreakdown)["bugfix"]).riskLevel).toBe("critical");
   });
 
   it("omits task types with fewer than 3 records from breakdown", () => {
@@ -205,8 +207,8 @@ describe("scheduleRisk", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = scheduleRisk({ estimatedHours: 20 });
     expect(result.taskTypeBreakdown).toBeDefined();
-    expect(result.taskTypeBreakdown!["migration"]).toBeUndefined();
-    expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
+    expect(defined(result.taskTypeBreakdown)["migration"]).toBeUndefined();
+    expect(defined(result.taskTypeBreakdown)["feature"]).toBeDefined();
   });
 
   it("includes estimatedTokenCost (estimatedHours × 50000)", () => {
