@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.KyaniteLabs/Epoch",
+  "title": "Epoch",
+  "description": "Time Estimation MCP Server — PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, and schedule risk. Self-improving.",
+  "version": "0.2.2",
+  "websiteUrl": "https://kyanitelabs.github.io/Epoch/",
+  "repository": {
+    "url": "https://github.com/KyaniteLabs/Epoch",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@kyanitelabs/epoch",
+      "version": "0.2.2",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
