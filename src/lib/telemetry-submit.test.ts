@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
-import { existsSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -83,6 +83,49 @@ describe("extractAnonymizedRecords", () => {
 
     const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
     expect(extractAnonymizedRecords(cutoff)).toHaveLength(0);
+  });
+
+  it("includes only records after the submission cutoff", async () => {
+    writeFileSync(join(TEST_DIR, "estimates.jsonl"), [
+      JSON.stringify({
+        id: "old-record",
+        tool: "pert_estimate",
+        inputs: { task_type: "feature", complexity: 2 },
+        outputs: { expected: 4, unit: "hours" },
+        estimatedAt: "2026-05-07T00:00:00.000Z",
+      }),
+      JSON.stringify({
+        id: "new-record",
+        tool: "pert_estimate",
+        inputs: { task_type: "feature", complexity: 4 },
+        outputs: { expected: 8, unit: "hours" },
+        estimatedAt: "2026-05-07T00:00:00.000Z",
+      }),
+    ].join("\n") + "\n", "utf-8");
+    writeFileSync(join(TEST_DIR, "feedback.jsonl"), [
+      JSON.stringify({
+        estimateId: "old-record",
+        actualHours: 5,
+        reportedAt: "2026-05-07T00:00:00.000Z",
+      }),
+      JSON.stringify({
+        estimateId: "new-record",
+        actualHours: 12,
+        reportedAt: "2026-05-07T00:00:01.000Z",
+      }),
+    ].join("\n") + "\n", "utf-8");
+
+    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+    const records = extractAnonymizedRecords("2026-05-07T00:00:00.000Z");
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      complexity: 4,
+      estimated_hours: 8,
+      actual_hours: 12,
+      ratio: 1.5,
+      date: "2026-05-07",
+    });
   });
 });
 

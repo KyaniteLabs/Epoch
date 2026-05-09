@@ -61,6 +61,17 @@ describe("scheduleRisk", () => {
     expect(result.riskLevel).toBeDefined();
   });
 
+  it("uses historical accuracy instead of profile fallback when at least five records exist", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(5, 0));
+
+    const result = scheduleRisk({ estimatedHours: 20, aiNative: 0.0 });
+
+    expect(result.historicalAccuracy.sampleSize).toBe(5);
+    expect(result.historicalAccuracy.mape).toBe(0);
+    expect(result.cappedMdape).toBe(0);
+    expect(result.confidenceIntervals.p95).toBe(20);
+  });
+
   it("confidence intervals widen with higher MdAPE", () => {
     mockGetCalibrationData.mockReturnValue(makeRecords(10, 10));
     const lowRisk = scheduleRisk({ estimatedHours: 40 });

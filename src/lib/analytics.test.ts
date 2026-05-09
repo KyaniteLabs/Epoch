@@ -138,6 +138,22 @@ describe("referenceClassEstimate", () => {
     expect(result.correctedEstimate).toBeGreaterThan(result.rawEstimate);
   });
 
+  it("uses the median actual/estimated ratio as the data-driven correction factor", () => {
+    const calibratedRecords: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-01-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 14, completedAt: "2026-01-02" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 15, completedAt: "2026-01-03" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 16, completedAt: "2026-01-04" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 18, completedAt: "2026-01-05" },
+    ];
+
+    const result = referenceClassEstimate(calibratedRecords, "feature", 3, "medium", false);
+
+    expect(result.sampleSize).toBe(5);
+    expect(result.correctionFactor).toBe(1.5);
+    expect(result.correctedEstimate).toBeCloseTo(result.rawEstimate * 1.5, 5);
+  });
+
   it("falls back to industry correction when insufficient data", () => {
     const result = referenceClassEstimate(records, "migration", 3);
     expect(result.sampleSize).toBe(0);
