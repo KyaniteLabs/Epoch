@@ -24,7 +24,7 @@ The audit remediation is implemented as atomic Lore-protocol commits. The releas
 | Telemetry receiver did not prove persisted, deduplicated ingestion | `6f1d027` | `src/lib/telemetry-receiver.ts`, `src/lib/telemetry-integration.test.ts` | `pnpm test` includes isolated e2e ingestion; final local canary passes API surface |
 | Backfill/deploy telemetry scripts were untracked/unsafe to rely on | `27bf77d`, `d054f1d` | `scripts/backfill-telemetry.mjs`, `scripts/configure-mac-mini-telemetry.sh`, `scripts/install-telemetry-launchd.sh`, `docs/TELEMETRY.md` | Backfill dry-run smoke passed; shell scripts pass `bash -n`; ops scripts require `EPOCH_CONFIRM_OPS=1` |
 | Reference database was stale/opaque | `fac4aae` | `src/lib/self-improve.ts`, `src/entries/cli.ts`, `scripts/verify-reference-db.mjs`, `src/data/reference-database.json`, docs | `node scripts/verify-reference-db.mjs` passed with sampleSize 5895/source self-improvement; CLI `reference-db-status` loaded bundled DB in isolated data |
-| Calculation behavior lacked regression characterization | `654a4d5` | `src/lib/analytics.test.ts`, `src/lib/risk.test.ts`, `src/lib/telemetry-submit.test.ts` | Full `pnpm test` passed 956 tests; local canary surface 21/21 |
+| Calculation behavior lacked regression characterization | `654a4d5` | `src/lib/analytics.test.ts`, `src/lib/risk.test.ts`, `src/lib/telemetry-submit.test.ts` | Full `pnpm test` passed 956 tests in the original remediation and 950 tests after removing the unused deprecated wrapper; local canary surface 21/21 |
 | Silent telemetry/self-improvement/feedback failures were hidden | `7fa5859` | `src/lib/internal/logging.ts`, `src/lib/telemetry.ts`, `src/lib/telemetry-submit.ts`, `src/lib/self-improve.ts`, `src/entries/http.ts` | Debug logging tests passed; HTTP feedback returns typed 400/409/500 reason paths |
 | Lint baseline had actionable errors and noisy production non-null assertions | `4aa5415` | `eslint.config.js`, production lint targets, typed tests | Originally fixed to zero errors with accepted test warnings, then closed in follow-up: `pnpm run lint` now exits 0 with zero warnings |
 | `.npmignore` contradicted packaged `data/` assets | `d054f1d` | `.npmignore` | `npm pack --dry-run --json` includes `dist/`, `data/`, `README.md`, `LICENSE`, `package.json`; excludes docs/scripts |
@@ -39,7 +39,7 @@ Executed after `73bb54d`:
 | `git status --short` | Clean before report creation |
 | `pnpm run typecheck` | Pass |
 | `pnpm run lint` | Pass: 0 errors, 0 warnings |
-| `pnpm test` | Pass: 36 files, 956 tests |
+| `pnpm test` | Pass: 36 files, 950 tests |
 | `pnpm run build` | Pass |
 | `node scripts/validate-community-data.mjs` | Pass: 12 records valid |
 | `node scripts/verify-reference-db.mjs` | Pass: sampleSize 5895, source `self-improvement`, globalCorrectionFactor 0.3 |
