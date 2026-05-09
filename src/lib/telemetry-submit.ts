@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { getCalibrationData } from "./feedback.js";
 import { loadConfig, saveConfig, getInstallationId, isUsableTelemetryEndpoint } from "./config.js";
+import { debugLog } from "./internal/logging.js";
 
 export interface AnonymizedRecord {
   task_type: string;
@@ -172,7 +173,9 @@ export function maybeSubmitTelemetry(): void {
     if (hoursSinceLast < 1) return;
   }
 
-  submitTelemetry().catch(() => { /* non-critical, silent */ });
+  submitTelemetry().catch((err: unknown) => {
+    debugLog("telemetry.submit", err);
+  });
 }
 
 export function resetCallCount(): void {

@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+import { debugLog } from "./internal/logging.js";
+
 export interface ToolCallRecord {
   timestamp: string;
   tool: string;
@@ -59,7 +61,8 @@ class TelemetryStore {
     if (this.enabled && !existsSync(dir)) {
       try {
         mkdirSync(dir, { recursive: true });
-      } catch {
+      } catch (err) {
+        debugLog("telemetry.mkdir", err);
         this.enabled = false;
       }
     }
@@ -103,8 +106,8 @@ class TelemetryStore {
 
     try {
       appendFileSync(this.filePath, lines, "utf-8");
-    } catch {
-      // silently fail — telemetry is non-critical
+    } catch (err) {
+      debugLog("telemetry.flush", err);
     }
   }
 
@@ -120,7 +123,8 @@ class TelemetryStore {
     let content: string;
     try {
       content = readFileSync(this.filePath, "utf-8");
-    } catch {
+    } catch (err) {
+      debugLog("telemetry.read", err);
       return [];
     }
 
@@ -161,7 +165,8 @@ class TelemetryStore {
     let content: string;
     try {
       content = readFileSync(this.filePath, "utf-8");
-    } catch {
+    } catch (err) {
+      debugLog("telemetry.model-read", err);
       return null;
     }
 

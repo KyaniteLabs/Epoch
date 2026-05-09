@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
-import { recordActual, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import { recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
 import type { ToolResult } from "../types/index.js";
@@ -685,12 +685,21 @@ export function createApiApp(): Hono {
     }
 
     const notes = body["notes"] as string | undefined;
-    const success = recordActual(estimateId, actualHours, notes);
-    if (!success) {
+    const result = recordActualDetailed(estimateId, actualHours, notes);
+    if (!result.ok) {
+      const status = result.reason === "duplicate"
+        ? 409
+        : result.reason === "below_threshold" || result.reason === "synthetic_id"
+          ? 400
+          : 500;
       return c.json({
         ok: false,
-        error: { isError: true, message: "Failed to record actual. Estimate ID may not exist.", retryHint: "Check estimate_id and try again." },
-      }, 500);
+        error: {
+          isError: true,
+          message: `Failed to record actual: ${result.reason}.`,
+          retryHint: "Use a real estimate_id, actual_hours >= 0.25, and avoid duplicate submissions.",
+        },
+      }, status);
     }
     return c.json({ ok: true, data: { estimateId, actualHours, recorded: true } });
   });

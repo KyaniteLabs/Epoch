@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
+import { debugLog } from "./internal/logging.js";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 
 function resolveReferenceDbPath(): string {
@@ -98,8 +99,8 @@ export function notifyToolCall(): void {
     callCounter = 0;
     lastUpdateAt = Date.now();
     isUpdating = true;
-    updateReferenceDatabase().catch(() => {
-      // self-improvement is non-critical
+    updateReferenceDatabase().catch((err: unknown) => {
+      debugLog("self-improve", err);
     }).finally(() => {
       isUpdating = false;
     });

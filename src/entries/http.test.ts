@@ -549,6 +549,38 @@ describe("HTTP API", () => {
       const data = body.data as Record<string, unknown>;
       expect(data.actualHours).toBe(8.5);
     });
+
+    it("returns 400 with a typed reason for below-threshold actual hours", async () => {
+      const res = await app.request("/v1/feedback/record-actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: "below-threshold-estimate", actual_hours: 0.1 }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(error.message).toContain("below_threshold");
+    });
+
+    it("returns 409 with a typed reason for duplicate actuals", async () => {
+      const payload = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: "duplicate-estimate", actual_hours: 2 }),
+      };
+
+      const first = await app.request("/v1/feedback/record-actual", payload);
+      expect(first.status).toBe(200);
+
+      const second = await app.request("/v1/feedback/record-actual", payload);
+      expect(second.status).toBe(409);
+      const body = await second.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(error.message).toContain("duplicate");
+    });
   });
 
   describe("GET /v1/feedback/pending", () => {
