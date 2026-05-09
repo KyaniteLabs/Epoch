@@ -28,6 +28,15 @@ export {
   recordEstimate,
 } from "./lib/feedback.js";
 export {
+  getInstallationId,
+  isPlaceholderTelemetryEndpoint,
+  isTelemetryEnabled,
+  isUsableTelemetryEndpoint,
+  loadConfig,
+  saveConfig,
+  type EpochConfig,
+} from "./lib/config.js";
+export {
   buildPayload,
   extractAnonymizedRecords,
   exportToFile,

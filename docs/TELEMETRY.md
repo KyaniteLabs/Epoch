@@ -143,6 +143,7 @@ Displays current telemetry configuration:
 - Whether the endpoint is usable or still unset/placeholder
 - Number of records queued for next submission
 - Timestamp of last successful submission
+- Last and total receiver-accepted / receiver-deduplicated counts
 - Installation ID
 
 ### `epoch telemetry set-endpoint`
@@ -153,7 +154,7 @@ Configures the telemetry receiver without changing the opt-in setting:
 epoch telemetry set-endpoint --endpoint https://your-server.example.com/v1/telemetry
 ```
 
-Endpoints must use HTTPS, except localhost receivers used for local development.
+Endpoints must use HTTPS, except localhost receivers used for local development and Tailscale private `100.64.0.0/10` receivers used on private networks.
 
 ### `epoch telemetry submit`
 
@@ -169,7 +170,25 @@ You can also set the endpoint immediately before submitting:
 epoch telemetry submit --endpoint https://your-server.example.com/v1/telemetry
 ```
 
-Successful submissions update `lastSubmissionAt` and `totalRecordsSubmitted` in `epoch telemetry status`. Failed submissions leave records queued locally.
+Successful submissions update `lastSubmissionAt`, `totalRecordsSubmitted`, `totalRecordsAccepted`, and `totalRecordsDeduplicated` in `epoch telemetry status`. Failed submissions leave records queued locally.
+
+## Backfill Historical Records
+
+The supported backfill script sends all currently available anonymized records in 100-record chunks. It imports the built package API, so build first:
+
+```bash
+pnpm run build
+node scripts/backfill-telemetry.mjs --endpoint https://your-server.example.com/v1/telemetry --dry-run
+node scripts/backfill-telemetry.mjs --endpoint https://your-server.example.com/v1/telemetry
+```
+
+Always run `--dry-run` first. Dry-run mode validates and counts records without making network calls or updating `~/.epoch/config.json`. A real backfill updates telemetry status with submitted, accepted, and deduplicated counts returned by the receiver.
+
+For a private Mac mini receiver reachable through Tailscale, use the private endpoint explicitly:
+
+```bash
+node scripts/backfill-telemetry.mjs --endpoint http://100.66.225.85:3099/v1/telemetry --dry-run
+```
 
 ### `epoch telemetry export`
 
@@ -244,7 +263,13 @@ epoch telemetry set-endpoint --endpoint http://localhost:3099/v1/telemetry
 epoch telemetry submit
 ```
 
-The built-in receiver verifies the signature and stores aggregate receipt metadata in `~/.epoch/telemetry-receipts.jsonl`; it does not duplicate raw telemetry records into the receipt log.
+The built-in receiver verifies the signature and writes three local files:
+
+- `~/.epoch/telemetry-records.jsonl` — shared anonymized records plus `received_at`
+- `~/.epoch/telemetry-record-keys.jsonl` — receiver-local SHA-256 dedupe keys
+- `~/.epoch/telemetry-receipts.jsonl` — aggregate receipts with accepted/deduplicated counts
+
+The shared records file contains only anonymized telemetry fields: `task_type`, `complexity`, `tool`, `estimated_hours`, `actual_hours`, `ratio`, `date`, and `received_at`. It does not store installation IDs, notes, project names, source text, team IDs, or dedupe keys.
 
 **Verification steps (server-side):**
 
@@ -252,8 +277,8 @@ The built-in receiver verifies the signature and stores aggregate receipt metada
 2. Compute HMAC-SHA256 of the raw body using `installation_id` from the payload as the key
 3. Compare with `X-Epoch-Signature` header (constant-time comparison)
 4. Validate `schema_version` is supported
-5. Deduplicate records by `(installation_id, date, task_type, estimated_hours)`
-6. Store or aggregate
+5. Deduplicate records by a receiver-local hash of `(installation_id, record)`
+6. Store anonymized records and aggregate receipts
 
 ### Configuring a custom endpoint
 
