@@ -54,6 +54,8 @@ function makeDb(overrides: Record<string, unknown> = {}) {
     toolExecutionBenchmarks: {},
     modelLatencyProfiles: {},
     taskTypeCorrectionFactors: {},
+    complexityCorrectionFactors: {},
+    complexityCorrectionFactorStatus: "unit-test-status",
     toolTaskCorrectionFactors: {},
     globalCorrectionFactor: 1.07,
     estimationAccuracy: {
@@ -111,6 +113,7 @@ describe("getReferenceDbStatus", () => {
         taskTypeCorrectionFactors: { feature: 1.4, bugfix: 1.2 },
         toolTaskCorrectionFactors: { pert_estimate: { feature: 1.5 } },
         complexityCorrectionFactors: { feature: { 3: 1.4, 5: 1.8 } },
+        complexityCorrectionFactorStatus: "available",
       }),
     );
 
@@ -123,6 +126,7 @@ describe("getReferenceDbStatus", () => {
       taskTypeCorrectionFactorCount: 2,
       toolTaskCorrectionFactorCount: 1,
       complexityCorrectionFactorCount: 1,
+      complexityCorrectionFactorStatus: "available",
     });
     expect(getReferenceDbStatus().path).toEqual(expect.any(String));
   });
@@ -142,6 +146,7 @@ describe("getReferenceDbStatus", () => {
       taskTypeCorrectionFactorCount: 0,
       toolTaskCorrectionFactorCount: 0,
       complexityCorrectionFactorCount: 0,
+      complexityCorrectionFactorStatus: null,
     });
   });
 });

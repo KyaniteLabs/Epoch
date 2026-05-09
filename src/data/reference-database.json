@@ -463,5 +463,6 @@
       "documentation": 0.5
     }
   },
-  "complexityCorrectionFactors": {}
+  "complexityCorrectionFactors": {},
+  "complexityCorrectionFactorStatus": "No approved bundled calibration source currently has at least 3 records per task type and complexity; user-local self-improvement populates complexity factors when enough feedback exists."
 }

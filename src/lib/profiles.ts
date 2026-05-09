@@ -40,10 +40,6 @@ function getHumanAnchor(): Anchor {
   };
 }
 
-/** @deprecated Use getDeveloperProfileGradient for float aiRatio support. */
-export function getDeveloperProfile(aiNative: boolean): DeveloperProfile {
-  return getDeveloperProfileGradient(aiNative ? 1.0 : 0.0);
-}
 
 export function getDeveloperProfileGradient(aiRatio: number): DeveloperProfile {
   const clamped = Math.max(0, Math.min(1, aiRatio));

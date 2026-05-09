@@ -45,6 +45,7 @@ interface ReferenceDatabase {
   };
   taskTypeCorrectionFactors: Record<string, number>;
   complexityCorrectionFactors: Record<string, Record<number, number>>;
+  complexityCorrectionFactorStatus?: string;
   toolTaskCorrectionFactors: Record<string, Record<string, number>>;
   tokenTimeCalibration: Record<string, TokenCalibration>;
   globalCorrectionFactor: number;
@@ -60,6 +61,7 @@ export interface ReferenceDbStatus {
   taskTypeCorrectionFactorCount: number;
   toolTaskCorrectionFactorCount: number;
   complexityCorrectionFactorCount: number;
+  complexityCorrectionFactorStatus: string | null;
 }
 
 interface ToolBenchmark {
@@ -205,6 +207,7 @@ export function getReferenceDbStatus(): ReferenceDbStatus {
       taskTypeCorrectionFactorCount: 0,
       toolTaskCorrectionFactorCount: 0,
       complexityCorrectionFactorCount: 0,
+      complexityCorrectionFactorStatus: null,
     };
   }
 
@@ -218,6 +221,7 @@ export function getReferenceDbStatus(): ReferenceDbStatus {
     taskTypeCorrectionFactorCount: Object.keys(db.taskTypeCorrectionFactors ?? {}).length,
     toolTaskCorrectionFactorCount: Object.keys(db.toolTaskCorrectionFactors ?? {}).length,
     complexityCorrectionFactorCount: Object.keys(db.complexityCorrectionFactors ?? {}).length,
+    complexityCorrectionFactorStatus: db.complexityCorrectionFactorStatus ?? null,
   };
 }
 

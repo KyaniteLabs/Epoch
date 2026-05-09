@@ -486,7 +486,7 @@ Estimated vs Actual -> Correction Factor -> Better Estimates -> Repeat
 
 The engine detects systematic biases (chronic under-estimation, accuracy degradation) and surfaces actionable recommendations.
 
-Epoch ships with a frozen baseline reference database in the package. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); use `epoch reference-db-status` to see which database is active, when it was generated, sample size, source, and available correction-factor counts.
+Epoch ships with a verified baseline reference database in the package. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); use `epoch reference-db-status` to see which database is active, when it was generated, sample size, source, available correction-factor counts, and why any bundled factor family is not populated yet.
 
 ## Data Pipeline
 

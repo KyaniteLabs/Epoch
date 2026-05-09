@@ -22,6 +22,13 @@ for (const key of ["taskTypeCorrectionFactors", "toolTaskCorrectionFactors", "co
     errors.push(`${key} must be an object`);
   }
 }
+if (
+  db.complexityCorrectionFactors
+  && Object.keys(db.complexityCorrectionFactors).length === 0
+  && (typeof db.complexityCorrectionFactorStatus !== "string" || db.complexityCorrectionFactorStatus.length === 0)
+) {
+  errors.push("complexityCorrectionFactorStatus must explain why bundled complexity factors are empty");
+}
 
 if (errors.length > 0) {
   throw new Error(`reference database failed verification: ${errors.join("; ")}`);
@@ -33,4 +40,5 @@ console.log(JSON.stringify({
   sampleSize: db.sampleSize,
   source: db.source,
   globalCorrectionFactor: db.globalCorrectionFactor,
+  complexityCorrectionFactorStatus: db.complexityCorrectionFactorStatus ?? null,
 }, null, 2));
