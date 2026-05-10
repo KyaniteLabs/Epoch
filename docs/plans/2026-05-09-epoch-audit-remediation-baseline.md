@@ -1,5 +1,10 @@
 # Epoch Audit Remediation Baseline
 
+> Historical archive: this captured the dirty working tree before the May 9, 2026
+> remediation run. It is not current release state; use
+> `docs/plans/2026-05-09-epoch-audit-remediation-report.md` and `README.md`
+> for current verification truth.
+
 - Branch: audit-remediation-2026-05-09
 - Base commit: 29fbadb Add MCP Registry links and fix stale package reference
 

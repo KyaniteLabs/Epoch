@@ -29,6 +29,7 @@ export interface ActualRecord {
   actualHours: number;
   notes?: string;
   reportedAt: string;
+  completedAt?: string;
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), ".epoch");
@@ -160,12 +161,15 @@ export function getCalibrationData(
   taskType?: TaskType,
   windowDays?: number,
   tool?: string,
+  calibrationUsage: "correction" | "baseline" | "all" = "correction",
 ): HistoricalRecord[] {
-  return matchEstimatesToActuals(
+  const records = matchEstimatesToActuals(
     readLines<EstimateRecord>(ESTIMATES_FILE),
     readLines<ActualRecord>(ACTUALS_FILE),
     { teamId, taskType, windowDays, tool },
   );
+  if (calibrationUsage === "all") return records;
+  return records.filter((record) => record.calibrationUsage === calibrationUsage);
 }
 
 /** Prefixes that indicate synthetic/test/batch data, not real estimates. */
@@ -199,6 +203,93 @@ function isSeedRecord(act: ActualRecord): boolean {
   return notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed") || notes.includes("test data");
 }
 
+type CalibrationProvenance = NonNullable<HistoricalRecord["calibrationProvenance"]>;
+type CalibrationUsage = NonNullable<HistoricalRecord["calibrationUsage"]>;
+
+const VALID_PROVENANCE = new Set<CalibrationProvenance>([
+  "prospective",
+  "backfilled_real_session",
+  "backfilled_calibration",
+  "synthetic",
+  "smoke",
+  "unknown",
+]);
+
+const VALID_USAGE = new Set<CalibrationUsage>(["correction", "baseline", "exclude"]);
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function happenedBefore(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  const aTime = Date.parse(a);
+  const bTime = Date.parse(b);
+  if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) return false;
+  return aTime < bTime - 60_000;
+}
+
+function normalizeProvenance(value: unknown): CalibrationProvenance | undefined {
+  const raw = stringField(value);
+  if (!raw) return undefined;
+  return VALID_PROVENANCE.has(raw as CalibrationProvenance) ? raw as CalibrationProvenance : undefined;
+}
+
+function normalizeUsage(value: unknown): CalibrationUsage | undefined {
+  const raw = stringField(value);
+  if (!raw) return undefined;
+  return VALID_USAGE.has(raw as CalibrationUsage) ? raw as CalibrationUsage : undefined;
+}
+
+function classifyCalibrationRecord(
+  est: EstimateRecord,
+  act: ActualRecord,
+): { calibrationProvenance: CalibrationProvenance; calibrationUsage: CalibrationUsage } {
+  const inputs = est.inputs as Record<string, unknown>;
+  const actual = act as unknown as Record<string, unknown>;
+  const explicitProvenance = normalizeProvenance(
+    inputs["calibration_provenance"] ?? actual["calibrationProvenance"] ?? actual["calibration_provenance"],
+  );
+  const explicitUsage = normalizeUsage(
+    inputs["calibration_usage"] ?? actual["calibrationUsage"] ?? actual["calibration_usage"],
+  );
+  const notes = (act.notes ?? "").toLowerCase();
+  const tool = est.tool.toLowerCase();
+
+  if (explicitUsage === "exclude" || explicitProvenance === "synthetic" || explicitProvenance === "smoke") {
+    return { calibrationProvenance: explicitProvenance ?? "synthetic", calibrationUsage: "exclude" };
+  }
+
+  if (tool === "receiver_smoke" || notes.includes("receiver smoke") || notes.includes("smoke test")) {
+    return { calibrationProvenance: "smoke", calibrationUsage: "exclude" };
+  }
+
+  if (notes.includes("industry calibration")) {
+    return { calibrationProvenance: "synthetic", calibrationUsage: "exclude" };
+  }
+
+  if (notes.includes("ingested from")) {
+    return { calibrationProvenance: "backfilled_real_session", calibrationUsage: "baseline" };
+  }
+
+  if (notes.includes("real data calibration")) {
+    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
+  }
+
+  if (happenedBefore(stringField(actual["completedAt"]), est.estimatedAt)) {
+    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
+  }
+
+  if (explicitProvenance) {
+    return {
+      calibrationProvenance: explicitProvenance,
+      calibrationUsage: explicitUsage ?? (explicitProvenance === "prospective" ? "correction" : "baseline"),
+    };
+  }
+
+  return { calibrationProvenance: "prospective", calibrationUsage: explicitUsage ?? "correction" };
+}
+
 export function matchEstimatesToActuals(
   estimates: EstimateRecord[],
   actuals: ActualRecord[],
@@ -230,6 +321,9 @@ export function matchEstimatesToActuals(
     // Filter seed/synthetic records: explicitly marked or implausibly low ratio
     if (isSeedRecord(act)) continue;
 
+    const calibration = classifyCalibrationRecord(est, act);
+    if (calibration.calibrationUsage === "exclude") continue;
+
     const estHours = extractEstimatedHours(est.outputs);
     if (estHours === null) continue;
 
@@ -245,6 +339,7 @@ export function matchEstimatesToActuals(
     const complexity = typeof est.inputs["complexity"] === "number"
       ? est.inputs["complexity"]
       : undefined;
+    const completedAt = stringField((act as unknown as Record<string, unknown>)["completedAt"]) ?? act.reportedAt ?? "";
 
     records.push({
       taskType: type,
@@ -253,7 +348,9 @@ export function matchEstimatesToActuals(
       tool: est.tool,
       ...(complexity !== undefined && { complexity }),
       ...(filters?.teamId && { teamId: filters.teamId }),
-      completedAt: act.reportedAt ?? act["completedAt" as keyof typeof act] ?? "",
+      completedAt,
+      calibrationProvenance: calibration.calibrationProvenance,
+      calibrationUsage: calibration.calibrationUsage,
     });
   }
 
@@ -344,6 +441,11 @@ export interface FeedbackHealthReport {
   totalActuals: number;
   matchedPairs: number;
   seedRecordsFiltered: number;
+  provenance: {
+    correctionRecords: number;
+    baselineRecords: number;
+    excludedRecords: number;
+  };
   matchRate: number;
   byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; cappedMdape: number | null; bias: number | null; trend: string | null; recommendation: string }>;
   byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; cappedMdape: number | null; bias: number | null; trend: string | null; recommendation: string }>;
@@ -374,6 +476,8 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   // Compute all matched records once (no re-reads)
   const allMatched = matchEstimatesToActuals(estimates, actuals);
+  const correctionMatched = allMatched.filter((record) => record.calibrationUsage !== "baseline");
+  const baselineRecords = allMatched.length - correctionMatched.length;
 
   // Count seed records filtered from accuracy computation
   const actualsMap = new Map<string, ActualRecord>();
@@ -403,7 +507,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
       toolActuals.set(e.tool, (toolActuals.get(e.tool) ?? 0) + 1);
     }
   }
-  for (const r of allMatched) {
+  for (const r of correctionMatched) {
     const toolKey = r.tool ?? "unknown";
     const records = toolRecords.get(toolKey) ?? [];
     records.push(r);
@@ -431,7 +535,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   // By task type — group the pre-matched records
   const typeGroups = new Map<string, HistoricalRecord[]>();
-  for (const r of allMatched) {
+  for (const r of correctionMatched) {
     const records = typeGroups.get(r.taskType) ?? [];
     records.push(r);
     typeGroups.set(r.taskType, records);
@@ -476,18 +580,18 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   let outlierRatio = 0;
   let recommendation: string;
 
-  if (allMatched.length >= 5) {
-    const metrics = computeAccuracyMetrics(allMatched);
+  if (correctionMatched.length >= 5) {
+    const metrics = computeAccuracyMetrics(correctionMatched);
     overallMdape = metrics.mdape;
     overallCappedMdape = metrics.cappedMdape;
 
     // Outliers: records where MAPE > 3× cappedMdape
     const outlierThreshold = metrics.cappedMdape * 3;
-    const outliers = allMatched.filter(r => {
+    const outliers = correctionMatched.filter(r => {
       const err = Math.abs(r.actualHours - r.estimatedHours) / r.actualHours * 100;
       return err > outlierThreshold;
     });
-    outlierRatio = Math.round(outliers.length / allMatched.length * 1000) / 10;
+    outlierRatio = Math.round(outliers.length / correctionMatched.length * 1000) / 10;
 
     if (overallCappedMdape < 25) {
       recommendation = "Data quality is good. Capped MdAPE below 25% indicates reliable estimates.";
@@ -514,7 +618,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const typesCalibrated = allTaskTypes.filter(t => (byTaskType[t]?.matchedPairs ?? 0) >= 3).length;
   const typeScore = allTaskTypes.length > 0 ? Math.round((typesCalibrated / allTaskTypes.length) * 30) : 0;
 
-  const pairScore = Math.min(30, Math.round((allMatched.length / 100) * 30));
+  const pairScore = Math.min(30, Math.round((correctionMatched.length / 100) * 30));
 
   const dataCompletenessScore = toolScore + typeScore + pairScore;
 
@@ -523,13 +627,14 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   return {
     totalEstimates,
     totalActuals,
-    matchedPairs: allMatched.length,
+    matchedPairs: correctionMatched.length,
     seedRecordsFiltered,
+    provenance: { correctionRecords: correctionMatched.length, baselineRecords, excludedRecords: seedRecordsFiltered },
     matchRate,
     byTool,
     byTaskType,
     selfImprovement: { readyTypes, callsUntilUpdate },
     dataQuality: { overallMdape, overallCappedMdape, outlierRatio, recommendation, dataCompletenessScore },
-    humanReadable: `${allMatched.length} matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
+    humanReadable: `${correctionMatched.length} correction-eligible matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}; ${baselineRecords} baseline-only records held out). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
   };
 }

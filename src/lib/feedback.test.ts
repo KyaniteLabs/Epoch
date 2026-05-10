@@ -51,7 +51,7 @@ function makeEstimate(overrides: Partial<{ id: string; tool: string; inputs: Rec
   });
 }
 
-function makeActual(overrides: Partial<{ estimateId: string; actualHours: number }> = {}): string {
+function makeActual(overrides: Partial<{ estimateId: string; actualHours: number; reportedAt: string; completedAt: string; notes: string }> = {}): string {
   return JSON.stringify({
     estimateId: "est-1",
     actualHours: 12,
@@ -171,6 +171,119 @@ describe("getCalibrationData", () => {
     expect(defined(records[0]).estimatedHours).toBe(10);
     expect(defined(records[0]).actualHours).toBe(12);
     expect(defined(records[0]).taskType).toBe("feature");
+  });
+
+  it("marks ordinary matched feedback as correction-eligible prospective data", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) return makeEstimate({ id: "live-estimate" }) + "\n";
+      if (p.endsWith("feedback.jsonl")) return makeActual({ estimateId: "live-estimate", actualHours: 12 }) + "\n";
+      return "";
+    });
+
+    const records = getCalibrationData();
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("prospective");
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
+  it("keeps backfilled real-session data as baseline-only instead of correction-factor data when all usages are requested", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({
+          id: "backfilled-session",
+          inputs: { task_type: "feature", complexity: 3 },
+          outputs: { expected: 6, unit: "hours" },
+        }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "backfilled-session",
+          actualHours: 6,
+          notes: "Ingested from liminal: feature, 10 LOC, 2 files",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData(undefined, undefined, undefined, undefined, "all");
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("backfilled_real_session");
+    expect(defined(records[0]).calibrationUsage).toBe("baseline");
+  });
+
+  it("excludes baseline-only backfilled records from default calibration data", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({
+          id: "backfilled-session",
+          inputs: { task_type: "feature", complexity: 3 },
+          outputs: { expected: 6, unit: "hours" },
+        }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "backfilled-session",
+          actualHours: 6,
+          notes: "Ingested from liminal: feature, 10 LOC, 2 files",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    expect(getCalibrationData()).toEqual([]);
+  });
+
+  it("treats actuals completed before the estimate was created as backfilled calibration baseline", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({
+          id: "retroactive-calibration",
+          inputs: { task_type: "feature", complexity: 4 },
+          outputs: { correctedEstimate: 12 },
+        }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({
+          estimateId: "retroactive-calibration",
+          actualHours: 8,
+          completedAt: "2026-05-01T08:00:00.000Z",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData(undefined, undefined, undefined, undefined, "all");
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("backfilled_calibration");
+    expect(defined(records[0]).calibrationUsage).toBe("baseline");
+    expect(getCalibrationData()).toEqual([]);
+  });
+
+  it("excludes smoke records from calibration data", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "receiver-smoke", tool: "receiver_smoke" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "receiver-smoke",
+          actualHours: 1,
+          notes: "receiver smoke",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    expect(getCalibrationData()).toEqual([]);
   });
 
   it("filters by taskType", () => {
@@ -848,6 +961,23 @@ describe("matchEstimatesToActuals", () => {
     ];
     const actuals = [
       { estimateId: "e1", actualHours: 8, completedAt: "2026-01-10T00:00:00Z" },
+    ];
+    const result = matchFixtureRecords(estimates, actuals);
+    expect(result).toHaveLength(1);
+    expect(defined(result[0]).completedAt).toBe("2026-01-10T00:00:00Z");
+  });
+
+  it("prefers actual completion time over later reporting time for calibration history", () => {
+    const estimates = [
+      { id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+    ];
+    const actuals = [
+      {
+        estimateId: "e1",
+        actualHours: 8,
+        completedAt: "2026-01-10T00:00:00Z",
+        reportedAt: "2026-01-12T00:00:00Z",
+      },
     ];
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);

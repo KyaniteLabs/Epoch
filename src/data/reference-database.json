@@ -1,198 +1,225 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-05-02T22:05:40.625Z",
-  "source": "self-improvement",
-  "sampleSize": 5895,
-  "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
+  "generatedAt": "2026-05-10T00:13:42.602Z",
+  "source": "telemetry-prospective-aggregate",
+  "sampleSize": 7667,
+  "description": "Reference database recalculated from prospective first-party Epoch telemetry; correction factors exclude backfilled, legacy receiver, synthetic, and smoke records.",
   "toolExecutionBenchmarks": {
-    "add_business_days": {
-      "p50_ms": 0.55,
-      "p95_ms": 3.41,
-      "mean_ms": 1.18,
-      "stddev_ms": 0.88,
-      "min_ms": 0.16,
-      "max_ms": 4.949999999999999,
-      "sampleCount": 164
-    },
-    "calibrate_estimates": {
-      "p50_ms": 1.33,
-      "p95_ms": 4.95,
-      "mean_ms": 1.77,
-      "stddev_ms": 0.83,
-      "min_ms": 0.645,
-      "max_ms": 7.574999999999999,
-      "sampleCount": 153
-    },
-    "cocomo_estimate": {
-      "p50_ms": 0.26,
-      "p95_ms": 0.7,
-      "mean_ms": 0.37,
-      "stddev_ms": 1.18,
-      "min_ms": 0,
-      "max_ms": 5.78,
-      "sampleCount": 145
-    },
-    "convert_timezone": {
-      "p50_ms": 0.49,
-      "p95_ms": 1.57,
-      "mean_ms": 0.66,
-      "stddev_ms": 1,
-      "min_ms": 0.08,
-      "max_ms": 4.4,
-      "sampleCount": 119
-    },
-    "count_business_days": {
-      "p50_ms": 0.75,
-      "p95_ms": 8.98,
-      "mean_ms": 1.8,
-      "stddev_ms": 1.7,
-      "min_ms": 0.195,
-      "max_ms": 13.995000000000001,
-      "sampleCount": 118
-    },
-    "critical_path": {
-      "p50_ms": 0.49,
-      "p95_ms": 1.56,
-      "mean_ms": 0.63,
-      "stddev_ms": 1.04,
-      "min_ms": 0.01,
-      "max_ms": 4.41,
-      "sampleCount": 92
-    },
-    "get_current_time": {
-      "p50_ms": 0.55,
-      "p95_ms": 4.78,
-      "mean_ms": 1.64,
-      "stddev_ms": 0.74,
-      "min_ms": 0.135,
-      "max_ms": 7.6499999999999995,
-      "sampleCount": 187
-    },
-    "monte_carlo_schedule": {
-      "p50_ms": 5.73,
-      "p95_ms": 22.41,
-      "mean_ms": 8.85,
-      "stddev_ms": 9.02,
-      "min_ms": 2.505,
-      "max_ms": 36.59,
-      "sampleCount": 71
-    },
-    "parse_duration": {
-      "p50_ms": 0.21,
-      "p95_ms": 1.1,
-      "mean_ms": 0.55,
-      "stddev_ms": 1.1,
-      "min_ms": 0.005,
-      "max_ms": 5.75,
-      "sampleCount": 163
-    },
-    "pert_estimate": {
-      "p50_ms": 0.12,
-      "p95_ms": 0.9,
-      "mean_ms": 0.27,
-      "stddev_ms": 0.83,
-      "min_ms": 0.015,
-      "max_ms": 4.5,
-      "sampleCount": 771
-    },
-    "reference_class_estimate": {
-      "p50_ms": 1.97,
-      "p95_ms": 6.13,
-      "mean_ms": 2.46,
-      "stddev_ms": 1.69,
-      "min_ms": 0.61,
-      "max_ms": 9.209999999999999,
-      "sampleCount": 1107
-    },
-    "sprint_forecast": {
-      "p50_ms": 0.31,
-      "p95_ms": 0.62,
-      "mean_ms": 0.34,
-      "stddev_ms": 0.72,
-      "min_ms": 0,
-      "max_ms": 3.99,
-      "sampleCount": 162
-    },
-    "time_math": {
-      "p50_ms": 0.42,
-      "p95_ms": 1.35,
-      "mean_ms": 2.18,
-      "stddev_ms": 49.23,
-      "min_ms": 0.015,
-      "max_ms": 332.19,
-      "sampleCount": 201
-    },
-    "token_time_bridge": {
-      "p50_ms": 1.17,
-      "p95_ms": 3.14,
-      "mean_ms": 1.44,
-      "stddev_ms": 1.22,
-      "min_ms": 0.545,
-      "max_ms": 5.68,
-      "sampleCount": 258
-    },
-    "record_actual": {
-      "p50_ms": 0.14,
-      "p95_ms": 0.52,
-      "mean_ms": 0.18,
-      "stddev_ms": 0,
-      "min_ms": 0.14,
-      "max_ms": 0.52,
-      "sampleCount": 61
-    },
-    "schedule_risk": {
-      "p50_ms": 6,
-      "p95_ms": 13.74,
-      "mean_ms": 8.54,
-      "stddev_ms": 0,
-      "min_ms": 6,
-      "max_ms": 13.74,
-      "sampleCount": 21
-    },
-    "compare_models": {
-      "p50_ms": 30.82,
-      "p95_ms": 38.59,
-      "mean_ms": 29.93,
-      "stddev_ms": 0,
-      "min_ms": 30.82,
-      "max_ms": 38.59,
+    "accuracy_trend": {
+      "p50_ms": 12.93,
+      "p95_ms": 20.4,
+      "mean_ms": 12.99,
+      "stddev_ms": 5.28,
+      "min_ms": 5.09,
+      "max_ms": 20.4,
       "sampleCount": 11
     },
-    "token_cost_estimate": {
-      "p50_ms": 6.17,
-      "p95_ms": 8.53,
-      "mean_ms": 5.82,
-      "stddev_ms": 0,
-      "min_ms": 6.17,
-      "max_ms": 8.53,
-      "sampleCount": 6
+    "add_business_days": {
+      "p50_ms": 0.84,
+      "p95_ms": 4.99,
+      "mean_ms": 1.84,
+      "stddev_ms": 4.16,
+      "min_ms": 0.02,
+      "max_ms": 41.57,
+      "sampleCount": 366
     },
-    "accuracy_trend": {
-      "p50_ms": 10.61,
-      "p95_ms": 16.52,
-      "mean_ms": 9.51,
-      "stddev_ms": 0,
-      "min_ms": 10.61,
-      "max_ms": 16.52,
-      "sampleCount": 6
+    "batch_record_actuals": {
+      "p50_ms": 0.15,
+      "p95_ms": 3.89,
+      "mean_ms": 0.85,
+      "stddev_ms": 1.52,
+      "min_ms": 0.03,
+      "max_ms": 3.89,
+      "sampleCount": 5
     },
-    "cocomo_validate": {
-      "p50_ms": 1.88,
-      "p95_ms": 2.22,
-      "mean_ms": 1.41,
-      "stddev_ms": 0,
-      "min_ms": 1.88,
-      "max_ms": 2.22,
-      "sampleCount": 6
+    "calibrate_estimates": {
+      "p50_ms": 1.39,
+      "p95_ms": 12.37,
+      "mean_ms": 2.22,
+      "stddev_ms": 3.32,
+      "min_ms": 0.2,
+      "max_ms": 19.06,
+      "sampleCount": 138
+    },
+    "cocomo_estimate": {
+      "p50_ms": 0,
+      "p95_ms": 0.49,
+      "mean_ms": 0.11,
+      "stddev_ms": 0.5,
+      "min_ms": 0,
+      "max_ms": 4.38,
+      "sampleCount": 130
     },
     "cocomo_ground_truth": {
       "p50_ms": 3.05,
       "p95_ms": 3.05,
       "mean_ms": 1.71,
-      "stddev_ms": 0,
-      "min_ms": 3.05,
+      "stddev_ms": 1.34,
+      "min_ms": 0.37,
       "max_ms": 3.05,
       "sampleCount": 2
+    },
+    "cocomo_validate": {
+      "p50_ms": 1.45,
+      "p95_ms": 2.22,
+      "mean_ms": 1.13,
+      "stddev_ms": 0.78,
+      "min_ms": 0.11,
+      "max_ms": 2.22,
+      "sampleCount": 10
+    },
+    "compare_models": {
+      "p50_ms": 30.92,
+      "p95_ms": 62.81,
+      "mean_ms": 34.77,
+      "stddev_ms": 11.27,
+      "min_ms": 24.66,
+      "max_ms": 62.81,
+      "sampleCount": 15
+    },
+    "convert_timezone": {
+      "p50_ms": 0.17,
+      "p95_ms": 1.04,
+      "mean_ms": 0.34,
+      "stddev_ms": 0.39,
+      "min_ms": 0.07,
+      "max_ms": 2.38,
+      "sampleCount": 100
+    },
+    "count_business_days": {
+      "p50_ms": 0.39,
+      "p95_ms": 8.7,
+      "mean_ms": 1.57,
+      "stddev_ms": 2.91,
+      "min_ms": 0.03,
+      "max_ms": 15.9,
+      "sampleCount": 103
+    },
+    "critical_path": {
+      "p50_ms": 0.02,
+      "p95_ms": 0.27,
+      "mean_ms": 0.07,
+      "stddev_ms": 0.19,
+      "min_ms": 0.01,
+      "max_ms": 1.23,
+      "sampleCount": 64
+    },
+    "feedback_health": {
+      "p50_ms": 20.01,
+      "p95_ms": 231.28,
+      "mean_ms": 47.35,
+      "stddev_ms": 92.92,
+      "min_ms": 1.59,
+      "max_ms": 478.43,
+      "sampleCount": 30
+    },
+    "get_current_time": {
+      "p50_ms": 1.6,
+      "p95_ms": 10.64,
+      "mean_ms": 3.14,
+      "stddev_ms": 5.67,
+      "min_ms": 0.08,
+      "max_ms": 60.26,
+      "sampleCount": 377
+    },
+    "get_pending_estimates": {
+      "p50_ms": 13.99,
+      "p95_ms": 23.73,
+      "mean_ms": 12.29,
+      "stddev_ms": 6.89,
+      "min_ms": 0.58,
+      "max_ms": 23.73,
+      "sampleCount": 11
+    },
+    "monte_carlo_schedule": {
+      "p50_ms": 4.43,
+      "p95_ms": 11.39,
+      "mean_ms": 6.05,
+      "stddev_ms": 11.64,
+      "min_ms": 0.06,
+      "max_ms": 85.78,
+      "sampleCount": 52
+    },
+    "parse_duration": {
+      "p50_ms": 0.22,
+      "p95_ms": 1.03,
+      "mean_ms": 0.49,
+      "stddev_ms": 1.53,
+      "min_ms": 0,
+      "max_ms": 18.52,
+      "sampleCount": 363
+    },
+    "pert_estimate": {
+      "p50_ms": 0.05,
+      "p95_ms": 1.99,
+      "mean_ms": 0.5,
+      "stddev_ms": 2.34,
+      "min_ms": 0,
+      "max_ms": 43.95,
+      "sampleCount": 3445
+    },
+    "record_actual": {
+      "p50_ms": 0.78,
+      "p95_ms": 1.94,
+      "mean_ms": 0.81,
+      "stddev_ms": 0.61,
+      "min_ms": 0.02,
+      "max_ms": 5.32,
+      "sampleCount": 505
+    },
+    "reference_class_estimate": {
+      "p50_ms": 2.18,
+      "p95_ms": 19.3,
+      "mean_ms": 4.3,
+      "stddev_ms": 5.97,
+      "min_ms": 0.15,
+      "max_ms": 77.87,
+      "sampleCount": 1316
+    },
+    "schedule_risk": {
+      "p50_ms": 9.86,
+      "p95_ms": 34.89,
+      "mean_ms": 11.54,
+      "stddev_ms": 8.9,
+      "min_ms": 4.72,
+      "max_ms": 40.93,
+      "sampleCount": 26
+    },
+    "sprint_forecast": {
+      "p50_ms": 0,
+      "p95_ms": 0.12,
+      "mean_ms": 0.05,
+      "stddev_ms": 0.29,
+      "min_ms": 0,
+      "max_ms": 2.13,
+      "sampleCount": 135
+    },
+    "time_math": {
+      "p50_ms": 0.03,
+      "p95_ms": 0.43,
+      "mean_ms": 0.11,
+      "stddev_ms": 0.2,
+      "min_ms": 0,
+      "max_ms": 1.3,
+      "sampleCount": 158
+    },
+    "token_cost_estimate": {
+      "p50_ms": 6.17,
+      "p95_ms": 10.03,
+      "mean_ms": 6.36,
+      "stddev_ms": 2.05,
+      "min_ms": 2.51,
+      "max_ms": 10.03,
+      "sampleCount": 9
+    },
+    "token_time_bridge": {
+      "p50_ms": 1.11,
+      "p95_ms": 4.74,
+      "mean_ms": 1.65,
+      "stddev_ms": 3.07,
+      "min_ms": 0.03,
+      "max_ms": 33.12,
+      "sampleCount": 237
     }
   },
   "modelLatencyProfiles": {
@@ -376,7 +403,7 @@
       }
     },
     "correctionFactors": {
-      "global": 1.07,
+      "global": 0.47,
       "byTaskType": {
         "calendar_calculation": 1.29,
         "calibration": 1,
@@ -390,7 +417,7 @@
         "temporal_calculation": 1.04,
         "token_time_bridge": 1.03
       },
-      "methodology": "Correction factor = 1 / success_rate. Based on 330 model-driven canary tests."
+      "methodology": "Global factor recalculated from prospective correction-eligible Epoch telemetry; canary task-type factors are retained separately."
     }
   },
   "tokenTimeCalibration": {
@@ -444,25 +471,118 @@
     }
   },
   "taskTypeCorrectionFactors": {
-    "bugfix": 0.45,
-    "design": 0.24,
-    "documentation": 0.2,
-    "feature": 0.63,
-    "infrastructure": 0.23,
-    "migration": 1.84,
-    "refactor": 0.18,
-    "testing": 0.24
+    "feature": 0.46,
+    "infrastructure": 0.92,
+    "refactor": 0.25,
+    "documentation": 2.5,
+    "testing": 0.45
   },
-  "globalCorrectionFactor": 0.3,
+  "globalCorrectionFactor": 0.47,
   "toolTaskCorrectionFactors": {
+    "schedule_risk": {},
+    "token_time_bridge": {},
+    "sprint_forecast": {},
+    "critical_path": {},
+    "pert_estimate": {
+      "feature": 0.46
+    },
     "reference_class_estimate": {
-      "infrastructure": 0.5,
-      "feature": 0.63,
-      "testing": 0.5,
-      "bugfix": 0.5,
-      "documentation": 0.5
+      "infrastructure": 1.01,
+      "feature": 0.94,
+      "testing": 0.45
     }
   },
-  "complexityCorrectionFactors": {},
-  "complexityCorrectionFactorStatus": "No approved bundled calibration source currently has at least 3 records per task type and complexity; user-local self-improvement populates complexity factors when enough feedback exists."
+  "complexityCorrectionFactors": {
+    "feature": {
+      "2": 1.05
+    },
+    "infrastructure": {
+      "2": 1.67
+    },
+    "testing": {
+      "5": 0.55
+    }
+  },
+  "complexityCorrectionFactorStatus": "Computed from prospective correction-eligible telemetry with at least 3 records per task type and complexity.",
+  "provenanceSummary": {
+    "generatedAt": "2026-05-10T00:13:42.602Z",
+    "sourceLabel": "telemetry-prospective-aggregate",
+    "sourceNames": [
+      "local",
+      "mac-mini",
+      "windows-receiver"
+    ],
+    "telemetryEvents": 7608,
+    "receiverRecords": 698,
+    "legacyReceiverBaselineRecords": 322,
+    "totalCalibrationRecords": 1118,
+    "correctionRecords": 59,
+    "baselineRecords": 1007,
+    "excludedRecords": 1,
+    "duplicateCorrectionRecords": 51,
+    "taskTypeSampleCounts": {
+      "feature": 39,
+      "infrastructure": 8,
+      "refactor": 3,
+      "documentation": 3,
+      "testing": 4,
+      "bugfix": 2
+    },
+    "toolTaskSampleCounts": {
+      "schedule_risk": {
+        "feature": 1
+      },
+      "token_time_bridge": {
+        "infrastructure": 1,
+        "documentation": 1
+      },
+      "sprint_forecast": {
+        "feature": 1
+      },
+      "critical_path": {
+        "feature": 2
+      },
+      "pert_estimate": {
+        "feature": 25,
+        "refactor": 1,
+        "documentation": 1
+      },
+      "reference_class_estimate": {
+        "infrastructure": 7,
+        "refactor": 2,
+        "feature": 10,
+        "testing": 4,
+        "bugfix": 2,
+        "documentation": 1
+      }
+    },
+    "complexitySampleCounts": {
+      "feature": {
+        "1": 1,
+        "2": 9,
+        "3": 2,
+        "4": 2
+      },
+      "infrastructure": {
+        "1": 1,
+        "2": 4,
+        "4": 1,
+        "5": 1
+      },
+      "refactor": {
+        "3": 1,
+        "4": 1
+      },
+      "testing": {
+        "3": 1,
+        "5": 3
+      },
+      "bugfix": {
+        "3": 2
+      },
+      "documentation": {
+        "1": 1
+      }
+    }
+  }
 }

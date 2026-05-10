@@ -8,8 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- MCP Registry metadata (`server.json`) and automated registry publishing via `mcp-publisher` in the release workflow. Identifier: `io.github.KyaniteLabs/Epoch`.
 - MCP Registry badge and links in README, `llms.txt`, `docs/llms.txt`, `site/llms-full.txt`, and `site/index.html`.
+- `pnpm run verify:remediation` release-readiness guard covering the closed audit residuals, package boundary, canary split, telemetry operator safety, reference database provenance, and documentation drift.
+- Release verification docs in README covering typecheck, lint, tests, build, community/reference data validation, local canary, and `npm pack --dry-run --json`.
+- `pnpm run recalculate:reference-db` for repeatable bundled reference DB recalculation from staged local, Mac mini, and receiver telemetry exports.
+
+### Changed
+- `pnpm run canary` now runs the local-only Epoch API surface and failure-mode checks; external provider compatibility is opt-in through `pnpm run canary:providers`.
+- Telemetry/privacy docs now state that Epoch has no built-in default telemetry receiver URL; telemetry is sent only to an explicitly configured endpoint.
+- Public README/site/LLM docs now reflect the current release gate, scoped `@kyanitelabs/epoch` CLI usage, current HTTP `/v1/tools/*` route, and current test snapshot.
+- Package docs now describe that telemetry/privacy docs and `scripts/backfill-telemetry.mjs` are intentionally included in the npm package.
+- Bundled reference DB now comes from prospective first-party telemetry (`source: telemetry-prospective-aggregate`): 7,608 tool-call telemetry events, 59 correction-eligible matched pairs, 1,007 baseline-only records held out, 698 Windows receiver records accounted for, and global correction factor 0.47.
+- Telemetry endpoint validation now accepts private Tailscale Serve `.ts.net` hostnames in addition to HTTPS, localhost, and `100.64.0.0/10` Tailscale IP receivers.
+
+### Fixed
+- Removed release-facing documentation claims about registry publishing automation that is not implemented in this branch.
+- Removed hardcoded private LM Studio/Tailscale endpoint guidance from repo agent instruction files.
+- Updated the audit remediation report so package-content evidence matches the current package boundary.
+- Prevented retrospective/backfilled, legacy receiver, smoke, and synthetic records from changing correction factors; task-specific misses now fall back to the DB global correction factor before stale canary-derived categories.
 
 ## [0.2.2] - 2026-05-07
 

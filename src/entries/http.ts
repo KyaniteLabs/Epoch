@@ -321,6 +321,25 @@ const telemetryPath = {
                     actual_hours: { type: "number" },
                     ratio: { type: "number" },
                     date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+                    calibration_provenance: {
+                      type: "string",
+                      enum: [
+                        "prospective",
+                        "backfilled_real_session",
+                        "backfilled_calibration",
+                        "synthetic",
+                        "smoke",
+                        "unknown",
+                      ],
+                      description:
+                        "Non-identifying provenance class for calibration records. Optional for backward-compatible clients.",
+                    },
+                    calibration_usage: {
+                      type: "string",
+                      enum: ["correction", "baseline", "exclude"],
+                      description:
+                        "Whether the record may influence correction factors, is baseline-only, or should be excluded.",
+                    },
                   },
                 },
               },
@@ -765,7 +784,7 @@ export function createApiApp(): Hono {
       error: {
         isError: true,
         message: `Not found: ${c.req.path}`,
-        retryHint: "Available endpoints: /health, /openapi.json, /llms.txt, /.well-known/ai-plugin.json, /v1/tools/{tool_name}, /v1/telemetry, /v1/feedback/record-actual, /v1/feedback/pending",
+        retryHint: "Available endpoints: /health, /openapi.json, /llms.txt, /.well-known/ai-plugin.json, /v1/tools/{tool_name}, /v1/telemetry, /v1/feedback/record-actual, /v1/feedback/pending, /v1/feedback/batch-record-actuals, /v1/feedback/health",
       },
     }, 404);
   });

@@ -30,6 +30,8 @@ function signedPayload(): { rawBody: string; signature: string } {
         actual_hours: 5,
         ratio: 1.25,
         date: "2026-05-07",
+        calibration_provenance: "prospective",
+        calibration_usage: "correction",
       },
     ],
     generated_at: "2026-05-07T00:00:00.000Z",
@@ -59,6 +61,8 @@ describe("receiveTelemetry", () => {
       actual_hours: 5,
       ratio: 1.25,
       date: "2026-05-07",
+      calibration_provenance: "prospective",
+      calibration_usage: "correction",
     });
     expect(stored.received_at).toEqual(expect.any(String));
     expect(stored).not.toHaveProperty("installation_id");

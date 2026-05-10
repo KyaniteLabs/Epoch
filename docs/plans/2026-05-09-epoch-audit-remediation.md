@@ -1,5 +1,9 @@
 # Epoch Audit Remediation Implementation Plan
 
+> Historical archive: this was the execution plan for the May 9, 2026 remediation run.
+> For current release truth, use `docs/plans/2026-05-09-epoch-audit-remediation-report.md`
+> and the release verification commands in `README.md`.
+
 **Goal:** Remediate every issue found in the 2026-05-09 Epoch audit so telemetry/data ingestion is verifiable, calculations use fresh calibration data, CI/release gates are real, and the repo can be safely released.
 
 **Architecture:** Treat this as a sequence of small, test-first repair lanes. First stabilize the current working tree and test isolation, then make CI/release fail closed, then repair public API/docs contracts, then make telemetry/calibration ingestion observable and verifiable, then clean lint/debt and publish a final evidence bundle. Each task has an atomic commit boundary using the repo Lore Commit Protocol.
@@ -1598,4 +1602,3 @@ PR description must include:
 - Any remaining accepted risks, especially if bundled reference DB is intentionally frozen.
 - Confirmation that tests used isolated `EPOCH_DATA_DIR` and did not touch real `~/.epoch`.
 - Confirmation that CI/release fail closed.
-

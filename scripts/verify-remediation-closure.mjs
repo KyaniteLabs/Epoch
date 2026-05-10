@@ -18,10 +18,42 @@ check("non-null assertions are not downgraded in tests", !/no-non-null-assertion
 
 const llms = text("docs/llms.txt");
 check("llms doc avoids stale test-count literals", !/\b\d+ tests, \d+ test files\b/.test(llms), "test counts drift; docs should point to pnpm test/current report");
+check("llms doc uses scoped CLI package", /npx @kyanitelabs\/epoch <command>/.test(llms), "scoped package docs must not point users at the wrong unscoped npm package");
+check("llms doc uses current HTTP route", /localhost:3000\/v1\/tools\/<tool-name>/.test(llms), "HTTP docs must use the current /v1/tools route");
+
+const publicDocs = [
+  "README.md",
+  "site/index.html",
+  "site/llms-full.txt",
+  "docs/compatibility-matrix.md",
+  "docs/PRIVACY.md",
+  "docs/TELEMETRY.md",
+  "llms.txt",
+  ".github/copilot-instructions.md",
+  ".cursorrules",
+  ".windsurfrules",
+];
+for (const path of publicDocs) {
+  check(`${path} has no stale 896-test release claim`, !/\b896\b/.test(text(path)), "release-facing docs should not keep the old 896-test snapshot");
+  check(`${path} has no private LM Studio endpoint`, !/100\.66\.225\.85/.test(text(path)), "public/repo guidance must not hardcode private Tailscale endpoints");
+}
+check("privacy doc has no default telemetry endpoint claim", !/The default endpoint is operated by Kyanite Labs|default: Kyanite Labs|default Kyanite Labs endpoint/.test(text("docs/PRIVACY.md")), "telemetry requires an explicitly configured endpoint");
+check("telemetry doc has no default Kyanite endpoint claim", !/default Kyanite Labs endpoint/.test(text("docs/TELEMETRY.md")), "telemetry docs must not imply a built-in receiver URL");
+
+const compatibility = text("docs/compatibility-matrix.md");
+check("compatibility doc describes local-only canary", /pnpm run canary[\s\S]*--local-only/.test(compatibility), "default release canary should be documented as local-only");
+check("compatibility doc describes provider canary", /pnpm run canary:providers/.test(compatibility), "external provider canary should be explicit");
+check("compatibility doc avoids stale five-task canary claim", !/tests 5 tasks/.test(compatibility), "canary methodology must match current runner shape");
+
+check("root llms doc has no unimplemented server.json claim", !/server\.json/.test(text("llms.txt")), "do not claim registry metadata exists unless the file is tracked");
+check("changelog has no unimplemented registry publishing claim", !/mcp-publisher|MCP Registry metadata/.test(text("CHANGELOG.md")), "release notes must not claim unimplemented registry automation");
+check("report package evidence matches included docs/scripts", !/excludes docs\/scripts/.test(report), "report must reflect package.json files inclusions for telemetry docs and backfill script");
 
 for (const path of [
   "docs/superpowers/specs/2026-05-01-ship-ready-polish.md",
   "docs/superpowers/plans/2026-05-01-ship-ready-polish.md",
+  "docs/plans/2026-05-09-epoch-audit-remediation.md",
+  "docs/plans/2026-05-09-epoch-audit-remediation-baseline.md",
 ]) {
   check(`${path} marked historical`, /Historical archive:/.test(text(path)), "archived plans with stale counts need an explicit historical banner");
 }

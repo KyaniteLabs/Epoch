@@ -614,7 +614,8 @@ export function createCliProgram(): Command {
 
     const isLocalHttp = parsed.protocol === "http:"
       && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-    const isTailscaleHttp = parsed.protocol === "http:" && isTailscalePrivateIpv4(parsed.hostname);
+    const isTailscaleHttp = parsed.protocol === "http:"
+      && (isTailscalePrivateIpv4(parsed.hostname) || isTailscaleHostname(parsed.hostname));
     if (parsed.protocol !== "https:" && !isLocalHttp && !isTailscaleHttp) {
       throw new Error("--endpoint must use https://, except for localhost or Tailscale private receivers");
     }
@@ -629,6 +630,10 @@ export function createCliProgram(): Command {
     }
     const [first, second] = parts as [number, number, number, number];
     return first === 100 && second >= 64 && second <= 127;
+  }
+
+  function isTailscaleHostname(hostname: string): boolean {
+    return hostname.toLowerCase().endsWith(".ts.net");
   }
 
   telemetryCmd

@@ -14,6 +14,8 @@ export interface AnonymizedRecord {
   actual_hours: number;
   ratio: number;
   date: string;
+  calibration_provenance?: string;
+  calibration_usage?: string;
 }
 
 export interface SubmissionPayload {
@@ -44,7 +46,7 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
     : undefined;
   const sinceMs = sinceDate ? new Date(sinceDate).getTime() : undefined;
 
-  const historical = getCalibrationData(undefined, undefined, windowDays);
+  const historical = getCalibrationData(undefined, undefined, windowDays, undefined, "all");
 
   return historical
     .filter((rec) => sinceMs === undefined || new Date(rec.completedAt).getTime() > sinceMs)
@@ -56,6 +58,8 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
       actual_hours: Math.round(rec.actualHours * 100) / 100,
       ratio: Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
       date: rec.completedAt.slice(0, 10),
+      calibration_provenance: rec.calibrationProvenance ?? "prospective",
+      calibration_usage: rec.calibrationUsage ?? "correction",
     }));
 }
 

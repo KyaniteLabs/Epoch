@@ -17,6 +17,25 @@ if (typeof db.source !== "string" || db.source.length === 0) {
 if (typeof db.globalCorrectionFactor !== "number" || !Number.isFinite(db.globalCorrectionFactor)) {
   errors.push("globalCorrectionFactor must be a finite number");
 }
+if (db.source === "telemetry-prospective-aggregate") {
+  const summary = db.provenanceSummary;
+  if (typeof summary !== "object" || summary === null || Array.isArray(summary)) {
+    errors.push("telemetry-prospective-aggregate DB must include provenanceSummary");
+  } else {
+    for (const key of ["telemetryEvents", "correctionRecords", "baselineRecords", "excludedRecords", "legacyReceiverBaselineRecords"]) {
+      if (typeof summary[key] !== "number" || !Number.isFinite(summary[key]) || summary[key] < 0) {
+        errors.push(`provenanceSummary.${key} must be a non-negative finite number`);
+      }
+    }
+    if (
+      typeof summary.telemetryEvents === "number"
+      && typeof summary.correctionRecords === "number"
+      && db.sampleSize !== summary.telemetryEvents + summary.correctionRecords
+    ) {
+      errors.push("sampleSize must equal telemetryEvents + correctionRecords for telemetry-prospective-aggregate DBs");
+    }
+  }
+}
 for (const key of ["taskTypeCorrectionFactors", "toolTaskCorrectionFactors", "complexityCorrectionFactors"]) {
   if (typeof db[key] !== "object" || db[key] === null || Array.isArray(db[key])) {
     errors.push(`${key} must be an object`);
@@ -41,4 +60,5 @@ console.log(JSON.stringify({
   source: db.source,
   globalCorrectionFactor: db.globalCorrectionFactor,
   complexityCorrectionFactorStatus: db.complexityCorrectionFactorStatus ?? null,
+  provenanceSummary: db.provenanceSummary ?? null,
 }, null, 2));

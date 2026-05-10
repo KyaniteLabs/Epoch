@@ -47,6 +47,21 @@ function isRecordArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
 
+const VALID_CALIBRATION_PROVENANCE = new Set([
+  "prospective",
+  "backfilled_real_session",
+  "backfilled_calibration",
+  "synthetic",
+  "smoke",
+  "unknown",
+]);
+
+const VALID_CALIBRATION_USAGE = new Set(["correction", "baseline", "exclude"]);
+
+function isOptionalEnum(value: unknown, allowed: Set<string>): boolean {
+  return value === undefined || (typeof value === "string" && allowed.has(value));
+}
+
 function isAnonymizedRecord(value: unknown): value is AnonymizedRecord {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
@@ -61,7 +76,9 @@ function isAnonymizedRecord(value: unknown): value is AnonymizedRecord {
     typeof record["ratio"] === "number" &&
     Number.isFinite(record["ratio"]) &&
     typeof record["date"] === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(record["date"])
+    /^\d{4}-\d{2}-\d{2}$/.test(record["date"]) &&
+    isOptionalEnum(record["calibration_provenance"], VALID_CALIBRATION_PROVENANCE) &&
+    isOptionalEnum(record["calibration_usage"], VALID_CALIBRATION_USAGE)
   );
 }
 

@@ -71,6 +71,34 @@ describe("extractAnonymizedRecords", () => {
     }
   });
 
+  it("includes non-identifying calibration provenance fields", async () => {
+    writeFileSync(join(TEST_DIR, "estimates.jsonl"), JSON.stringify({
+      id: "backfilled-record",
+      tool: "pert_estimate",
+      inputs: { task_type: "feature", complexity: 3 },
+      outputs: { expected: 4, unit: "hours" },
+      estimatedAt: "2026-05-07T00:00:00.000Z",
+    }) + "\n", "utf-8");
+    writeFileSync(join(TEST_DIR, "feedback.jsonl"), JSON.stringify({
+      estimateId: "backfilled-record",
+      actualHours: 4,
+      notes: "Ingested from liminal: feature, 10 LOC, 2 files",
+      reportedAt: "2026-05-07T00:00:00.000Z",
+    }) + "\n", "utf-8");
+
+    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+    const records = extractAnonymizedRecords();
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      calibration_provenance: "backfilled_real_session",
+      calibration_usage: "baseline",
+    });
+    const obj = records[0] as unknown as Record<string, unknown>;
+    expect(obj["source"]).toBeUndefined();
+    expect(obj["notes"]).toBeUndefined();
+  });
+
   it("excludes records at or before the exact submission cutoff", async () => {
     const { recordEstimate, recordActual } = await import("./feedback.js");
     const estimateId = recordEstimate(

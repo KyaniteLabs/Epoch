@@ -199,8 +199,8 @@ Health report on the feedback loop.
 ## Interfaces
 
 - **MCP**: `npx @kyanitelabs/epoch` (stdio transport)
-- **CLI**: `npx epoch <command> [options]`
-- **HTTP**: `http://localhost:3000/api/<tool-name>` (POST with JSON body)
+- **CLI**: `npx @kyanitelabs/epoch <command> [options]`
+- **HTTP**: `http://localhost:3000/v1/tools/<tool-name>` (POST with JSON body)
 
 ## Telemetry
 
@@ -236,4 +236,4 @@ Privacy: docs/PRIVACY.md | Telemetry: docs/TELEMETRY.md
 
 ## Data
 
-Reference baselines built from the packaged reference database plus user-local learned feedback. Use `epoch reference-db-status` for current provenance and `pnpm test` for the current test-suite count.
+Reference baselines come from the packaged reference database plus user-local learned feedback. Use `epoch reference-db-status` for current provenance and `pnpm test` for the current test-suite count. Bundled correction factors use prospective correction-eligible telemetry only; retrospective/backfilled, duplicate receiver backfill, and legacy receiver records are held out as baseline evidence.

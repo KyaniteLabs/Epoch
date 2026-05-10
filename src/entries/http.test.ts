@@ -413,6 +413,33 @@ describe("HTTP API", () => {
       expect(paths["/v1/telemetry"]).toBeTruthy();
     });
 
+    it("documents telemetry calibration provenance fields", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const paths = spec.paths as Record<string, Record<string, unknown>>;
+      const telemetry = paths["/v1/telemetry"] as Record<string, unknown>;
+      const post = telemetry.post as Record<string, unknown>;
+      const requestBody = post.requestBody as Record<string, unknown>;
+      const content = requestBody.content as Record<string, Record<string, unknown>>;
+      const json = content["application/json"] as Record<string, unknown>;
+      const schema = json.schema as Record<string, unknown>;
+      const properties = schema.properties as Record<string, unknown>;
+      const records = properties.records as Record<string, unknown>;
+      const items = records.items as Record<string, unknown>;
+      const recordProperties = items.properties as Record<string, Record<string, unknown>>;
+
+      expect(recordProperties.calibration_provenance?.enum).toEqual([
+        "prospective",
+        "backfilled_real_session",
+        "backfilled_calibration",
+        "synthetic",
+        "smoke",
+        "unknown",
+      ]);
+      expect(recordProperties.calibration_usage?.enum).toEqual(["correction", "baseline", "exclude"]);
+    });
+
     it("documents feedback endpoints", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;

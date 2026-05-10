@@ -32,11 +32,27 @@ Models under 1B parameters (e.g., SmolLM2-360M) generally cannot follow multi-st
 
 ## Canary Test Methodology
 
-The canary runner (`canary-runner.mjs`) tests 5 tasks against each model:
-1. **current-time** — Tool call to get current time in Tokyo
-2. **pert-estimate** — PERT calculation via API
-3. **business-days** — Business day counting
-4. **token-bridge** — Token-to-time estimation
-5. **schema-compliance** — Direct POST with exact schema
+Epoch has two canary modes:
 
-Each test validates the response text for expected patterns (time format, numerical ranges, key phrases).
+### Default release canary
+
+`pnpm run canary` runs `node canary-runner.mjs --local-only`. This is the release
+gate because it does not depend on external provider credentials or network
+availability. It verifies the local Epoch HTTP API surface and failure handling:
+
+- 21 local API surface checks across tool calls and HTTP routes
+- 11 local failure-mode checks for schema validation, missing tools, bad inputs,
+  and fail-closed behavior
+- Non-zero process exit if the local API surface or expected failure semantics break
+
+### Provider compatibility canary
+
+`pnpm run canary:providers` runs `node canary-runner.mjs` and exercises configured
+external model providers. Use it when evaluating GLM, Minimax, LM Studio, or other
+provider compatibility. These results are compatibility signals, not the default
+release gate, because provider availability, credentials, and model behavior can
+change independently of Epoch.
+
+Provider runs cover the same local Epoch API assumptions plus model-facing tool-call
+and schema-following tasks. Each task validates response text and structured outputs
+for expected patterns such as time formats, numerical ranges, and required fields.

@@ -163,10 +163,28 @@ describe("getTaskTypeCorrectionFactor", () => {
     expect(getTaskTypeCorrectionFactor("feature")).toBe(1.45);
   });
 
-  it("falls back to estimationAccuracy.correctionFactors.byTaskType", () => {
+  it("falls back to global correction factor before stale canary task factors", () => {
     mockReadFileSync.mockReturnValue(
       makeDb({
         taskTypeCorrectionFactors: {},
+        globalCorrectionFactor: 0.47,
+        estimationAccuracy: {
+          taskTypes: {},
+          correctionFactors: {
+            byTaskType: { pert_estimation: 1.29 },
+            global: 1.07,
+          },
+        },
+      }),
+    );
+    expect(getTaskTypeCorrectionFactor("feature")).toBe(0.47);
+  });
+
+  it("falls back to estimationAccuracy.correctionFactors.byTaskType when no global factor is available", () => {
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        taskTypeCorrectionFactors: {},
+        globalCorrectionFactor: undefined,
         estimationAccuracy: {
           taskTypes: {},
           correctionFactors: {
@@ -180,10 +198,11 @@ describe("getTaskTypeCorrectionFactor", () => {
     expect(getTaskTypeCorrectionFactor("feature")).toBe(1.29);
   });
 
-  it("falls back to estimationAccuracy.taskTypes correctionFactor", () => {
+  it("falls back to estimationAccuracy.taskTypes correctionFactor when no global factor is available", () => {
     mockReadFileSync.mockReturnValue(
       makeDb({
         taskTypeCorrectionFactors: {},
+        globalCorrectionFactor: undefined,
         estimationAccuracy: {
           taskTypes: {
             calendar_calculation: { correctionFactor: 1.35 },
@@ -196,8 +215,13 @@ describe("getTaskTypeCorrectionFactor", () => {
     expect(getTaskTypeCorrectionFactor("bugfix")).toBe(1.35);
   });
 
-  it("returns default 1.8 when no match found", () => {
+  it("returns DB global factor when no task-specific match is found", () => {
     mockReadFileSync.mockReturnValue(makeDb());
+    expect(getTaskTypeCorrectionFactor("feature")).toBe(1.07);
+  });
+
+  it("returns default 1.8 when no DB factor is usable", () => {
+    mockReadFileSync.mockReturnValue(makeDb({ globalCorrectionFactor: undefined }));
     expect(getTaskTypeCorrectionFactor("feature")).toBe(1.8);
   });
 
@@ -234,9 +258,9 @@ describe("getToolTaskCorrectionFactor", () => {
     expect(getToolTaskCorrectionFactor("pert_estimate", "feature")).toBe(1.45);
   });
 
-  it("falls back to default when both are absent", () => {
+  it("falls back to global factor when tool and task-specific factors are absent", () => {
     mockReadFileSync.mockReturnValue(makeDb());
-    expect(getToolTaskCorrectionFactor("pert_estimate", "feature")).toBe(1.8);
+    expect(getToolTaskCorrectionFactor("pert_estimate", "feature")).toBe(1.07);
   });
 
   it("falls back when DB is null", () => {
@@ -292,6 +316,36 @@ describe("updateReferenceDatabase", () => {
     );
     // feature correction factor should be median of [1.2, 1.4, 1.5, 1.6, 1.8] = 1.5
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
+  });
+
+  it("computes correction factors from prospective records only", async () => {
+    const records: HistoricalRecord[] = [
+      // Prospective live feedback: ratios [1.2, 1.4, 1.6, 1.8, 2.0] => median 1.6.
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, tool: "pert_estimate", completedAt: "2026-04-01", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 14, tool: "pert_estimate", completedAt: "2026-04-02", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 16, tool: "pert_estimate", completedAt: "2026-04-03", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 18, tool: "pert_estimate", completedAt: "2026-04-04", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 20, tool: "pert_estimate", completedAt: "2026-04-05", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      // Backfilled actual-derived sessions must not force the median down to 1.0.
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, tool: "pert_estimate", completedAt: "2026-04-06", calibrationUsage: "baseline", calibrationProvenance: "backfilled_real_session" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, tool: "pert_estimate", completedAt: "2026-04-07", calibrationUsage: "baseline", calibrationProvenance: "backfilled_real_session" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, tool: "pert_estimate", completedAt: "2026-04-08", calibrationUsage: "baseline", calibrationProvenance: "backfilled_real_session" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
+    );
+    expect(writtenData.globalCorrectionFactor).toBe(1.6);
+    expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.6);
+    expect(writtenData.provenanceSummary).toMatchObject({
+      correctionRecords: 5,
+      baselineRecords: 3,
+      excludedRecords: 0,
+    });
   });
 
   it("computes global correction from all records", async () => {

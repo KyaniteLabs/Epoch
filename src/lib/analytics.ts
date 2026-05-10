@@ -169,6 +169,14 @@ export interface HistoricalRecord {
   readonly tool?: string;
   readonly complexity?: number;
   readonly completedAt: string;
+  readonly calibrationProvenance?:
+    | "prospective"
+    | "backfilled_real_session"
+    | "backfilled_calibration"
+    | "synthetic"
+    | "smoke"
+    | "unknown";
+  readonly calibrationUsage?: "correction" | "baseline" | "exclude";
 }
 
 function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string, complexity?: number): number {
