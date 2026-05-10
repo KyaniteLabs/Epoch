@@ -1,6 +1,6 @@
 {
   "name": "@kyanitelabs/epoch",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Time Estimation MCP Server \u2014 24 tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, and schedule risk. Self-improving. MCP + CLI + REST.",
   "type": "module",
   "main": "dist/index.js",
@@ -103,5 +103,6 @@
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.59.1",
     "vitest": "^3.0.0"
-  }
+  },
+  "mcpName": "io.github.KyaniteLabs/Epoch"
 }
