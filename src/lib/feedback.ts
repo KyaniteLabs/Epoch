@@ -36,8 +36,10 @@ const DEFAULT_DATA_DIR = join(homedir(), ".epoch");
 const ESTIMATES_FILE = "estimates.jsonl";
 const ACTUALS_FILE = "feedback.jsonl";
 
-/** Actuals below this threshold (15 min) are excluded as seed/test artifacts. */
-const MINIMUM_ACTUAL_HOURS = 0.25;
+/** Actuals must be positive to be recorded. */
+const MINIMUM_RECORDED_ACTUAL_HOURS = 0;
+/** Actuals below this threshold (~36 seconds) are stored but excluded from calibration math as microtask artifacts. */
+const MINIMUM_CALIBRATION_ACTUAL_HOURS = 0.01;
 /** Ratio threshold — actual/estimate below this indicates synthetic/seed data. */
 const MIN_RATIO = 0.03;
 
@@ -121,7 +123,7 @@ export function recordActual(estimateId: string, actualHours: number, notes?: st
 }
 
 export function recordActualDetailed(estimateId: string, actualHours: number, notes?: string): RecordActualResult {
-  if (actualHours < MINIMUM_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
+  if (actualHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
 
   // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
   if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
@@ -316,7 +318,7 @@ export function matchEstimatesToActuals(
 
     const act = actualsMap.get(est.id);
     if (!act) continue;
-    if (act.actualHours < MINIMUM_ACTUAL_HOURS) continue;
+    if (act.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS) continue;
 
     // Filter seed/synthetic records: explicitly marked or implausibly low ratio
     if (isSeedRecord(act)) continue;
@@ -487,13 +489,13 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   let seedRecordsFiltered = 0;
   for (const a of actuals) {
     if (!estSet.has(a.estimateId)) continue;
-    if (a.actualHours < MINIMUM_ACTUAL_HOURS) { seedRecordsFiltered++; continue; }
+    if (a.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS) { seedRecordsFiltered++; continue; }
     if (isSeedRecord(a)) { seedRecordsFiltered++; continue; }
   }
   // Also count extreme ratio records
   for (const e of estimates) {
     const act = actualsMap.get(e.id);
-    if (!act || act.actualHours < MINIMUM_ACTUAL_HOURS || isSeedRecord(act)) continue;
+    if (!act || act.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS || isSeedRecord(act)) continue;
     const estHours = extractEstimatedHours(e.outputs);
     if (estHours !== null && act.actualHours / estHours < MIN_RATIO) seedRecordsFiltered++;
   }

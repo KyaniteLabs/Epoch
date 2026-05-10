@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Telemetry endpoint validation now accepts private Tailscale Serve `.ts.net` hostnames in addition to HTTPS, localhost, and `100.64.0.0/10` Tailscale IP receivers.
 
 ### Fixed
+- Lowered feedback actual handling so real fast tasks below the old 15-minute floor are recorded and calibration-eligible when their estimate/actual ratio is plausible; microtask artifacts below 0.01h remain excluded from calibration math.
 - Removed release-facing documentation claims about registry publishing automation that is not implemented in this branch.
 - Removed hardcoded private LM Studio/Tailscale endpoint guidance from repo agent instruction files.
 - Updated the audit remediation report so package-content evidence matches the current package boundary.

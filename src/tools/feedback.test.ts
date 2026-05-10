@@ -89,7 +89,7 @@ describe("feedback tools via registry", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.message).toContain("minimum threshold");
+      expect(result.error.message).toContain("must be positive");
     }
   });
 

@@ -716,7 +716,7 @@ export function createApiApp(): Hono {
         error: {
           isError: true,
           message: `Failed to record actual: ${result.reason}.`,
-          retryHint: "Use a real estimate_id, actual_hours >= 0.25, and avoid duplicate submissions.",
+          retryHint: "Use a real estimate_id, positive actual_hours, and avoid duplicate submissions.",
         },
       }, status);
     }

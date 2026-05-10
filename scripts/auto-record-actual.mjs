@@ -28,7 +28,7 @@ import { execSync } from "node:child_process";
 const DATA_DIR = process.env["EPOCH_DATA_DIR"] ?? join(homedir(), ".epoch");
 const SESSION_FILE = join(DATA_DIR, ".active-session.json");
 const FEEDBACK_FILE = join(DATA_DIR, "feedback.jsonl");
-const MIN_HOURS = 0.1;
+const MIN_HOURS = 0.01;
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -154,8 +154,8 @@ function cmdGit(opts) {
     const end = new Date(lastTs);
     const hours = Math.abs(end - start) / (1000 * 60 * 60);
 
-    // Add 0.25h minimum for very fast commits (represents context switch + review)
-    const actualHours = Math.max(hours, 0.25);
+    // Preserve fast commits instead of inflating them to the old 15-minute floor.
+    const actualHours = Math.max(hours, 0.01);
 
     const commitMsgs = execSync(`git log --format=%s ${fromRef}..${toRef}`, { encoding: "utf-8" }).trim();
     const summary = commitMsgs.split("\n").slice(0, 3).join("; ");
