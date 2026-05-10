@@ -119,6 +119,8 @@ export function loadSupplementaryData(): SupplementaryDatabase | null {
 
   const paths = [
     join(getDataDir(), "supplementary-database.json"),
+    join(import.meta.dirname, "..", "..", "data", "supplementary-database.json"),
+    join(import.meta.dirname, "..", "data", "supplementary-database.json"),
   ];
 
   for (const p of paths) {
@@ -143,6 +145,7 @@ export function loadCocomoData(): CocomoCalibrationData | null {
   const paths = [
     join(getDataDir(), "cocomo-calibration-data.json"),
     join(getDataDir(), "supplementary-database.json"),
+    join(import.meta.dirname, "..", "..", "data", "cocomo-calibration-data.json"),
     join(import.meta.dirname, "..", "data", "cocomo-calibration-data.json"),
   ];
 

@@ -166,6 +166,20 @@ describe("loadSupplementaryData", () => {
     expect(loadSupplementaryData()).toBeNull();
   });
 
+  it("falls back to bundled supplementary data when the user data dir is empty", () => {
+    mockExistsSync.mockImplementation((path) => String(path).includes("data/supplementary-database.json"));
+    mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
+
+    const data = loadSupplementaryData();
+
+    expect(data).not.toBeNull();
+    expect(defined(data).version).toBe("1.0.0");
+    expect(mockReadFileSync).toHaveBeenCalledWith(
+      expect.stringContaining("data/supplementary-database.json"),
+      "utf-8",
+    );
+  });
+
   it("caches the result (returns same object on second call)", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
@@ -202,6 +216,20 @@ describe("loadCocomoData", () => {
     mockReadFileSync.mockReturnValueOnce("bad json").mockReturnValueOnce(SAMPLE_COCOMO);
     const data = loadCocomoData();
     expect(data).not.toBeNull();
+  });
+
+  it("falls back to bundled cocomo calibration data when the user data dir is empty", () => {
+    mockExistsSync.mockImplementation((path) => String(path).includes("data/cocomo-calibration-data.json"));
+    mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
+
+    const data = loadCocomoData();
+
+    expect(data).not.toBeNull();
+    expect(defined(data).cocomoCalibration.datasets).toHaveLength(1);
+    expect(mockReadFileSync).toHaveBeenCalledWith(
+      expect.stringContaining("data/cocomo-calibration-data.json"),
+      "utf-8",
+    );
   });
 });
 
