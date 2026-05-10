@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-05-10
+
+### Fixed
+- Shortened MCP Registry server description to satisfy the registry 100-character metadata limit.
+
 ## [0.2.3] - 2026-05-10
 
 ### Added
