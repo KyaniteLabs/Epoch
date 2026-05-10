@@ -148,12 +148,12 @@ describe("recalculateReferenceDatabase", () => {
       tool: "pert_estimate",
       inputs: { task_type: "feature", complexity: 2 },
       outputs: { estimatedHours: 10 },
-      estimatedAt: `2026-05-08T1${index}:00:00.000Z`,
+      estimatedAt: `2026-05-07T1${index}:00:00.000Z`,
     }));
     const actuals = estimates.map((estimate, index) => ({
       estimateId: estimate.id,
       actualHours: 5,
-      completedAt: `2026-05-08T1${index}:30:00.000Z`,
+      completedAt: "2026-05-08",
       reportedAt: `2026-05-08T1${index}:45:00.000Z`,
     }));
 
@@ -191,6 +191,57 @@ describe("recalculateReferenceDatabase", () => {
     expect(db.sampleSize).toBe(5);
     expect(summary.correctionRecords).toBe(5);
     expect(summary.duplicateCorrectionRecords).toBe(5);
+  });
+
+  it("keeps receiver corrections with the same day and rounded hours when source records have distinct timestamps", () => {
+    const estimates = Array.from({ length: 5 }, (_, index) => ({
+      id: `p${index}`,
+      tool: "pert_estimate",
+      inputs: { task_type: "feature", complexity: 2 },
+      outputs: { estimatedHours: 10 },
+      estimatedAt: `2026-05-08T1${index}:00:00.000Z`,
+    }));
+    const actuals = estimates.map((estimate, index) => ({
+      estimateId: estimate.id,
+      actualHours: 5,
+      completedAt: `2026-05-08T1${index}:30:00.000Z`,
+      reportedAt: `2026-05-08T1${index}:45:00.000Z`,
+    }));
+
+    const { summary } = recalculateReferenceDatabase(
+      {
+        taskTypeCorrectionFactors: {},
+        toolTaskCorrectionFactors: {},
+        complexityCorrectionFactors: {},
+        globalCorrectionFactor: 1.8,
+      },
+      {
+        generatedAt: "2026-05-09T00:00:00.000Z",
+        sources: [
+          { name: "sender", estimates, actuals },
+          {
+            name: "windows-receiver",
+            receiverRecords: [
+              {
+                task_type: "feature",
+                complexity: 2,
+                tool: "pert_estimate",
+                estimated_hours: 10,
+                actual_hours: 5,
+                ratio: 0.5,
+                date: "2026-05-08",
+                received_at: "2026-05-09T00:00:00.000Z",
+                calibration_provenance: "prospective",
+                calibration_usage: "correction",
+              },
+            ],
+          },
+        ],
+      },
+    );
+
+    expect(summary.correctionRecords).toBe(6);
+    expect(summary.duplicateCorrectionRecords).toBe(0);
   });
 
 });

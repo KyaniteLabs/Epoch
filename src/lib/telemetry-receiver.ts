@@ -88,8 +88,8 @@ function loadRecordKeys(): Set<string> {
   return new Set(readFileSync(path, "utf-8").split("\n").map((line) => line.trim()).filter(Boolean));
 }
 
-function recordKey(installationId: string, record: AnonymizedRecord): string {
-  return createHash("sha256").update(JSON.stringify({ installationId, record })).digest("hex");
+function recordKey(installationId: string, payloadHash: string, recordIndex: number): string {
+  return createHash("sha256").update(JSON.stringify({ installationId, payloadHash, recordIndex })).digest("hex");
 }
 
 export function receiveTelemetry(rawBody: string, signature: string | undefined): TelemetryReceiveResult {
@@ -135,12 +135,13 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   const dir = dataDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const receivedAt = new Date().toISOString();
+  const payloadHash = createHash("sha256").update(rawBody).digest("hex");
   const knownKeys = loadRecordKeys();
   let accepted = 0;
   let deduplicated = 0;
 
-  for (const record of records) {
-    const key = recordKey(installationId, record);
+  for (const [recordIndex, record] of records.entries()) {
+    const key = recordKey(installationId, payloadHash, recordIndex);
     if (knownKeys.has(key)) {
       deduplicated += 1;
       continue;

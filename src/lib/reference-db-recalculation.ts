@@ -187,7 +187,7 @@ function roundTelemetryHours(value: number): number {
 
 function correctionDedupeKey(record: HistoricalRecord): string {
   return [
-    record.completedAt.slice(0, 10),
+    record.completedAt,
     record.taskType,
     record.tool ?? "unknown",
     record.complexity ?? "",
