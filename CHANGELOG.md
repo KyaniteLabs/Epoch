@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- MCP Registry metadata (`server.json`) and automated registry publishing via `mcp-publisher` in the release workflow. Identifier: `io.github.KyaniteLabs/Epoch`.
+- MCP Registry badge and links in README, `llms.txt`, `docs/llms.txt`, `site/llms-full.txt`, and `site/index.html`.
+
 ## [0.2.2] - 2026-05-07
 
 ### Added
