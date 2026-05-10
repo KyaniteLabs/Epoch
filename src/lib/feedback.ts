@@ -470,8 +470,9 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   const totalEstimates = estimates.length;
   const totalActuals = actuals.length;
+  const matchedEstimateCount = estimates.filter((estimate) => actualIds.has(estimate.id)).length;
   const matchRate = totalEstimates > 0
-    ? Math.round((actualIds.size / totalEstimates) * 1000) / 10
+    ? Math.round((matchedEstimateCount / totalEstimates) * 1000) / 10
     : 0;
 
   // Compute all matched records once (no re-reads)

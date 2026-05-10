@@ -1,6 +1,27 @@
-import { describe, it, expect } from "vitest";
-import { batchRecordActuals, getFeedbackHealthReport } from "./feedback.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { batchRecordActuals, getFeedbackHealthReport, recordEstimate } from "./feedback.js";
 import { defined } from "../test-support.js";
+
+let previousDataDir: string | undefined;
+let tempDataDir: string;
+
+beforeEach(() => {
+  previousDataDir = process.env["EPOCH_DATA_DIR"];
+  tempDataDir = mkdtempSync(join(tmpdir(), "epoch-feedback-batch-test-"));
+  process.env["EPOCH_DATA_DIR"] = tempDataDir;
+});
+
+afterEach(() => {
+  if (previousDataDir === undefined) {
+    delete process.env["EPOCH_DATA_DIR"];
+  } else {
+    process.env["EPOCH_DATA_DIR"] = previousDataDir;
+  }
+  rmSync(tempDataDir, { recursive: true, force: true });
+});
 
 
 // ---------------------------------------------------------------------------
@@ -91,6 +112,25 @@ describe("getFeedbackHealthReport", () => {
     if (report.totalEstimates === 0) {
       expect(report.matchRate).toBe(0);
     }
+  });
+
+  it("counts only actuals that match known estimates in matchRate", () => {
+    const estimateId = recordEstimate(
+      "pert_estimate",
+      { task_type: "feature" },
+      { estimated_hours: 4 },
+      "unit-test",
+    );
+    batchRecordActuals([
+      { estimateId, actualHours: 5 },
+      { estimateId: `external-estimate-${Date.now()}`, actualHours: 3 },
+    ]);
+
+    const report = getFeedbackHealthReport();
+
+    expect(report.totalEstimates).toBe(1);
+    expect(report.totalActuals).toBe(2);
+    expect(report.matchRate).toBe(100);
   });
 
   it("selfImprovement tracks ready types", () => {
