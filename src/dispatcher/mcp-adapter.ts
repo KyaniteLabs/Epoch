@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_REGISTRY, type ToolDefinition } from "./tool-registry.js";
+import { TOOL_REGISTRY } from "./tool-registry.js";
 import { dispatch } from "./index.js";
 import { z } from "zod";
 

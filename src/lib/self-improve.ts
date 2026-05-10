@@ -3,13 +3,19 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
-import type { HistoricalRecord, TaskType } from "../types/index.js";
-
-const REFERENCE_DB_PATH = resolveReferenceDbPath();
+import { debugLog } from "./internal/logging.js";
+import {
+  computeComplexityCorrectionFactors,
+  computeGlobalCorrectionFactor,
+  computeTaskTypeCorrectionFactors,
+  computeToolTaskCorrectionFactors,
+  isCorrectionEligibleRecord,
+} from "./calibration-factors.js";
+import type { TaskType } from "../types/index.js";
 
 function resolveReferenceDbPath(): string {
   // Prefer user data dir (survives npm updates, no git noise)
-  const userDataPath = join(homedir(), ".epoch", "reference-database.json");
+  const userDataPath = join(process.env["EPOCH_DATA_DIR"] ?? join(homedir(), ".epoch"), "reference-database.json");
   if (existsSync(userDataPath)) return userDataPath;
 
   // Dev: src/lib/self-improve.ts → src/data/reference-database.json
@@ -46,9 +52,30 @@ interface ReferenceDatabase {
   };
   taskTypeCorrectionFactors: Record<string, number>;
   complexityCorrectionFactors: Record<string, Record<number, number>>;
+  complexityCorrectionFactorStatus?: string;
   toolTaskCorrectionFactors: Record<string, Record<string, number>>;
   tokenTimeCalibration: Record<string, TokenCalibration>;
   globalCorrectionFactor: number;
+  provenanceSummary?: {
+    generatedAt: string;
+    totalRecords: number;
+    correctionRecords: number;
+    baselineRecords: number;
+    excludedRecords: number;
+  };
+}
+
+export interface ReferenceDbStatus {
+  path: string | null;
+  loaded: boolean;
+  generatedAt: string | null;
+  sampleSize: number | null;
+  source: string | null;
+  globalCorrectionFactor: number | null;
+  taskTypeCorrectionFactorCount: number;
+  toolTaskCorrectionFactorCount: number;
+  complexityCorrectionFactorCount: number;
+  complexityCorrectionFactorStatus: string | null;
 }
 
 interface ToolBenchmark {
@@ -88,8 +115,8 @@ export function notifyToolCall(): void {
     callCounter = 0;
     lastUpdateAt = Date.now();
     isUpdating = true;
-    updateReferenceDatabase().catch(() => {
-      // self-improvement is non-critical
+    updateReferenceDatabase().catch((err: unknown) => {
+      debugLog("self-improve", err);
     }).finally(() => {
       isUpdating = false;
     });
@@ -121,15 +148,18 @@ export async function updateReferenceDatabase(): Promise<void> {
     }
   }
 
-  const feedbackRecords = getCalibrationData(undefined, undefined, 180);
+  const allFeedbackRecords = getCalibrationData(undefined, undefined, 180, undefined, "all");
+  const feedbackRecords = allFeedbackRecords.filter(isCorrectionEligibleRecord);
+  const baselineRecords = allFeedbackRecords.filter((record) => record.calibrationUsage === "baseline").length;
+  const excludedRecords = allFeedbackRecords.filter((record) => record.calibrationUsage === "exclude").length;
   if (feedbackRecords.length >= 5) {
-    const newFactors = computeCorrectionFactors(feedbackRecords);
+    const newFactors = computeTaskTypeCorrectionFactors(feedbackRecords);
     for (const [taskType, factor] of Object.entries(newFactors)) {
       db.taskTypeCorrectionFactors[taskType] = factor;
     }
-    db.toolTaskCorrectionFactors = computeToolCorrectionFactors(feedbackRecords);
+    db.toolTaskCorrectionFactors = computeToolTaskCorrectionFactors(feedbackRecords);
     db.complexityCorrectionFactors = computeComplexityCorrectionFactors(feedbackRecords);
-    db.globalCorrectionFactor = computeGlobalCorrection(feedbackRecords);
+    db.globalCorrectionFactor = computeGlobalCorrectionFactor(feedbackRecords);
   }
 
   const feedbackSize = feedbackRecords.length;
@@ -137,6 +167,13 @@ export async function updateReferenceDatabase(): Promise<void> {
   db.sampleSize += telemetrySize + feedbackSize;
   db.generatedAt = new Date().toISOString();
   db.source = "self-improvement";
+  db.provenanceSummary = {
+    generatedAt: db.generatedAt,
+    totalRecords: allFeedbackRecords.length,
+    correctionRecords: feedbackRecords.length,
+    baselineRecords,
+    excludedRecords,
+  };
 
   // Write to user data dir (~/.epoch/) — never mutate source tree
   const dataDir = getUserDataDir();
@@ -149,18 +186,28 @@ export async function updateReferenceDatabase(): Promise<void> {
 
 let _cachedDb: ReferenceDatabase | null | undefined;
 let _cachedDbAt = 0;
+let _cachedDbPath: string | null = null;
 const DB_CACHE_TTL = 60_000;
 
 export function loadReferenceDb(): ReferenceDatabase | null {
-  if (_cachedDb !== undefined && Date.now() - _cachedDbAt < DB_CACHE_TTL) return _cachedDb;
+  const referenceDbPath = resolveReferenceDbPath();
+  if (
+    _cachedDb !== undefined
+    && _cachedDbPath === referenceDbPath
+    && Date.now() - _cachedDbAt < DB_CACHE_TTL
+  ) {
+    return _cachedDb;
+  }
   try {
-    const content = readFileSync(REFERENCE_DB_PATH, "utf-8");
+    const content = readFileSync(referenceDbPath, "utf-8");
     _cachedDb = JSON.parse(content) as ReferenceDatabase;
     _cachedDbAt = Date.now();
+    _cachedDbPath = referenceDbPath;
     return _cachedDb;
   } catch {
     _cachedDb = null;
     _cachedDbAt = Date.now();
+    _cachedDbPath = referenceDbPath;
     return null;
   }
 }
@@ -168,6 +215,38 @@ export function loadReferenceDb(): ReferenceDatabase | null {
 export function invalidateReferenceDbCache(): void {
   _cachedDb = undefined;
   _cachedDbAt = 0;
+  _cachedDbPath = null;
+}
+
+export function getReferenceDbStatus(): ReferenceDbStatus {
+  const db = loadReferenceDb();
+  if (!db) {
+    return {
+      path: null,
+      loaded: false,
+      generatedAt: null,
+      sampleSize: null,
+      source: null,
+      globalCorrectionFactor: null,
+      taskTypeCorrectionFactorCount: 0,
+      toolTaskCorrectionFactorCount: 0,
+      complexityCorrectionFactorCount: 0,
+      complexityCorrectionFactorStatus: null,
+    };
+  }
+
+  return {
+    path: _cachedDbPath,
+    loaded: true,
+    generatedAt: db.generatedAt ?? null,
+    sampleSize: db.sampleSize ?? null,
+    source: db.source ?? null,
+    globalCorrectionFactor: db.globalCorrectionFactor ?? null,
+    taskTypeCorrectionFactorCount: Object.keys(db.taskTypeCorrectionFactors ?? {}).length,
+    toolTaskCorrectionFactorCount: Object.keys(db.toolTaskCorrectionFactors ?? {}).length,
+    complexityCorrectionFactorCount: Object.keys(db.complexityCorrectionFactors ?? {}).length,
+    complexityCorrectionFactorStatus: db.complexityCorrectionFactorStatus ?? null,
+  };
 }
 
 export function getTaskTypeCorrectionFactor(taskType: TaskType): number {
@@ -177,6 +256,10 @@ export function getTaskTypeCorrectionFactor(taskType: TaskType): number {
   // Check taskTypeCorrectionFactors first (updated by self-improvement)
   if (db.taskTypeCorrectionFactors?.[taskType]) {
     return db.taskTypeCorrectionFactors[taskType];
+  }
+
+  if (typeof db.globalCorrectionFactor === "number" && Number.isFinite(db.globalCorrectionFactor)) {
+    return db.globalCorrectionFactor;
   }
 
   // Check estimationAccuracy from canary data
@@ -253,96 +336,4 @@ function mergeBenchmark(existing: ToolBenchmark, stat: { p50Ms: number; p95Ms: n
     max_ms: Math.round(Math.max(existing.max_ms, stat.p95Ms * 1.5) * 100) / 100,
     sampleCount: total,
   };
-}
-
-function computeCorrectionFactors(records: HistoricalRecord[]): Record<string, number> {
-  const grouped = new Map<string, number[]>();
-  for (const r of records) {
-    if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
-    const arr = grouped.get(r.taskType) ?? [];
-    arr.push(r.actualHours / r.estimatedHours);
-    grouped.set(r.taskType, arr);
-  }
-
-  const factors: Record<string, number> = {};
-  for (const [type, ratios] of grouped) {
-    if (ratios.length < 3) continue;
-    ratios.sort((a, b) => a - b);
-    const mid = Math.floor(ratios.length / 2);
-    const median = ratios.length % 2 === 0
-      ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
-      : (ratios[mid] ?? 1.8);
-    factors[type] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
-  }
-
-  return factors;
-}
-
-function computeGlobalCorrection(records: HistoricalRecord[]): number {
-  if (records.length === 0) return 1.07;
-  const valid = records.filter((r) => r.estimatedHours > 0 && r.actualHours > 0);
-  if (valid.length === 0) return 1.07;
-  const ratios = valid.map((r) => r.actualHours / r.estimatedHours);
-  ratios.sort((a, b) => a - b);
-  const mid = Math.floor(ratios.length / 2);
-  const median = ratios.length % 2 === 0
-    ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
-    : (ratios[mid] ?? 1.07);
-  return Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
-}
-
-function computeToolCorrectionFactors(records: HistoricalRecord[]): Record<string, Record<string, number>> {
-  const grouped = new Map<string, Map<string, number[]>>();
-  for (const r of records) {
-    if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
-    const tool = r.tool ?? "unknown";
-    if (!grouped.has(tool)) grouped.set(tool, new Map());
-    const taskMap = grouped.get(tool)!;
-    const arr = taskMap.get(r.taskType) ?? [];
-    arr.push(r.actualHours / r.estimatedHours);
-    taskMap.set(r.taskType, arr);
-  }
-
-  const result: Record<string, Record<string, number>> = {};
-  for (const [tool, taskMap] of grouped) {
-    result[tool] = {};
-    for (const [taskType, ratios] of taskMap) {
-      if (ratios.length < 3) continue;
-      ratios.sort((a, b) => a - b);
-      const mid = Math.floor(ratios.length / 2);
-      const median = ratios.length % 2 === 0
-        ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
-        : (ratios[mid] ?? 1.4);
-      result[tool][taskType] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
-    }
-  }
-  return result;
-}
-
-function computeComplexityCorrectionFactors(records: HistoricalRecord[]): Record<string, Record<number, number>> {
-  const grouped = new Map<string, Map<number, number[]>>();
-  for (const r of records) {
-    if (r.estimatedHours <= 0 || r.actualHours <= 0) continue;
-    if (r.complexity === undefined) continue;
-    const taskMap = grouped.get(r.taskType) ?? new Map();
-    const arr = taskMap.get(r.complexity) ?? [];
-    arr.push(r.actualHours / r.estimatedHours);
-    taskMap.set(r.complexity, arr);
-    grouped.set(r.taskType, taskMap);
-  }
-
-  const result: Record<string, Record<number, number>> = {};
-  for (const [taskType, taskMap] of grouped) {
-    result[taskType] = {};
-    for (const [complexity, ratios] of taskMap) {
-      if (ratios.length < 3) continue;
-      ratios.sort((a, b) => a - b);
-      const mid = Math.floor(ratios.length / 2);
-      const median = ratios.length % 2 === 0
-        ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
-        : (ratios[mid] ?? 1.0);
-      result[taskType][complexity] = Math.round(Math.min(3.0, Math.max(0.1, median)) * 100) / 100;
-    }
-  }
-  return result;
 }

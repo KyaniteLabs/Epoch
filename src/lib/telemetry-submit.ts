@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { getCalibrationData } from "./feedback.js";
 import { loadConfig, saveConfig, getInstallationId, isUsableTelemetryEndpoint } from "./config.js";
+import { debugLog } from "./internal/logging.js";
 
 export interface AnonymizedRecord {
   task_type: string;
@@ -13,6 +14,8 @@ export interface AnonymizedRecord {
   actual_hours: number;
   ratio: number;
   date: string;
+  calibration_provenance?: string;
+  calibration_usage?: string;
 }
 
 export interface SubmissionPayload {
@@ -43,7 +46,7 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
     : undefined;
   const sinceMs = sinceDate ? new Date(sinceDate).getTime() : undefined;
 
-  const historical = getCalibrationData(undefined, undefined, windowDays);
+  const historical = getCalibrationData(undefined, undefined, windowDays, undefined, "all");
 
   return historical
     .filter((rec) => sinceMs === undefined || new Date(rec.completedAt).getTime() > sinceMs)
@@ -55,6 +58,8 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
       actual_hours: Math.round(rec.actualHours * 100) / 100,
       ratio: Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
       date: rec.completedAt.slice(0, 10),
+      calibration_provenance: rec.calibrationProvenance ?? "prospective",
+      calibration_usage: rec.calibrationUsage ?? "correction",
     }));
 }
 
@@ -76,7 +81,14 @@ export function signPayload(payload: SubmissionPayload, installationId: string):
 export interface SubmissionResult {
   ok: boolean;
   recordCount: number;
+  accepted?: number;
+  deduplicated?: number;
   error?: string;
+}
+
+interface ReceiverResponse {
+  accepted?: unknown;
+  deduplicated?: unknown;
 }
 
 export async function submitTelemetry(): Promise<SubmissionResult> {
@@ -126,12 +138,24 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
       return { ok: false, recordCount: 0, error: `server returned ${response.status}` };
     }
 
+    const body = await response.json().catch(() => ({})) as ReceiverResponse;
+    const accepted = typeof body.accepted === "number" && Number.isFinite(body.accepted)
+      ? body.accepted
+      : capped.length;
+    const deduplicated = typeof body.deduplicated === "number" && Number.isFinite(body.deduplicated)
+      ? body.deduplicated
+      : 0;
+
     config.telemetry.installationId = payload.installation_id;
     config.telemetry.lastSubmissionAt = new Date().toISOString();
     config.telemetry.lastSubmissionRecordCount += capped.length;
+    config.telemetry.lastSubmissionAcceptedCount = accepted;
+    config.telemetry.lastSubmissionDeduplicatedCount = deduplicated;
+    config.telemetry.totalRecordsAccepted += accepted;
+    config.telemetry.totalRecordsDeduplicated += deduplicated;
     saveConfig(config);
 
-    return { ok: true, recordCount: capped.length };
+    return { ok: true, recordCount: capped.length, accepted, deduplicated };
   } catch (err) {
     const message = err instanceof Error ? err.message : "network error";
     return { ok: false, recordCount: 0, error: message };
@@ -153,7 +177,9 @@ export function maybeSubmitTelemetry(): void {
     if (hoursSinceLast < 1) return;
   }
 
-  submitTelemetry().catch(() => { /* non-critical, silent */ });
+  submitTelemetry().catch((err: unknown) => {
+    debugLog("telemetry.submit", err);
+  });
 }
 
 export function resetCallCount(): void {

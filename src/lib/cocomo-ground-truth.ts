@@ -16,6 +16,8 @@ const COCOMO_BASIC: Record<string, { a: number; b: number }> = {
   embedded: { a: 3.6, b: 1.20 },
 };
 
+const DEFAULT_BASIC_COEFFS = { a: 3.0, b: 1.12 } as const;
+
 const COCOMO_II_A = 2.94;
 const COCOMO_II_B = 1.10;
 
@@ -61,8 +63,8 @@ export interface CocomoGroundTruthResult {
 
 function predictAll(kloc: number, projectType: string): PerProjectResult["models"] {
   // Model A — COCOMO Basic
-  const basicCoeffs = COCOMO_BASIC[projectType] ?? COCOMO_BASIC.semidetached!;
-  const basic = basicCoeffs!.a * Math.pow(kloc, basicCoeffs!.b);
+  const basicCoeffs = COCOMO_BASIC[projectType] ?? DEFAULT_BASIC_COEFFS;
+  const basic = basicCoeffs.a * Math.pow(kloc, basicCoeffs.b);
 
   // Model B — COCOMO II Nominal (no multipliers)
   const nominal = COCOMO_II_A * Math.pow(kloc, COCOMO_II_B);
@@ -101,8 +103,9 @@ function computeMetrics(predictions: number[], actuals: number[], name: string):
   let sumBias = 0;
 
   for (let i = 0; i < n; i++) {
-    const pred = predictions[i]!;
-    const act = actuals[i]!;
+    const pred = predictions[i];
+    const act = actuals[i];
+    if (pred === undefined || act === undefined) continue;
     const absErr = Math.abs(pred - act);
     const relErr = absErr / act;
 
@@ -142,8 +145,9 @@ export function cocomoValidateGroundTruth(params?: {
     };
   }
 
-  const filtered = params?.datasetFilter
-    ? datasets.filter((d) => params.datasetFilter!.includes(d.name))
+  const datasetFilter = params?.datasetFilter;
+  const filtered = datasetFilter
+    ? datasets.filter((d) => datasetFilter.includes(d.name))
     : datasets;
 
   const projects: PerProjectResult[] = [];
@@ -196,8 +200,9 @@ export function cocomoValidateGroundTruth(params?: {
   // Per-dataset breakdown
   const datasetGroups = new Map<string, PerProjectResult[]>();
   for (const p of projects) {
-    if (!datasetGroups.has(p.dataset)) datasetGroups.set(p.dataset, []);
-    datasetGroups.get(p.dataset)!.push(p);
+    const group = datasetGroups.get(p.dataset) ?? [];
+    group.push(p);
+    datasetGroups.set(p.dataset, group);
   }
 
   const byDataset: CocomoGroundTruthResult["byDataset"] = {};
@@ -218,8 +223,9 @@ export function cocomoValidateGroundTruth(params?: {
   // Per-type breakdown
   const typeGroups = new Map<string, PerProjectResult[]>();
   for (const p of projects) {
-    if (!typeGroups.has(p.type)) typeGroups.set(p.type, []);
-    typeGroups.get(p.type)!.push(p);
+    const group = typeGroups.get(p.type) ?? [];
+    group.push(p);
+    typeGroups.set(p.type, group);
   }
 
   const byType: CocomoGroundTruthResult["byType"] = {};
@@ -242,12 +248,13 @@ export function cocomoValidateGroundTruth(params?: {
     .join("\n");
 
   const aiModels = allMetrics.filter((m) => m.name.includes("AI"));
-  const bestAi = aiModels.reduce((best, m) => (m.mape < best.mape ? m : best), aiModels[0]!);
+  const bestAi = aiModels.reduce((best, m) => (m.mape < best.mape ? m : best), aiModels[0] ?? winner);
   const traditionalBest = allMetrics.filter((m) => !m.name.includes("AI"))
     .reduce((best, m) => (m.mape < best.mape ? m : best));
 
-  const conclusion = allMetrics.find((m) => m.name === "COCOMO II + AI 12x")!.pred25 < 0.05
-    ? `Best model: ${winner.name} (MAPE=${winner.mape}%). WARNING: The 12x AI speedup divisor produces catastrophic underprediction (PRED(25)=0%, bias=${allMetrics.find((m) => m.name === "COCOMO II + AI 12x")!.bias}%). These are pre-LLM projects — the speedup factor needs empirical validation against modern AI-assisted project data, not historical human-only data. Best traditional model: ${traditionalBest.name} at ${traditionalBest.mape}% MAPE.`
+  const aiSpeedup12 = allMetrics.find((m) => m.name === "COCOMO II + AI 12x");
+  const conclusion = (aiSpeedup12?.pred25 ?? 0) < 0.05
+    ? `Best model: ${winner.name} (MAPE=${winner.mape}%). WARNING: The 12x AI speedup divisor produces catastrophic underprediction (PRED(25)=0%, bias=${aiSpeedup12?.bias ?? "unknown"}%). These are pre-LLM projects — the speedup factor needs empirical validation against modern AI-assisted project data, not historical human-only data. Best traditional model: ${traditionalBest.name} at ${traditionalBest.mape}% MAPE.`
     : `Best model: ${winner.name} (MAPE=${winner.mape}%). AI speedup models show ${bestAi.pred25 > traditionalBest.pred25 ? "better" : "comparable"} PRED(25) vs traditional COCOMO.`;
 
   const humanReadable = [

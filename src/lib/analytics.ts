@@ -6,7 +6,7 @@ import type {
   ReasoningDepth,
   TaskType,
 } from "../types/index.js";
-import { loadReferenceDb, getTaskTypeCorrectionFactor as getDbCorrectionFactor, getToolTaskCorrectionFactor, getComplexityCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
+import { loadReferenceDb, getComplexityCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
 import { getReferenceClassForCategory, getScopeBaseline, getAiNativeScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
 
@@ -169,6 +169,14 @@ export interface HistoricalRecord {
   readonly tool?: string;
   readonly complexity?: number;
   readonly completedAt: string;
+  readonly calibrationProvenance?:
+    | "prospective"
+    | "backfilled_real_session"
+    | "backfilled_calibration"
+    | "synthetic"
+    | "smoke"
+    | "unknown";
+  readonly calibrationUsage?: "correction" | "baseline" | "exclude";
 }
 
 function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string, complexity?: number): number {
@@ -177,13 +185,34 @@ function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string, compl
     const ccf = getComplexityCorrectionFactor(taskType, complexity);
     if (ccf !== null) return ccf;
   }
+
+  const db = loadReferenceDb();
   if (tool) {
-    const toolFactor = getToolTaskCorrectionFactor(tool, taskType);
-    if (toolFactor !== 1.8) return toolFactor;
+    const toolFactor = db?.toolTaskCorrectionFactors?.[tool]?.[taskType];
+    if (typeof toolFactor === "number" && Number.isFinite(toolFactor)) return toolFactor;
   }
-  const dbFactor = getDbCorrectionFactor(taskType);
-  if (dbFactor !== 1.8) return dbFactor;
+  const taskFactor = db?.taskTypeCorrectionFactors?.[taskType];
+  if (typeof taskFactor === "number" && Number.isFinite(taskFactor)) return taskFactor;
+  const canaryKey = mapToCanaryKey(taskType);
+  const canaryFactor = db?.estimationAccuracy?.correctionFactors?.byTaskType?.[canaryKey]
+    ?? db?.estimationAccuracy?.taskTypes?.[canaryKey]?.correctionFactor;
+  if (typeof canaryFactor === "number" && Number.isFinite(canaryFactor)) return canaryFactor;
+
   return INDUSTRY_CORRECTION_FACTORS[taskType] ?? 1.8;
+}
+
+function mapToCanaryKey(taskType: string): string {
+  const mapping: Record<string, string> = {
+    feature: "pert_estimation",
+    bugfix: "calendar_calculation",
+    refactor: "cocomo_estimation",
+    migration: "cocomo_estimation",
+    infrastructure: "token_time_bridge",
+    documentation: "other",
+    testing: "calibration",
+    design: "reference_class",
+  };
+  return mapping[taskType] ?? taskType;
 }
 
 export function referenceClassEstimate(
@@ -289,14 +318,14 @@ export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMet
   const sorted = [...errors].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   const mdape = sorted.length % 2 === 0
-    ? ((sorted[mid - 1]! + sorted[mid]!) / 2) * 100
+    ? (((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2) * 100
     : (sorted[mid] ?? 0) * 100;
 
   // Capped MdAPE: clamp individual errors at 500% before taking median.
   const CAP = 5.0;
   const capped = errors.map(e => Math.min(e, CAP)).sort((a, b) => a - b);
   const cappedMdape = capped.length % 2 === 0
-    ? ((capped[mid - 1]! + capped[mid]!) / 2) * 100
+    ? (((capped[mid - 1] ?? 0) + (capped[mid] ?? 0)) / 2) * 100
     : (capped[mid] ?? 0) * 100;
 
   const biases = validRecords.map(r => r.actualHours - r.estimatedHours);

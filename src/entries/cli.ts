@@ -45,7 +45,11 @@ function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
 
 /** Resolve root options from Commander command chain. */
 function getRootOpts(cmd: Command): Record<string, unknown> {
-  return cmd.parent!.opts() as Record<string, unknown>;
+  const parent = cmd.parent;
+  if (!parent) {
+    throw new Error("CLI command is missing its root command.");
+  }
+  return parent.opts() as Record<string, unknown>;
 }
 
 function isQuiet(rootOpts: Record<string, unknown>): boolean {
@@ -586,6 +590,15 @@ export function createCliProgram(): Command {
       process.exit(0);
     });
 
+  program
+    .command("reference-db-status")
+    .description("Show active reference database provenance and calibration freshness")
+    .action(async () => {
+      const { getReferenceDbStatus } = await import("../lib/self-improve.js");
+      process.stdout.write(JSON.stringify(getReferenceDbStatus(), null, 2) + "\n");
+      process.exit(0);
+    });
+
   // ---- Telemetry commands ----------------------------------------------------
 
   const telemetryCmd = program.command("telemetry").description("Manage anonymous telemetry settings");
@@ -601,11 +614,26 @@ export function createCliProgram(): Command {
 
     const isLocalHttp = parsed.protocol === "http:"
       && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-    if (parsed.protocol !== "https:" && !isLocalHttp) {
-      throw new Error("--endpoint must use https://, except for localhost receivers");
+    const isTailscaleHttp = parsed.protocol === "http:"
+      && (isTailscalePrivateIpv4(parsed.hostname) || isTailscaleHostname(parsed.hostname));
+    if (parsed.protocol !== "https:" && !isLocalHttp && !isTailscaleHttp) {
+      throw new Error("--endpoint must use https://, except for localhost or Tailscale private receivers");
     }
 
     return trimmed;
+  }
+
+  function isTailscalePrivateIpv4(hostname: string): boolean {
+    const parts = hostname.split(".").map((part) => Number(part));
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return false;
+    }
+    const [first, second] = parts as [number, number, number, number];
+    return first === 100 && second >= 64 && second <= 127;
+  }
+
+  function isTailscaleHostname(hostname: string): boolean {
+    return hostname.toLowerCase().endsWith(".ts.net");
   }
 
   telemetryCmd
@@ -629,6 +657,10 @@ export function createCliProgram(): Command {
         queuedRecords,
         lastSubmissionAt: config.telemetry.lastSubmissionAt,
         totalRecordsSubmitted: config.telemetry.lastSubmissionRecordCount,
+        lastSubmissionAcceptedCount: config.telemetry.lastSubmissionAcceptedCount,
+        lastSubmissionDeduplicatedCount: config.telemetry.lastSubmissionDeduplicatedCount,
+        totalRecordsAccepted: config.telemetry.totalRecordsAccepted,
+        totalRecordsDeduplicated: config.telemetry.totalRecordsDeduplicated,
         installationId: config.telemetry.installationId || "(not generated yet)",
       }, null, 2) + "\n");
       process.exit(0);
@@ -638,10 +670,15 @@ export function createCliProgram(): Command {
     .command("preview")
     .description("Preview anonymized data that would be shared")
     .action(async () => {
+      const { loadConfig } = await import("../lib/config.js");
       const { extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
+      const config = loadConfig();
       const records = extractAnonymizedRecords();
+      const queuedRecords = extractAnonymizedRecords(config.telemetry.lastSubmissionAt ?? undefined);
       const summary = {
         totalRecords: records.length,
+        queuedRecords: queuedRecords.length,
+        lastSubmissionAt: config.telemetry.lastSubmissionAt,
         fields: Object.keys(records[0] ?? {}),
         strippedFields: ["estimateId", "source", "notes", "teamId", "time-of-day"],
         sample: records.slice(0, 5),

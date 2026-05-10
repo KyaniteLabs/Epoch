@@ -106,6 +106,8 @@ for (const { file, source, hoursKey } of SESSION_FILES) {
         inputs: {
           task_type: taskType,
           complexity,
+          calibration_provenance: "backfilled_real_session",
+          calibration_usage: "baseline",
           optimistic,
           most_likely: mostLikely,
           pessimistic,

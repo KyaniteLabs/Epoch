@@ -25,6 +25,7 @@ import { getCalibrationData } from "./feedback.js";
 import { getTelemetry } from "./telemetry.js";
 import {
   loadReferenceDb,
+  getReferenceDbStatus,
   getTaskTypeCorrectionFactor,
   getToolTaskCorrectionFactor,
   getGlobalCorrectionFactor,
@@ -32,6 +33,8 @@ import {
   invalidateReferenceDbCache,
 } from "./self-improve.js";
 import type { HistoricalRecord } from "./analytics.js";
+import { defined } from "../test-support.js";
+
 
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
@@ -51,6 +54,8 @@ function makeDb(overrides: Record<string, unknown> = {}) {
     toolExecutionBenchmarks: {},
     modelLatencyProfiles: {},
     taskTypeCorrectionFactors: {},
+    complexityCorrectionFactors: {},
+    complexityCorrectionFactorStatus: "unit-test-status",
     toolTaskCorrectionFactors: {},
     globalCorrectionFactor: 1.07,
     estimationAccuracy: {
@@ -82,7 +87,7 @@ describe("loadReferenceDb", () => {
   it("returns parsed DB when file exists and is valid JSON", () => {
     const db = loadReferenceDb();
     expect(db).not.toBeNull();
-    expect(db!.version).toBe("1.0.0");
+    expect(defined(db).version).toBe("1.0.0");
   });
 
   it("returns null when file read throws", () => {
@@ -98,6 +103,54 @@ describe("loadReferenceDb", () => {
   });
 });
 
+describe("getReferenceDbStatus", () => {
+  it("reports active DB provenance and factor counts", () => {
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        source: "unit-test",
+        sampleSize: 42,
+        globalCorrectionFactor: 1.23,
+        taskTypeCorrectionFactors: { feature: 1.4, bugfix: 1.2 },
+        toolTaskCorrectionFactors: { pert_estimate: { feature: 1.5 } },
+        complexityCorrectionFactors: { feature: { 3: 1.4, 5: 1.8 } },
+        complexityCorrectionFactorStatus: "available",
+      }),
+    );
+
+    expect(getReferenceDbStatus()).toMatchObject({
+      loaded: true,
+      generatedAt: "2026-01-01T00:00:00Z",
+      sampleSize: 42,
+      source: "unit-test",
+      globalCorrectionFactor: 1.23,
+      taskTypeCorrectionFactorCount: 2,
+      toolTaskCorrectionFactorCount: 1,
+      complexityCorrectionFactorCount: 1,
+      complexityCorrectionFactorStatus: "available",
+    });
+    expect(getReferenceDbStatus().path).toEqual(expect.any(String));
+  });
+
+  it("reports unloaded status when DB cannot be read", () => {
+    mockReadFileSync.mockImplementation(() => {
+      throw new Error("ENOENT");
+    });
+
+    expect(getReferenceDbStatus()).toEqual({
+      path: null,
+      loaded: false,
+      generatedAt: null,
+      sampleSize: null,
+      source: null,
+      globalCorrectionFactor: null,
+      taskTypeCorrectionFactorCount: 0,
+      toolTaskCorrectionFactorCount: 0,
+      complexityCorrectionFactorCount: 0,
+      complexityCorrectionFactorStatus: null,
+    });
+  });
+});
+
 // ---- getTaskTypeCorrectionFactor ----
 
 describe("getTaskTypeCorrectionFactor", () => {
@@ -110,10 +163,28 @@ describe("getTaskTypeCorrectionFactor", () => {
     expect(getTaskTypeCorrectionFactor("feature")).toBe(1.45);
   });
 
-  it("falls back to estimationAccuracy.correctionFactors.byTaskType", () => {
+  it("falls back to global correction factor before stale canary task factors", () => {
     mockReadFileSync.mockReturnValue(
       makeDb({
         taskTypeCorrectionFactors: {},
+        globalCorrectionFactor: 0.47,
+        estimationAccuracy: {
+          taskTypes: {},
+          correctionFactors: {
+            byTaskType: { pert_estimation: 1.29 },
+            global: 1.07,
+          },
+        },
+      }),
+    );
+    expect(getTaskTypeCorrectionFactor("feature")).toBe(0.47);
+  });
+
+  it("falls back to estimationAccuracy.correctionFactors.byTaskType when no global factor is available", () => {
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        taskTypeCorrectionFactors: {},
+        globalCorrectionFactor: undefined,
         estimationAccuracy: {
           taskTypes: {},
           correctionFactors: {
@@ -127,10 +198,11 @@ describe("getTaskTypeCorrectionFactor", () => {
     expect(getTaskTypeCorrectionFactor("feature")).toBe(1.29);
   });
 
-  it("falls back to estimationAccuracy.taskTypes correctionFactor", () => {
+  it("falls back to estimationAccuracy.taskTypes correctionFactor when no global factor is available", () => {
     mockReadFileSync.mockReturnValue(
       makeDb({
         taskTypeCorrectionFactors: {},
+        globalCorrectionFactor: undefined,
         estimationAccuracy: {
           taskTypes: {
             calendar_calculation: { correctionFactor: 1.35 },
@@ -143,8 +215,13 @@ describe("getTaskTypeCorrectionFactor", () => {
     expect(getTaskTypeCorrectionFactor("bugfix")).toBe(1.35);
   });
 
-  it("returns default 1.8 when no match found", () => {
+  it("returns DB global factor when no task-specific match is found", () => {
     mockReadFileSync.mockReturnValue(makeDb());
+    expect(getTaskTypeCorrectionFactor("feature")).toBe(1.07);
+  });
+
+  it("returns default 1.8 when no DB factor is usable", () => {
+    mockReadFileSync.mockReturnValue(makeDb({ globalCorrectionFactor: undefined }));
     expect(getTaskTypeCorrectionFactor("feature")).toBe(1.8);
   });
 
@@ -181,9 +258,9 @@ describe("getToolTaskCorrectionFactor", () => {
     expect(getToolTaskCorrectionFactor("pert_estimate", "feature")).toBe(1.45);
   });
 
-  it("falls back to default when both are absent", () => {
+  it("falls back to global factor when tool and task-specific factors are absent", () => {
     mockReadFileSync.mockReturnValue(makeDb());
-    expect(getToolTaskCorrectionFactor("pert_estimate", "feature")).toBe(1.8);
+    expect(getToolTaskCorrectionFactor("pert_estimate", "feature")).toBe(1.07);
   });
 
   it("falls back when DB is null", () => {
@@ -235,10 +312,40 @@ describe("updateReferenceDatabase", () => {
     expect(mockWrite).toHaveBeenCalled();
 
     const writtenData = JSON.parse(
-      mockWrite.mock.calls[0]![1] as string,
+      defined(mockWrite.mock.calls[0])[1] as string,
     );
     // feature correction factor should be median of [1.2, 1.4, 1.5, 1.6, 1.8] = 1.5
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
+  });
+
+  it("computes correction factors from prospective records only", async () => {
+    const records: HistoricalRecord[] = [
+      // Prospective live feedback: ratios [1.2, 1.4, 1.6, 1.8, 2.0] => median 1.6.
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, tool: "pert_estimate", completedAt: "2026-04-01", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 14, tool: "pert_estimate", completedAt: "2026-04-02", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 16, tool: "pert_estimate", completedAt: "2026-04-03", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 18, tool: "pert_estimate", completedAt: "2026-04-04", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 20, tool: "pert_estimate", completedAt: "2026-04-05", calibrationUsage: "correction", calibrationProvenance: "prospective" },
+      // Backfilled actual-derived sessions must not force the median down to 1.0.
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, tool: "pert_estimate", completedAt: "2026-04-06", calibrationUsage: "baseline", calibrationProvenance: "backfilled_real_session" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, tool: "pert_estimate", completedAt: "2026-04-07", calibrationUsage: "baseline", calibrationProvenance: "backfilled_real_session" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 10, tool: "pert_estimate", completedAt: "2026-04-08", calibrationUsage: "baseline", calibrationProvenance: "backfilled_real_session" },
+    ];
+    mockGetCalibrationData.mockReturnValue(records);
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
+    );
+    expect(writtenData.globalCorrectionFactor).toBe(1.6);
+    expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.6);
+    expect(writtenData.provenanceSummary).toMatchObject({
+      correctionRecords: 5,
+      baselineRecords: 3,
+      excludedRecords: 0,
+    });
   });
 
   it("computes global correction from all records", async () => {
@@ -255,7 +362,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Global = median of [1.5, 2.0, 1.0, 1.5, 1.5] sorted = [1.0, 1.5, 1.5, 1.5, 2.0] = 1.5
     expect(writtenData.globalCorrectionFactor).toBe(1.5);
@@ -272,7 +379,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Should keep the original globalCorrectionFactor since < 5 records
     expect(writtenData.globalCorrectionFactor).toBe(1.07);
@@ -295,7 +402,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // pert_estimate should have feature: 1.4
     expect(writtenData.toolTaskCorrectionFactors.pert_estimate.feature).toBe(1.4);
@@ -318,7 +425,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
   });
@@ -369,7 +476,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Weighted average: existing weight=10/20=0.5, new weight=10/20=0.5
     // p50 = (100*0.5 + 120*0.5) = 110
@@ -398,7 +505,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.toolExecutionBenchmarks["new-tool"]).toBeDefined();
     expect(writtenData.toolExecutionBenchmarks["new-tool"].p50_ms).toBe(50);
@@ -419,7 +526,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // Valid ratios: 1.5, 2.0, 1.0 -> sorted: 1.0, 1.5, 2.0 -> median 1.5
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
@@ -440,7 +547,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // slow-tool / feature ratios: 5.0, 6.0, 3.5 -> sorted: 3.5, 5.0, 6.0 -> median 5.0 -> clamped 3.0
     expect(writtenData.toolTaskCorrectionFactors["slow-tool"].feature).toBe(3.0);
@@ -460,7 +567,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // fast-tool / feature ratios: 0.2, 0.1, 0.3 -> sorted: 0.1, 0.2, 0.3 -> median 0.2 -> clamped 0.2 (within 0.1 floor)
     expect(writtenData.toolTaskCorrectionFactors["fast-tool"].feature).toBe(0.2);
@@ -480,7 +587,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.toolTaskCorrectionFactors.unknown).toBeDefined();
     // ratios: 1.2, 1.4, 1.6, 1.8, 2.0 -> sorted median = 1.6
@@ -502,7 +609,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     expect(writtenData.complexityCorrectionFactors).toBeDefined();
     expect(writtenData.complexityCorrectionFactors.feature).toBeDefined();
@@ -525,7 +632,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
-      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+      defined(vi.mocked(writeFileSync).mock.calls[0])[1] as string,
     );
     // complexity 3 should not appear (only 2 records)
     expect(writtenData.complexityCorrectionFactors.bugfix?.[3]).toBeUndefined();

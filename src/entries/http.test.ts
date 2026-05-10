@@ -5,13 +5,26 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createApiApp } from "./http.js";
+
+const TEST_DIR = join(tmpdir(), `epoch-http-test-${process.pid}`);
 
 describe("HTTP API", () => {
   let app: ReturnType<typeof createApiApp>;
 
   beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+    mkdirSync(TEST_DIR, { recursive: true });
+    process.env["EPOCH_DATA_DIR"] = TEST_DIR;
     app = createApiApp();
+  });
+
+  afterEach(() => {
+    delete process.env["EPOCH_DATA_DIR"];
+    rmSync(TEST_DIR, { recursive: true, force: true });
   });
 
   // ---------------------------------------------------------------------------
@@ -381,7 +394,7 @@ describe("HTTP API", () => {
       const spec = await res.json() as Record<string, unknown>;
 
       const paths = spec.paths as Record<string, unknown>;
-      const pathKeys = Object.keys(paths);
+      const pathKeys = Object.keys(paths).filter((path) => path.startsWith("/v1/tools/"));
 
       // Each tool has its own path: /v1/tools/{toolName}
       expect(pathKeys).toHaveLength(24);
@@ -392,12 +405,59 @@ describe("HTTP API", () => {
       }
     });
 
+    it("documents telemetry receiver endpoint", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const paths = spec.paths as Record<string, unknown>;
+      expect(paths["/v1/telemetry"]).toBeTruthy();
+    });
+
+    it("documents telemetry calibration provenance fields", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const paths = spec.paths as Record<string, Record<string, unknown>>;
+      const telemetry = paths["/v1/telemetry"] as Record<string, unknown>;
+      const post = telemetry.post as Record<string, unknown>;
+      const requestBody = post.requestBody as Record<string, unknown>;
+      const content = requestBody.content as Record<string, Record<string, unknown>>;
+      const json = content["application/json"] as Record<string, unknown>;
+      const schema = json.schema as Record<string, unknown>;
+      const properties = schema.properties as Record<string, unknown>;
+      const records = properties.records as Record<string, unknown>;
+      const items = records.items as Record<string, unknown>;
+      const recordProperties = items.properties as Record<string, Record<string, unknown>>;
+
+      expect(recordProperties.calibration_provenance?.enum).toEqual([
+        "prospective",
+        "backfilled_real_session",
+        "backfilled_calibration",
+        "synthetic",
+        "smoke",
+        "unknown",
+      ]);
+      expect(recordProperties.calibration_usage?.enum).toEqual(["correction", "baseline", "exclude"]);
+    });
+
+    it("documents feedback endpoints", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const paths = spec.paths as Record<string, unknown>;
+      expect(paths["/v1/feedback/record-actual"]).toBeTruthy();
+      expect(paths["/v1/feedback/pending"]).toBeTruthy();
+      expect(paths["/v1/feedback/batch-record-actuals"]).toBeTruthy();
+      expect(paths["/v1/feedback/health"]).toBeTruthy();
+    });
+
     it("each tool path has a POST operation", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;
 
       const paths = spec.paths as Record<string, Record<string, unknown>>;
-      for (const [, pathObj] of Object.entries(paths)) {
+      for (const [path, pathObj] of Object.entries(paths)) {
+        if (!path.startsWith("/v1/tools/")) continue;
         expect(pathObj.post).toBeDefined();
         const post = pathObj.post as Record<string, unknown>;
         expect(post.operationId).toBeTruthy();
@@ -515,6 +575,38 @@ describe("HTTP API", () => {
 
       const data = body.data as Record<string, unknown>;
       expect(data.actualHours).toBe(8.5);
+    });
+
+    it("returns 400 with a typed reason for below-threshold actual hours", async () => {
+      const res = await app.request("/v1/feedback/record-actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: "below-threshold-estimate", actual_hours: 0.1 }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(error.message).toContain("below_threshold");
+    });
+
+    it("returns 409 with a typed reason for duplicate actuals", async () => {
+      const payload = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: "duplicate-estimate", actual_hours: 2 }),
+      };
+
+      const first = await app.request("/v1/feedback/record-actual", payload);
+      expect(first.status).toBe(200);
+
+      const second = await app.request("/v1/feedback/record-actual", payload);
+      expect(second.status).toBe(409);
+      const body = await second.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(error.message).toContain("duplicate");
     });
   });
 

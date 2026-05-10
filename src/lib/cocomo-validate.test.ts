@@ -7,6 +7,8 @@ vi.mock("./supplementary-data.js", () => ({
 }));
 
 import { getCocomoProjects, getCocomoDerivedFactors } from "./supplementary-data.js";
+import { defined } from "../test-support.js";
+
 
 const mockGetCocomoProjects = vi.mocked(getCocomoProjects);
 const mockGetCocomoDerivedFactors = vi.mocked(getCocomoDerivedFactors);
@@ -88,9 +90,9 @@ describe("cocomoValidate", () => {
     expect(result.data.byProjectType).toHaveProperty("organic");
     expect(result.data.byProjectType).toHaveProperty("embedded");
     expect(result.data.byProjectType).toHaveProperty("semidetached");
-    expect(result.data.byProjectType.organic!.count).toBe(1);
-    expect(result.data.byProjectType.embedded!.count).toBe(1);
-    expect(result.data.byProjectType.semidetached!.count).toBe(1);
+    expect(defined(result.data.byProjectType.organic).count).toBe(1);
+    expect(defined(result.data.byProjectType.embedded).count).toBe(1);
+    expect(defined(result.data.byProjectType.semidetached).count).toBe(1);
   });
 
   it("respects dataset filter", () => {
@@ -195,8 +197,8 @@ describe("cocomoValidate", () => {
       (a) => a.parameter === "organic.a",
     );
     expect(organicAdj).toBeDefined();
-    expect(organicAdj!.reason).toContain("Organic MAPE");
-    expect(organicAdj!.reason).toContain("exceeding 30% threshold");
+    expect(defined(organicAdj).reason).toContain("Organic MAPE");
+    expect(defined(organicAdj).reason).toContain("exceeding 30% threshold");
   });
 
   it("recommends adjustment for embedded type when MAPE > 30%", () => {
@@ -220,8 +222,8 @@ describe("cocomoValidate", () => {
       (a) => a.parameter === "embedded.b",
     );
     expect(embeddedAdj).toBeDefined();
-    expect(embeddedAdj!.reason).toContain("Embedded MAPE");
-    expect(embeddedAdj!.reason).toContain("exceeding 30% threshold");
+    expect(defined(embeddedAdj).reason).toContain("Embedded MAPE");
+    expect(defined(embeddedAdj).reason).toContain("exceeding 30% threshold");
   });
 
   it("recommends overall scale factor when absolute bias > 20%", () => {
@@ -246,7 +248,7 @@ describe("cocomoValidate", () => {
       (a) => a.parameter === "overall_scale_factor",
     );
     expect(scaleAdj).toBeDefined();
-    expect(scaleAdj!.reason).toContain("Overall bias");
-    expect(scaleAdj!.reason).toContain("exceeding 20% threshold");
+    expect(defined(scaleAdj).reason).toContain("Overall bias");
+    expect(defined(scaleAdj).reason).toContain("exceeding 20% threshold");
   });
 });

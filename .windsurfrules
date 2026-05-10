@@ -48,7 +48,7 @@
 - Epoch only works if everyone contributes estimate-vs-actual data
 
 ## Local LLM
-- Use local inference at 100.66.225.85:1234 before cloud APIs
+- Use local inference through a configured local endpoint such as http://localhost:1234 before cloud APIs; do not hardcode private network addresses.
 - Check loaded models first, don't touch models you didn't load
 - Unload when done
 - CPU thread pool: 10, flash attention: on, KV cache: Q8

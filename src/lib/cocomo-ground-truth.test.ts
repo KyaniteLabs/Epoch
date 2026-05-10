@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { cocomoValidateGroundTruth } from "./cocomo-ground-truth.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // COCOMO Ground Truth Validation — Tests
@@ -28,8 +30,8 @@ describe("cocomoValidateGroundTruth", () => {
     // COCOMO Basic model should exist and have a valid MAPE
     const basicModel = result.data.models.find((m) => m.name === "COCOMO Basic");
     expect(basicModel).toBeDefined();
-    expect(basicModel!.mape).toBeGreaterThan(0);
-    expect(basicModel!.count).toBeGreaterThan(0);
+    expect(defined(basicModel).mape).toBeGreaterThan(0);
+    expect(defined(basicModel).count).toBeGreaterThan(0);
   });
 
   it("AI speedup model produces lower estimates than nominal", () => {
@@ -44,7 +46,7 @@ describe("cocomoValidateGroundTruth", () => {
 
     // AI speedup divides by 12, so MAPE should differ from nominal
     // Against 1970s-80s data, both models will have large MAPE, but different values
-    expect(aiSpeedup!.mape).not.toBeCloseTo(nominal!.mape, 0);
+    expect(defined(aiSpeedup).mape).not.toBeCloseTo(defined(nominal).mape, 0);
   });
 
   it("supports dataset filtering", () => {
@@ -80,7 +82,7 @@ describe("cocomoValidateGroundTruth", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    for (const [name, info] of Object.entries(result.data.byDataset)) {
+    for (const [, info] of Object.entries(result.data.byDataset)) {
       expect(info.count).toBeGreaterThan(0);
       expect(info.bestModel).toBeTruthy();
       expect(info.bestMape).toBeGreaterThan(0);
@@ -93,7 +95,7 @@ describe("cocomoValidateGroundTruth", () => {
     if (!result.ok) return;
 
     expect(Object.keys(result.data.byType).length).toBeGreaterThan(0);
-    for (const [name, info] of Object.entries(result.data.byType)) {
+    for (const [, info] of Object.entries(result.data.byType)) {
       expect(info.count).toBeGreaterThan(0);
       expect(info.bestModel).toBeTruthy();
     }
@@ -107,7 +109,7 @@ describe("cocomoValidateGroundTruth", () => {
     const lowestMape = Math.min(...result.data.models.map((m) => m.mape));
     const winnerModel = result.data.models.find((m) => m.name === result.data.winner);
     expect(winnerModel).toBeDefined();
-    expect(winnerModel!.mape).toBe(lowestMape);
+    expect(defined(winnerModel).mape).toBe(lowestMape);
   });
 
   it("PRED(25) and PRED(50) are between 0 and 1", () => {

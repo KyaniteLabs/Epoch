@@ -1,6 +1,6 @@
 # Epoch -- Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![Tests](https://img.shields.io/badge/tests-896-brightgreen.svg)]() [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]() [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
 
 **Epoch helps AI agents understand time.**
 
@@ -47,7 +47,7 @@ Claude (using Epoch):
 
 Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 24 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
-**Accuracy note:** Reference class baselines are built from 268 real AI-native tasks across 6 repositories (epoch, liminal, github_pipeline, dev-archaeology, and others). With correct complexity calibration, estimates fall within 25% of actuals ~67% of the time. Accuracy improves as teams submit estimated-vs-actual feedback through the self-improvement engine.
+**Accuracy note:** The packaged reference database is recalculated from first-party Epoch telemetry, not from hand-waved defaults. Current release provenance is visible through `epoch reference-db-status`: the May 10, 2026 UTC recalculation uses 7,608 tool-call telemetry events plus 59 correction-eligible estimate/actual pairs, while 1,007 backfilled, duplicate, or legacy receiver records are held out as baseline-only evidence. Accuracy improves as teams submit prospective estimated-vs-actual feedback through the self-improvement engine.
 
 ## What is MCP?
 
@@ -486,6 +486,8 @@ Estimated vs Actual -> Correction Factor -> Better Estimates -> Repeat
 
 The engine detects systematic biases (chronic under-estimation, accuracy degradation) and surfaces actionable recommendations.
 
+Epoch ships with a verified baseline reference database in the package. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); use `epoch reference-db-status` to see which database is active, when it was generated, sample size, source, available correction-factor counts, and why any bundled factor family is not populated yet. Correction factors are computed only from prospective correction-eligible records; backfilled calibration data, legacy receiver imports, smoke checks, and synthetic records are preserved for provenance but held out of the math.
+
 ## Data Pipeline
 
 Epoch collects and processes estimation data across all your projects to improve accuracy over time:
@@ -495,6 +497,7 @@ Epoch collects and processes estimation data across all your projects to improve
 - **Source tagging:** Set `EPOCH_SOURCE=<project-name>` to tag estimates by project. This enables per-project accuracy tracking while contributing to the shared reference pool.
 - **Community data:** Contribute anonymized data via `data/community/` to help improve baselines for all users. See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for format and privacy requirements.
 - **Self-improvement triggers:** The engine recalibrates automatically every 100 tool calls and every 24 hours, whichever comes first.
+- **Release recalculation:** maintainers can refresh the bundled DB from staged local/remote exports with `pnpm run recalculate:reference-db -- --stage-dir <dir> --write`; the command emits provenance counts and refuses to let legacy receiver records update correction factors.
 
 ## Community Data
 
@@ -581,12 +584,37 @@ pnpm run build
 ## Development
 
 ```bash
-pnpm test          # Run test suite (896 tests)
+pnpm test          # Run the full test suite
 pnpm run build     # Build with tsup
 pnpm run typecheck # TypeScript strict mode check
+pnpm run lint      # ESLint with zero-warning release gate
 pnpm run dev       # Run development server
 pnpm run inspector # Open MCP Inspector for interactive testing
 ```
+
+## Release Verification
+
+Before cutting a release tag, run the full local release gate:
+
+```bash
+pnpm run verify:remediation
+pnpm run typecheck
+pnpm run lint
+pnpm test
+pnpm run build
+node scripts/validate-community-data.mjs
+node scripts/verify-reference-db.mjs
+pnpm run canary        # local-only Epoch API surface and failure-mode checks
+npm pack --dry-run --json
+```
+
+`pnpm run canary` is intentionally local-only and does not require external provider
+credentials. Use `pnpm run canary:providers` only when you explicitly want to test
+GLM, Minimax, LM Studio, or other provider compatibility.
+
+The release workflow publishes npm packages from `v*` tags after typecheck, lint,
+tests, and build pass. Bump `package.json` to a new semver version before tagging;
+npm will reject republishing an already published version.
 
 ## Tech Stack
 

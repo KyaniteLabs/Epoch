@@ -15,6 +15,9 @@ vi.mock("./supplementary-data.js", () => ({
 }));
 
 import { getCalibrationData } from "./feedback.js";
+import type { HistoricalRecord } from "./analytics.js";
+import { defined } from "../test-support.js";
+
 
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
 
@@ -72,7 +75,7 @@ describe("computeAccuracyTrend", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = computeAccuracyTrend({ windowSize: 50 });
     expect(result.overallTrend).toBe("improving");
-    expect(result.currentMape).toBeLessThan(result.windows[0]!.mape);
+    expect(result.currentMape).toBeLessThan(defined(result.windows[0]).mape);
   });
 
   it("detects stable trend", () => {
@@ -93,7 +96,7 @@ describe("computeAccuracyTrend", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = computeAccuracyTrend({ windowSize: 50 });
     expect(result.overallTrend).toBe("degrading");
-    expect(result.currentMape).toBeGreaterThan(result.windows[0]!.mape);
+    expect(result.currentMape).toBeGreaterThan(defined(result.windows[0]).mape);
   });
 
   it("industry baseline is 25%", () => {
@@ -119,9 +122,9 @@ describe("computeAccuracyTrend", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = computeAccuracyTrend({ windowSize: 50 });
     // First window: records 0-49, dates Jan 1 - Feb 19
-    expect(result.windows[0]!.dateRange).toContain("2026-01-01");
+    expect(defined(result.windows[0]).dateRange).toContain("2026-01-01");
     // Second window: records 50-99, dates Feb 20 - Apr 10
-    expect(result.windows[1]!.dateRange).toContain("2026-02-20");
+    expect(defined(result.windows[1]).dateRange).toContain("2026-02-20");
   });
 
   it("redistributes windows to avoid tiny last window", () => {
@@ -130,7 +133,7 @@ describe("computeAccuracyTrend", () => {
     const records = makeRecords(120, () => 20);
     mockGetCalibrationData.mockReturnValue(records);
     const result = computeAccuracyTrend({ windowSize: 50 });
-    const lastWindow = result.windows[result.windows.length - 1]!;
+    const lastWindow = defined(result.windows[result.windows.length - 1]);
     // Last window should have at least half the normal size (25)
     expect(lastWindow.sampleSize).toBeGreaterThanOrEqual(25);
   });
@@ -141,8 +144,8 @@ describe("computeAccuracyTrend", () => {
       estimatedHours: 5 + i,
       actualHours: 4 + i,
       completedAt: i % 3 === 0 ? (undefined as unknown as string) : `2026-01-${10 + i}T00:00:00Z`,
-    }));
-    mockGetCalibrationData.mockReturnValue(records as any);
+    })) as unknown as HistoricalRecord[];
+    mockGetCalibrationData.mockReturnValue(records);
     const result = computeAccuracyTrend({ windowSize: 50 });
     expect(result.windows.length).toBeGreaterThanOrEqual(1);
     expect(result.overallTrend).toBeDefined();

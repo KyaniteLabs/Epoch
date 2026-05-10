@@ -11,6 +11,8 @@ vi.mock("node:fs", () => ({
 import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { getTelemetry, resetTelemetry } from "./telemetry.js";
 import type { ToolCallRecord } from "./telemetry.js";
+import { defined } from "../test-support.js";
+
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockAppendFileSync = vi.mocked(appendFileSync);
@@ -56,10 +58,10 @@ describe("record + flush", () => {
     store.record("pert_estimate", 150, true, { x: 1 });
     store.flush();
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
-    const written = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const lines = written.trim().split("\n");
     expect(lines).toHaveLength(1);
-    const parsed = JSON.parse(lines[0]!) as ToolCallRecord;
+    const parsed = JSON.parse(defined(lines[0])) as ToolCallRecord;
     expect(parsed.tool).toBe("pert_estimate");
     expect(parsed.outputOk).toBe(true);
   });
@@ -87,7 +89,7 @@ describe("record + flush", () => {
     const store = getTelemetry();
     store.record("tool", 123.4567, true);
     store.flush();
-    const written = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const parsed = JSON.parse(written.trim()) as ToolCallRecord;
     expect(parsed.elapsedMs).toBe(123.46);
   });
@@ -96,7 +98,7 @@ describe("record + flush", () => {
     const store = getTelemetry();
     store.record("tool", 100, true, undefined, "gpt-4o", 5000);
     store.flush();
-    const written = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const parsed = JSON.parse(written.trim()) as ToolCallRecord;
     expect(parsed.model).toBe("gpt-4o");
     expect(parsed.tokens).toBe(5000);
@@ -106,7 +108,7 @@ describe("record + flush", () => {
     const store = getTelemetry();
     store.record("tool", 100, true);
     store.flush();
-    const written = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const parsed = JSON.parse(written.trim()) as ToolCallRecord;
     expect(parsed).not.toHaveProperty("model");
     expect(parsed).not.toHaveProperty("tokens");
@@ -153,7 +155,7 @@ describe("getStats", () => {
     const store = getTelemetry();
     const stats = store.getStats("pert_estimate");
     expect(stats).toHaveLength(1);
-    expect(stats[0]!.tool).toBe("pert_estimate");
+    expect(defined(stats[0]).tool).toBe("pert_estimate");
   });
 
   it("computes success rate", () => {
@@ -166,7 +168,7 @@ describe("getStats", () => {
     mockReadFileSync.mockReturnValue(makeRecordsJson(records));
     const store = getTelemetry();
     const stats = store.getStats("tool");
-    expect(stats[0]!.successRate).toBe(0.75);
+    expect(defined(stats[0]).successRate).toBe(0.75);
   });
 
   it("computes p50 and p95 percentiles", () => {
@@ -175,8 +177,8 @@ describe("getStats", () => {
     mockReadFileSync.mockReturnValue(makeRecordsJson(records));
     const store = getTelemetry();
     const stats = store.getStats("tool");
-    expect(stats[0]!.p50Ms).toBe(60);
-    expect(stats[0]!.p95Ms).toBe(100);
+    expect(defined(stats[0]).p50Ms).toBe(60);
+    expect(defined(stats[0]).p95Ms).toBe(100);
   });
 
   it("filters by time window", () => {
@@ -194,8 +196,8 @@ describe("getStats", () => {
     const store = getTelemetry();
     const stats = store.getStats("tool", 90);
     expect(stats).toHaveLength(1);
-    expect(stats[0]!.callCount).toBe(1);
-    expect(stats[0]!.p50Ms).toBe(50);
+    expect(defined(stats[0]).callCount).toBe(1);
+    expect(defined(stats[0]).p50Ms).toBe(50);
   });
 });
 
@@ -219,9 +221,9 @@ describe("getModelStats", () => {
     const store = getTelemetry();
     const stats = store.getModelStats("gpt-4o");
     expect(stats).not.toBeNull();
-    expect(stats!.sampleCount).toBe(20);
-    expect(stats!.avgTps).toBeGreaterThan(0);
-    expect(stats!.medianTps).toBeGreaterThan(0);
+    expect(defined(stats).sampleCount).toBe(20);
+    expect(defined(stats).avgTps).toBeGreaterThan(0);
+    expect(defined(stats).medianTps).toBeGreaterThan(0);
   });
 
   it("returns null when file does not exist", () => {
@@ -243,7 +245,7 @@ describe("getModelStats", () => {
     const store = getTelemetry();
     const stats = store.getModelStats("gpt-4o");
     expect(stats).not.toBeNull();
-    expect(stats!.sampleCount).toBe(10);
+    expect(defined(stats).sampleCount).toBe(10);
   });
 });
 
@@ -254,13 +256,13 @@ describe("hashInput", () => {
     const store = getTelemetry();
     store.record("tool", 100, true, { a: 1, b: 2 });
     store.flush();
-    const written1 = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written1 = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     resetTelemetry();
     mockAppendFileSync.mockClear();
     const store2 = getTelemetry();
     store2.record("tool", 100, true, { a: 1, b: 2 });
     store2.flush();
-    const written2 = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written2 = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const hash1 = (JSON.parse(written1.trim()) as ToolCallRecord).inputHash;
     const hash2 = (JSON.parse(written2.trim()) as ToolCallRecord).inputHash;
     expect(hash1).toBe(hash2);
@@ -270,14 +272,14 @@ describe("hashInput", () => {
     const store = getTelemetry();
     store.record("tool", 100, true, { b: 2, a: 1 });
     store.flush();
-    const written = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const parsed = JSON.parse(written.trim()) as ToolCallRecord;
     // Same values, different insertion order → same hash (keys are sorted)
     const store2 = getTelemetry();
     mockAppendFileSync.mockClear();
     store2.record("tool", 100, true, { a: 1, b: 2 });
     store2.flush();
-    const written2 = mockAppendFileSync.mock.calls[0]![1] as string;
+    const written2 = defined(mockAppendFileSync.mock.calls[0])[1] as string;
     const parsed2 = JSON.parse(written2.trim()) as ToolCallRecord;
     expect(parsed.inputHash).toBe(parsed2.inputHash);
   });

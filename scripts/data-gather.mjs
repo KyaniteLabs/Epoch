@@ -228,7 +228,7 @@ const INPUTS = {
 
 // ---- Inference provider configs ---------------------------------------------
 
-const LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://100.66.225.85:1234";
+const LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://localhost:1234";
 
 const PROVIDERS = {
   cloud: {

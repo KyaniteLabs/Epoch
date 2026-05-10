@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** May 5, 2026
+**Last updated:** May 10, 2026
 
 ## Overview
 
@@ -8,7 +8,7 @@ Epoch is a local-first time estimation tool. All estimation data, feedback recor
 
 ## Data Controller
 
-**Kyanite Labs** is the data controller for any telemetry data submitted through the Epoch telemetry service.
+**Kyanite Labs** is the data controller only for telemetry data submitted to a Kyanite Labs-operated telemetry endpoint. If you self-host or configure a third-party endpoint, that endpoint operator controls its own receiver-side handling.
 
 ## Local Data Storage
 
@@ -95,18 +95,20 @@ When telemetry is enabled, data is:
 2. Anonymized (all identifying fields stripped)
 3. Batched (max 100 records per submission, max 1 submission per hour)
 4. Signed with HMAC-SHA256 (proves data came from a real Epoch instance)
-5. Sent via HTTPS POST to a configurable endpoint
+5. Sent via HTTPS POST to an explicitly configured endpoint
 
-The default endpoint is operated by Kyanite Labs. You can configure a custom endpoint to self-host the telemetry receiver.
+Epoch does not ship with a built-in default telemetry receiver URL. Configure an endpoint with `epoch telemetry set-endpoint`, `epoch telemetry enable --endpoint ...`, `epoch telemetry submit --endpoint ...`, or `EPOCH_TELEMETRY_ENDPOINT`. You may use a Kyanite Labs-operated endpoint if one is provided, or self-host the telemetry receiver.
 
 ### Server-side handling
 
-Kyanite Labs commits to the following server-side practices:
+When telemetry is submitted to a Kyanite Labs-operated endpoint, Kyanite Labs commits to the following server-side practices:
 
 - **No IP logging** -- IP addresses are not recorded or stored
 - **No cross-correlation** -- Telemetry data is not correlated with any other data source
 - **Aggregation after 90 days** -- Raw telemetry records are aggregated into statistical summaries after 90 days
 - **Self-hostable** -- The telemetry endpoint is a simple API; you can run your own
+
+Self-hosted or third-party endpoints are governed by the operator of that endpoint.
 
 ### HMAC signing
 
@@ -157,7 +159,7 @@ Epoch does **not** use any third-party analytics services, tracking pixels, adve
 | Data type | Retention | Location |
 |-----------|-----------|----------|
 | Local estimate/feedback data | Until user deletes | `~/.epoch/` (local filesystem) |
-| Anonymized telemetry records | 90 days raw, then aggregated | Configurable endpoint (default: Kyanite Labs) |
+| Anonymized telemetry records | 90 days raw, then aggregated for Kyanite Labs-operated endpoints; self-hosted retention is operator-defined | Explicitly configured endpoint |
 | Aggregated statistics | Published publicly in open-source project | GitHub repository |
 | Community-contributed data | Indefinite (open-source) | GitHub repository (anonymized) |
 
