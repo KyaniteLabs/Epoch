@@ -49,7 +49,7 @@ The full payload sent to the telemetry endpoint:
 {
   "schema_version": 1,
   "installation_id": "550e8400-e29b-41d4-a716-446655440000",
-  "epoch_version": "0.2.3",
+  "epoch_version": "0.2.4",
   "records": [
     { "task_type": "feature", "complexity": 3, "tool": "pert_estimate", "estimated_hours": 8.5, "actual_hours": 12.0, "ratio": 1.41, "date": "2026-05-01", "calibration_provenance": "prospective", "calibration_usage": "correction" }
   ],
