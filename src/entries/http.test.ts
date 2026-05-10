@@ -577,18 +577,18 @@ describe("HTTP API", () => {
       expect(data.actualHours).toBe(8.5);
     });
 
-    it("returns 400 with a typed reason for below-threshold actual hours", async () => {
+    it("accepts real fast feedback below the old 15-minute floor", async () => {
       const res = await app.request("/v1/feedback/record-actual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estimate_id: "below-threshold-estimate", actual_hours: 0.1 }),
+        body: JSON.stringify({ estimate_id: `fast-http-estimate-${Date.now()}`, actual_hours: 0.08 }),
       });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
       const body = await res.json() as Record<string, unknown>;
-      expect(body.ok).toBe(false);
-      const error = body.error as Record<string, unknown>;
-      expect(error.message).toContain("below_threshold");
+      expect(body.ok).toBe(true);
+      const data = body.data as Record<string, unknown>;
+      expect(data.actualHours).toBe(0.08);
     });
 
     it("returns 409 with a typed reason for duplicate actuals", async () => {

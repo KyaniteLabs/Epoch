@@ -105,9 +105,16 @@ describe("recordActual", () => {
     expect(written).not.toHaveProperty("notes");
   });
 
-  it("rejects actuals below minimum threshold (0.25h)", () => {
-    expect(recordActual("est-1", 0.1)).toBe(false);
-    expect(recordActual("est-2", 0.24)).toBe(false);
+  it("accepts real fast actuals below the old 15-minute floor", () => {
+    expect(recordActual("est-fast", 0.08)).toBe(true);
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(0.08);
+  });
+
+  it("rejects non-positive actuals", () => {
+    expect(recordActual("est-zero", 0)).toBe(false);
+    expect(recordActual("est-negative", -0.1)).toBe(false);
     expect(mockAppendFileSync).not.toHaveBeenCalled();
   });
 });
@@ -337,23 +344,25 @@ describe("getCalibrationData", () => {
     expect(getCalibrationData()).toEqual([]);
   });
 
-  it("filters out actuals under 0.25 hours as seed artifacts", () => {
+  it("keeps real fast actuals above the microtask floor", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return makeEstimate({ id: "e1" }) + "\n" + makeEstimate({ id: "e2" }) + "\n" + makeEstimate({ id: "e3" }) + "\n";
+        return makeEstimate({ id: "e1", outputs: { totalHours: 0.1 } }) + "\n"
+          + makeEstimate({ id: "e2", outputs: { totalHours: 0.2 } }) + "\n"
+          + makeEstimate({ id: "e3" }) + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return JSON.stringify({ estimateId: "e1", actualHours: 0.1, reportedAt: new Date().toISOString() }) + "\n"
-          + JSON.stringify({ estimateId: "e2", actualHours: 0.2, reportedAt: new Date().toISOString() }) + "\n"
+        return JSON.stringify({ estimateId: "e1", actualHours: 0.008, reportedAt: new Date().toISOString() }) + "\n"
+          + JSON.stringify({ estimateId: "e2", actualHours: 0.08, reportedAt: new Date().toISOString() }) + "\n"
           + JSON.stringify({ estimateId: "e3", actualHours: 5, reportedAt: new Date().toISOString() }) + "\n";
       }
       return "";
     });
 
     const data = getCalibrationData();
-    expect(data).toHaveLength(1);
-    expect(defined(data[0]).actualHours).toBe(5);
+    expect(data).toHaveLength(2);
+    expect(data.map((record) => record.actualHours)).toEqual([0.08, 5]);
   });
 });
 
@@ -890,11 +899,12 @@ describe("matchEstimatesToActuals", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("skips actuals below 0.25 hours", () => {
-    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
-    const actuals = [{ estimateId: "e1", actualHours: 0.1, reportedAt: "2026-01-10T00:00:00Z" }];
+  it("keeps fast actuals when the estimate/actual ratio is plausible", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 0.1 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 0.08, reportedAt: "2026-01-10T00:00:00Z" }];
     const result = matchFixtureRecords(estimates, actuals);
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(defined(result[0]).actualHours).toBe(0.08);
   });
 
   it("returns empty for unmatched estimateIds", () => {

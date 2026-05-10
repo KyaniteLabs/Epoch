@@ -40,7 +40,7 @@ function isSeed(act: any): boolean {
 }
 
 for (const act of feedback) {
-  if (act.actualHours < 0.25) continue;
+  if (act.actualHours < 0.01) continue;
   if (isSeed(act)) continue;
   
   const est = estMap.get(act.estimateId);

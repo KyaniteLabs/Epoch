@@ -66,9 +66,9 @@ console.log(`\n=== Seed Records ===`);
 console.log(`Explicitly marked seed records: ${seedRecords.length}`);
 
 // Check for records with very low actuals (likely seed artifacts)
-const lowActuals = feedback.filter(f => f.actualHours < 0.25);
-console.log(`Actuals < 0.25h (MINIMUM_ACTUAL_HOURS): ${lowActuals.length}`);
+const lowActuals = feedback.filter(f => f.actualHours < 0.01);
+console.log(`Actuals < 0.01h (microtask calibration floor): ${lowActuals.length}`);
 
-// Check for records with actuals between 0.25 and 1.0
-const suspiciousActuals = feedback.filter(f => f.actualHours >= 0.25 && f.actualHours < 1.0);
-console.log(`Actuals 0.25-1.0h (potentially seed): ${suspiciousActuals.length}`);
+// Check for records with actuals between 0.01 and 1.0
+const suspiciousActuals = feedback.filter(f => f.actualHours >= 0.01 && f.actualHours < 1.0);
+console.log(`Actuals 0.01-1.0h (fast real tasks; inspect provenance before filtering): ${suspiciousActuals.length}`);

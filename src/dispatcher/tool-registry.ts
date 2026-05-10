@@ -795,7 +795,7 @@ update automatically to reduce estimation bias.`,
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes);
       if (!result.ok) {
         const messages: Record<string, string> = {
-          below_threshold: `Actual hours (${p.actual_hours}) below minimum threshold (0.25h).`,
+          below_threshold: `Actual hours (${p.actual_hours}) must be positive.`,
           duplicate: `An actual for estimate ${p.estimate_id} already exists. Each estimate can only have one actual.`,
           write_failed: "Failed to write to feedback storage — ensure ~/.epoch/ directory is writable.",
         };
