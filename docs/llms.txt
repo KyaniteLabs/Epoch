@@ -9,6 +9,7 @@ sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, llm
 
 Install: claude mcp add epoch -- npx @kyanitelabs/epoch
 npm: https://www.npmjs.com/package/@kyanitelabs/epoch
+MCP Registry: https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch
 GitHub: https://github.com/KyaniteLabs/Epoch
 
 ---
