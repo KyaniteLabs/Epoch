@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-10
+
 ### Added
 - MCP Registry badge and links in README, `llms.txt`, `docs/llms.txt`, `site/llms-full.txt`, and `site/index.html`.
 - `pnpm run verify:remediation` release-readiness guard covering the closed audit residuals, package boundary, canary split, telemetry operator safety, reference database provenance, and documentation drift.
