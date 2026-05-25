@@ -1,0 +1,4 @@
+{
+  "signature": "src/lib/self-improve.ts::Unresolved from this turn — src/lib/self-improve.ts:\n🔴 STOP — 3 issue(s) must be fixed:\n  L278: Property 'complexityCorrectionFactorStatus' does not exist on type 'ReferenceDatabase'. Did you mean 'complexityCorrectionFactors'?\n    💡 Fix: LSP quick fixes: Change spelling to 'complexityCorrectionFactors'; Declare property 'complexityCorrectionFactorStatus'; Add index signature for property 'complexityCorrectionFactorStatus'\n  L249: prefer-const: '_cachedDbPath' is never reassigned. Use 'const' instead.\n  L409: @typescript-eslint/no-non-null-assertion: Forbidden non-null assertion.",
+  "sessionId": "lens-mpkfj4ro-ee2e2a08"
+}

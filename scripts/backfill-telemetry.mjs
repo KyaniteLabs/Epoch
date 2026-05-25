@@ -1,43 +1,10 @@
 #!/usr/bin/env node
+import { buildPayload, extractAnonymizedRecords, signPayload } from "../src/lib/telemetry-submit.ts";
+import { loadConfig, saveConfig, isUsableTelemetryEndpoint } from "../src/lib/config.ts";
 
-const args = new Set(process.argv.slice(2));
 const endpointArgIndex = process.argv.indexOf("--endpoint");
-const endpointArg = endpointArgIndex >= 0 ? process.argv[endpointArgIndex + 1] : undefined;
-const dryRun = args.has("--dry-run");
+const endpoint = endpointArgIndex >= 0 ? process.argv[endpointArgIndex + 1] : loadConfig().telemetry.endpoint;
 const chunkSize = 100;
-
-if (args.has("--help") || args.has("-h")) {
-  console.log(`Usage: node scripts/backfill-telemetry.mjs --endpoint <url> [--dry-run]
-
-Backfills all locally available anonymized telemetry records in chunks of ${chunkSize}.
-Run "pnpm run build" first; this script imports the built public API from dist/index.js.
-
-Options:
-  --endpoint <url>  Telemetry receiver endpoint.
-  --dry-run         Validate and count records without making network calls or updating config.
-`);
-  process.exit(0);
-}
-
-let epoch;
-try {
-  epoch = await import(new URL("../dist/index.js", import.meta.url).href);
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Could not import dist/index.js (${message}). Run "pnpm run build" first.`);
-  process.exit(1);
-}
-
-const {
-  buildPayload,
-  extractAnonymizedRecords,
-  isUsableTelemetryEndpoint,
-  loadConfig,
-  saveConfig,
-  signPayload,
-} = epoch;
-
-const endpoint = endpointArg ?? loadConfig().telemetry.endpoint;
 
 if (!endpoint || !isUsableTelemetryEndpoint(endpoint)) {
   console.error("No usable endpoint configured. Pass --endpoint <url> or run telemetry set-endpoint first.");
@@ -66,12 +33,6 @@ let deduplicated = 0;
 
 for (let index = 0; index < records.length; index += chunkSize) {
   const chunk = records.slice(index, index + chunkSize);
-
-  if (dryRun) {
-    submitted += chunk.length;
-    continue;
-  }
-
   const payload = buildPayload(chunk);
   const raw = JSON.stringify(payload);
   const response = await fetch(endpoint, {
@@ -89,32 +50,21 @@ for (let index = 0; index < records.length; index += chunkSize) {
     process.exit(1);
   }
 
-  const body = await response.json().catch(() => ({}));
+  const body = await response.json();
   submitted += chunk.length;
   accepted += typeof body.accepted === "number" ? body.accepted : 0;
   deduplicated += typeof body.deduplicated === "number" ? body.deduplicated : 0;
 }
 
-if (!dryRun) {
-  const config = loadConfig();
-  config.telemetry.enabled = true;
-  config.telemetry.endpoint = endpoint;
-  config.telemetry.lastSubmissionAt = new Date().toISOString();
-  config.telemetry.lastSubmissionRecordCount = Math.max(config.telemetry.lastSubmissionRecordCount, submitted);
-  config.telemetry.lastSubmissionAcceptedCount = accepted;
-  config.telemetry.lastSubmissionDeduplicatedCount = deduplicated;
-  config.telemetry.totalRecordsAccepted += accepted;
-  config.telemetry.totalRecordsDeduplicated += deduplicated;
-  saveConfig(config);
-}
+const config = loadConfig();
+config.telemetry.enabled = true;
+config.telemetry.endpoint = endpoint;
+config.telemetry.lastSubmissionAt = new Date().toISOString();
+config.telemetry.lastSubmissionRecordCount = Math.max(config.telemetry.lastSubmissionRecordCount, submitted);
+config.telemetry.lastSubmissionAcceptedCount = accepted;
+config.telemetry.lastSubmissionDeduplicatedCount = deduplicated;
+config.telemetry.totalRecordsAccepted = (config.telemetry.totalRecordsAccepted ?? 0) + accepted;
+config.telemetry.totalRecordsDeduplicated = (config.telemetry.totalRecordsDeduplicated ?? 0) + deduplicated;
+saveConfig(config);
 
-console.log(JSON.stringify({
-  ok: true,
-  dryRun,
-  endpoint,
-  extracted: extractedRecords.length,
-  submitted,
-  accepted,
-  deduplicated,
-  skippedInvalid,
-}, null, 2));
+console.log(JSON.stringify({ ok: true, extracted: extractedRecords.length, submitted, accepted, deduplicated, skippedInvalid }, null, 2));

@@ -6,13 +6,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
 import { Command } from "commander";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createCliProgram } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
-import { defined } from "../test-support.js";
-
 
 // ---- Sentinel error for process.exit mock -----------------------------------
 
@@ -125,28 +123,6 @@ function mockDispatchError(
   });
 }
 
-function writeTelemetryFixtures(records: Array<{
-  id: string;
-  reportedAt: string;
-  actualHours: number;
-}>): void {
-  const estimates = records.map((record) => JSON.stringify({
-    id: record.id,
-    tool: "pert_estimate",
-    inputs: { task_type: "feature", complexity: 3 },
-    outputs: { expected: 4, unit: "hours" },
-    estimatedAt: "2026-05-07T00:00:00.000Z",
-  })).join("\n");
-  const actuals = records.map((record) => JSON.stringify({
-    estimateId: record.id,
-    actualHours: record.actualHours,
-    reportedAt: record.reportedAt,
-  })).join("\n");
-
-  writeFileSync(join(TEST_DIR, "estimates.jsonl"), `${estimates}\n`, "utf-8");
-  writeFileSync(join(TEST_DIR, "feedback.jsonl"), `${actuals}\n`, "utf-8");
-}
-
 // ---- Tests ------------------------------------------------------------------
 
 describe("CLI tests", () => {
@@ -178,7 +154,7 @@ describe("CLI tests", () => {
       const program = createCliProgram();
       const formatOption = program.options.find((o) => o.long === "--format");
       expect(formatOption).toBeDefined();
-      expect(defined(formatOption).argChoices).toEqual(["json", "table"]);
+      expect(formatOption!.argChoices).toEqual(["json", "table"]);
     });
 
     it("registers --pretty option", () => {
@@ -222,9 +198,9 @@ describe("CLI tests", () => {
       "cocomo-ground-truth",
       "list-tools",
       "self-improve",
-      "reference-db-status",
       "telemetry",
       "share-data",
+      "data",
     ];
 
     it("registers all expected commands", () => {
@@ -245,15 +221,15 @@ describe("CLI tests", () => {
 
     it("get-current-time has --timezone optional argument defaulting to UTC", () => {
       const program = createCliProgram();
-      const cmd = defined(program.commands.find((c) => c.name() === "get-current-time"));
+      const cmd = program.commands.find((c) => c.name() === "get-current-time")!;
       const tzOption = cmd.options.find((o) => o.long === "--timezone");
       expect(tzOption).toBeDefined();
-      expect(defined(tzOption).defaultValue).toBe("UTC");
+      expect(tzOption!.defaultValue).toBe("UTC");
     });
 
     it("convert-timezone has required --timestamp and --target-tz", () => {
       const program = createCliProgram();
-      const cmd = defined(program.commands.find((c) => c.name() === "convert-timezone"));
+      const cmd = program.commands.find((c) => c.name() === "convert-timezone")!;
       const requiredFlags = cmd.options
         .filter((o) => o.required)
         .map((o) => o.long);
@@ -263,7 +239,7 @@ describe("CLI tests", () => {
 
     it("pert-estimate has required --optimistic, --most-likely, --pessimistic", () => {
       const program = createCliProgram();
-      const cmd = defined(program.commands.find((c) => c.name() === "pert-estimate"));
+      const cmd = program.commands.find((c) => c.name() === "pert-estimate")!;
       const requiredFlags = cmd.options
         .filter((o) => o.required)
         .map((o) => o.long);
@@ -274,7 +250,7 @@ describe("CLI tests", () => {
 
     it("critical-path has required --tasks argument", () => {
       const program = createCliProgram();
-      const cmd = defined(program.commands.find((c) => c.name() === "critical-path"));
+      const cmd = program.commands.find((c) => c.name() === "critical-path")!;
       const requiredFlags = cmd.options
         .filter((o) => o.required)
         .map((o) => o.long);
@@ -283,9 +259,9 @@ describe("CLI tests", () => {
 
     it("telemetry exposes endpoint configuration and submit subcommands", () => {
       const program = createCliProgram();
-      const telemetry = defined(program.commands.find((c) => c.name() === "telemetry"));
+      const telemetry = program.commands.find((c) => c.name() === "telemetry")!;
       const subcommands = telemetry.commands.map((c) => c.name());
-      const enable = defined(telemetry.commands.find((c) => c.name() === "enable"));
+      const enable = telemetry.commands.find((c) => c.name() === "enable")!;
 
       expect(subcommands).toContain("set-endpoint");
       expect(subcommands).toContain("submit");
@@ -569,7 +545,7 @@ describe("CLI tests", () => {
         expect.objectContaining({ kloc: 10 }),
       );
       // Should NOT contain optional multipliers
-      const callArgs = defined((dispatch as ReturnType<typeof vi.fn>).mock.calls[0])[1] as Record<string, unknown>;
+      const callArgs = (dispatch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Record<string, unknown>;
       expect(callArgs).not.toHaveProperty("reasoning_complexity");
       expect(callArgs).not.toHaveProperty("context_completeness");
     });
@@ -614,23 +590,6 @@ describe("CLI tests", () => {
       const tools = JSON.parse(output) as Array<{ name: string; description: string }>;
       expect(tools.length).toBeGreaterThan(0);
       expect(capture.exitCode).toBe(0);
-    });
-  });
-
-  describe("CLI reference database status command", () => {
-    it("outputs active reference database provenance as JSON", async () => {
-      const program = createCliProgram();
-      const capture = await runWithCapture(program, ["reference-db-status"]);
-
-      const output = JSON.parse(capture.stdout.join("")) as {
-        loaded: boolean;
-        sampleSize: number | null;
-        globalCorrectionFactor: number | null;
-      };
-      expect(capture.exitCode).toBe(0);
-      expect(typeof output.loaded).toBe("boolean");
-      expect(output).toHaveProperty("sampleSize");
-      expect(output).toHaveProperty("globalCorrectionFactor");
     });
   });
 
@@ -694,21 +653,6 @@ describe("CLI tests", () => {
       expect(output.endpoint).toBe("http://100.66.225.85:3099/v1/telemetry");
     });
 
-    it("allows Tailscale Serve hostnames for private HTTP telemetry endpoints", async () => {
-      const program = createCliProgram();
-      const capture = await runWithCapture(program, [
-        "telemetry",
-        "set-endpoint",
-        "--endpoint",
-        "http://nucbox-evo-x2.tail599928.ts.net:3099/v1/telemetry",
-      ]);
-
-      const output = JSON.parse(capture.stdout.join("")) as { ok: boolean; endpoint: string };
-      expect(capture.exitCode).toBe(0);
-      expect(output.ok).toBe(true);
-      expect(output.endpoint).toBe("http://nucbox-evo-x2.tail599928.ts.net:3099/v1/telemetry");
-    });
-
     it("reports placeholder endpoint as not configured in telemetry status", async () => {
       const { saveConfig } = await import("../lib/config.js");
       saveConfig({
@@ -733,64 +677,6 @@ describe("CLI tests", () => {
       expect(output.endpoint).toBe("(not configured)");
       expect(output.endpointConfigured).toBe(false);
       expect(typeof output.queuedRecords).toBe("number");
-    });
-
-    it("telemetry preview reports all records and queued records separately", async () => {
-      const { saveConfig } = await import("../lib/config.js");
-      writeTelemetryFixtures([
-        { id: "old-estimate", actualHours: 5, reportedAt: "2026-05-06T23:59:59.000Z" },
-        { id: "new-estimate", actualHours: 6, reportedAt: "2026-05-07T00:00:01.000Z" },
-      ]);
-      saveConfig({
-        telemetry: {
-          enabled: true,
-          endpoint: "https://collector.example.net/v1/telemetry",
-          lastSubmissionAt: "2026-05-07T00:00:00.000Z",
-          lastSubmissionRecordCount: 1,
-          installationId: "test-id",
-        },
-      });
-
-      const program = createCliProgram();
-      const capture = await runWithCapture(program, ["telemetry", "preview"]);
-      const output = JSON.parse(capture.stdout.join("")) as {
-        totalRecords: number;
-        queuedRecords: number;
-        lastSubmissionAt: string | null;
-      };
-
-      expect(capture.exitCode).toBe(0);
-      expect(output.totalRecords).toBe(2);
-      expect(output.queuedRecords).toBe(1);
-      expect(output.lastSubmissionAt).toBe("2026-05-07T00:00:00.000Z");
-    });
-
-    it("telemetry status exposes last submission cutoff used for queued records", async () => {
-      const { saveConfig } = await import("../lib/config.js");
-      writeTelemetryFixtures([
-        { id: "old-estimate", actualHours: 5, reportedAt: "2026-05-06T23:59:59.000Z" },
-        { id: "new-estimate", actualHours: 6, reportedAt: "2026-05-07T00:00:01.000Z" },
-      ]);
-      saveConfig({
-        telemetry: {
-          enabled: true,
-          endpoint: "https://collector.example.net/v1/telemetry",
-          lastSubmissionAt: "2026-05-07T00:00:00.000Z",
-          lastSubmissionRecordCount: 1,
-          installationId: "test-id",
-        },
-      });
-
-      const program = createCliProgram();
-      const capture = await runWithCapture(program, ["telemetry", "status"]);
-      const output = JSON.parse(capture.stdout.join("")) as {
-        lastSubmissionAt: string | null;
-        queuedRecords: number;
-      };
-
-      expect(capture.exitCode).toBe(0);
-      expect(output.lastSubmissionAt).toBe("2026-05-07T00:00:00.000Z");
-      expect(output.queuedRecords).toBe(1);
     });
   });
 });

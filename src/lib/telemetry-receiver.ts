@@ -47,21 +47,6 @@ function isRecordArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
 
-const VALID_CALIBRATION_PROVENANCE = new Set([
-  "prospective",
-  "backfilled_real_session",
-  "backfilled_calibration",
-  "synthetic",
-  "smoke",
-  "unknown",
-]);
-
-const VALID_CALIBRATION_USAGE = new Set(["correction", "baseline", "exclude"]);
-
-function isOptionalEnum(value: unknown, allowed: Set<string>): boolean {
-  return value === undefined || (typeof value === "string" && allowed.has(value));
-}
-
 function isAnonymizedRecord(value: unknown): value is AnonymizedRecord {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
@@ -76,9 +61,7 @@ function isAnonymizedRecord(value: unknown): value is AnonymizedRecord {
     typeof record["ratio"] === "number" &&
     Number.isFinite(record["ratio"]) &&
     typeof record["date"] === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(record["date"]) &&
-    isOptionalEnum(record["calibration_provenance"], VALID_CALIBRATION_PROVENANCE) &&
-    isOptionalEnum(record["calibration_usage"], VALID_CALIBRATION_USAGE)
+    /^\d{4}-\d{2}-\d{2}$/.test(record["date"])
   );
 }
 
@@ -88,8 +71,8 @@ function loadRecordKeys(): Set<string> {
   return new Set(readFileSync(path, "utf-8").split("\n").map((line) => line.trim()).filter(Boolean));
 }
 
-function recordKey(installationId: string, payloadHash: string, recordIndex: number): string {
-  return createHash("sha256").update(JSON.stringify({ installationId, payloadHash, recordIndex })).digest("hex");
+function recordKey(installationId: string, record: AnonymizedRecord): string {
+  return createHash("sha256").update(JSON.stringify({ installationId, record })).digest("hex");
 }
 
 export function receiveTelemetry(rawBody: string, signature: string | undefined): TelemetryReceiveResult {
@@ -135,13 +118,12 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   const dir = dataDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const receivedAt = new Date().toISOString();
-  const payloadHash = createHash("sha256").update(rawBody).digest("hex");
   const knownKeys = loadRecordKeys();
   let accepted = 0;
   let deduplicated = 0;
 
-  for (const [recordIndex, record] of records.entries()) {
-    const key = recordKey(installationId, payloadHash, recordIndex);
+  for (const record of records) {
+    const key = recordKey(installationId, record);
     if (knownKeys.has(key)) {
       deduplicated += 1;
       continue;

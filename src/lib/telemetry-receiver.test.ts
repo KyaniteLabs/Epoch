@@ -16,7 +16,7 @@ afterEach(() => {
   try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ok */ }
 });
 
-function signedPayload(generatedAt = "2026-05-07T00:00:00.000Z"): { rawBody: string; signature: string } {
+function signedPayload(): { rawBody: string; signature: string } {
   const payload = {
     schema_version: 1,
     installation_id: "test-installation",
@@ -30,11 +30,9 @@ function signedPayload(generatedAt = "2026-05-07T00:00:00.000Z"): { rawBody: str
         actual_hours: 5,
         ratio: 1.25,
         date: "2026-05-07",
-        calibration_provenance: "prospective",
-        calibration_usage: "correction",
       },
     ],
-    generated_at: generatedAt,
+    generated_at: "2026-05-07T00:00:00.000Z",
   };
   const rawBody = JSON.stringify(payload);
   const signature = createHmac("sha256", payload.installation_id).update(rawBody).digest("hex");
@@ -61,8 +59,6 @@ describe("receiveTelemetry", () => {
       actual_hours: 5,
       ratio: 1.25,
       date: "2026-05-07",
-      calibration_provenance: "prospective",
-      calibration_usage: "correction",
     });
     expect(stored.received_at).toEqual(expect.any(String));
     expect(stored).not.toHaveProperty("installation_id");
@@ -95,18 +91,6 @@ describe("receiveTelemetry", () => {
       { accepted: 1, deduplicated: 0 },
       { accepted: 0, deduplicated: 1 },
     ]);
-  });
-
-  it("keeps same-shape telemetry records from distinct signed submissions", async () => {
-    const { receiveTelemetry } = await import("./telemetry-receiver.js");
-    const first = signedPayload("2026-05-07T00:00:00.000Z");
-    const second = signedPayload("2026-05-07T00:01:00.000Z");
-
-    expect(receiveTelemetry(first.rawBody, first.signature)).toEqual({ ok: true, status: 200, accepted: 1, deduplicated: 0 });
-    expect(receiveTelemetry(second.rawBody, second.signature)).toEqual({ ok: true, status: 200, accepted: 1, deduplicated: 0 });
-
-    const storedRecords = readFileSync(join(TEST_DIR, "telemetry-records.jsonl"), "utf-8").trim().split("\n");
-    expect(storedRecords).toHaveLength(2);
   });
 
   it("rejects invalid signatures", async () => {

@@ -9,17 +9,13 @@ export interface EpochConfig {
     endpoint: string;
     lastSubmissionAt: string | null;
     lastSubmissionRecordCount: number;
-    lastSubmissionAcceptedCount: number;
-    lastSubmissionDeduplicatedCount: number;
-    totalRecordsAccepted: number;
-    totalRecordsDeduplicated: number;
+    lastSubmissionAcceptedCount?: number;
+    lastSubmissionDeduplicatedCount?: number;
+    totalRecordsAccepted?: number;
+    totalRecordsDeduplicated?: number;
     installationId: string;
   };
 }
-
-type ConfigInput = {
-  telemetry?: Partial<EpochConfig["telemetry"]>;
-};
 
 const DEFAULT_CONFIG: EpochConfig = {
   telemetry: {
@@ -53,36 +49,32 @@ function ensureDir(): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-function normalizeConfig(config: ConfigInput | undefined, applyEnvOverride: boolean): EpochConfig {
-  const endpointOverride = applyEnvOverride
-    ? process.env["EPOCH_TELEMETRY_ENDPOINT"]?.trim()
-    : undefined;
-
-  return {
-    telemetry: {
-      ...DEFAULT_CONFIG.telemetry,
-      ...(config?.telemetry ?? {}),
-      ...(endpointOverride ? { endpoint: endpointOverride } : {}),
-    },
-  };
-}
-
 export function loadConfig(): EpochConfig {
   try {
     const raw = readFileSync(configPath(), "utf-8");
-    const parsed = JSON.parse(raw) as ConfigInput;
-    return normalizeConfig(parsed, true);
+    const parsed = JSON.parse(raw) as Partial<EpochConfig>;
+    const endpointOverride = process.env["EPOCH_TELEMETRY_ENDPOINT"]?.trim();
+    return {
+      telemetry: {
+        ...DEFAULT_CONFIG.telemetry,
+        ...parsed?.telemetry,
+        ...(endpointOverride ? { endpoint: endpointOverride } : {}),
+      },
+    };
   } catch {
-    return normalizeConfig(undefined, true);
+    const config = structuredClone(DEFAULT_CONFIG);
+    const endpointOverride = process.env["EPOCH_TELEMETRY_ENDPOINT"]?.trim();
+    if (endpointOverride) config.telemetry.endpoint = endpointOverride;
+    return config;
   }
 }
 
-export function saveConfig(config: ConfigInput): void {
+export function saveConfig(config: EpochConfig): void {
   ensureDir();
   const dir = dataDir();
   const target = join(dir, "config.json");
   const tmp = join(dir, "config.json.tmp");
-  writeFileSync(tmp, JSON.stringify(normalizeConfig(config, false), null, 2), "utf-8");
+  writeFileSync(tmp, JSON.stringify(config, null, 2), "utf-8");
   renameSync(tmp, target);
 }
 

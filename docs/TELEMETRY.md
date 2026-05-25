@@ -1,13 +1,12 @@
 # Telemetry Documentation
 
-**Last updated:** May 10, 2026
+**Last updated:** May 5, 2026
 
 ## Purpose
 
 Epoch telemetry collects anonymized estimate/actual pairs to improve estimation accuracy for all users. When enough data flows through the system, the self-improvement engine can produce better correction factors, tighter confidence intervals, and more accurate reference class baselines.
 
 Telemetry is **OFF by default** and requires explicit opt-in via `epoch telemetry enable`.
-Epoch does not ship with a built-in default telemetry receiver URL; submissions require an explicitly configured endpoint.
 
 ## Data Schema
 
@@ -23,9 +22,7 @@ Each individual record in a telemetry submission contains only these fields:
   "estimated_hours": 8.5,
   "actual_hours": 12.0,
   "ratio": 1.41,
-  "date": "2026-05-01",
-  "calibration_provenance": "prospective",
-  "calibration_usage": "correction"
+  "date": "2026-05-01"
 }
 ```
 
@@ -38,8 +35,6 @@ Each individual record in a telemetry submission contains only these fields:
 | `actual_hours` | `number` | yes | Actual hours recorded via `record_actual` |
 | `ratio` | `number` | yes | `actual_hours / estimated_hours` -- the estimation accuracy ratio |
 | `date` | `string` | yes | Date in `YYYY-MM-DD` format only. Time-of-day is stripped. |
-| `calibration_provenance` | `string` | no | Non-identifying provenance class: `prospective`, `backfilled_real_session`, `backfilled_calibration`, `synthetic`, `smoke`, or `unknown`. |
-| `calibration_usage` | `string` | no | Math eligibility: `correction`, `baseline`, or `exclude`. Legacy clients may omit it; receiver-side recalculation treats omitted receiver records as baseline-only. |
 
 ### SubmissionPayload
 
@@ -49,9 +44,9 @@ The full payload sent to the telemetry endpoint:
 {
   "schema_version": 1,
   "installation_id": "550e8400-e29b-41d4-a716-446655440000",
-  "epoch_version": "0.2.5",
+  "epoch_version": "0.2.2",
   "records": [
-    { "task_type": "feature", "complexity": 3, "tool": "pert_estimate", "estimated_hours": 8.5, "actual_hours": 12.0, "ratio": 1.41, "date": "2026-05-01", "calibration_provenance": "prospective", "calibration_usage": "correction" }
+    { "task_type": "feature", "complexity": 3, "tool": "pert_estimate", "estimated_hours": 8.5, "actual_hours": 12.0, "ratio": 1.41, "date": "2026-05-01" }
   ],
   "generated_at": "2026-05-01T12:00:00Z"
 }
@@ -90,9 +85,6 @@ Extract matched estimate/actual pairs
   |
   v
 Anonymize (strip identifying fields, truncate dates to YYYY-MM-DD)
-  |
-  v
-Classify provenance and correction eligibility
   |
   v
 Batch into SubmissionPayload (max 100 records)
@@ -151,7 +143,6 @@ Displays current telemetry configuration:
 - Whether the endpoint is usable or still unset/placeholder
 - Number of records queued for next submission
 - Timestamp of last successful submission
-- Last and total receiver-accepted / receiver-deduplicated counts
 - Installation ID
 
 ### `epoch telemetry set-endpoint`
@@ -162,7 +153,7 @@ Configures the telemetry receiver without changing the opt-in setting:
 epoch telemetry set-endpoint --endpoint https://your-server.example.com/v1/telemetry
 ```
 
-Endpoints must use HTTPS, except localhost receivers used for local development, Tailscale private `100.64.0.0/10` receivers, and Tailscale Serve hostnames ending in `.ts.net` used on private networks.
+Endpoints must use HTTPS, except localhost receivers used for local development.
 
 ### `epoch telemetry submit`
 
@@ -178,53 +169,7 @@ You can also set the endpoint immediately before submitting:
 epoch telemetry submit --endpoint https://your-server.example.com/v1/telemetry
 ```
 
-Successful submissions update `lastSubmissionAt`, `totalRecordsSubmitted`, `totalRecordsAccepted`, and `totalRecordsDeduplicated` in `epoch telemetry status`. Failed submissions leave records queued locally.
-
-## Calibration Provenance and Math Eligibility
-
-Telemetry can be useful without being allowed to change correction factors. Epoch separates the two:
-
-- **Correction-eligible:** prospective estimate/actual pairs generated before the work completed. These update task, tool, complexity, and global correction factors.
-- **Baseline-only:** real but retrospective/backfilled records, including records whose completion timestamp predates the estimate timestamp and legacy receiver records without explicit provenance.
-- **Excluded:** smoke tests, synthetic data, seed data, and invalid records. These do not update math or reference DB factors.
-
-The release recalculation command preserves this split in `provenanceSummary`:
-
-```bash
-pnpm run recalculate:reference-db -- --stage-dir <dir> --write
-node scripts/verify-reference-db.mjs
-```
-
-For the May 10, 2026 UTC release recalculation, the reference DB was refreshed from 7,608 tool-call telemetry events, 59 correction-eligible matched pairs, 1,007 baseline-only records, and 698 Windows receiver records. The 322 legacy receiver records without explicit provenance and 51 receiver backfills duplicated by source feedback were intentionally held out of correction-factor math.
-
-## Backfill Historical Records
-
-The supported backfill script sends all currently available anonymized records in 100-record chunks. It imports the built package API, so build first:
-
-```bash
-pnpm run build
-node scripts/backfill-telemetry.mjs --endpoint https://your-server.example.com/v1/telemetry --dry-run
-node scripts/backfill-telemetry.mjs --endpoint https://your-server.example.com/v1/telemetry
-```
-
-Always run `--dry-run` first. Dry-run mode validates and counts records without making network calls or updating `~/.epoch/config.json`. A real backfill updates telemetry status with submitted, accepted, and deduplicated counts returned by the receiver.
-
-`scripts/backfill-telemetry.mjs` is included in the npm package alongside this telemetry guide, so package consumers can run the same dry-run-first path from an installed package checkout.
-
-For a private Mac mini receiver reachable through Tailscale, use the private endpoint explicitly:
-
-```bash
-node scripts/backfill-telemetry.mjs --endpoint http://100.x.y.z:3099/v1/telemetry --dry-run
-# or, when the receiver is exposed through Tailscale Serve:
-node scripts/backfill-telemetry.mjs --endpoint http://host.tailnet-name.ts.net:3099/v1/telemetry --dry-run
-```
-
-Side-effecting operational helpers such as `scripts/configure-mac-mini-telemetry.sh`
-and `scripts/install-telemetry-launchd.sh` require `EPOCH_CONFIRM_OPS=1`. They can
-enable telemetry, submit queued records, or install a user launchd agent, so review
-`EPOCH_TELEMETRY_ENDPOINT` and `EPOCH_TELEMETRY_INTERVAL_SECONDS` before running them.
-Both helpers also support `--dry-run`, and neither has a built-in default receiver:
-set `EPOCH_TELEMETRY_ENDPOINT` explicitly for your own HTTPS, localhost, or private-network endpoint.
+Successful submissions update `lastSubmissionAt` and `totalRecordsSubmitted` in `epoch telemetry status`. Failed submissions leave records queued locally.
 
 ### `epoch telemetry export`
 
@@ -243,7 +188,45 @@ Provides instructions for deleting your data:
 
 ### `epoch share-data`
 
-Exports anonymized data formatted for community contribution to the Epoch GitHub repository. Produces a file suitable for submitting via Pull Request. See [CONTRIBUTING-data.md](../CONTRIBUTING-data.md) for the community contribution workflow.
+Exports anonymized data formatted for community contribution to the Epoch GitHub repository.
+
+```bash
+epoch share-data --description "Anonymized Epoch usage export" --validate
+```
+
+The export produces a file with this structure:
+
+```json
+{
+  "_schema": "estimation-record",
+  "description": "...",
+  "records": [
+    {
+      "estimated_hours": 8,
+      "actual_hours": 12,
+      "task_type": "feature",
+      "complexity": 3,
+      "timestamp": "2026-05-24T00:00:00Z"
+    }
+  ]
+}
+```
+
+**What is included:** task type, complexity (1-5), estimated hours, actual hours, date-only timestamp.
+
+**What is NOT included:** No notes, source names, team IDs, project names, estimate IDs, tool names, ratios, or time-of-day.
+
+Use `--validate` to verify the export against the community data schema before submitting.
+
+See [CONTRIBUTING-data.md](../CONTRIBUTING-data.md) for the community contribution workflow.
+
+### `epoch data where`
+
+Shows local Epoch data file locations. Read-only, no network calls, no telemetry submission.
+
+### `epoch data status`
+
+Shows local Epoch data status: file counts, feedback match rate, telemetry configuration, reference database health, and role hints.
 
 ## Rate Limits
 
@@ -259,7 +242,7 @@ If a submission fails, it is not retried automatically. Records remain in the lo
 
 ## Server-Side Promises
 
-When using a Kyanite Labs-operated endpoint, if one is explicitly configured, the following guarantees apply:
+When using the default Kyanite Labs endpoint, the following guarantees apply:
 
 | Promise | Implementation |
 |---------|---------------|
@@ -271,8 +254,6 @@ When using a Kyanite Labs-operated endpoint, if one is explicitly configured, th
 ## Self-Hosting
 
 You can run your own telemetry endpoint to keep all data within your infrastructure. The API contract is minimal:
-
-Epoch ships with a verified baseline reference database. Self-improvement writes the active learned database to `~/.epoch/reference-database.json` (or `EPOCH_DATA_DIR/reference-database.json`); run `epoch reference-db-status` to see whether the active database is bundled or user-local, when it was generated, how many correction factors are available, and why any bundled factor family is not populated yet. Bundled correction factors are updated only from records marked or inferred as correction-eligible.
 
 ### Endpoint Contract
 
@@ -307,7 +288,7 @@ The built-in receiver verifies the signature and writes three local files:
 - `~/.epoch/telemetry-record-keys.jsonl` — receiver-local SHA-256 dedupe keys
 - `~/.epoch/telemetry-receipts.jsonl` — aggregate receipts with accepted/deduplicated counts
 
-The shared records file contains only anonymized telemetry fields: `task_type`, `complexity`, `tool`, `estimated_hours`, `actual_hours`, `ratio`, `date`, optional `calibration_provenance`, optional `calibration_usage`, and receiver-added `received_at`. It does not store installation IDs, notes, project names, source text, team IDs, or dedupe keys.
+The shared records file contains only anonymized telemetry fields: `task_type`, `complexity`, `tool`, `estimated_hours`, `actual_hours`, `ratio`, `date`, and `received_at`. It does not store installation IDs, notes, project names, source text, team IDs, or dedupe keys.
 
 **Verification steps (server-side):**
 

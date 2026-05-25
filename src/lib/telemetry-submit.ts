@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { getCalibrationData } from "./feedback.js";
 import { loadConfig, saveConfig, getInstallationId, isUsableTelemetryEndpoint } from "./config.js";
-import { debugLog } from "./internal/logging.js";
 
 export interface AnonymizedRecord {
   task_type: string;
@@ -14,8 +13,6 @@ export interface AnonymizedRecord {
   actual_hours: number;
   ratio: number;
   date: string;
-  calibration_provenance?: string;
-  calibration_usage?: string;
 }
 
 export interface SubmissionPayload {
@@ -46,10 +43,12 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
     : undefined;
   const sinceMs = sinceDate ? new Date(sinceDate).getTime() : undefined;
 
-  const historical = getCalibrationData(undefined, undefined, windowDays, undefined, "all");
+  const historical = getCalibrationData(undefined, undefined, windowDays);
 
   return historical
     .filter((rec) => sinceMs === undefined || new Date(rec.completedAt).getTime() > sinceMs)
+    .filter((rec) => Number.isFinite(rec.estimatedHours) && rec.estimatedHours > 0)
+    .filter((rec) => Number.isFinite(rec.actualHours))
     .map((rec): AnonymizedRecord => ({
       task_type: rec.taskType,
       complexity: rec.complexity ?? null,
@@ -58,8 +57,6 @@ export function extractAnonymizedRecords(sinceDate?: string): AnonymizedRecord[]
       actual_hours: Math.round(rec.actualHours * 100) / 100,
       ratio: Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
       date: rec.completedAt.slice(0, 10),
-      calibration_provenance: rec.calibrationProvenance ?? "prospective",
-      calibration_usage: rec.calibrationUsage ?? "correction",
     }));
 }
 
@@ -86,9 +83,8 @@ export interface SubmissionResult {
   error?: string;
 }
 
-interface ReceiverResponse {
-  accepted?: unknown;
-  deduplicated?: unknown;
+function receiverCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 export async function submitTelemetry(): Promise<SubmissionResult> {
@@ -119,43 +115,65 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
     return { ok: false, recordCount: 0, error: "no new records to submit" };
   }
 
-  const capped = records.slice(0, 100);
-  const payload = buildPayload(capped);
-  const signature = signPayload(payload, payload.installation_id);
+  let submitted = 0;
+  let accepted = 0;
+  let deduplicated = 0;
+  let installationId = config.telemetry.installationId;
 
   try {
-    const response = await fetch(config.telemetry.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Epoch-Signature": signature,
-        "X-Epoch-Version": payload.epoch_version,
-      },
-      body: JSON.stringify(payload),
-    });
+    for (let offset = 0; offset < records.length; offset += 100) {
+      const chunk = records.slice(offset, offset + 100);
+      const payload = buildPayload(chunk);
+      const signature = signPayload(payload, payload.installation_id);
+      installationId = payload.installation_id;
 
-    if (!response.ok) {
-      return { ok: false, recordCount: 0, error: `server returned ${response.status}` };
+      const response = await fetch(config.telemetry.endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Epoch-Signature": signature,
+          "X-Epoch-Version": payload.epoch_version,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        const suffix = detail.trim().slice(0, 200);
+        return {
+          ok: false,
+          recordCount: submitted,
+          accepted,
+          deduplicated,
+          error: suffix ? `server returned ${response.status}: ${suffix}` : `server returned ${response.status}`,
+        };
+      }
+
+      let chunkAccepted = chunk.length;
+      let chunkDeduplicated = 0;
+      try {
+        const body = await response.json() as Record<string, unknown>;
+        chunkAccepted = receiverCount(body["accepted"]) ?? chunkAccepted;
+        chunkDeduplicated = receiverCount(body["deduplicated"]) ?? chunkDeduplicated;
+      } catch {
+        // Older receivers returned an empty 200 body; keep legacy submitted-count accounting.
+      }
+
+      submitted += chunk.length;
+      accepted += chunkAccepted;
+      deduplicated += chunkDeduplicated;
     }
 
-    const body = await response.json().catch(() => ({})) as ReceiverResponse;
-    const accepted = typeof body.accepted === "number" && Number.isFinite(body.accepted)
-      ? body.accepted
-      : capped.length;
-    const deduplicated = typeof body.deduplicated === "number" && Number.isFinite(body.deduplicated)
-      ? body.deduplicated
-      : 0;
-
-    config.telemetry.installationId = payload.installation_id;
+    config.telemetry.installationId = installationId;
     config.telemetry.lastSubmissionAt = new Date().toISOString();
-    config.telemetry.lastSubmissionRecordCount += capped.length;
+    config.telemetry.lastSubmissionRecordCount += submitted;
     config.telemetry.lastSubmissionAcceptedCount = accepted;
     config.telemetry.lastSubmissionDeduplicatedCount = deduplicated;
-    config.telemetry.totalRecordsAccepted += accepted;
-    config.telemetry.totalRecordsDeduplicated += deduplicated;
+    config.telemetry.totalRecordsAccepted = (config.telemetry.totalRecordsAccepted ?? 0) + accepted;
+    config.telemetry.totalRecordsDeduplicated = (config.telemetry.totalRecordsDeduplicated ?? 0) + deduplicated;
     saveConfig(config);
 
-    return { ok: true, recordCount: capped.length, accepted, deduplicated };
+    return { ok: true, recordCount: submitted, accepted, deduplicated };
   } catch (err) {
     const message = err instanceof Error ? err.message : "network error";
     return { ok: false, recordCount: 0, error: message };
@@ -177,9 +195,7 @@ export function maybeSubmitTelemetry(): void {
     if (hoursSinceLast < 1) return;
   }
 
-  submitTelemetry().catch((err: unknown) => {
-    debugLog("telemetry.submit", err);
-  });
+  submitTelemetry().catch(() => { /* non-critical, silent */ });
 }
 
 export function resetCallCount(): void {

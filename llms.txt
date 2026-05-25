@@ -21,7 +21,7 @@ Epoch gives AI agents 24 structured tools for grounded time estimation, calendar
 
 ## MCP Registry
 
-Epoch is linked from the [official MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch) as `io.github.KyaniteLabs/Epoch`; keep this link in sync with the public README and site docs.
+Epoch is listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch) as `io.github.KyaniteLabs/Epoch`. Registry metadata is in `server.json` at the repo root.
 
 ## Keywords
 time estimation MCP server, AI agent planning, PERT estimate, COCOMO II, Monte Carlo schedule, sprint forecasting, token cost estimate, model cost comparison, schedule risk analysis, business day calculator, Model Context Protocol, Claude Code time tools, Cursor MCP server.

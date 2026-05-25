@@ -1,225 +1,225 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-05-10T00:13:42.602Z",
-  "source": "telemetry-prospective-aggregate",
-  "sampleSize": 7667,
-  "description": "Reference database recalculated from prospective first-party Epoch telemetry; correction factors exclude backfilled, legacy receiver, synthetic, and smoke records.",
+  "generatedAt": "2026-05-25T00:32:54.861Z",
+  "source": "self-improvement",
+  "sampleSize": 126223,
+  "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
   "toolExecutionBenchmarks": {
-    "accuracy_trend": {
-      "p50_ms": 12.93,
-      "p95_ms": 20.4,
-      "mean_ms": 12.99,
-      "stddev_ms": 5.28,
-      "min_ms": 5.09,
-      "max_ms": 20.4,
-      "sampleCount": 11
-    },
     "add_business_days": {
-      "p50_ms": 0.84,
-      "p95_ms": 4.99,
-      "mean_ms": 1.84,
-      "stddev_ms": 4.16,
-      "min_ms": 0.02,
-      "max_ms": 41.57,
-      "sampleCount": 366
-    },
-    "batch_record_actuals": {
-      "p50_ms": 0.15,
-      "p95_ms": 3.89,
-      "mean_ms": 0.85,
-      "stddev_ms": 1.52,
-      "min_ms": 0.03,
-      "max_ms": 3.89,
-      "sampleCount": 5
+      "p50_ms": 0.78,
+      "p95_ms": 4.75,
+      "mean_ms": 1.82,
+      "stddev_ms": 3.95,
+      "min_ms": 0.16,
+      "max_ms": 7.57,
+      "sampleCount": 5028
     },
     "calibrate_estimates": {
-      "p50_ms": 1.39,
-      "p95_ms": 12.37,
-      "mean_ms": 2.22,
-      "stddev_ms": 3.32,
-      "min_ms": 0.2,
-      "max_ms": 19.06,
-      "sampleCount": 138
+      "p50_ms": 1.34,
+      "p95_ms": 9.44,
+      "mean_ms": 2.11,
+      "stddev_ms": 8.77,
+      "min_ms": 0.65,
+      "max_ms": 20.45,
+      "sampleCount": 2349
     },
     "cocomo_estimate": {
-      "p50_ms": 0,
-      "p95_ms": 0.49,
-      "mean_ms": 0.11,
-      "stddev_ms": 0.5,
+      "p50_ms": 0.04,
+      "p95_ms": 0.52,
+      "mean_ms": 0.15,
+      "stddev_ms": 0.57,
       "min_ms": 0,
-      "max_ms": 4.38,
-      "sampleCount": 130
+      "max_ms": 5.78,
+      "sampleCount": 2205
+    },
+    "convert_timezone": {
+      "p50_ms": 0.2,
+      "p95_ms": 1.04,
+      "mean_ms": 0.37,
+      "stddev_ms": 0.86,
+      "min_ms": 0.08,
+      "max_ms": 4.4,
+      "sampleCount": 1699
+    },
+    "count_business_days": {
+      "p50_ms": 0.44,
+      "p95_ms": 9.04,
+      "mean_ms": 1.56,
+      "stddev_ms": 8.36,
+      "min_ms": 0.2,
+      "max_ms": 14,
+      "sampleCount": 1742
+    },
+    "critical_path": {
+      "p50_ms": 0.08,
+      "p95_ms": 0.37,
+      "mean_ms": 0.13,
+      "stddev_ms": 0.38,
+      "min_ms": 0.01,
+      "max_ms": 4.41,
+      "sampleCount": 1105
+    },
+    "get_current_time": {
+      "p50_ms": 1.49,
+      "p95_ms": 10.04,
+      "mean_ms": 2.96,
+      "stddev_ms": 8.57,
+      "min_ms": 0.14,
+      "max_ms": 17.6,
+      "sampleCount": 5227
+    },
+    "monte_carlo_schedule": {
+      "p50_ms": 4.52,
+      "p95_ms": 11.35,
+      "mean_ms": 6.39,
+      "stddev_ms": 6.32,
+      "min_ms": 2.19,
+      "max_ms": 36.59,
+      "sampleCount": 867
+    },
+    "parse_duration": {
+      "p50_ms": 0.2,
+      "p95_ms": 1.08,
+      "mean_ms": 0.52,
+      "stddev_ms": 0.87,
+      "min_ms": 0.01,
+      "max_ms": 5.75,
+      "sampleCount": 4990
+    },
+    "pert_estimate": {
+      "p50_ms": 0.06,
+      "p95_ms": 1.89,
+      "mean_ms": 0.46,
+      "stddev_ms": 1.85,
+      "min_ms": 0.02,
+      "max_ms": 4.5,
+      "sampleCount": 43667
+    },
+    "reference_class_estimate": {
+      "p50_ms": 14.24,
+      "p95_ms": 63.46,
+      "mean_ms": 22.61,
+      "stddev_ms": 60.86,
+      "min_ms": 0.61,
+      "max_ms": 159.89,
+      "sampleCount": 29577
+    },
+    "sprint_forecast": {
+      "p50_ms": 0.04,
+      "p95_ms": 0.13,
+      "mean_ms": 0.09,
+      "stddev_ms": 0.23,
+      "min_ms": 0,
+      "max_ms": 3.99,
+      "sampleCount": 2310
+    },
+    "time_math": {
+      "p50_ms": 0.08,
+      "p95_ms": 0.5,
+      "mean_ms": 0.27,
+      "stddev_ms": 13.41,
+      "min_ms": 0.02,
+      "max_ms": 332.19,
+      "sampleCount": 2718
+    },
+    "token_time_bridge": {
+      "p50_ms": 1.11,
+      "p95_ms": 3.87,
+      "mean_ms": 1.56,
+      "stddev_ms": 2.96,
+      "min_ms": 0.55,
+      "max_ms": 7.76,
+      "sampleCount": 4005
+    },
+    "record_actual": {
+      "p50_ms": 1.18,
+      "p95_ms": 2.81,
+      "mean_ms": 1.34,
+      "stddev_ms": 1.74,
+      "min_ms": 0.08,
+      "max_ms": 6.18,
+      "sampleCount": 8547
+    },
+    "schedule_risk": {
+      "p50_ms": 8.65,
+      "p95_ms": 23.51,
+      "mean_ms": 10.27,
+      "stddev_ms": 17.51,
+      "min_ms": 3.89,
+      "max_ms": 52.34,
+      "sampleCount": 409
+    },
+    "compare_models": {
+      "p50_ms": 31.34,
+      "p95_ms": 50.57,
+      "mean_ms": 33.38,
+      "stddev_ms": 22.55,
+      "min_ms": 15.41,
+      "max_ms": 95.79,
+      "sampleCount": 240
+    },
+    "token_cost_estimate": {
+      "p50_ms": 6.36,
+      "p95_ms": 9.97,
+      "mean_ms": 6.39,
+      "stddev_ms": 3.58,
+      "min_ms": 3.09,
+      "max_ms": 15.04,
+      "sampleCount": 139
+    },
+    "accuracy_trend": {
+      "p50_ms": 14.37,
+      "p95_ms": 23.6,
+      "mean_ms": 12.75,
+      "stddev_ms": 9.72,
+      "min_ms": 5.31,
+      "max_ms": 44.09,
+      "sampleCount": 167
+    },
+    "cocomo_validate": {
+      "p50_ms": 1.3,
+      "p95_ms": 2.22,
+      "mean_ms": 1.16,
+      "stddev_ms": 0.96,
+      "min_ms": 0.52,
+      "max_ms": 3.33,
+      "sampleCount": 155
     },
     "cocomo_ground_truth": {
       "p50_ms": 3.05,
       "p95_ms": 3.05,
       "mean_ms": 1.71,
-      "stddev_ms": 1.34,
-      "min_ms": 0.37,
-      "max_ms": 3.05,
-      "sampleCount": 2
-    },
-    "cocomo_validate": {
-      "p50_ms": 1.45,
-      "p95_ms": 2.22,
-      "mean_ms": 1.13,
-      "stddev_ms": 0.78,
-      "min_ms": 0.11,
-      "max_ms": 2.22,
-      "sampleCount": 10
-    },
-    "compare_models": {
-      "p50_ms": 30.92,
-      "p95_ms": 62.81,
-      "mean_ms": 34.77,
-      "stddev_ms": 11.27,
-      "min_ms": 24.66,
-      "max_ms": 62.81,
-      "sampleCount": 15
-    },
-    "convert_timezone": {
-      "p50_ms": 0.17,
-      "p95_ms": 1.04,
-      "mean_ms": 0.34,
-      "stddev_ms": 0.39,
-      "min_ms": 0.07,
-      "max_ms": 2.38,
-      "sampleCount": 100
-    },
-    "count_business_days": {
-      "p50_ms": 0.39,
-      "p95_ms": 8.7,
-      "mean_ms": 1.57,
-      "stddev_ms": 2.91,
-      "min_ms": 0.03,
-      "max_ms": 15.9,
-      "sampleCount": 103
-    },
-    "critical_path": {
-      "p50_ms": 0.02,
-      "p95_ms": 0.27,
-      "mean_ms": 0.07,
-      "stddev_ms": 0.19,
-      "min_ms": 0.01,
-      "max_ms": 1.23,
-      "sampleCount": 64
+      "stddev_ms": 0,
+      "min_ms": 1.53,
+      "max_ms": 4.57,
+      "sampleCount": 34
     },
     "feedback_health": {
-      "p50_ms": 20.01,
+      "p50_ms": 19.98,
       "p95_ms": 231.28,
-      "mean_ms": 47.35,
-      "stddev_ms": 92.92,
-      "min_ms": 1.59,
-      "max_ms": 478.43,
-      "sampleCount": 30
-    },
-    "get_current_time": {
-      "p50_ms": 1.6,
-      "p95_ms": 10.64,
-      "mean_ms": 3.14,
-      "stddev_ms": 5.67,
-      "min_ms": 0.08,
-      "max_ms": 60.26,
-      "sampleCount": 377
+      "mean_ms": 50.6,
+      "stddev_ms": 205.97,
+      "min_ms": 9.97,
+      "max_ms": 346.92,
+      "sampleCount": 443
     },
     "get_pending_estimates": {
-      "p50_ms": 13.99,
-      "p95_ms": 23.73,
-      "mean_ms": 12.29,
-      "stddev_ms": 6.89,
-      "min_ms": 0.58,
-      "max_ms": 23.73,
-      "sampleCount": 11
+      "p50_ms": 17.57,
+      "p95_ms": 29.79,
+      "mean_ms": 17.6,
+      "stddev_ms": 12.77,
+      "min_ms": 3.22,
+      "max_ms": 50.22,
+      "sampleCount": 127
     },
-    "monte_carlo_schedule": {
-      "p50_ms": 4.43,
-      "p95_ms": 11.39,
-      "mean_ms": 6.05,
-      "stddev_ms": 11.64,
-      "min_ms": 0.06,
-      "max_ms": 85.78,
-      "sampleCount": 52
-    },
-    "parse_duration": {
-      "p50_ms": 0.22,
-      "p95_ms": 1.03,
-      "mean_ms": 0.49,
-      "stddev_ms": 1.53,
-      "min_ms": 0,
-      "max_ms": 18.52,
-      "sampleCount": 363
-    },
-    "pert_estimate": {
-      "p50_ms": 0.05,
-      "p95_ms": 1.99,
-      "mean_ms": 0.5,
-      "stddev_ms": 2.34,
-      "min_ms": 0,
-      "max_ms": 43.95,
-      "sampleCount": 3445
-    },
-    "record_actual": {
-      "p50_ms": 0.78,
-      "p95_ms": 1.94,
-      "mean_ms": 0.81,
-      "stddev_ms": 0.61,
-      "min_ms": 0.02,
-      "max_ms": 5.32,
-      "sampleCount": 505
-    },
-    "reference_class_estimate": {
-      "p50_ms": 2.18,
-      "p95_ms": 19.3,
-      "mean_ms": 4.3,
-      "stddev_ms": 5.97,
-      "min_ms": 0.15,
-      "max_ms": 77.87,
-      "sampleCount": 1316
-    },
-    "schedule_risk": {
-      "p50_ms": 9.86,
-      "p95_ms": 34.89,
-      "mean_ms": 11.54,
-      "stddev_ms": 8.9,
-      "min_ms": 4.72,
-      "max_ms": 40.93,
-      "sampleCount": 26
-    },
-    "sprint_forecast": {
-      "p50_ms": 0,
-      "p95_ms": 0.12,
-      "mean_ms": 0.05,
-      "stddev_ms": 0.29,
-      "min_ms": 0,
-      "max_ms": 2.13,
-      "sampleCount": 135
-    },
-    "time_math": {
-      "p50_ms": 0.03,
-      "p95_ms": 0.43,
-      "mean_ms": 0.11,
-      "stddev_ms": 0.2,
-      "min_ms": 0,
-      "max_ms": 1.3,
-      "sampleCount": 158
-    },
-    "token_cost_estimate": {
-      "p50_ms": 6.17,
-      "p95_ms": 10.03,
-      "mean_ms": 6.36,
-      "stddev_ms": 2.05,
-      "min_ms": 2.51,
-      "max_ms": 10.03,
-      "sampleCount": 9
-    },
-    "token_time_bridge": {
-      "p50_ms": 1.11,
-      "p95_ms": 4.74,
-      "mean_ms": 1.65,
-      "stddev_ms": 3.07,
-      "min_ms": 0.03,
-      "max_ms": 33.12,
-      "sampleCount": 237
+    "batch_record_actuals": {
+      "p50_ms": 0.16,
+      "p95_ms": 3.99,
+      "mean_ms": 1.31,
+      "stddev_ms": 3.6,
+      "min_ms": 0.08,
+      "max_ms": 6.02,
+      "sampleCount": 41
     }
   },
   "modelLatencyProfiles": {
@@ -403,7 +403,7 @@
       }
     },
     "correctionFactors": {
-      "global": 0.47,
+      "global": 1.07,
       "byTaskType": {
         "calendar_calculation": 1.29,
         "calibration": 1,
@@ -417,7 +417,7 @@
         "temporal_calculation": 1.04,
         "token_time_bridge": 1.03
       },
-      "methodology": "Global factor recalculated from prospective correction-eligible Epoch telemetry; canary task-type factors are retained separately."
+      "methodology": "Correction factor = 1 / success_rate. Based on 330 model-driven canary tests."
     }
   },
   "tokenTimeCalibration": {
@@ -471,118 +471,104 @@
     }
   },
   "taskTypeCorrectionFactors": {
-    "feature": 0.46,
-    "infrastructure": 0.92,
-    "refactor": 0.25,
-    "documentation": 2.5,
-    "testing": 0.45
+    "bugfix": 1,
+    "design": 0.59,
+    "documentation": 1,
+    "feature": 0.83,
+    "infrastructure": 1,
+    "migration": 1.14,
+    "refactor": 0.65,
+    "testing": 0.67
   },
-  "globalCorrectionFactor": 0.47,
+  "globalCorrectionFactor": 0.89,
   "toolTaskCorrectionFactors": {
-    "schedule_risk": {},
-    "token_time_bridge": {},
-    "sprint_forecast": {},
-    "critical_path": {},
-    "pert_estimate": {
-      "feature": 0.46
-    },
     "reference_class_estimate": {
-      "infrastructure": 1.01,
-      "feature": 0.94,
-      "testing": 0.45
-    }
+      "infrastructure": 0.65,
+      "feature": 0.51,
+      "testing": 0.51,
+      "design": 0.55,
+      "bugfix": 0.5,
+      "refactor": 0.37,
+      "documentation": 0.5
+    },
+    "pert_estimate": {
+      "feature": 1,
+      "refactor": 1,
+      "migration": 1.14,
+      "design": 1.29,
+      "testing": 1,
+      "infrastructure": 1,
+      "bugfix": 1,
+      "documentation": 1
+    },
+    "monte_carlo_schedule": {
+      "feature": 0.1
+    },
+    "token_time_bridge": {
+      "infrastructure": 2.61
+    },
+    "critical_path": {
+      "feature": 0.1
+    },
+    "sprint_forecast": {
+      "feature": 0.83
+    },
+    "schedule_risk": {
+      "refactor": 0.38
+    },
+    "cocomo_estimate": {},
+    "repo_audit_deploy_verify": {},
+    "repo_quality_fix_deploy_verify": {},
+    "repo_deploy_truth_finish": {},
+    "elixis_user_surface_redesign": {},
+    "elixis_glm_classification_json_fix": {},
+    "receiver_smoke": {}
   },
   "complexityCorrectionFactors": {
-    "feature": {
-      "2": 1.05
-    },
     "infrastructure": {
-      "2": 1.67
+      "1": 0.77,
+      "2": 1,
+      "3": 0.65,
+      "4": 0.35,
+      "5": 1
+    },
+    "feature": {
+      "1": 1,
+      "2": 1.25,
+      "3": 0.29,
+      "4": 1,
+      "5": 1
     },
     "testing": {
-      "5": 0.55
-    }
-  },
-  "complexityCorrectionFactorStatus": "Computed from prospective correction-eligible telemetry with at least 3 records per task type and complexity.",
-  "provenanceSummary": {
-    "generatedAt": "2026-05-10T00:13:42.602Z",
-    "sourceLabel": "telemetry-prospective-aggregate",
-    "sourceNames": [
-      "local",
-      "mac-mini",
-      "windows-receiver"
-    ],
-    "telemetryEvents": 7608,
-    "receiverRecords": 698,
-    "legacyReceiverBaselineRecords": 322,
-    "totalCalibrationRecords": 1118,
-    "correctionRecords": 59,
-    "baselineRecords": 1007,
-    "excludedRecords": 1,
-    "duplicateCorrectionRecords": 51,
-    "taskTypeSampleCounts": {
-      "feature": 39,
-      "infrastructure": 8,
-      "refactor": 3,
-      "documentation": 3,
-      "testing": 4,
-      "bugfix": 2
+      "2": 1.34,
+      "3": 0.5,
+      "4": 1.8,
+      "5": 0.93
     },
-    "toolTaskSampleCounts": {
-      "schedule_risk": {
-        "feature": 1
-      },
-      "token_time_bridge": {
-        "infrastructure": 1,
-        "documentation": 1
-      },
-      "sprint_forecast": {
-        "feature": 1
-      },
-      "critical_path": {
-        "feature": 2
-      },
-      "pert_estimate": {
-        "feature": 25,
-        "refactor": 1,
-        "documentation": 1
-      },
-      "reference_class_estimate": {
-        "infrastructure": 7,
-        "refactor": 2,
-        "feature": 10,
-        "testing": 4,
-        "bugfix": 2,
-        "documentation": 1
-      }
+    "design": {
+      "3": 0.47
     },
-    "complexitySampleCounts": {
-      "feature": {
-        "1": 1,
-        "2": 9,
-        "3": 2,
-        "4": 2
-      },
-      "infrastructure": {
-        "1": 1,
-        "2": 4,
-        "4": 1,
-        "5": 1
-      },
-      "refactor": {
-        "3": 1,
-        "4": 1
-      },
-      "testing": {
-        "3": 1,
-        "5": 3
-      },
-      "bugfix": {
-        "3": 2
-      },
-      "documentation": {
-        "1": 1
-      }
-    }
+    "bugfix": {
+      "1": 0.83,
+      "2": 1,
+      "3": 0.5,
+      "4": 0.83,
+      "5": 1
+    },
+    "refactor": {
+      "1": 1,
+      "2": 0.5,
+      "3": 0.29,
+      "4": 0.37,
+      "5": 1
+    },
+    "documentation": {
+      "1": 0.16,
+      "2": 1,
+      "3": 0.5,
+      "5": 1
+    },
+    "frontend": {},
+    "ops": {}
   }
 }

@@ -1,64 +1,123 @@
 #!/usr/bin/env node
+// ---------------------------------------------------------------------------
+// Epoch — Verify Reference Database
+//
+// Validates src/data/reference-database.json for structural integrity.
+// Ensures the bundled reference database is loadable and has sensible values.
+//
+// Usage: node scripts/verify-reference-db.mjs
+// ---------------------------------------------------------------------------
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const db = JSON.parse(readFileSync("src/data/reference-database.json", "utf8"));
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..");
+const DB_FILE = join(ROOT, "src", "data", "reference-database.json");
 
-const errors = [];
-if (typeof db.generatedAt !== "string" || Number.isNaN(Date.parse(db.generatedAt))) {
-  errors.push("generatedAt must be a valid ISO timestamp");
-}
-if (typeof db.sampleSize !== "number" || !Number.isFinite(db.sampleSize) || db.sampleSize < 0) {
-  errors.push("sampleSize must be a non-negative finite number");
-}
-if (typeof db.source !== "string" || db.source.length === 0) {
-  errors.push("source must be a non-empty string");
-}
-if (typeof db.globalCorrectionFactor !== "number" || !Number.isFinite(db.globalCorrectionFactor)) {
-  errors.push("globalCorrectionFactor must be a finite number");
-}
-if (db.source === "telemetry-prospective-aggregate") {
-  const summary = db.provenanceSummary;
-  if (typeof summary !== "object" || summary === null || Array.isArray(summary)) {
-    errors.push("telemetry-prospective-aggregate DB must include provenanceSummary");
-  } else {
-    for (const key of ["telemetryEvents", "correctionRecords", "baselineRecords", "excludedRecords", "legacyReceiverBaselineRecords"]) {
-      if (typeof summary[key] !== "number" || !Number.isFinite(summary[key]) || summary[key] < 0) {
-        errors.push(`provenanceSummary.${key} must be a non-negative finite number`);
-      }
-    }
-    if (
-      typeof summary.telemetryEvents === "number"
-      && typeof summary.correctionRecords === "number"
-      && db.sampleSize !== summary.telemetryEvents + summary.correctionRecords
-    ) {
-      errors.push("sampleSize must equal telemetryEvents + correctionRecords for telemetry-prospective-aggregate DBs");
-    }
-  }
-}
-for (const key of ["taskTypeCorrectionFactors", "toolTaskCorrectionFactors", "complexityCorrectionFactors"]) {
-  if (typeof db[key] !== "object" || db[key] === null || Array.isArray(db[key])) {
-    errors.push(`${key} must be an object`);
-  }
-}
-if (
-  db.complexityCorrectionFactors
-  && Object.keys(db.complexityCorrectionFactors).length === 0
-  && (typeof db.complexityCorrectionFactorStatus !== "string" || db.complexityCorrectionFactorStatus.length === 0)
-) {
-  errors.push("complexityCorrectionFactorStatus must explain why bundled complexity factors are empty");
+let exitCode = 0;
+
+function fail(msg) {
+	console.log(`FAIL  ${msg}`);
+	exitCode = 1;
 }
 
-if (errors.length > 0) {
-  throw new Error(`reference database failed verification: ${errors.join("; ")}`);
+function pass(msg) {
+	console.log(`PASS  ${msg}`);
 }
 
-console.log(JSON.stringify({
-  ok: true,
-  generatedAt: db.generatedAt,
-  sampleSize: db.sampleSize,
-  source: db.source,
-  globalCorrectionFactor: db.globalCorrectionFactor,
-  complexityCorrectionFactorStatus: db.complexityCorrectionFactorStatus ?? null,
-  provenanceSummary: db.provenanceSummary ?? null,
-}, null, 2));
+console.log("Epoch Reference Database Verifier");
+console.log("=".repeat(50));
+console.log("");
+
+if (!existsSync(DB_FILE)) {
+	fail(`Reference database not found: ${DB_FILE}`);
+	process.exit(1);
+}
+
+let data;
+try {
+	data = JSON.parse(readFileSync(DB_FILE, "utf-8"));
+} catch (err) {
+	fail(`Failed to parse JSON: ${err.message}`);
+	process.exit(1);
+}
+
+// Required fields
+const requiredFields = [
+	"sampleSize",
+	"globalCorrectionFactor",
+	"taskTypeCorrectionFactors",
+	"toolTaskCorrectionFactors",
+	"complexityCorrectionFactors",
+	"generatedAt",
+	"source",
+];
+
+for (const field of requiredFields) {
+	if (data[field] === undefined) {
+		fail(`Missing required field: ${field}`);
+	} else {
+		pass(`Has ${field}`);
+	}
+}
+
+// Validate sample size
+if (typeof data.sampleSize === "number") {
+	if (data.sampleSize < 0) {
+		fail(`sampleSize must be non-negative, got ${data.sampleSize}`);
+	} else {
+		pass(`sampleSize: ${data.sampleSize.toLocaleString()}`);
+	}
+}
+
+// Validate global correction factor
+if (typeof data.globalCorrectionFactor === "number") {
+	if (data.globalCorrectionFactor <= 0 || data.globalCorrectionFactor > 5) {
+		fail(
+			`globalCorrectionFactor should be between 0 and 5, got ${data.globalCorrectionFactor}`,
+		);
+	} else {
+		pass(`globalCorrectionFactor: ${data.globalCorrectionFactor.toFixed(3)}`);
+	}
+}
+
+// Validate task type correction factors
+if (typeof data.taskTypeCorrectionFactors === "object") {
+	const taskTypes = Object.keys(data.taskTypeCorrectionFactors);
+	pass(`taskTypeCorrectionFactors has ${taskTypes.length} task types`);
+	for (const [type, factor] of Object.entries(data.taskTypeCorrectionFactors)) {
+		if (typeof factor !== "number" || factor <= 0) {
+			fail(`Invalid correction factor for ${type}: ${factor}`);
+		}
+	}
+}
+
+// Validate generatedAt
+if (typeof data.generatedAt === "string") {
+	if (isNaN(Date.parse(data.generatedAt))) {
+		fail(`generatedAt is not a valid date: ${data.generatedAt}`);
+	} else {
+		pass(`generatedAt: ${data.generatedAt}`);
+	}
+}
+
+// Validate source
+if (typeof data.source === "string" && data.source.length > 0) {
+	pass(`source: ${data.source}`);
+} else {
+	fail("source must be a non-empty string");
+}
+
+console.log("");
+console.log("-".repeat(50));
+if (exitCode === 0) {
+	console.log(
+		`VALID  src/data/reference-database.json (${data.sampleSize.toLocaleString()} samples, factor ${data.globalCorrectionFactor.toFixed(3)})`,
+	);
+} else {
+	console.log(`INVALID  verification failed`);
+}
+
+process.exit(exitCode);
