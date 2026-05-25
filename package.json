@@ -34,7 +34,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "canary": "node canary-runner.mjs"
+    "canary": "node canary-runner.mjs",
+    "dataset:build": "node scripts/export-public-benchmark.mjs",
+    "dataset:verify": "node scripts/validate-public-benchmark.mjs"
   },
   "keywords": [
     "mcp",
