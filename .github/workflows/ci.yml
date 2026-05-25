@@ -43,3 +43,9 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Validate community data
+        run: node scripts/validate-community-data.mjs
+
+      - name: Verify reference database
+        run: node scripts/verify-reference-db.mjs
