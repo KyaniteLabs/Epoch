@@ -154,6 +154,7 @@ describe("CLI tests", () => {
       const program = createCliProgram();
       const formatOption = program.options.find((o) => o.long === "--format");
       expect(formatOption).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(formatOption!.argChoices).toEqual(["json", "table"]);
     });
 
@@ -221,14 +222,17 @@ describe("CLI tests", () => {
 
     it("get-current-time has --timezone optional argument defaulting to UTC", () => {
       const program = createCliProgram();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const cmd = program.commands.find((c) => c.name() === "get-current-time")!;
       const tzOption = cmd.options.find((o) => o.long === "--timezone");
       expect(tzOption).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(tzOption!.defaultValue).toBe("UTC");
     });
 
     it("convert-timezone has required --timestamp and --target-tz", () => {
       const program = createCliProgram();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const cmd = program.commands.find((c) => c.name() === "convert-timezone")!;
       const requiredFlags = cmd.options
         .filter((o) => o.required)
@@ -239,6 +243,7 @@ describe("CLI tests", () => {
 
     it("pert-estimate has required --optimistic, --most-likely, --pessimistic", () => {
       const program = createCliProgram();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const cmd = program.commands.find((c) => c.name() === "pert-estimate")!;
       const requiredFlags = cmd.options
         .filter((o) => o.required)
@@ -250,6 +255,7 @@ describe("CLI tests", () => {
 
     it("critical-path has required --tasks argument", () => {
       const program = createCliProgram();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const cmd = program.commands.find((c) => c.name() === "critical-path")!;
       const requiredFlags = cmd.options
         .filter((o) => o.required)
@@ -259,8 +265,10 @@ describe("CLI tests", () => {
 
     it("telemetry exposes endpoint configuration and submit subcommands", () => {
       const program = createCliProgram();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const telemetry = program.commands.find((c) => c.name() === "telemetry")!;
       const subcommands = telemetry.commands.map((c) => c.name());
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const enable = telemetry.commands.find((c) => c.name() === "enable")!;
 
       expect(subcommands).toContain("set-endpoint");
@@ -545,6 +553,7 @@ describe("CLI tests", () => {
         expect.objectContaining({ kloc: 10 }),
       );
       // Should NOT contain optional multipliers
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const callArgs = (dispatch as ReturnType<typeof vi.fn>).mock.calls[0]![1] as Record<string, unknown>;
       expect(callArgs).not.toHaveProperty("reasoning_complexity");
       expect(callArgs).not.toHaveProperty("context_completeness");

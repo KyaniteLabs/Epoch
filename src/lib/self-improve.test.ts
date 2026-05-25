@@ -82,6 +82,7 @@ describe("loadReferenceDb", () => {
   it("returns parsed DB when file exists and is valid JSON", () => {
     const db = loadReferenceDb();
     expect(db).not.toBeNull();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(db!.version).toBe("1.0.0");
   });
 
@@ -235,6 +236,7 @@ describe("updateReferenceDatabase", () => {
     expect(mockWrite).toHaveBeenCalled();
 
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       mockWrite.mock.calls[0]![1] as string,
     );
     // feature correction factor should be median of [1.2, 1.4, 1.5, 1.6, 1.8] = 1.5
@@ -261,6 +263,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.6);
@@ -283,6 +286,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // Global = median of [1.5, 2.0, 1.0, 1.5, 1.5] sorted = [1.0, 1.5, 1.5, 1.5, 2.0] = 1.5
@@ -300,6 +304,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // Should keep the original globalCorrectionFactor since < 5 records
@@ -323,6 +328,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // pert_estimate should have feature: 1.4
@@ -346,6 +352,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
@@ -397,6 +404,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // Weighted average: existing weight=10/20=0.5, new weight=10/20=0.5
@@ -426,6 +434,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     expect(writtenData.toolExecutionBenchmarks["new-tool"]).toBeDefined();
@@ -447,6 +456,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // Valid ratios: 1.5, 2.0, 1.0 -> sorted: 1.0, 1.5, 2.0 -> median 1.5
@@ -468,6 +478,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // slow-tool / feature ratios: 5.0, 6.0, 3.5 -> sorted: 3.5, 5.0, 6.0 -> median 5.0 -> clamped 3.0
@@ -488,6 +499,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // fast-tool / feature ratios: 0.2, 0.1, 0.3 -> sorted: 0.1, 0.2, 0.3 -> median 0.2 -> clamped 0.2 (within 0.1 floor)
@@ -508,6 +520,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     expect(writtenData.toolTaskCorrectionFactors.unknown).toBeDefined();
@@ -530,6 +543,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     expect(writtenData.complexityCorrectionFactors).toBeDefined();
@@ -553,6 +567,7 @@ describe("updateReferenceDatabase", () => {
 
     const { writeFileSync } = await import("node:fs");
     const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       vi.mocked(writeFileSync).mock.calls[0]![1] as string,
     );
     // complexity 3 should not appear (only 2 records)

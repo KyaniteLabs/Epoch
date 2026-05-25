@@ -175,7 +175,32 @@
         }
       ],
       "trend": "stable"
+    },
+    "src/entries/http.ts": {
+      "latest": {
+        "commit": "f99d794",
+        "timestamp": "2026-05-25T03:57:40.108Z",
+        "mi": 9,
+        "cognitive": 205,
+        "nesting": 6,
+        "lines": 707,
+        "maxCyclomatic": 86,
+        "entropy": 6.92
+      },
+      "history": [
+        {
+          "commit": "f99d794",
+          "timestamp": "2026-05-25T03:57:40.108Z",
+          "mi": 9,
+          "cognitive": 205,
+          "nesting": 6,
+          "lines": 707,
+          "maxCyclomatic": 86,
+          "entropy": 6.92
+        }
+      ],
+      "trend": "stable"
     }
   },
-  "capturedAt": "2026-05-25T00:32:08.452Z"
+  "capturedAt": "2026-05-25T03:57:45.110Z"
 }
