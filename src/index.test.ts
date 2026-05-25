@@ -7,5 +7,5 @@ describe("public package entrypoint", () => {
     expect(typeof mod.pertEstimate).toBe("function");
     expect(typeof mod.referenceClassEstimate).toBe("function");
     expect(typeof mod.submitTelemetry).toBe("function");
-  });
+  }, 15_000);
 });

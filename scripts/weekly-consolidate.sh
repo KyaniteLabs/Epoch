@@ -23,7 +23,7 @@ PR_BRANCH="chore/weekly-reference-db-update"
 LOG_FILE="${HOME}/.epoch/consolidate.log"
 
 # ---- Logging ----------------------------------------------------------------
-log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> "$LOG_FILE" 2>/dev/null || true; }
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >>"$LOG_FILE" 2>/dev/null || true; }
 
 # ---- Preflight --------------------------------------------------------------
 log "=== Epoch Weekly Consolidation Start ==="
@@ -55,8 +55,8 @@ if [ -f "$HOME/.epoch/estimates.jsonl" ]; then
   cp "$HOME/.epoch/feedback.jsonl" "$CONSOLIDATE_DIR/"
   cp "$HOME/.epoch/telemetry.jsonl" "$CONSOLIDATE_DIR/" 2>/dev/null || true
   cp "$HOME/.epoch/config.json" "$CONSOLIDATE_DIR/" 2>/dev/null || true
-  MAC_ESTIMATES=$(wc -l < "$CONSOLIDATE_DIR/estimates.jsonl" | tr -d ' ')
-  MAC_ACTUALS=$(wc -l < "$CONSOLIDATE_DIR/feedback.jsonl" | tr -d ' ')
+  MAC_ESTIMATES=$(wc -l <"$CONSOLIDATE_DIR/estimates.jsonl" | tr -d ' ')
+  MAC_ACTUALS=$(wc -l <"$CONSOLIDATE_DIR/feedback.jsonl" | tr -d ' ')
   log "  Mac mini: $MAC_ESTIMATES estimates, $MAC_ACTUALS actuals"
 else
   MAC_ESTIMATES=0
@@ -68,8 +68,8 @@ fi
 log "Gathering NuC receiver records..."
 NUC_RECORDS=0
 if ssh -o ConnectTimeout=10 "$NUC_HOST" "test -f $NUC_DATA_DIR/telemetry-records.jsonl" 2>/dev/null; then
-  ssh -o ConnectTimeout=10 "$NUC_HOST" "cat $NUC_DATA_DIR/telemetry-records.jsonl" > "$CONSOLIDATE_DIR/telemetry-records.jsonl" 2>/dev/null || true
-  NUC_RECORDS=$(wc -l < "$CONSOLIDATE_DIR/telemetry-records.jsonl" 2>/dev/null | tr -d ' ' || echo 0)
+  ssh -o ConnectTimeout=10 "$NUC_HOST" "cat $NUC_DATA_DIR/telemetry-records.jsonl" >"$CONSOLIDATE_DIR/telemetry-records.jsonl" 2>/dev/null || true
+  NUC_RECORDS=$(wc -l <"$CONSOLIDATE_DIR/telemetry-records.jsonl" 2>/dev/null | tr -d ' ' || echo 0)
   log "  NuC: $NUC_RECORDS received records"
 else
   log "  NuC: unreachable (will skip)"
@@ -80,9 +80,9 @@ log "Checking laptop ($LAPTOP_HOST)..."
 LAPTOP_ESTIMATES=0
 LAPTOP_ACTUALS=0
 if ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'test -f ~/.epoch/estimates.jsonl' 2>/dev/null; then
-  ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'cat ~/.epoch/estimates.jsonl' >> "$CONSOLIDATE_DIR/estimates.jsonl" 2>/dev/null || true
-  ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'cat ~/.epoch/feedback.jsonl' >> "$CONSOLIDATE_DIR/feedback.jsonl" 2>/dev/null || true
-  ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'cat ~/.epoch/telemetry.jsonl' >> "$CONSOLIDATE_DIR/telemetry.jsonl" 2>/dev/null || true
+  ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'cat ~/.epoch/estimates.jsonl' >>"$CONSOLIDATE_DIR/estimates.jsonl" 2>/dev/null || true
+  ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'cat ~/.epoch/feedback.jsonl' >>"$CONSOLIDATE_DIR/feedback.jsonl" 2>/dev/null || true
+  ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'cat ~/.epoch/telemetry.jsonl' >>"$CONSOLIDATE_DIR/telemetry.jsonl" 2>/dev/null || true
   LAPTOP_ESTIMATES=$(ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'wc -l < ~/.epoch/estimates.jsonl' 2>/dev/null | tr -d ' ' || echo 0)
   LAPTOP_ACTUALS=$(ssh -o ConnectTimeout=5 "$LAPTOP_HOST" 'wc -l < ~/.epoch/feedback.jsonl' 2>/dev/null | tr -d ' ' || echo 0)
   log "  Laptop: $LAPTOP_ESTIMATES estimates, $LAPTOP_ACTUALS actuals (reachable!)"
@@ -91,22 +91,22 @@ else
 fi
 
 # ---- 4. Summary -------------------------------------------------------------
-TOTAL_ESTIMATES=$(wc -l < "$CONSOLIDATE_DIR/estimates.jsonl" 2>/dev/null | tr -d ' ' || echo 0)
-TOTAL_ACTUALS=$(wc -l < "$CONSOLIDATE_DIR/feedback.jsonl" 2>/dev/null | tr -d ' ' || echo 0)
+TOTAL_ESTIMATES=$(wc -l <"$CONSOLIDATE_DIR/estimates.jsonl" 2>/dev/null | tr -d ' ' || echo 0)
+TOTAL_ACTUALS=$(wc -l <"$CONSOLIDATE_DIR/feedback.jsonl" 2>/dev/null | tr -d ' ' || echo 0)
 
 log "Consolidated: $TOTAL_ESTIMATES estimates, $TOTAL_ACTUALS actuals, $NUC_RECORDS receiver records"
 
 # ---- 5. Self-improve --------------------------------------------------------
 log "Running self-improve on consolidated data..."
 
-BEFORE_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js data status 2>/dev/null \
-  | python3 -c "import sys,json; print(json.loads(sys.stdin.read())['referenceDatabase']['sampleSize'])" 2>/dev/null)
+BEFORE_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js data status 2>/dev/null |
+  python3 -c "import sys,json; print(json.loads(sys.stdin.read())['referenceDatabase']['sampleSize'])" 2>/dev/null)
 BEFORE_SIZE="${BEFORE_SIZE:-unknown}"
 
 EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js self-improve 2>&1 | while read -r line; do log "  $line"; done
 
-AFTER_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js data status 2>/dev/null \
-  | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(f\"{d['referenceDatabase']['sampleSize']} samples\")" 2>/dev/null)
+AFTER_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js data status 2>/dev/null |
+  python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(f\"{d['referenceDatabase']['sampleSize']} samples\")" 2>/dev/null)
 AFTER_SIZE="${AFTER_SIZE:-unknown}"
 
 log "Reference DB: $BEFORE_SIZE → $AFTER_SIZE"
@@ -131,6 +131,11 @@ if git diff --quiet src/data/reference-database.json 2>/dev/null; then
   log "No changes to reference database. Skipping commit."
 else
   STAMP=$(date -u +%Y-%m-%d)
+
+  # Switch to PR branch BEFORE committing so main stays clean
+  git branch -D "$PR_BRANCH" 2>/dev/null || true
+  git checkout -b "$PR_BRANCH" 2>/dev/null || true
+
   git add src/data/reference-database.json
   git commit -m "chore: update bundled reference database ($STAMP consolidation)
 
@@ -139,9 +144,6 @@ Laptop ($LAPTOP_ESTIMATES est, $LAPTOP_ACTUALS act), \
 NuC ($NUC_RECORDS records). \
 Total: $TOTAL_ESTIMATES estimates, $TOTAL_ACTUALS actuals."
 
-  # Create or reuse a PR branch
-  git branch -D "$PR_BRANCH" 2>/dev/null || true
-  git checkout -b "$PR_BRANCH" 2>/dev/null || true
   git push origin "$PR_BRANCH" --force 2>&1 | while read -r line; do log "  $line"; done || log "WARN: push failed (may be offline)"
 
   # Create or update PR via GitHub CLI
@@ -162,14 +164,15 @@ This PR was auto-generated by the weekly consolidation launchd job on simons-mac
         2>&1 | while read -r line; do log "  $line"; done || log "WARN: PR creation failed"
       log "Created new PR"
     fi
-    # Auto-merge if CI passes
+    # Auto-merge when CI passes
     gh pr merge "$PR_BRANCH" --squash --auto --delete-branch=false 2>&1 | while read -r line; do log "  $line"; done || true
   else
     log "WARN: gh CLI not available, cannot create PR"
   fi
 
-  # Switch back to main for next run
+  # Switch back to main and sync with origin to avoid divergence
   git checkout main 2>/dev/null || true
+  git pull --ff-only origin main 2>/dev/null || git reset --hard origin/main 2>/dev/null || true
   log "Committed and PR created/updated."
 fi
 
