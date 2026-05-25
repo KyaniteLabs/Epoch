@@ -5,6 +5,9 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createApiApp } from "./http.js";
 
 describe("HTTP API", () => {
@@ -180,6 +183,19 @@ describe("HTTP API", () => {
   // ---------------------------------------------------------------------------
 
   describe("POST /v1/telemetry", () => {
+    let telemetryDir: string;
+
+    beforeEach(() => {
+      telemetryDir = join(tmpdir(), `epoch-http-telemetry-test-${Date.now()}-${Math.random()}`);
+      mkdirSync(telemetryDir, { recursive: true });
+      process.env["EPOCH_DATA_DIR"] = telemetryDir;
+    });
+
+    afterEach(() => {
+      delete process.env["EPOCH_DATA_DIR"];
+      rmSync(telemetryDir, { recursive: true, force: true });
+    });
+
     it("accepts signed anonymized telemetry payloads", async () => {
       const payload = {
         schema_version: 1,

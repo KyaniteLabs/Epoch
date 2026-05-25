@@ -71,6 +71,23 @@ describe("extractAnonymizedRecords", () => {
     }
   });
 
+  it("excludes records with invalid numeric values before computing ratios", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const feedbackPath = join(TEST_DIR, "feedback.jsonl");
+    writeFileSync(feedbackPath, `${JSON.stringify({
+      estimateId: "zero-estimate",
+      tool: "pert_estimate",
+      taskType: "feature",
+      estimatedHours: 0,
+      actualHours: 1,
+      ratio: null,
+      completedAt: new Date().toISOString(),
+    })}\n`, "utf-8");
+
+    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+    expect(extractAnonymizedRecords()).toHaveLength(0);
+  });
+
   it("excludes records at or before the exact submission cutoff", async () => {
     const { recordEstimate, recordActual } = await import("./feedback.js");
     const estimateId = recordEstimate(
@@ -205,15 +222,56 @@ describe("submitTelemetry", () => {
       const expected = createHmac("sha256", payload.installation_id).update(body).digest("hex");
       expect(payload.installation_id).toHaveLength(36);
       expect(headers["X-Epoch-Signature"]).toBe(expected);
-      return new Response("{}", { status: 200 });
+      return new Response(JSON.stringify({ accepted: 1, deduplicated: 0 }), { status: 200 });
     }) as typeof fetch;
 
     const { submitTelemetry } = await import("./telemetry-submit.js");
     const result = await submitTelemetry();
 
-    expect(result).toEqual({ ok: true, recordCount: 1 });
+    expect(result).toEqual({ ok: true, recordCount: 1, accepted: 1, deduplicated: 0 });
     expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(1);
+    expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(1);
+    expect(loadConfig().telemetry.lastSubmissionDeduplicatedCount).toBe(0);
+    expect(loadConfig().telemetry.totalRecordsAccepted).toBe(1);
+    expect(loadConfig().telemetry.totalRecordsDeduplicated).toBe(0);
     expect(loadConfig().telemetry.installationId).toHaveLength(36);
+  });
+
+  it("submits the whole queued backlog in receiver-sized chunks before advancing the cursor", async () => {
+    const { saveConfig, loadConfig } = await import("./config.js");
+    const { recordEstimate, recordActual } = await import("./feedback.js");
+    for (let index = 0; index < 101; index++) {
+      const estimateId = recordEstimate(
+        "pert_estimate",
+        { task_type: "feature", complexity: 3 },
+        { expected: 2, unit: "hours" },
+      );
+      recordActual(estimateId, 3);
+    }
+    saveConfig({
+      telemetry: {
+        enabled: true,
+        endpoint: "https://collector.example.net/v1/telemetry",
+        lastSubmissionAt: null,
+        lastSubmissionRecordCount: 0,
+        installationId: "test-id",
+      },
+    });
+
+    const chunkSizes: number[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body ?? "")) as { records: unknown[] };
+      chunkSizes.push(payload.records.length);
+      return new Response(JSON.stringify({ accepted: payload.records.length, deduplicated: 0 }), { status: 200 });
+    }) as typeof fetch;
+
+    const { submitTelemetry } = await import("./telemetry-submit.js");
+    const result = await submitTelemetry();
+
+    expect(result).toEqual({ ok: true, recordCount: 101, accepted: 101, deduplicated: 0 });
+    expect(chunkSizes).toEqual([100, 1]);
+    expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(101);
+    expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(101);
   });
 });
 

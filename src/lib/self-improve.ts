@@ -8,6 +8,12 @@ import type { HistoricalRecord, TaskType } from "../types/index.js";
 const REFERENCE_DB_PATH = resolveReferenceDbPath();
 
 function resolveReferenceDbPath(): string {
+  const configuredDataDir = process.env["EPOCH_DATA_DIR"];
+  if (configuredDataDir) {
+    const configuredPath = join(configuredDataDir, "reference-database.json");
+    if (existsSync(configuredPath)) return configuredPath;
+  }
+
   // Prefer user data dir (survives npm updates, no git noise)
   const userDataPath = join(homedir(), ".epoch", "reference-database.json");
   if (existsSync(userDataPath)) return userDataPath;
@@ -78,6 +84,17 @@ interface TokenCalibration {
   sampleCount: number;
 }
 
+interface ReceivedTelemetryRecord {
+  task_type: string;
+  complexity: number | null;
+  tool: string;
+  estimated_hours: number;
+  actual_hours: number;
+  ratio: number;
+  date: string;
+  received_at?: string;
+}
+
 let callCounter = 0;
 let lastUpdateAt = 0;
 let isUpdating = false;
@@ -122,19 +139,22 @@ export async function updateReferenceDatabase(): Promise<void> {
   }
 
   const feedbackRecords = getCalibrationData(undefined, undefined, 180);
-  if (feedbackRecords.length >= 5) {
-    const newFactors = computeCorrectionFactors(feedbackRecords);
+  const receivedTelemetryRecords = loadReceivedTelemetryRecords();
+  const calibrationRecords = [...feedbackRecords, ...receivedTelemetryRecords];
+  if (calibrationRecords.length >= 5) {
+    const newFactors = computeCorrectionFactors(calibrationRecords);
     for (const [taskType, factor] of Object.entries(newFactors)) {
       db.taskTypeCorrectionFactors[taskType] = factor;
     }
-    db.toolTaskCorrectionFactors = computeToolCorrectionFactors(feedbackRecords);
-    db.complexityCorrectionFactors = computeComplexityCorrectionFactors(feedbackRecords);
-    db.globalCorrectionFactor = computeGlobalCorrection(feedbackRecords);
+    db.toolTaskCorrectionFactors = computeToolCorrectionFactors(calibrationRecords);
+    db.complexityCorrectionFactors = computeComplexityCorrectionFactors(calibrationRecords);
+    db.globalCorrectionFactor = computeGlobalCorrection(calibrationRecords);
   }
 
   const feedbackSize = feedbackRecords.length;
+  const receivedTelemetrySize = receivedTelemetryRecords.length;
   const telemetrySize = allStats.reduce((s, t) => s + t.callCount, 0);
-  db.sampleSize += telemetrySize + feedbackSize;
+  db.sampleSize += telemetrySize + feedbackSize + receivedTelemetrySize;
   db.generatedAt = new Date().toISOString();
   db.source = "self-improvement";
 
@@ -145,6 +165,49 @@ export async function updateReferenceDatabase(): Promise<void> {
   writeFileSync(tmpPath, JSON.stringify(db, null, 2), "utf-8");
   renameSync(tmpPath, targetPath);
   invalidateReferenceDbCache();
+}
+
+function loadReceivedTelemetryRecords(): HistoricalRecord[] {
+  const path = join(getUserDataDir(), "telemetry-records.jsonl");
+  if (!existsSync(path)) return [];
+
+  try {
+    return readFileSync(path, "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as unknown)
+      .filter(isReceivedTelemetryRecord)
+      .map((record): HistoricalRecord => ({
+        taskType: record.task_type,
+        estimatedHours: record.estimated_hours,
+        actualHours: record.actual_hours,
+        tool: record.tool,
+        complexity: record.complexity ?? undefined,
+        completedAt: record.date,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function isReceivedTelemetryRecord(value: unknown): value is ReceivedTelemetryRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record["task_type"] === "string" &&
+    (typeof record["complexity"] === "number" || record["complexity"] === null) &&
+    typeof record["tool"] === "string" &&
+    typeof record["estimated_hours"] === "number" &&
+    Number.isFinite(record["estimated_hours"]) &&
+    record["estimated_hours"] > 0 &&
+    typeof record["actual_hours"] === "number" &&
+    Number.isFinite(record["actual_hours"]) &&
+    record["actual_hours"] > 0 &&
+    typeof record["ratio"] === "number" &&
+    Number.isFinite(record["ratio"]) &&
+    typeof record["date"] === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(record["date"])
+  );
 }
 
 let _cachedDb: ReferenceDatabase | null | undefined;

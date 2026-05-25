@@ -241,6 +241,34 @@ describe("updateReferenceDatabase", () => {
     expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.5);
   });
 
+  it("computes correction factors from received anonymized telemetry records", async () => {
+    mockGetCalibrationData.mockReturnValue([]);
+    mockReadFileSync.mockImplementation((path) => {
+      const pathText = String(path);
+      if (pathText.endsWith("telemetry-records.jsonl")) {
+        return [
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 18, ratio: 1.8, date: "2026-04-04", received_at: "2026-04-04T00:00:00.000Z" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 20, ratio: 2, date: "2026-04-05", received_at: "2026-04-05T00:00:00.000Z" },
+        ].map((record) => JSON.stringify(record)).join("\n");
+      }
+      return makeDb();
+    });
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.6);
+    expect(writtenData.toolTaskCorrectionFactors.reference_class_estimate.feature).toBe(1.6);
+    expect(writtenData.complexityCorrectionFactors.feature["3"]).toBe(1.6);
+    expect(writtenData.globalCorrectionFactor).toBe(1.6);
+  });
+
   it("computes global correction from all records", async () => {
     const records: HistoricalRecord[] = [
       { taskType: "feature", estimatedHours: 10, actualHours: 15, tool: "pert", completedAt: "2026-04-01" },

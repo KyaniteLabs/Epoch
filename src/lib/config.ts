@@ -9,6 +9,10 @@ export interface EpochConfig {
     endpoint: string;
     lastSubmissionAt: string | null;
     lastSubmissionRecordCount: number;
+    lastSubmissionAcceptedCount?: number;
+    lastSubmissionDeduplicatedCount?: number;
+    totalRecordsAccepted?: number;
+    totalRecordsDeduplicated?: number;
     installationId: string;
   };
 }
@@ -19,6 +23,10 @@ const DEFAULT_CONFIG: EpochConfig = {
     endpoint: "",
     lastSubmissionAt: null,
     lastSubmissionRecordCount: 0,
+    lastSubmissionAcceptedCount: 0,
+    lastSubmissionDeduplicatedCount: 0,
+    totalRecordsAccepted: 0,
+    totalRecordsDeduplicated: 0,
     installationId: "",
   },
 };
