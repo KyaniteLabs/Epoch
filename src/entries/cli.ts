@@ -601,11 +601,21 @@ export function createCliProgram(): Command {
 
     const isLocalHttp = parsed.protocol === "http:"
       && ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-    if (parsed.protocol !== "https:" && !isLocalHttp) {
-      throw new Error("--endpoint must use https://, except for localhost receivers");
+    const isTailscaleHttp = parsed.protocol === "http:" && isTailscalePrivateIpv4(parsed.hostname);
+    if (parsed.protocol !== "https:" && !isLocalHttp && !isTailscaleHttp) {
+      throw new Error("--endpoint must use https://, except for localhost or Tailscale private receivers");
     }
 
     return trimmed;
+  }
+
+  function isTailscalePrivateIpv4(hostname: string): boolean {
+    const parts = hostname.split(".").map((part) => Number(part));
+    if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return false;
+    }
+    const [first, second] = parts as [number, number, number, number];
+    return first === 100 && second >= 64 && second <= 127;
   }
 
   telemetryCmd
@@ -629,6 +639,10 @@ export function createCliProgram(): Command {
         queuedRecords,
         lastSubmissionAt: config.telemetry.lastSubmissionAt,
         totalRecordsSubmitted: config.telemetry.lastSubmissionRecordCount,
+        lastSubmissionAcceptedCount: config.telemetry.lastSubmissionAcceptedCount ?? 0,
+        lastSubmissionDeduplicatedCount: config.telemetry.lastSubmissionDeduplicatedCount ?? 0,
+        totalRecordsAccepted: config.telemetry.totalRecordsAccepted ?? 0,
+        totalRecordsDeduplicated: config.telemetry.totalRecordsDeduplicated ?? 0,
         installationId: config.telemetry.installationId || "(not generated yet)",
       }, null, 2) + "\n");
       process.exit(0);
@@ -819,27 +833,71 @@ export function createCliProgram(): Command {
     .command("share-data")
     .description("Export anonymized data for community contribution")
     .option("--output <path>", "Output file path")
+    .option("--description <text>", "Description of the exported dataset")
+    .option("--validate", "Validate export against community data schema")
+    .option("--default-complexity <n>", "Default complexity for records missing it (1-5)", safeFloat("default-complexity"))
     .action(async (opts) => {
-      const { exportToFile, extractAnonymizedRecords } = await import("../lib/telemetry-submit.js");
-      const records = extractAnonymizedRecords();
+      const { writeCommunityEstimationDataset, validateCommunityExport } = await import("../lib/community-export.js");
 
-      if (records.length === 0) {
-        process.stdout.write(JSON.stringify({ ok: false, message: "No data to share. Use Epoch for a few tasks first, then run this again." }) + "\n");
+      try {
+        const result = writeCommunityEstimationDataset({
+          output: opts.output,
+          description: opts.description ?? "Anonymized Epoch usage export",
+          defaultComplexity: opts.defaultComplexity,
+        });
+
+        const output: Record<string, unknown> = {
+          ok: true,
+          path: result.path,
+          recordCount: result.recordCount,
+          skipped: result.skipped,
+          schema: "estimation-record",
+          validated: false as boolean,
+        };
+
+        if (opts.validate) {
+          const validation = validateCommunityExport(result.path);
+          output.validated = validation.valid;
+          if (!validation.valid) {
+            output.validationErrors = validation.errors;
+          }
+        }
+
+        output.nextSteps = [
+          "Review the exported file to verify anonymization",
+          "Copy it to data/community/<contributor-id>-estimation.json",
+          "Run node scripts/validate-community-data.mjs",
+          "Open a pull request",
+        ];
+
+        process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(JSON.stringify({ ok: false, message }) + "\n");
         process.exit(1);
       }
+    });
 
-      const path = exportToFile(opts.output);
-      process.stdout.write(JSON.stringify({
-        ok: true,
-        path,
-        recordCount: records.length,
-        nextSteps: [
-          "1. Review the exported file to verify anonymization",
-          "2. Fork https://github.com/KyaniteLabs/Epoch",
-          "3. Copy the file to data/community/",
-          "4. Open a pull request",
-        ],
-      }, null, 2) + "\n");
+  // ---- Data inspection commands ----------------------------------------------
+
+  const dataCmd = program.command("data").description("Inspect local Epoch data files");
+
+  dataCmd
+    .command("where")
+    .description("Show local Epoch data file locations")
+    .action(async () => {
+      const { getEpochDataPaths } = await import("../lib/data-status.js");
+      process.stdout.write(JSON.stringify(getEpochDataPaths(), null, 2) + "\n");
+      process.exit(0);
+    });
+
+  dataCmd
+    .command("status")
+    .description("Show local Epoch data status and file counts")
+    .action(async () => {
+      const { getEpochDataStatus } = await import("../lib/data-status.js");
+      process.stdout.write(JSON.stringify(getEpochDataStatus(), null, 2) + "\n");
       process.exit(0);
     });
 

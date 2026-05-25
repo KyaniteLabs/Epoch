@@ -200,6 +200,7 @@ describe("CLI tests", () => {
       "self-improve",
       "telemetry",
       "share-data",
+      "data",
     ];
 
     it("registers all expected commands", () => {
@@ -635,6 +636,21 @@ describe("CLI tests", () => {
 
       expect(capture.exitCode).toBe(1);
       expect(capture.stderr.join("")).toContain("https://");
+    });
+
+    it("allows Tailscale private HTTP telemetry endpoints", async () => {
+      const program = createCliProgram();
+      const capture = await runWithCapture(program, [
+        "telemetry",
+        "set-endpoint",
+        "--endpoint",
+        "http://100.66.225.85:3099/v1/telemetry",
+      ]);
+
+      const output = JSON.parse(capture.stdout.join("")) as { ok: boolean; endpoint: string };
+      expect(capture.exitCode).toBe(0);
+      expect(output.ok).toBe(true);
+      expect(output.endpoint).toBe("http://100.66.225.85:3099/v1/telemetry");
     });
 
     it("reports placeholder endpoint as not configured in telemetry status", async () => {
