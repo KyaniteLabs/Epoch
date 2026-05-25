@@ -1,198 +1,225 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-05-02T22:05:40.625Z",
+  "generatedAt": "2026-05-25T00:32:54.861Z",
   "source": "self-improvement",
-  "sampleSize": 5895,
+  "sampleSize": 126223,
   "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
   "toolExecutionBenchmarks": {
     "add_business_days": {
-      "p50_ms": 0.55,
-      "p95_ms": 3.41,
-      "mean_ms": 1.18,
-      "stddev_ms": 0.88,
+      "p50_ms": 0.78,
+      "p95_ms": 4.75,
+      "mean_ms": 1.82,
+      "stddev_ms": 3.95,
       "min_ms": 0.16,
-      "max_ms": 4.949999999999999,
-      "sampleCount": 164
+      "max_ms": 7.57,
+      "sampleCount": 5028
     },
     "calibrate_estimates": {
-      "p50_ms": 1.33,
-      "p95_ms": 4.95,
-      "mean_ms": 1.77,
-      "stddev_ms": 0.83,
-      "min_ms": 0.645,
-      "max_ms": 7.574999999999999,
-      "sampleCount": 153
+      "p50_ms": 1.34,
+      "p95_ms": 9.44,
+      "mean_ms": 2.11,
+      "stddev_ms": 8.77,
+      "min_ms": 0.65,
+      "max_ms": 20.45,
+      "sampleCount": 2349
     },
     "cocomo_estimate": {
-      "p50_ms": 0.26,
-      "p95_ms": 0.7,
-      "mean_ms": 0.37,
-      "stddev_ms": 1.18,
+      "p50_ms": 0.04,
+      "p95_ms": 0.52,
+      "mean_ms": 0.15,
+      "stddev_ms": 0.57,
       "min_ms": 0,
       "max_ms": 5.78,
-      "sampleCount": 145
+      "sampleCount": 2205
     },
     "convert_timezone": {
-      "p50_ms": 0.49,
-      "p95_ms": 1.57,
-      "mean_ms": 0.66,
-      "stddev_ms": 1,
+      "p50_ms": 0.2,
+      "p95_ms": 1.04,
+      "mean_ms": 0.37,
+      "stddev_ms": 0.86,
       "min_ms": 0.08,
       "max_ms": 4.4,
-      "sampleCount": 119
+      "sampleCount": 1699
     },
     "count_business_days": {
-      "p50_ms": 0.75,
-      "p95_ms": 8.98,
-      "mean_ms": 1.8,
-      "stddev_ms": 1.7,
-      "min_ms": 0.195,
-      "max_ms": 13.995000000000001,
-      "sampleCount": 118
+      "p50_ms": 0.44,
+      "p95_ms": 9.04,
+      "mean_ms": 1.56,
+      "stddev_ms": 8.36,
+      "min_ms": 0.2,
+      "max_ms": 14,
+      "sampleCount": 1742
     },
     "critical_path": {
-      "p50_ms": 0.49,
-      "p95_ms": 1.56,
-      "mean_ms": 0.63,
-      "stddev_ms": 1.04,
+      "p50_ms": 0.08,
+      "p95_ms": 0.37,
+      "mean_ms": 0.13,
+      "stddev_ms": 0.38,
       "min_ms": 0.01,
       "max_ms": 4.41,
-      "sampleCount": 92
+      "sampleCount": 1105
     },
     "get_current_time": {
-      "p50_ms": 0.55,
-      "p95_ms": 4.78,
-      "mean_ms": 1.64,
-      "stddev_ms": 0.74,
-      "min_ms": 0.135,
-      "max_ms": 7.6499999999999995,
-      "sampleCount": 187
+      "p50_ms": 1.49,
+      "p95_ms": 10.04,
+      "mean_ms": 2.96,
+      "stddev_ms": 8.57,
+      "min_ms": 0.14,
+      "max_ms": 17.6,
+      "sampleCount": 5227
     },
     "monte_carlo_schedule": {
-      "p50_ms": 5.73,
-      "p95_ms": 22.41,
-      "mean_ms": 8.85,
-      "stddev_ms": 9.02,
-      "min_ms": 2.505,
+      "p50_ms": 4.52,
+      "p95_ms": 11.35,
+      "mean_ms": 6.39,
+      "stddev_ms": 6.32,
+      "min_ms": 2.19,
       "max_ms": 36.59,
-      "sampleCount": 71
+      "sampleCount": 867
     },
     "parse_duration": {
-      "p50_ms": 0.21,
-      "p95_ms": 1.1,
-      "mean_ms": 0.55,
-      "stddev_ms": 1.1,
-      "min_ms": 0.005,
+      "p50_ms": 0.2,
+      "p95_ms": 1.08,
+      "mean_ms": 0.52,
+      "stddev_ms": 0.87,
+      "min_ms": 0.01,
       "max_ms": 5.75,
-      "sampleCount": 163
+      "sampleCount": 4990
     },
     "pert_estimate": {
-      "p50_ms": 0.12,
-      "p95_ms": 0.9,
-      "mean_ms": 0.27,
-      "stddev_ms": 0.83,
-      "min_ms": 0.015,
+      "p50_ms": 0.06,
+      "p95_ms": 1.89,
+      "mean_ms": 0.46,
+      "stddev_ms": 1.85,
+      "min_ms": 0.02,
       "max_ms": 4.5,
-      "sampleCount": 771
+      "sampleCount": 43667
     },
     "reference_class_estimate": {
-      "p50_ms": 1.97,
-      "p95_ms": 6.13,
-      "mean_ms": 2.46,
-      "stddev_ms": 1.69,
+      "p50_ms": 14.24,
+      "p95_ms": 63.46,
+      "mean_ms": 22.61,
+      "stddev_ms": 60.86,
       "min_ms": 0.61,
-      "max_ms": 9.209999999999999,
-      "sampleCount": 1107
+      "max_ms": 159.89,
+      "sampleCount": 29577
     },
     "sprint_forecast": {
-      "p50_ms": 0.31,
-      "p95_ms": 0.62,
-      "mean_ms": 0.34,
-      "stddev_ms": 0.72,
+      "p50_ms": 0.04,
+      "p95_ms": 0.13,
+      "mean_ms": 0.09,
+      "stddev_ms": 0.23,
       "min_ms": 0,
       "max_ms": 3.99,
-      "sampleCount": 162
+      "sampleCount": 2310
     },
     "time_math": {
-      "p50_ms": 0.42,
-      "p95_ms": 1.35,
-      "mean_ms": 2.18,
-      "stddev_ms": 49.23,
-      "min_ms": 0.015,
+      "p50_ms": 0.08,
+      "p95_ms": 0.5,
+      "mean_ms": 0.27,
+      "stddev_ms": 13.41,
+      "min_ms": 0.02,
       "max_ms": 332.19,
-      "sampleCount": 201
+      "sampleCount": 2718
     },
     "token_time_bridge": {
-      "p50_ms": 1.17,
-      "p95_ms": 3.14,
-      "mean_ms": 1.44,
-      "stddev_ms": 1.22,
-      "min_ms": 0.545,
-      "max_ms": 5.68,
-      "sampleCount": 258
+      "p50_ms": 1.11,
+      "p95_ms": 3.87,
+      "mean_ms": 1.56,
+      "stddev_ms": 2.96,
+      "min_ms": 0.55,
+      "max_ms": 7.76,
+      "sampleCount": 4005
     },
     "record_actual": {
-      "p50_ms": 0.14,
-      "p95_ms": 0.52,
-      "mean_ms": 0.18,
-      "stddev_ms": 0,
-      "min_ms": 0.14,
-      "max_ms": 0.52,
-      "sampleCount": 61
+      "p50_ms": 1.18,
+      "p95_ms": 2.81,
+      "mean_ms": 1.34,
+      "stddev_ms": 1.74,
+      "min_ms": 0.08,
+      "max_ms": 6.18,
+      "sampleCount": 8547
     },
     "schedule_risk": {
-      "p50_ms": 6,
-      "p95_ms": 13.74,
-      "mean_ms": 8.54,
-      "stddev_ms": 0,
-      "min_ms": 6,
-      "max_ms": 13.74,
-      "sampleCount": 21
+      "p50_ms": 8.65,
+      "p95_ms": 23.51,
+      "mean_ms": 10.27,
+      "stddev_ms": 17.51,
+      "min_ms": 3.89,
+      "max_ms": 52.34,
+      "sampleCount": 409
     },
     "compare_models": {
-      "p50_ms": 30.82,
-      "p95_ms": 38.59,
-      "mean_ms": 29.93,
-      "stddev_ms": 0,
-      "min_ms": 30.82,
-      "max_ms": 38.59,
-      "sampleCount": 11
+      "p50_ms": 31.34,
+      "p95_ms": 50.57,
+      "mean_ms": 33.38,
+      "stddev_ms": 22.55,
+      "min_ms": 15.41,
+      "max_ms": 95.79,
+      "sampleCount": 240
     },
     "token_cost_estimate": {
-      "p50_ms": 6.17,
-      "p95_ms": 8.53,
-      "mean_ms": 5.82,
-      "stddev_ms": 0,
-      "min_ms": 6.17,
-      "max_ms": 8.53,
-      "sampleCount": 6
+      "p50_ms": 6.36,
+      "p95_ms": 9.97,
+      "mean_ms": 6.39,
+      "stddev_ms": 3.58,
+      "min_ms": 3.09,
+      "max_ms": 15.04,
+      "sampleCount": 139
     },
     "accuracy_trend": {
-      "p50_ms": 10.61,
-      "p95_ms": 16.52,
-      "mean_ms": 9.51,
-      "stddev_ms": 0,
-      "min_ms": 10.61,
-      "max_ms": 16.52,
-      "sampleCount": 6
+      "p50_ms": 14.37,
+      "p95_ms": 23.6,
+      "mean_ms": 12.75,
+      "stddev_ms": 9.72,
+      "min_ms": 5.31,
+      "max_ms": 44.09,
+      "sampleCount": 167
     },
     "cocomo_validate": {
-      "p50_ms": 1.88,
+      "p50_ms": 1.3,
       "p95_ms": 2.22,
-      "mean_ms": 1.41,
-      "stddev_ms": 0,
-      "min_ms": 1.88,
-      "max_ms": 2.22,
-      "sampleCount": 6
+      "mean_ms": 1.16,
+      "stddev_ms": 0.96,
+      "min_ms": 0.52,
+      "max_ms": 3.33,
+      "sampleCount": 155
     },
     "cocomo_ground_truth": {
       "p50_ms": 3.05,
       "p95_ms": 3.05,
       "mean_ms": 1.71,
       "stddev_ms": 0,
-      "min_ms": 3.05,
-      "max_ms": 3.05,
-      "sampleCount": 2
+      "min_ms": 1.53,
+      "max_ms": 4.57,
+      "sampleCount": 34
+    },
+    "feedback_health": {
+      "p50_ms": 19.98,
+      "p95_ms": 231.28,
+      "mean_ms": 50.6,
+      "stddev_ms": 205.97,
+      "min_ms": 9.97,
+      "max_ms": 346.92,
+      "sampleCount": 443
+    },
+    "get_pending_estimates": {
+      "p50_ms": 17.57,
+      "p95_ms": 29.79,
+      "mean_ms": 17.6,
+      "stddev_ms": 12.77,
+      "min_ms": 3.22,
+      "max_ms": 50.22,
+      "sampleCount": 127
+    },
+    "batch_record_actuals": {
+      "p50_ms": 0.16,
+      "p95_ms": 3.99,
+      "mean_ms": 1.31,
+      "stddev_ms": 3.6,
+      "min_ms": 0.08,
+      "max_ms": 6.02,
+      "sampleCount": 41
     }
   },
   "modelLatencyProfiles": {
@@ -444,23 +471,104 @@
     }
   },
   "taskTypeCorrectionFactors": {
-    "bugfix": 0.45,
-    "design": 0.24,
-    "documentation": 0.2,
-    "feature": 0.63,
-    "infrastructure": 0.23,
-    "migration": 1.84,
-    "refactor": 0.18,
-    "testing": 0.24
+    "bugfix": 1,
+    "design": 0.59,
+    "documentation": 1,
+    "feature": 0.83,
+    "infrastructure": 1,
+    "migration": 1.14,
+    "refactor": 0.65,
+    "testing": 0.67
   },
-  "globalCorrectionFactor": 0.3,
+  "globalCorrectionFactor": 0.89,
   "toolTaskCorrectionFactors": {
     "reference_class_estimate": {
-      "infrastructure": 0.5,
-      "feature": 0.63,
-      "testing": 0.5,
+      "infrastructure": 0.65,
+      "feature": 0.51,
+      "testing": 0.51,
+      "design": 0.55,
       "bugfix": 0.5,
+      "refactor": 0.37,
       "documentation": 0.5
-    }
+    },
+    "pert_estimate": {
+      "feature": 1,
+      "refactor": 1,
+      "migration": 1.14,
+      "design": 1.29,
+      "testing": 1,
+      "infrastructure": 1,
+      "bugfix": 1,
+      "documentation": 1
+    },
+    "monte_carlo_schedule": {
+      "feature": 0.1
+    },
+    "token_time_bridge": {
+      "infrastructure": 2.61
+    },
+    "critical_path": {
+      "feature": 0.1
+    },
+    "sprint_forecast": {
+      "feature": 0.83
+    },
+    "schedule_risk": {
+      "refactor": 0.38
+    },
+    "cocomo_estimate": {},
+    "repo_audit_deploy_verify": {},
+    "repo_quality_fix_deploy_verify": {},
+    "repo_deploy_truth_finish": {},
+    "elixis_user_surface_redesign": {},
+    "elixis_glm_classification_json_fix": {},
+    "receiver_smoke": {}
+  },
+  "complexityCorrectionFactors": {
+    "infrastructure": {
+      "1": 0.77,
+      "2": 1,
+      "3": 0.65,
+      "4": 0.35,
+      "5": 1
+    },
+    "feature": {
+      "1": 1,
+      "2": 1.25,
+      "3": 0.29,
+      "4": 1,
+      "5": 1
+    },
+    "testing": {
+      "2": 1.34,
+      "3": 0.5,
+      "4": 1.8,
+      "5": 0.93
+    },
+    "design": {
+      "3": 0.47
+    },
+    "bugfix": {
+      "1": 0.83,
+      "2": 1,
+      "3": 0.5,
+      "4": 0.83,
+      "5": 1
+    },
+    "refactor": {
+      "1": 1,
+      "2": 0.5,
+      "3": 0.29,
+      "4": 0.37,
+      "5": 1
+    },
+    "documentation": {
+      "1": 0.16,
+      "2": 1,
+      "3": 0.5,
+      "5": 1
+    },
+    "frontend": {},
+    "ops": {}
   }
 }
