@@ -1,5 +1,28 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { batchRecordActuals, getFeedbackHealthReport } from "./feedback.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { batchRecordActuals, getFeedbackHealthReport, recordEstimate } from "./feedback.js";
+import { defined } from "../test-support.js";
+
+let previousDataDir: string | undefined;
+let tempDataDir: string;
+
+beforeEach(() => {
+  previousDataDir = process.env["EPOCH_DATA_DIR"];
+  tempDataDir = mkdtempSync(join(tmpdir(), "epoch-feedback-batch-test-"));
+  process.env["EPOCH_DATA_DIR"] = tempDataDir;
+});
+
+afterEach(() => {
+  if (previousDataDir === undefined) {
+    delete process.env["EPOCH_DATA_DIR"];
+  } else {
+    process.env["EPOCH_DATA_DIR"] = previousDataDir;
+  }
+  rmSync(tempDataDir, { recursive: true, force: true });
+});
+
 
 // ---------------------------------------------------------------------------
 // Feedback Batch + Health Report — Tests
@@ -74,7 +97,7 @@ describe("getFeedbackHealthReport", () => {
     if (report.totalEstimates > 0) {
       const toolKeys = Object.keys(report.byTool);
       expect(toolKeys.length).toBeGreaterThan(0);
-      for (const [tool, data] of Object.entries(report.byTool)) {
+      for (const [, data] of Object.entries(report.byTool)) {
         expect(data.estimates).toBeGreaterThan(0);
         expect(typeof data.actuals).toBe("number");
       }
@@ -91,13 +114,32 @@ describe("getFeedbackHealthReport", () => {
     }
   });
 
+  it("counts only actuals that match known estimates in matchRate", () => {
+    const estimateId = recordEstimate(
+      "pert_estimate",
+      { task_type: "feature" },
+      { estimated_hours: 4 },
+      "unit-test",
+    );
+    batchRecordActuals([
+      { estimateId, actualHours: 5 },
+      { estimateId: `external-estimate-${Date.now()}`, actualHours: 3 },
+    ]);
+
+    const report = getFeedbackHealthReport();
+
+    expect(report.totalEstimates).toBe(1);
+    expect(report.totalActuals).toBe(2);
+    expect(report.matchRate).toBe(100);
+  });
+
   it("selfImprovement tracks ready types", () => {
     const report = getFeedbackHealthReport();
     // readyTypes contains task types with 5+ matched records
     for (const type of report.selfImprovement.readyTypes) {
       const typeData = report.byTaskType[type];
       expect(typeData).toBeDefined();
-      expect(typeData!.actuals).toBeGreaterThanOrEqual(5);
+      expect(defined(typeData).actuals).toBeGreaterThanOrEqual(5);
     }
   });
 });

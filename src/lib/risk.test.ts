@@ -28,6 +28,8 @@ vi.mock("./profiles.js", () => ({
 }));
 
 import { getCalibrationData } from "./feedback.js";
+import { defined } from "../test-support.js";
+
 
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
 
@@ -59,6 +61,17 @@ describe("scheduleRisk", () => {
     expect(result.historicalAccuracy.mape).toBeGreaterThan(0);
     expect(result.historicalAccuracy.sampleSize).toBe(10);
     expect(result.riskLevel).toBeDefined();
+  });
+
+  it("uses historical accuracy instead of profile fallback when at least five records exist", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(5, 0));
+
+    const result = scheduleRisk({ estimatedHours: 20, aiNative: 0.0 });
+
+    expect(result.historicalAccuracy.sampleSize).toBe(5);
+    expect(result.historicalAccuracy.mape).toBe(0);
+    expect(result.cappedMdape).toBe(0);
+    expect(result.confidenceIntervals.p95).toBe(20);
   });
 
   it("confidence intervals widen with higher MdAPE", () => {
@@ -180,10 +193,10 @@ describe("scheduleRisk", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = scheduleRisk({ estimatedHours: 20 });
     expect(result.taskTypeBreakdown).toBeDefined();
-    expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
-    expect(result.taskTypeBreakdown!["feature"]!.riskLevel).toBe("low");
-    expect(result.taskTypeBreakdown!["bugfix"]).toBeDefined();
-    expect(result.taskTypeBreakdown!["bugfix"]!.riskLevel).toBe("critical");
+    expect(defined(result.taskTypeBreakdown)["feature"]).toBeDefined();
+    expect(defined(defined(result.taskTypeBreakdown)["feature"]).riskLevel).toBe("low");
+    expect(defined(result.taskTypeBreakdown)["bugfix"]).toBeDefined();
+    expect(defined(defined(result.taskTypeBreakdown)["bugfix"]).riskLevel).toBe("critical");
   });
 
   it("omits task types with fewer than 3 records from breakdown", () => {
@@ -194,8 +207,8 @@ describe("scheduleRisk", () => {
     mockGetCalibrationData.mockReturnValue(records);
     const result = scheduleRisk({ estimatedHours: 20 });
     expect(result.taskTypeBreakdown).toBeDefined();
-    expect(result.taskTypeBreakdown!["migration"]).toBeUndefined();
-    expect(result.taskTypeBreakdown!["feature"]).toBeDefined();
+    expect(defined(result.taskTypeBreakdown)["migration"]).toBeUndefined();
+    expect(defined(result.taskTypeBreakdown)["feature"]).toBeDefined();
   });
 
   it("includes estimatedTokenCost (estimatedHours × 50000)", () => {

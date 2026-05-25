@@ -23,6 +23,8 @@ import {
   getCocomoDerivedFactors,
   resetSupplementaryCache,
 } from "./supplementary-data.js";
+import { defined } from "../test-support.js";
+
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
@@ -155,13 +157,27 @@ describe("loadSupplementaryData", () => {
     mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
     const data = loadSupplementaryData();
     expect(data).not.toBeNull();
-    expect(data!.version).toBe("1.0.0");
+    expect(defined(data).version).toBe("1.0.0");
   });
 
   it("returns null when file has malformed JSON", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue("not-json");
     expect(loadSupplementaryData()).toBeNull();
+  });
+
+  it("falls back to bundled supplementary data when the user data dir is empty", () => {
+    mockExistsSync.mockImplementation((path) => String(path).includes("data/supplementary-database.json"));
+    mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
+
+    const data = loadSupplementaryData();
+
+    expect(data).not.toBeNull();
+    expect(defined(data).version).toBe("1.0.0");
+    expect(mockReadFileSync).toHaveBeenCalledWith(
+      expect.stringContaining("data/supplementary-database.json"),
+      "utf-8",
+    );
   });
 
   it("caches the result (returns same object on second call)", () => {
@@ -186,7 +202,7 @@ describe("loadCocomoData", () => {
     mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
     const data = loadCocomoData();
     expect(data).not.toBeNull();
-    expect(data!.cocomoCalibration.datasets).toHaveLength(1);
+    expect(defined(data).cocomoCalibration.datasets).toHaveLength(1);
   });
 
   it("skips files without cocomoCalibration key", () => {
@@ -201,6 +217,20 @@ describe("loadCocomoData", () => {
     const data = loadCocomoData();
     expect(data).not.toBeNull();
   });
+
+  it("falls back to bundled cocomo calibration data when the user data dir is empty", () => {
+    mockExistsSync.mockImplementation((path) => String(path).includes("data/cocomo-calibration-data.json"));
+    mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
+
+    const data = loadCocomoData();
+
+    expect(data).not.toBeNull();
+    expect(defined(data).cocomoCalibration.datasets).toHaveLength(1);
+    expect(mockReadFileSync).toHaveBeenCalledWith(
+      expect.stringContaining("data/cocomo-calibration-data.json"),
+      "utf-8",
+    );
+  });
 });
 
 // ---- getModelPricing ----
@@ -209,7 +239,7 @@ describe("getModelPricing", () => {
   it("returns pricing for a known model", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
-    const pricing = getModelPricing("claude-sonnet-4")!;
+    const pricing = defined(getModelPricing("claude-sonnet-4"));
     expect(pricing).not.toBeNull();
     expect(pricing.costInput).toBe(3);
     expect(pricing.costOutput).toBe(15);
@@ -234,7 +264,7 @@ describe("getHumanBaselines", () => {
   it("returns baselines when present", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(SAMPLE_SUPPLEMENTARY);
-    const baselines = getHumanBaselines()!;
+    const baselines = defined(getHumanBaselines());
     expect(baselines.featureDevTimeDays.median).toBe(14);
     expect(baselines.bugfixTimeHours.median).toBe(72);
     expect(baselines.sprintVelocityPoints.median).toBe(35);
@@ -275,7 +305,7 @@ describe("getAllModelPricing", () => {
 
     const pricing = getAllModelPricing();
     expect(pricing["claude-sonnet-4"]).toBeDefined();
-    expect(pricing["claude-sonnet-4"]!.costInput).toBe(3);
+    expect(defined(pricing["claude-sonnet-4"]).costInput).toBe(3);
   });
 
   it("returns empty object when no data at all", () => {
@@ -307,7 +337,7 @@ describe("getCocomoDerivedFactors", () => {
   it("returns factors when present", () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(SAMPLE_COCOMO);
-    const factors = getCocomoDerivedFactors()!;
+    const factors = defined(getCocomoDerivedFactors());
     expect(factors).not.toBeNull();
     expect(factors.cocomoBasic.organic?.a).toBe(2.4);
     expect(factors.productivityKlocPerPersonMonth.median).toBe(0.35);
@@ -352,7 +382,7 @@ describe("loadCommunityData", () => {
 
     const data = loadCommunityData();
     expect(data.modelCalibration).toHaveLength(1);
-    expect(data.modelCalibration[0]!.model).toBe("community-model-x");
+    expect(defined(data.modelCalibration[0]).model).toBe("community-model-x");
   });
 
   it("loads cocomo community projects", () => {
@@ -362,7 +392,7 @@ describe("loadCommunityData", () => {
 
     const data = loadCommunityData();
     expect(data.cocomoProjects).toHaveLength(2);
-    expect(data.cocomoProjects[0]!.name).toBe("proj-a");
+    expect(defined(data.cocomoProjects[0]).name).toBe("proj-a");
   });
 
   it("skips files with unknown _schema", () => {
@@ -443,8 +473,8 @@ describe("getAllModelPricing with community", () => {
 
     const all = getAllModelPricing();
 
-    expect(all["claude-sonnet-4"]!.tokensPerSecond).toBe(100);
-    expect(all["claude-sonnet-4"]!.costInput).toBe(3);
+    expect(defined(all["claude-sonnet-4"]).tokensPerSecond).toBe(100);
+    expect(defined(all["claude-sonnet-4"]).costInput).toBe(3);
   });
 
   it("adds new community model not in base", () => {
@@ -460,9 +490,9 @@ describe("getAllModelPricing with community", () => {
 
     expect(all["claude-sonnet-4"]).toBeDefined();
     expect(all["community-model-x"]).toBeDefined();
-    expect(all["community-model-x"]!.tokensPerSecond).toBe(80);
-    expect(all["community-model-x"]!.costInput).toBe(5000 / 1_000_000);
-    expect(all["community-model-x"]!.costOutput).toBe(15000 / 1_000_000);
+    expect(defined(all["community-model-x"]).tokensPerSecond).toBe(80);
+    expect(defined(all["community-model-x"]).costInput).toBe(5000 / 1_000_000);
+    expect(defined(all["community-model-x"]).costOutput).toBe(15000 / 1_000_000);
   });
 });
 
@@ -481,13 +511,13 @@ describe("getCocomoProjects with community", () => {
     const projects = getCocomoProjects();
 
     expect(projects).toHaveLength(2);
-    expect(projects[0]!.name).toBe("test-dataset");
-    expect(projects[1]!.name).toBe("community");
-    expect(projects[1]!.projects).toHaveLength(2);
-    expect(projects[1]!.projects[0]!.id).toBe(10000);
-    expect(projects[1]!.projects[0]!.kloc).toBe(200);
-    expect(projects[1]!.projects[1]!.id).toBe(10001);
-    expect(projects[1]!.projects[1]!.kloc).toBe(50);
+    expect(defined(projects[0]).name).toBe("test-dataset");
+    expect(defined(projects[1]).name).toBe("community");
+    expect(defined(projects[1]).projects).toHaveLength(2);
+    expect(defined(defined(projects[1]).projects[0]).id).toBe(10000);
+    expect(defined(defined(projects[1]).projects[0]).kloc).toBe(200);
+    expect(defined(defined(projects[1]).projects[1]).id).toBe(10001);
+    expect(defined(defined(projects[1]).projects[1]).kloc).toBe(50);
   });
 
   it("maps community cocomo fields correctly", () => {
@@ -500,7 +530,7 @@ describe("getCocomoProjects with community", () => {
     loadCommunityData();
 
     const projects = getCocomoProjects();
-    const communityProj = projects[1]!.projects[0]!;
+    const communityProj = defined(defined(projects[1]).projects[0]);
 
     expect(communityProj.effortPersonMonths).toBe(48);
     expect(communityProj.type).toBe("business");
@@ -519,6 +549,6 @@ describe("getCocomoProjects with community", () => {
     const projects = getCocomoProjects();
 
     expect(projects).toHaveLength(1);
-    expect(projects[0]!.name).toBe("test-dataset");
+    expect(defined(projects[0]).name).toBe("test-dataset");
   });
 });

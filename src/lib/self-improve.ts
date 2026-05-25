@@ -67,6 +67,19 @@ interface ToolBenchmark {
   sampleCount: number;
 }
 
+export interface ReferenceDbStatus {
+  path: string | null;
+  loaded: boolean;
+  generatedAt: string | null;
+  sampleSize: number | null;
+  source: string | null;
+  globalCorrectionFactor: number | null;
+  taskTypeCorrectionFactorCount: number;
+  toolTaskCorrectionFactorCount: number;
+  complexityCorrectionFactorCount: number;
+  
+}
+
 interface ModelProfile {
   successRate: number;
   taskSuccessRate?: number;
@@ -231,6 +244,39 @@ export function loadReferenceDb(): ReferenceDatabase | null {
 export function invalidateReferenceDbCache(): void {
   _cachedDb = undefined;
   _cachedDbAt = 0;
+}
+
+const _cachedDbPath: string | null = REFERENCE_DB_PATH;
+
+export function getReferenceDbStatus(): ReferenceDbStatus {
+  const db = loadReferenceDb();
+  if (!db) {
+    return {
+      path: null,
+      loaded: false,
+      generatedAt: null,
+      sampleSize: null,
+      source: null,
+      globalCorrectionFactor: null,
+      taskTypeCorrectionFactorCount: 0,
+      toolTaskCorrectionFactorCount: 0,
+      complexityCorrectionFactorCount: 0,
+      
+    };
+  }
+
+  return {
+    path: _cachedDbPath,
+    loaded: true,
+    generatedAt: db.generatedAt ?? null,
+    sampleSize: db.sampleSize ?? null,
+    source: db.source ?? null,
+    globalCorrectionFactor: db.globalCorrectionFactor ?? null,
+    taskTypeCorrectionFactorCount: Object.keys(db.taskTypeCorrectionFactors ?? {}).length,
+    toolTaskCorrectionFactorCount: Object.keys(db.toolTaskCorrectionFactors ?? {}).length,
+    complexityCorrectionFactorCount: Object.keys(db.complexityCorrectionFactors ?? {}).length,
+    
+  };
 }
 
 export function getTaskTypeCorrectionFactor(taskType: TaskType): number {

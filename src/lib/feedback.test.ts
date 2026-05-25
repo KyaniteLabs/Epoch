@@ -25,11 +25,20 @@ import {
   getFeedbackHealthReport,
   matchEstimatesToActuals,
 } from "./feedback.js";
+import type { ActualRecord, EstimateRecord } from "./feedback.js";
+import { defined } from "../test-support.js";
+
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockAppendFileSync = vi.mocked(appendFileSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+
+type FixtureActualRecord = Omit<ActualRecord, "reportedAt"> & { reportedAt?: string; completedAt?: string };
+
+function matchFixtureRecords(estimates: EstimateRecord[], actuals: FixtureActualRecord[]) {
+  return matchEstimatesToActuals(estimates, actuals as unknown as ActualRecord[]);
+}
 
 function makeEstimate(overrides: Partial<{ id: string; tool: string; inputs: Record<string, unknown>; outputs: Record<string, unknown> }> = {}): string {
   return JSON.stringify({
@@ -42,7 +51,7 @@ function makeEstimate(overrides: Partial<{ id: string; tool: string; inputs: Rec
   });
 }
 
-function makeActual(overrides: Partial<{ estimateId: string; actualHours: number }> = {}): string {
+function makeActual(overrides: Partial<{ estimateId: string; actualHours: number; reportedAt: string; completedAt: string; notes: string }> = {}): string {
   return JSON.stringify({
     estimateId: "est-1",
     actualHours: 12,
@@ -63,7 +72,7 @@ describe("recordEstimate", () => {
     const id = recordEstimate("pert_estimate", { optimistic: 5 }, { expected: 7 });
     expect(id).toBe("test-uuid-1234");
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
-    const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written.tool).toBe("pert_estimate");
     expect(written.inputs).toEqual({ optimistic: 5 });
     expect(written.outputs).toEqual({ expected: 7 });
@@ -84,7 +93,7 @@ describe("recordActual", () => {
     const result = recordActual("est-1", 12, "finished early");
     expect(result).toBe(true);
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
-    const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written.estimateId).toBe("est-1");
     expect(written.actualHours).toBe(12);
     expect(written.notes).toBe("finished early");
@@ -92,13 +101,20 @@ describe("recordActual", () => {
 
   it("omits notes when not provided", () => {
     recordActual("est-1", 8);
-    const written = JSON.parse(mockAppendFileSync.mock.calls[0]![1] as string);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written).not.toHaveProperty("notes");
   });
 
-  it("rejects actuals below minimum threshold (0.25h)", () => {
-    expect(recordActual("est-1", 0.1)).toBe(false);
-    expect(recordActual("est-2", 0.24)).toBe(false);
+  it("accepts real fast actuals below the old 15-minute floor", () => {
+    expect(recordActual("est-fast", 0.08)).toBe(true);
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(0.08);
+  });
+
+  it("rejects non-positive actuals", () => {
+    expect(recordActual("est-zero", 0)).toBe(false);
+    expect(recordActual("est-negative", -0.1)).toBe(false);
     expect(mockAppendFileSync).not.toHaveBeenCalled();
   });
 });
@@ -120,8 +136,8 @@ describe("getPendingEstimates", () => {
 
     const pending = getPendingEstimates();
     expect(pending).toHaveLength(1);
-    expect(pending[0]!.id).toBe("e2");
-    expect(pending[0]!.hasActual).toBe(false);
+    expect(defined(pending[0]).id).toBe("e2");
+    expect(defined(pending[0]).hasActual).toBe(false);
   });
 
   it("returns empty when no estimates exist", () => {
@@ -159,9 +175,122 @@ describe("getCalibrationData", () => {
 
     const records = getCalibrationData();
     expect(records).toHaveLength(1);
-    expect(records[0]!.estimatedHours).toBe(10);
-    expect(records[0]!.actualHours).toBe(12);
-    expect(records[0]!.taskType).toBe("feature");
+    expect(defined(records[0]).estimatedHours).toBe(10);
+    expect(defined(records[0]).actualHours).toBe(12);
+    expect(defined(records[0]).taskType).toBe("feature");
+  });
+
+  it("marks ordinary matched feedback as correction-eligible prospective data", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) return makeEstimate({ id: "live-estimate" }) + "\n";
+      if (p.endsWith("feedback.jsonl")) return makeActual({ estimateId: "live-estimate", actualHours: 12 }) + "\n";
+      return "";
+    });
+
+    const records = getCalibrationData();
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("prospective");
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
+  it("keeps backfilled real-session data as baseline-only instead of correction-factor data when all usages are requested", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({
+          id: "backfilled-session",
+          inputs: { task_type: "feature", complexity: 3 },
+          outputs: { expected: 6, unit: "hours" },
+        }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "backfilled-session",
+          actualHours: 6,
+          notes: "Ingested from liminal: feature, 10 LOC, 2 files",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData(undefined, undefined, undefined, undefined, "all");
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("backfilled_real_session");
+    expect(defined(records[0]).calibrationUsage).toBe("baseline");
+  });
+
+  it("excludes baseline-only backfilled records from default calibration data", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({
+          id: "backfilled-session",
+          inputs: { task_type: "feature", complexity: 3 },
+          outputs: { expected: 6, unit: "hours" },
+        }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "backfilled-session",
+          actualHours: 6,
+          notes: "Ingested from liminal: feature, 10 LOC, 2 files",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    expect(getCalibrationData()).toEqual([]);
+  });
+
+  it("treats actuals completed before the estimate was created as backfilled calibration baseline", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({
+          id: "retroactive-calibration",
+          inputs: { task_type: "feature", complexity: 4 },
+          outputs: { correctedEstimate: 12 },
+        }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({
+          estimateId: "retroactive-calibration",
+          actualHours: 8,
+          completedAt: "2026-05-01T08:00:00.000Z",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData(undefined, undefined, undefined, undefined, "all");
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("backfilled_calibration");
+    expect(defined(records[0]).calibrationUsage).toBe("baseline");
+    expect(getCalibrationData()).toEqual([]);
+  });
+
+  it("excludes smoke records from calibration data", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "receiver-smoke", tool: "receiver_smoke" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "receiver-smoke",
+          actualHours: 1,
+          notes: "receiver smoke",
+          reportedAt: "2026-05-02T10:00:00.000Z",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    expect(getCalibrationData()).toEqual([]);
   });
 
   it("filters by taskType", () => {
@@ -179,7 +308,7 @@ describe("getCalibrationData", () => {
 
     const records = getCalibrationData(undefined, "bugfix");
     expect(records).toHaveLength(1);
-    expect(records[0]!.taskType).toBe("bugfix");
+    expect(defined(records[0]).taskType).toBe("bugfix");
   });
 
   it("filters by tool", () => {
@@ -197,7 +326,7 @@ describe("getCalibrationData", () => {
 
     const records = getCalibrationData(undefined, undefined, undefined, "cocomo_estimate");
     expect(records).toHaveLength(1);
-    expect(records[0]!.tool).toBe("cocomo_estimate");
+    expect(defined(records[0]).tool).toBe("cocomo_estimate");
   });
 
   it("skips estimates without matching actuals", () => {
@@ -215,23 +344,25 @@ describe("getCalibrationData", () => {
     expect(getCalibrationData()).toEqual([]);
   });
 
-  it("filters out actuals under 0.25 hours as seed artifacts", () => {
+  it("keeps real fast actuals above the microtask floor", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return makeEstimate({ id: "e1" }) + "\n" + makeEstimate({ id: "e2" }) + "\n" + makeEstimate({ id: "e3" }) + "\n";
+        return makeEstimate({ id: "e1", outputs: { totalHours: 0.1 } }) + "\n"
+          + makeEstimate({ id: "e2", outputs: { totalHours: 0.2 } }) + "\n"
+          + makeEstimate({ id: "e3" }) + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return JSON.stringify({ estimateId: "e1", actualHours: 0.1, reportedAt: new Date().toISOString() }) + "\n"
-          + JSON.stringify({ estimateId: "e2", actualHours: 0.2, reportedAt: new Date().toISOString() }) + "\n"
+        return JSON.stringify({ estimateId: "e1", actualHours: 0.008, reportedAt: new Date().toISOString() }) + "\n"
+          + JSON.stringify({ estimateId: "e2", actualHours: 0.08, reportedAt: new Date().toISOString() }) + "\n"
           + JSON.stringify({ estimateId: "e3", actualHours: 5, reportedAt: new Date().toISOString() }) + "\n";
       }
       return "";
     });
 
     const data = getCalibrationData();
-    expect(data).toHaveLength(1);
-    expect(data[0]!.actualHours).toBe(5);
+    expect(data).toHaveLength(2);
+    expect(data.map((record) => record.actualHours)).toEqual([0.08, 5]);
   });
 });
 
@@ -250,7 +381,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(20);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(20);
   });
 
   it("extracts estimatedHours", () => {
@@ -260,7 +391,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(15);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(15);
   });
 
   it("extracts estimatedMinutes and converts to hours", () => {
@@ -270,7 +401,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(2);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(2);
   });
 
   it("extracts estimatedSeconds and converts to hours", () => {
@@ -280,7 +411,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(1);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(1);
   });
 
   it("extracts expected with unit=days and converts", () => {
@@ -290,7 +421,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(40);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(40);
   });
 
   it("extracts expected with unit=weeks and converts", () => {
@@ -300,7 +431,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(80);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(80);
   });
 
   it("extracts expected with unit=months and converts", () => {
@@ -310,7 +441,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(160);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(160);
   });
 
   it("extracts personMonthsLlmAdjusted and converts", () => {
@@ -320,7 +451,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(80);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(80);
   });
 
   it("extracts correctedEstimate directly", () => {
@@ -330,7 +461,7 @@ describe("extractEstimatedHours via getCalibrationData", () => {
       if (p.endsWith("feedback.jsonl")) return withActual() + "\n";
       return "";
     });
-    expect(getCalibrationData()[0]!.estimatedHours).toBe(42);
+    expect(defined(getCalibrationData()[0]).estimatedHours).toBe(42);
   });
 
   it("skips records with unrecognized output format", () => {
@@ -444,12 +575,12 @@ describe("getFeedbackHealthReport", () => {
     expect(report.totalActuals).toBe(3);
     expect(report.matchedPairs).toBe(3);
     expect(report.byTool["pert_estimate"]).toBeDefined();
-    expect(report.byTool["pert_estimate"]!.mdape).toBeDefined();
-    expect(report.byTool["pert_estimate"]!.matchedPairs).toBe(2);
+    expect(defined(report.byTool["pert_estimate"]).mdape).toBeDefined();
+    expect(defined(report.byTool["pert_estimate"]).matchedPairs).toBe(2);
     expect(report.byTaskType["feature"]).toBeDefined();
-    expect(report.byTaskType["feature"]!.mdape).toBeDefined();
-    expect(report.byTaskType["feature"]!.matchedPairs).toBe(2);
-    expect(report.byTaskType["feature"]!.recommendation).toContain("Only 2 matched pairs");
+    expect(defined(report.byTaskType["feature"]).mdape).toBeDefined();
+    expect(defined(report.byTaskType["feature"]).matchedPairs).toBe(2);
+    expect(defined(report.byTaskType["feature"]).recommendation).toContain("Only 2 matched pairs");
   });
 
   it("returns null mape/mdape with fewer than 2 matches", () => {
@@ -465,8 +596,8 @@ describe("getFeedbackHealthReport", () => {
     });
 
     const report = getFeedbackHealthReport();
-    expect(report.byTool["pert_estimate"]!.mape).toBeNull();
-    expect(report.byTool["pert_estimate"]!.mdape).toBeNull();
+    expect(defined(report.byTool["pert_estimate"]).mape).toBeNull();
+    expect(defined(report.byTool["pert_estimate"]).mdape).toBeNull();
     expect(report.matchedPairs).toBe(1);
   });
 
@@ -536,7 +667,7 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTool["cocomo_estimate"]!.recommendation).toContain("No matched pairs");
+    expect(defined(report.byTool["cocomo_estimate"]).recommendation).toContain("No matched pairs");
   });
 
   it("byTool includes recommendation for tools with 1-2 pairs", () => {
@@ -551,8 +682,8 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Only 1 matched pair");
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Need 2 more");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Only 1 matched pair");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Need 2 more");
   });
 
   it("byTool includes recommendation with MdAPE for tools with 3+ pairs", () => {
@@ -576,8 +707,8 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("Sufficient for calibration");
-    expect(report.byTool["pert_estimate"]!.recommendation).toContain("MdAPE:");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Sufficient for calibration");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("MdAPE:");
   });
 
   it("byTaskType includes recommendation for types with 0 pairs", () => {
@@ -589,7 +720,7 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTaskType["migration"]!.recommendation).toContain("No matched pairs");
+    expect(defined(report.byTaskType["migration"]).recommendation).toContain("No matched pairs");
   });
 
   it("byTaskType includes recommendation with MdAPE for types with 3+ pairs", () => {
@@ -612,8 +743,8 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(report.byTaskType["testing"]!.recommendation).toContain("Sufficient for calibration");
-    expect(report.byTaskType["testing"]!.recommendation).toContain("MdAPE:");
+    expect(defined(report.byTaskType["testing"]).recommendation).toContain("Sufficient for calibration");
+    expect(defined(report.byTaskType["testing"]).recommendation).toContain("MdAPE:");
   });
 
   it("byTool includes bias field", () => {
@@ -637,8 +768,8 @@ describe("getFeedbackHealthReport", () => {
     });
     const report = getFeedbackHealthReport();
     // bias = avg(actual - estimated) = avg(-2, 5, -2) = 0.33
-    expect(typeof report.byTool["pert_estimate"]!.bias).toBe("number");
-    expect(report.byTool["pert_estimate"]!.bias).toBeCloseTo(0.33, 1);
+    expect(typeof defined(report.byTool["pert_estimate"]).bias).toBe("number");
+    expect(defined(report.byTool["pert_estimate"]).bias).toBeCloseTo(0.33, 1);
   });
 
   it("byTaskType includes bias field", () => {
@@ -662,7 +793,7 @@ describe("getFeedbackHealthReport", () => {
     });
     const report = getFeedbackHealthReport();
     // bias = avg(3, 4, 2) = 3 — systematic underestimation
-    expect(report.byTaskType["bugfix"]!.bias).toBeGreaterThan(0);
+    expect(defined(report.byTaskType["bugfix"]).bias).toBeGreaterThan(0);
   });
 
   it("dataCompletenessScore is > 0 with matched pairs", () => {
@@ -675,7 +806,7 @@ describe("getFeedbackHealthReport", () => {
       }
       if (p.endsWith("feedback.jsonl")) {
         return Array.from({ length: 6 }, (_, i) =>
-          makeActual({ estimateId: `e${i}`, actualHours: 10 + i! })
+          makeActual({ estimateId: `e${i}`, actualHours: 10 + defined(i) })
         ).join("\n") + "\n";
       }
       return "";
@@ -692,128 +823,129 @@ describe("matchEstimatesToActuals", () => {
   it("extracts hours from totalHours", () => {
     const estimates = [{ id: "e1", tool: "sprint_forecast", inputs: {}, outputs: { totalHours: 100 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(100);
+    expect(defined(result[0]).estimatedHours).toBe(100);
   });
 
   it("extracts hours from estimatedHours", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 24 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 20, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(24);
+    expect(defined(result[0]).estimatedHours).toBe(24);
   });
 
   it("extracts hours from estimatedMinutes", () => {
     const estimates = [{ id: "e1", tool: "token_time_bridge", inputs: {}, outputs: { estimatedMinutes: 30 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 0.5, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBeCloseTo(0.5, 1);
+    expect(defined(result[0]).estimatedHours).toBeCloseTo(0.5, 1);
   });
 
   it("extracts hours from estimatedSeconds", () => {
     const estimates = [{ id: "e1", tool: "token_time_bridge", inputs: {}, outputs: { estimatedSeconds: 3600 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(1);
+    expect(defined(result[0]).estimatedHours).toBe(1);
   });
 
   it("extracts hours from expected with unit=days", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { expected: 5, unit: "days" }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 40, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(40);
+    expect(defined(result[0]).estimatedHours).toBe(40);
   });
 
   it("extracts hours from expected with unit=weeks", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { expected: 2, unit: "weeks" }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(80);
+    expect(defined(result[0]).estimatedHours).toBe(80);
   });
 
   it("extracts hours from correctedEstimate", () => {
     const estimates = [{ id: "e1", tool: "reference_class_estimate", inputs: {}, outputs: { correctedEstimate: 15.5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 12, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(15.5);
+    expect(defined(result[0]).estimatedHours).toBe(15.5);
   });
 
   it("extracts hours from total_duration (critical path)", () => {
     const estimates = [{ id: "e1", tool: "critical_path", inputs: {}, outputs: { total_duration: 11, critical_path: ["A", "B"] }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 88, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(88);
+    expect(defined(result[0]).estimatedHours).toBe(88);
   });
 
   it("extracts hours from personMonthsLlmAdjusted", () => {
     const estimates = [{ id: "e1", tool: "cocomo_estimate", inputs: {}, outputs: { personMonthsLlmAdjusted: 8.2 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 1312, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.estimatedHours).toBe(8.2 * 160);
+    expect(defined(result[0]).estimatedHours).toBe(8.2 * 160);
   });
 
   it("skips estimates with no extractable hours", () => {
     const estimates = [{ id: "e1", tool: "get_current_time", inputs: {}, outputs: { iso: "2026-01-01T00:00:00Z" }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(0);
   });
 
-  it("skips actuals below 0.25 hours", () => {
-    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
-    const actuals = [{ estimateId: "e1", actualHours: 0.1, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
-    expect(result).toHaveLength(0);
+  it("keeps fast actuals when the estimate/actual ratio is plausible", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 0.1 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [{ estimateId: "e1", actualHours: 0.08, reportedAt: "2026-01-10T00:00:00Z" }];
+    const result = matchFixtureRecords(estimates, actuals);
+    expect(result).toHaveLength(1);
+    expect(defined(result[0]).actualHours).toBe(0.08);
   });
 
   it("returns empty for unmatched estimateIds", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 5 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "orphan", actualHours: 10, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(0);
   });
 
   it("filters records with seed- prefixed estimateId", () => {
     const estimates = [{ id: "seed-abc", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "seed-abc", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(0);
   });
 
   it("filters records with 'seed' in notes", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 8, notes: "seed data", reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(0);
   });
 
   it("filters records with 'synthetic' in notes", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 8, notes: "synthetic baseline", reportedAt: "2026-01-10T00:00:00Z" }];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(0);
   });
 
   it("filters records with implausibly low actual/estimate ratio", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 100 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }]; // ratio = 0.01
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(0);
   });
 
   it("keeps records with reasonable ratio even if small", () => {
     const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
     const actuals = [{ estimateId: "e1", actualHours: 3, reportedAt: "2026-01-10T00:00:00Z" }]; // ratio = 0.3
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
   });
 
@@ -828,7 +960,7 @@ describe("matchEstimatesToActuals", () => {
       { estimateId: "seed-x", actualHours: 0.5, notes: "seed", reportedAt: "2026-01-10T00:00:00Z" },
       { estimateId: "e3", actualHours: 6, reportedAt: "2026-01-10T00:00:00Z" },
     ];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(2);
     expect(result.map(r => r.estimatedHours)).toEqual([10, 8]);
   });
@@ -840,9 +972,26 @@ describe("matchEstimatesToActuals", () => {
     const actuals = [
       { estimateId: "e1", actualHours: 8, completedAt: "2026-01-10T00:00:00Z" },
     ];
-    const result = matchEstimatesToActuals(estimates as any, actuals as any);
+    const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
-    expect(result[0]!.completedAt).toBe("2026-01-10T00:00:00Z");
+    expect(defined(result[0]).completedAt).toBe("2026-01-10T00:00:00Z");
+  });
+
+  it("prefers actual completion time over later reporting time for calibration history", () => {
+    const estimates = [
+      { id: "e1", tool: "pert_estimate", inputs: {}, outputs: { estimatedHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+    ];
+    const actuals = [
+      {
+        estimateId: "e1",
+        actualHours: 8,
+        completedAt: "2026-01-10T00:00:00Z",
+        reportedAt: "2026-01-12T00:00:00Z",
+      },
+    ];
+    const result = matchFixtureRecords(estimates, actuals);
+    expect(result).toHaveLength(1);
+    expect(defined(result[0]).completedAt).toBe("2026-01-10T00:00:00Z");
   });
 });
 
@@ -874,14 +1023,14 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["monte_carlo_schedule"]!;
+    const tool = defined(report.byTool["monte_carlo_schedule"]);
     expect(tool).toBeDefined();
     expect(tool.cappedMdape).not.toBeNull();
     // 5 records: 3 extreme outliers (2300-3233%) + 2 reasonable (7-11%).
     // Uncapped median picks 3rd sorted error ≈ 2300%+
     // Capped median picks 3rd capped error = 500%
-    expect(tool.cappedMdape!).toBeLessThanOrEqual(500);
-    expect(tool.mdape!).toBeGreaterThan(tool.cappedMdape!);
+    expect(defined(tool.cappedMdape)).toBeLessThanOrEqual(500);
+    expect(defined(tool.mdape)).toBeGreaterThan(defined(tool.cappedMdape));
   });
 
   it("recommendation includes bias direction for systematic overestimation", () => {
@@ -905,7 +1054,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"]!;
+    const tool = defined(report.byTool["pert_estimate"]);
     expect(tool.recommendation).toContain("systematic overestimation");
   });
 
@@ -930,7 +1079,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"]!;
+    const tool = defined(report.byTool["pert_estimate"]);
     expect(tool.recommendation).toContain("well-calibrated");
   });
 
@@ -955,7 +1104,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const type = report.byTaskType["migration"]!;
+    const type = defined(report.byTaskType["migration"]);
     expect(type.recommendation).toContain("systematic underestimation");
   });
 
@@ -976,7 +1125,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const tool = report.byTool["pert_estimate"]!;
+    const tool = defined(report.byTool["pert_estimate"]);
     expect(tool.trend).not.toBeNull();
     expect(["improving", "degrading", "stable"]).toContain(tool.trend);
   });
@@ -1002,7 +1151,7 @@ describe("cappedMdape in feedback health", () => {
     });
 
     const report = getFeedbackHealthReport();
-    const type = report.byTaskType["testing"]!;
+    const type = defined(report.byTaskType["testing"]);
     // Trend requires 6+ records to compute; with 3, metrics still has trend="stable"
     expect(typeof type.trend).toBe("string");
   });

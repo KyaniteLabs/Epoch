@@ -29,7 +29,7 @@ for (const tool of tools) {
     return notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed");
   }).length;
 
-  const tinyCount = toolActs.filter(({ act: a }) => a && a.actualHours < 0.25).length;
+  const tinyCount = toolActs.filter(({ act: a }) => a && a.actualHours < 0.01).length;
 
   console.log(`\n${tool}: ${toolEsts.length} ests, ${toolActs.length} acts (${seedCount} seed, ${tinyCount} tiny)`);
 
@@ -38,7 +38,7 @@ for (const tool of tools) {
     if (a.estimateId.startsWith("seed-")) return false;
     const notes = (a.notes ?? "").toLowerCase();
     if (notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed")) return false;
-    return a.actualHours >= 0.25;
+    return a.actualHours >= 0.01;
   });
 
   if (nonSeed.length > 0) {

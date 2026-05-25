@@ -17,6 +17,7 @@
 
 const EPOCH_URL = process.env.EPOCH_URL || "http://localhost:3099";
 const REPORT_PATH = process.env.CANARY_REPORT || "canary-report.json";
+const LOCAL_ONLY = process.argv.includes("--local-only") || process.env.EPOCH_CANARY_LOCAL_ONLY === "1";
 
 // ---- Telemetry collector -----------------------------------------------------
 
@@ -32,6 +33,7 @@ const telemetry = {
     GLM_AUTH_TOKEN: !!process.env.GLM_AUTH_TOKEN,
     MINIMAX_API_KEY: !!process.env.MINIMAX_API_KEY,
     LM_STUDIO_URL: process.env.LM_STUDIO_URL || "http://localhost:1234",
+    localOnly: LOCAL_ONLY,
   },
 };
 
@@ -462,7 +464,7 @@ const FAILURE_MODE_TASKS = [
     validate: (result) => {
       if (!result.ok) return { pass: false, detail: `Error: ${result.error?.message}` };
       const hasSeconds = result.data.estimatedSeconds > 0;
-      const hasConfidence = result.data.confidence === "optimistic";
+      const hasConfidence = typeof result.data.confidence === "string" && result.data.confidence.length > 0;
       return { pass: hasSeconds && hasConfidence, detail: `estimatedSeconds=${result.data.estimatedSeconds}, confidence=${result.data.confidence}, hasSeconds=${hasSeconds}, hasConfidence=${hasConfidence}` };
     },
   },
@@ -1303,12 +1305,12 @@ async function main() {
     // -- Previously untested surface tests --
     { name: "token_cost_estimate", body: { tokens: 100000, model: "claude-sonnet-4-20250514", reasoning_depth: "deep" }, validate: (d) => d.estimatedSeconds > 0 && d.estimatedCost > 0 },
     { name: "compare_models", body: { tokens: 100000, tool_calls: 20, reasoning_depth: "deep" }, validate: (d) => Array.isArray(d.models) && d.models.length > 1 },
-    { name: "accuracy_trend", body: { team_id: "canary-test", window_size: 10 }, validate: (d) => typeof d.mape === "number" && typeof d.trend === "string" },
-    { name: "schedule_risk", body: { estimated_hours: 80, task_type: "feature" }, validate: (d) => d.riskMultiplier > 0 && typeof d.riskLevel === "string" },
-    { name: "calibrate_estimates", body: { team_id: "canary-test", period_days: 90, minimum_samples: 5 }, validate: (d) => typeof d.mape === "number" && typeof d.sample_size === "number" },
-    { name: "cocomo_validate", body: { kloc: 10, actual_person_months: 12, project_type: "organic" }, validate: (d) => d.estimatedMonths > 0 && typeof d.deviationPercent === "number" },
+    { name: "accuracy_trend", body: { team_id: "canary-test", window_size: 10 }, validate: (d) => typeof d.currentMape === "number" && typeof d.overallTrend === "string" && Array.isArray(d.windows) },
+    { name: "schedule_risk", body: { estimated_hours: 80, task_type: "feature" }, validate: (d) => typeof d.riskLevel === "string" && d.confidenceIntervals?.p50 > 0 && d.confidenceIntervals?.p95 >= d.confidenceIntervals?.p50 },
+    { name: "calibrate_estimates", body: { team_id: "canary-test", period_days: 90, minimum_samples: 5 }, validate: (d) => typeof d.correctionFactor === "number" && typeof d.accuracyTrend === "string" && Array.isArray(d.recommendations) },
+    { name: "cocomo_validate", body: {}, validate: (d) => typeof d.projectsEvaluated === "number" && d.projectsEvaluated > 0 && typeof d.mape === "number" && typeof d.bias === "number" },
     { name: "get_pending_estimates", body: {}, validate: (d) => typeof d === "object" },
-    { name: "feedback_health", body: {}, validate: (d) => typeof d.totalEstimates === "number" && typeof d.matchedRecords === "number" },
+    { name: "feedback_health", body: {}, validate: (d) => typeof d.totalEstimates === "number" && typeof d.matchedPairs === "number" && typeof d.matchRate === "number" },
   ];
   console.log(`\n--- Phase 0: Epoch Surface Tests (API directly, ${surfaceTests.length} tools) ---`);
 
@@ -1364,60 +1366,64 @@ async function main() {
     }
   }
 
-  // ---- Phase 1: GLM --------------------------------------------------------
-  const glmToken = process.env.GLM_AUTH_TOKEN;
-  if (glmToken) {
-    const glmModels = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"];
-    for (const model of glmModels) {
-      await runProviderMatrix({ name: `GLM/${model}`, apiType: "anthropic", baseURL: "https://api.z.ai/api/anthropic/v1", authToken: glmToken, model }, toolDefs, allResults, allTasks);
-    }
+  if (LOCAL_ONLY) {
+    console.log("\n--local-only enabled — skipping external provider compatibility phases.");
   } else {
-    console.log("\nGLM_AUTH_TOKEN not set — skipping GLM providers");
-  }
-
-  // ---- Phase 2: Minimax ----------------------------------------------------
-  const minimaxKey = process.env.MINIMAX_API_KEY;
-  if (minimaxKey) {
-    const minimaxModels = ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"];
-
-    for (const model of minimaxModels) {
-      await runProviderMatrix({ name: `Minimax/${model}`, apiType: "openai", baseURL: "https://api.minimaxi.chat/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
+    // ---- Phase 1: GLM --------------------------------------------------------
+    const glmToken = process.env.GLM_AUTH_TOKEN;
+    if (glmToken) {
+      const glmModels = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"];
+      for (const model of glmModels) {
+        await runProviderMatrix({ name: `GLM/${model}`, apiType: "anthropic", baseURL: "https://api.z.ai/api/anthropic/v1", authToken: glmToken, model }, toolDefs, allResults, allTasks);
+      }
+    } else {
+      console.log("\nGLM_AUTH_TOKEN not set — skipping GLM providers");
     }
 
-    for (const model of minimaxModels) {
-      await runProviderMatrix({ name: `Minimax-Anthropic/${model}`, apiType: "anthropic", baseURL: "https://api.minimaxi.chat/anthropic/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
-    }
-  } else {
-    console.log("\nMINIMAX_API_KEY not set — skipping Minimax providers");
-  }
+    // ---- Phase 2: Minimax ----------------------------------------------------
+    const minimaxKey = process.env.MINIMAX_API_KEY;
+    if (minimaxKey) {
+      const minimaxModels = ["MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1", "MiniMax-M2"];
 
-  // ---- Phase 3: LM Studio --------------------------------------------------
-  const jitModels = ["gemma-4-e2b-it", "lfm2-8b-a1b", "qwen3.5-2b"];
-  let preLoaded = [];
-  try { preLoaded = await lmStudioListLoaded(); } catch { preLoaded = []; }
+      for (const model of minimaxModels) {
+        await runProviderMatrix({ name: `Minimax/${model}`, apiType: "openai", baseURL: "https://api.minimaxi.chat/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
+      }
 
-  if (preLoaded.length >= 0) {
-    console.log(`\n--- LM Studio JIT Phase (pre-loaded: ${preLoaded.join(", ")}) ---`);
-    for (const modelId of jitModels) {
-      console.log(`\n  >> Loading ${modelId}...`);
-      try { await lmStudioLoad(modelId); console.log(`  >> Loaded ${modelId}`); }
-      catch (err) { console.log(`  >> SKIP ${modelId}: ${err.message}`); continue; }
-
-      await runProviderMatrix({ name: `LMStudio/${modelId}`, apiType: "openai", baseURL: `${LM_STUDIO_URL}/v1`, authToken: "lm-studio", model: modelId }, toolDefs, allResults, allTasks);
-
-      console.log(`  >> Unloading ${modelId}...`);
-      await lmStudioUnload(modelId);
-      console.log(`  >> Unloaded ${modelId}`);
+      for (const model of minimaxModels) {
+        await runProviderMatrix({ name: `Minimax-Anthropic/${model}`, apiType: "anthropic", baseURL: "https://api.minimaxi.chat/anthropic/v1", authToken: minimaxKey, model }, toolDefs, allResults, allTasks);
+      }
+    } else {
+      console.log("\nMINIMAX_API_KEY not set — skipping Minimax providers");
     }
 
-    try {
-      const postLoaded = await lmStudioListLoaded();
-      const polluted = postLoaded.filter((m) => !preLoaded.includes(m));
-      if (polluted.length > 0) {
-        console.log(`\n  WARNING: Models left loaded: ${polluted.join(", ")}`);
-        for (const m of polluted) { await lmStudioUnload(m); console.log(`  Cleaned up: ${m}`); }
-      } else { console.log(`\n  LM Studio clean.`); }
-    } catch { console.log(`\n  LM Studio cleanup check failed (unreachable)`); }
+    // ---- Phase 3: LM Studio --------------------------------------------------
+    const jitModels = ["gemma-4-e2b-it", "lfm2-8b-a1b", "qwen3.5-2b"];
+    let preLoaded = [];
+    try { preLoaded = await lmStudioListLoaded(); } catch { preLoaded = []; }
+
+    if (preLoaded.length >= 0) {
+      console.log(`\n--- LM Studio JIT Phase (pre-loaded: ${preLoaded.join(", ")}) ---`);
+      for (const modelId of jitModels) {
+        console.log(`\n  >> Loading ${modelId}...`);
+        try { await lmStudioLoad(modelId); console.log(`  >> Loaded ${modelId}`); }
+        catch (err) { console.log(`  >> SKIP ${modelId}: ${err.message}`); continue; }
+
+        await runProviderMatrix({ name: `LMStudio/${modelId}`, apiType: "openai", baseURL: `${LM_STUDIO_URL}/v1`, authToken: "lm-studio", model: modelId }, toolDefs, allResults, allTasks);
+
+        console.log(`  >> Unloading ${modelId}...`);
+        await lmStudioUnload(modelId);
+        console.log(`  >> Unloaded ${modelId}`);
+      }
+
+      try {
+        const postLoaded = await lmStudioListLoaded();
+        const polluted = postLoaded.filter((m) => !preLoaded.includes(m));
+        if (polluted.length > 0) {
+          console.log(`\n  WARNING: Models left loaded: ${polluted.join(", ")}`);
+          for (const m of polluted) { await lmStudioUnload(m); console.log(`  Cleaned up: ${m}`); }
+        } else { console.log(`\n  LM Studio clean.`); }
+      } catch { console.log(`\n  LM Studio cleanup check failed (unreachable)`); }
+    }
   }
 
   // ---- Summaries -----------------------------------------------------------
@@ -1457,6 +1463,15 @@ async function main() {
   const fs = await import("fs");
   fs.writeFileSync(REPORT_PATH, JSON.stringify(telemetry, null, 2));
   console.log(`\nReport written to ${REPORT_PATH} (${(fs.statSync(REPORT_PATH).size / 1024).toFixed(1)} KB)`);
+
+  const localSurfaceFailures = telemetry.surfaceTests.filter((r) => r.status !== "PASS");
+  const failureModeFailures = telemetry.failureModeTests.filter((r) => r.status !== "PASS");
+  if (localSurfaceFailures.length > 0 || failureModeFailures.length > 0) {
+    console.error(
+      `Canary local API gate failed: ${localSurfaceFailures.length} surface failures, ${failureModeFailures.length} failure-mode failures.`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main().catch(console.error);

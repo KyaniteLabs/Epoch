@@ -17,7 +17,7 @@ GitHub: https://github.com/KyaniteLabs/Epoch
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.2.2 — 24 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.2.5 — 24 structured tools for grounded time estimation
 
 ## What
 
@@ -206,7 +206,7 @@ Health report on the feedback loop.
 ## Interfaces
 
 - **MCP**: `npx @kyanitelabs/epoch` (stdio transport) — Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code
-- **CLI**: `npx epoch <command> [options]`
+- **CLI**: `npx @kyanitelabs/epoch <command> [options]`
 - **HTTP**: `http://localhost:3000/v1/tools/<tool-name>` (POST with JSON body)
 - **AI Manifest**: `/.well-known/ai-plugin.json`
 - **OpenAPI**: `/openapi.json` (OpenAPI 3.1 spec)
@@ -239,7 +239,7 @@ Environment variables:
 
 ## Data
 
-Reference baselines built from 5,800+ samples across 8 task categories from real AI-native development workflows. 896 tests passing, 97% statement coverage.
+Reference baselines come from the packaged reference database plus user-local learned feedback. Use `epoch reference-db-status` for current provenance and `pnpm test` for the current test-suite count. Bundled correction factors use prospective correction-eligible telemetry only; retrospective/backfilled, duplicate receiver backfill, and legacy receiver records are held out as baseline evidence.
 
 Privacy: https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md
 Telemetry: https://github.com/KyaniteLabs/Epoch/blob/main/docs/TELEMETRY.md

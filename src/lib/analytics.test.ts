@@ -7,6 +7,8 @@ import {
   MODEL_CALIBRATIONS,
 } from "./analytics.js";
 import type { HistoricalRecord } from "./analytics.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Layer 4-5: Analytics Utilities
@@ -23,7 +25,7 @@ describe("MODEL_CALIBRATIONS", () => {
     ];
     for (const model of expected) {
       expect(MODEL_CALIBRATIONS[model]).toBeDefined();
-      expect(MODEL_CALIBRATIONS[model]!.tokensPerSecond).toBeGreaterThan(0);
+      expect(defined(MODEL_CALIBRATIONS[model]).tokensPerSecond).toBeGreaterThan(0);
     }
   });
 });
@@ -136,6 +138,22 @@ describe("referenceClassEstimate", () => {
     expect(result.sampleSize).toBe(5);
     expect(result.correctionFactor).toBeGreaterThan(1);
     expect(result.correctedEstimate).toBeGreaterThan(result.rawEstimate);
+  });
+
+  it("uses the median actual/estimated ratio as the data-driven correction factor", () => {
+    const calibratedRecords: HistoricalRecord[] = [
+      { taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-01-01" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 14, completedAt: "2026-01-02" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 15, completedAt: "2026-01-03" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 16, completedAt: "2026-01-04" },
+      { taskType: "feature", estimatedHours: 10, actualHours: 18, completedAt: "2026-01-05" },
+    ];
+
+    const result = referenceClassEstimate(calibratedRecords, "feature", 3, "medium", false);
+
+    expect(result.sampleSize).toBe(5);
+    expect(result.correctionFactor).toBe(1.5);
+    expect(result.correctedEstimate).toBeCloseTo(result.rawEstimate * 1.5, 5);
   });
 
   it("falls back to industry correction when insufficient data", () => {

@@ -27,6 +27,10 @@ describe("loadConfig", () => {
     expect(config.telemetry.endpoint).toBe("");
     expect(config.telemetry.lastSubmissionAt).toBeNull();
     expect(config.telemetry.lastSubmissionRecordCount).toBe(0);
+    expect(config.telemetry.lastSubmissionAcceptedCount).toBe(0);
+    expect(config.telemetry.lastSubmissionDeduplicatedCount).toBe(0);
+    expect(config.telemetry.totalRecordsAccepted).toBe(0);
+    expect(config.telemetry.totalRecordsDeduplicated).toBe(0);
     expect(config.telemetry.installationId).toBe("");
   });
 

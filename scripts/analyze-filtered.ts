@@ -49,7 +49,7 @@ for (const tool of tools) {
   
   let filteredSeed = 0, filteredMinAct = 0, filteredRatio = 0, kept = 0;
   for (const a of matched) {
-    if (a.actualHours < 0.25) { filteredMinAct++; continue; }
+    if (a.actualHours < 0.01) { filteredMinAct++; continue; }
     if (isSeed(a)) { filteredSeed++; continue; }
     const est = estMap.get(a.estimateId);
     if (!est) continue;

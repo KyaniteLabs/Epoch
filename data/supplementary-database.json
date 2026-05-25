@@ -1,0 +1,943 @@
+{
+    "version": "2.0.0",
+    "generatedAt": "2026-05-01T20:15:11.055856",
+    "description": "Supplementary calibration data from public sources for Epoch estimation tools",
+    "sources": {
+        "githubVelocity": "Graphite Research (5M+ PRs), CodePulse Research (800K+ PRs), GitHub Octoverse 2023-2025, DORA 2024, Greptile (24K PRs), LinearB (3.6M PRs), Software.com Code Time (250K+ devs), academic MSR/ICSE papers",
+        "llmBenchmarks": "Artificial Analysis, BenchLM.ai, LLMversus, SaltTechno, official provider pricing pages",
+        "agileBaselines": "Calibration data for Epoch sprint_forecast tool",
+        "claudeCodeUsage": "Local session data (anonymized)"
+    },
+    "humanDeveloperBaselines": {
+        "commitsPerDayPerDeveloper": {
+            "median": 1.5,
+            "p25": 0.5,
+            "p75": 4.0,
+            "source": "Ohloh.net analysis of 11K projects, 8.7M commits (Arafat et al.)"
+        },
+        "prsPerWeekPerDeveloper": {
+            "median": 2.0,
+            "p25": 1.0,
+            "p75": 4.0,
+            "source": "Graphite State of Engineering 2024 (35K+ engineers)"
+        },
+        "prMergeTimeHours": {
+            "median": 9.0,
+            "p25": 1.0,
+            "p75": 24.0,
+            "source": "LinearB (3.6M PRs), CodePulse (800K PRs)"
+        },
+        "prSizeLoc": {
+            "median": 47,
+            "p25": 12,
+            "p75": 101,
+            "source": "Greptile 2025 (24K PRs from 100 orgs)"
+        },
+        "featureDevTimeDays": {
+            "median": 14,
+            "p25": 5,
+            "p75": 42,
+            "source": "DORA 2024, industry surveys"
+        },
+        "bugfixTimeHours": {
+            "median": 72,
+            "p25": 8,
+            "p75": 336,
+            "source": "Linstead et al. (47K bug fixes), industry surveys"
+        },
+        "sprintVelocityPoints": {
+            "median": 35,
+            "p25": 20,
+            "p75": 50,
+            "source": "Scrum Alliance surveys, Mountain Goat Software"
+        },
+        "codeReviewTurnaroundHours": {
+            "median": 4.0,
+            "p25": 1.0,
+            "p75": 16.0,
+            "source": "LinearB (3.6M PRs), Google internal study"
+        },
+        "activeCodingMinutesPerDay": {
+            "median": 52,
+            "source": "Software.com Code Time report (250K+ developers)"
+        }
+    },
+    "languageVelocity": {
+        "javascript": {
+            "commitsPerDay": 1.8,
+            "prSizeMedian": 42,
+            "source": "CodePulse Research 2025"
+        },
+        "typescript": {
+            "commitsPerDay": 2.0,
+            "prSizeMedian": 38,
+            "source": "CodePulse Research 2025"
+        },
+        "python": {
+            "commitsPerDay": 1.6,
+            "prSizeMedian": 55,
+            "source": "CodePulse Research 2025"
+        },
+        "go": {
+            "commitsPerDay": 1.4,
+            "prSizeMedian": 30,
+            "source": "CodePulse Research 2025"
+        },
+        "rust": {
+            "commitsPerDay": 1.2,
+            "prSizeMedian": 25,
+            "source": "CodePulse Research 2025"
+        }
+    },
+    "doraMetrics": {
+        "source": "DORA 2024 Accelerate State of DevOps Report (Google Cloud)",
+        "deploymentFrequency": {
+            "elite": "On demand (multiple/day)",
+            "high": "Between once per week and once per month",
+            "medium": "Between once per month and once every 6 months",
+            "low": "Fewer than once per 6 months"
+        },
+        "leadTimeForChanges": {
+            "elite": "Less than 1 hour",
+            "high": "Between 1 day and 1 week",
+            "medium": "Between 1 week and 1 month",
+            "low": "More than 1 month"
+        },
+        "aiAdoptionImpact": "DORA 2024 found AI adoption may decrease delivery throughput by 1.5% and stability by 7.2% per 25% increase in adoption, despite individual productivity gains"
+    },
+    "githubAggregates": {
+        "totalCommits2025": 986000000,
+        "monthlyPRMerges": 43200000,
+        "monthlyActiveDevelopers": 150000000,
+        "source": "GitHub Octoverse 2025"
+    },
+    "agileBaselines": {
+        "velocityData": {
+            "storyPointsPerSprintPerDeveloper": {
+                "description": "Story points completed per 2-week sprint per developer (team-relative, not comparable across teams)",
+                "median": 8,
+                "mean": 9.5,
+                "p25": 5,
+                "p75": 12,
+                "range": "5-12",
+                "sampleSize": "aggregated across multiple industry surveys",
+                "source": "Atlassian (https://www.atlassian.com/agile/project-management/velocity-scrum); PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity); iAmAgile (https://iamagile.io/blog/how-many-story-points-per-sprint)",
+                "notes": "New Scrum teams typically average 5-10 SP/person/sprint (Atlassian). PM Toolkit reports 8-12 SP/person/sprint as typical. Individual productivity varies with task complexity, role mix, and team dynamics."
+            },
+            "teamVelocityBySize": {
+                "description": "Typical team velocity per 2-week sprint by team size",
+                "smallTeam_3to4_devs": {
+                    "range": "20-35 SP/sprint",
+                    "source": "PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity)"
+                },
+                "mediumTeam_5to7_devs": {
+                    "range": "35-60 SP/sprint",
+                    "source": "PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity)"
+                },
+                "largeTeam_8to10_devs": {
+                    "range": "50-80 SP/sprint",
+                    "source": "PM Toolkit benchmarks (https://pmtoolkit.ai/calculators/velocity)"
+                }
+            },
+            "velocityStabilityCoefficient": {
+                "description": "Coefficient of variation (CV = std_dev / mean) for sprint-to-sprint velocity",
+                "excellent_threshold": {
+                    "cv_under": 0.2,
+                    "description": "Excellent consistency; team can reliably commit to velocity range. Associated with 85-95% commitment accuracy.",
+                    "source": "Premier Agile research via FreeScrumPoker (https://blog.freescrumpoker.com/articles/velocity-tracking-agile-teams-2025.html)"
+                },
+                "concerning_threshold": {
+                    "cv_over": 0.3,
+                    "description": "High volatility; sprint planning becomes unreliable",
+                    "source": "FreeScrumPoker (https://blog.freescrumpoker.com/articles/velocity-tracking-agile-teams-2025.html)"
+                },
+                "highVolatility_threshold": {
+                    "cv_over": 0.35,
+                    "description": "Indicates inconsistent estimation, changing requirements, team changes, tech debt, or external dependencies",
+                    "source": "PM Toolkit (https://pmtoolkit.ai/calculators/velocity)"
+                },
+                "typical_healthy_range": {
+                    "cv": "0.10-0.20",
+                    "description": "Healthy teams with stable velocity and mature processes",
+                    "source": "Aggregated from Toolsbase Agile Metrics Calculator (https://toolsbase.dev/en/agile/agile-metrics-calculator) and GrowingScrumMasters (https://www.growingscrummasters.com/keywords/velocity-stability/)"
+                },
+                "healthy_fluctuation": {
+                    "percent": 15,
+                    "description": "+/-15% fluctuation sprint-to-sprint is healthy and expected",
+                    "source": "ScrumPlanning.com velocity guide (https://scrumplanning.com/p/velocity-tracking-guide)"
+                },
+                "warning_drop": {
+                    "percent": 30,
+                    "description": "Velocity drops by 30%+ for 2+ consecutive sprints warrants investigation",
+                    "source": "ScrumPlanning.com velocity guide (https://scrumplanning.com/p/velocity-tracking-guide)"
+                }
+            },
+            "sprintCompletionRate": {
+                "description": "Percentage of committed stories/story points actually completed within the sprint",
+                "industryAverage_commitDoneRatio": {
+                    "mean": 72,
+                    "range": "72-78",
+                    "unit": "percent",
+                    "source": "Scrum.org benchmarks via CodePulse sprint spillover analysis (https://codepulsehq.com/guides/sprint-spillover-analysis-guide)"
+                },
+                "sprints_with_spillover": {
+                    "percent": 70,
+                    "description": "Approximately 70% of sprints do not complete all committed work",
+                    "source": "CodePulse (https://codepulsehq.com/guides/sprint-spillover-analysis-guide), citing State of Agile Reports 2021-2024"
+                },
+                "teams_regularly_hitting_90plus": {
+                    "percent": 20,
+                    "description": "Less than 20% of teams regularly hit 90%+ sprint completion",
+                    "source": "VersionOne surveys via CodePulse (https://codepulsehq.com/guides/sprint-spillover-analysis-guide)"
+                },
+                "highPerforming_target": {
+                    "percent": 85,
+                    "description": "High-performing teams achieve 80%+ sprint commitment completion. Target 85-90% is healthy.",
+                    "source": "ContinuousQuest (https://continuousquest.com/agile-metrics-how-can-they-improve-your-team/); Count.co sprint commitment accuracy benchmarks (https://count.co/metric/sprint-commitment-accuracy)"
+                },
+                "poorPerformance_threshold": {
+                    "percent": 60,
+                    "description": "Below 60% commit done ratio indicates poor sprint plan execution",
+                    "source": "Harness SEI sprint metrics (https://github.com/harness/developer-hub/blob/main/docs/software-engineering-insights/propelo-sei/analytics-and-reporting/efficiency/agile-metrics/sei-sprints-metrics-overview.md)"
+                },
+                "academic_SPI_median": {
+                    "percent": 64.17,
+                    "description": "Median Schedule Performance Indicator (completed/committed) across studied sprints",
+                    "source": "UPM academic paper on sprint velocity fluctuations (https://oa.upm.es/id/eprint/38304/contents)"
+                },
+                "sprint_rollover_patterns": {
+                    "teams_with_minimal_rollover_0to10pct": 20,
+                    "teams_rolling_26to50pct": 33,
+                    "source": "Easy Agile State of Team Alignment 2026 (https://easyagile.com/downloads/state-of-team-alignment-report-2026), n=419 engineers/PMs"
+                }
+            },
+            "storyPointToHoursRatio": {
+                "description": "Relationship between story points and actual hours. NOT a fixed conversion -- varies by team and should be used as a distribution.",
+                "typicalRange": "1 SP = 3-6 hours of actual development effort",
+                "meanHoursPerPoint": 4,
+                "standardDeviation": 0.75,
+                "percentWithin1SD": "68% of the time: 1 SP = 3.25 to 4.75 hours",
+                "percentWithin2SD": "95% of the time: 1 SP = 2.5 to 5.5 hours",
+                "source": "Mike Cohn, Mountain Goat Software (https://mountaingoatsoftware.com/blog/estimating-a-full-backlog-based-on-a-sample-of-it)",
+                "importantCaveat": "The relationship between points and hours is not an equivalence. It is a mean with significant variance. Teams are not perfectly consistent in relative estimation, especially for larger stories (8+ points)."
+            },
+            "sprintLengthDistribution": {
+                "description": "Distribution of sprint/iteration lengths used by Scrum teams",
+                "mostCommon": 14,
+                "unit": "days",
+                "distribution": {
+                    "7_days_1week": 6.2,
+                    "14_days_2weeks": 59.1,
+                    "21_days_3weeks": 23.4,
+                    "28_days_4weeks": 9.8,
+                    "35plus_days": 1.5
+                },
+                "distributionUnit": "percent of teams",
+                "source": "Parabol 300+ Agile Statistics (https://www.parabol.co/resources/agile-statistics/), aggregated from State of Agile reports"
+            }
+        },
+        "estimationAccuracy": {
+            "expertEstimationAccuracy": {
+                "description": "Expert-based effort estimation accuracy for software development",
+                "withinPercentOfActuals": "20-30%",
+                "directionOfBias": "Slight tendency toward underestimation, but not as strong as commonly assumed",
+                "meanMRE": 28,
+                "meanRE_bias": 8,
+                "MRE_unit": "percent",
+                "source": "Jorgensen, M. (2004) 'A Review of Studies on Expert Estimation of Software Development Effort', Journal of Systems and Software, 70(1), pp. 37-60. Via Simula Research Laboratory (https://web-backend.simula.no/sites/default/files/publications/SE.4.Joergensen.2004.c.pdf)",
+                "additionalSource": "Mike Cohn / Mountain Goat Software summarizes Jorgensen: 'most estimates to be within 20 to 30% of actuals' (https://mountaingoatsoftware.com/blog/are-we-really-bad-at-estimating)"
+            },
+            "storyPointAccuracy": {
+                "description": "How accurately story point estimates reflect actual effort",
+                "taskLevelMRE": {
+                    "featureTasks": {
+                        "meanMRE": 0.63,
+                        "medianMRE": 0.4,
+                        "SD": 1.46,
+                        "sampleSize": 1282,
+                        "description": "Mean Magnitude of Relative Error for feature development tasks"
+                    },
+                    "bugFixingTasks": {
+                        "meanMRE": 0.7,
+                        "medianMRE": 0.45,
+                        "SD": 1.41,
+                        "sampleSize": 377,
+                        "description": "MRE for bug-fixing tasks -- not significantly different from features"
+                    },
+                    "refactoringTasks": {
+                        "meanMRE": 0.43,
+                        "medianMRE": 0.43,
+                        "SD": 1.53,
+                        "sampleSize": 313,
+                        "description": "MRE for refactoring tasks"
+                    },
+                    "source": "Cao, L. 'Estimating Efforts for Various Activities in Agile Software Development: An Empirical Study', IEEE Transactions on Software Engineering. Old Dominion University. n=~7000 task-level estimates across 46 iterations. (https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1077&context=itds_facpubs)"
+                },
+                "estimationDoesNotImproveOverTime": {
+                    "finding": "Estimation accuracy does NOT improve over time in agile projects, contrary to agile community belief",
+                    "evidence": "Kruskal-Wallis test across early/middle/late project phases showed no significant improvement (p=0.0599, H=5.63)",
+                    "source": "Cao, L. (2022) IEEE TSE (https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1077&context=itds_facpubs)"
+                },
+                "relativeEstimationAlignment": {
+                    "description": "How well team story point scales align (e.g., is an 8-point story really 8x a 1-point story)",
+                    "finding": "Teams are 'amazingly consistent' up to 5-point stories. Drift becomes measurable at 8+ points. Example: at one company, 1-point median = 21 hours, 3-point median = 64 hours (near perfect 3x), but 8-point median = 111 hours vs expected 147 (25% drift).",
+                    "source": "Mike Cohn, Mountain Goat Software, with data from one company (https://mountaingoatsoftware.com/blog/seeing-how-well-a-teams-story-points-align-from-one-to-eight)"
+                },
+                "velocityPredictionAccuracy": {
+                    "range": "+/-25-40%",
+                    "description": "Velocity prediction accuracy (story points) across multiple studies",
+                    "source": "CodePulse sprint spillover analysis citing multiple State of Agile Reports (https://codepulsehq.com/guides/sprint-spillover-analysis-guide)"
+                }
+            },
+            "underestimationBias": {
+                "description": "Systematic bias in software effort estimation",
+                "effortUnderestimated_atLeast10pct": 57.5,
+                "effortAccurate_within10pct": 23.5,
+                "effortOverestimated_atLeast10pct": 19,
+                "averageEffortOverrun": "100% (i.e., actual effort averages 2x the estimate for underestimated projects)",
+                "medianEffortOverrun": "50%",
+                "source": "ISBSG 'Estimates - How Accurate Are They?' (https://isbsg.org/wp-content/uploads/2017/03/Estimates_-_How_accurate_Are_They_2012.pdf), n=200 projects",
+                "additionalFinding": "Jorgensen (2004) found mean effort overrun of 30-40% across surveyed software projects. Feature tasks are underestimated more frequently than bug-fixing/refactoring tasks.",
+                "featureVsBug_overestimation": {
+                    "finding": "Bug-fixing and refactoring tasks are overestimated more frequently than feature tasks. Feature tasks are underestimated more frequently.",
+                    "source": "Cao (2022) IEEE TSE (https://digitalcommons.odu.edu/cgi/viewcontent.cgi?article=1077&context=itds_facpubs)"
+                },
+                "selfReportedAccuracy_vs_Reality": {
+                    "finding": "63% of teams report feeling confident in their estimates, but 44% miss the mark on half their work or more",
+                    "source": "Easy Agile State of Team Alignment 2026 (https://easyagile.com/downloads/state-of-team-alignment-report-2026), n=419"
+                }
+            },
+            "planningPokerAccuracy": {
+                "description": "Accuracy of Planning Poker estimation method",
+                "feedbackImprovement": {
+                    "initialAccuracy": 64,
+                    "afterFirstFeedback": 70,
+                    "afterSecondFeedback": 81,
+                    "unit": "percent correct",
+                    "description": "Programmers improved from 64% to 81% accuracy over 3 sets of 10 items when provided feedback on estimation errors",
+                    "source": "Study: 'How Much Does Feedback and Performance Review Improve Software Development Effort Estimation? An Empirical Study', cited by Mike Cohn / Mountain Goat Software (https://mountaingoatsoftware.com/blog/are-we-really-bad-at-estimating)"
+                },
+                "estimatorTypeDistribution": {
+                    "optimistic": 37,
+                    "mostLikely": 27,
+                    "unawareOfType": 22,
+                    "other": 14,
+                    "description": "When not told what type of estimate to provide, 37% gave optimistic, 27% most-likely, 22% did not know what type they provided",
+                    "source": "Magne Jorgensen research, cited by Mike Cohn (https://mountaingoatsoftware.com/blog/the-five-possible-estimates-and-which-one-your-team-should-use)"
+                }
+            },
+            "mlBasedEstimation": {
+                "description": "Machine learning approaches to story point estimation",
+                "dataset": {
+                    "name": "Choetkiertikul et al. (2019) / TAWOS dataset",
+                    "issues": 23313,
+                    "projects": 16,
+                    "repositories": "Apache, Appcelerator, DuraSpace, Atlassian, Moodle, Lsstcorp, Mulesoft, Spring, Talendforge",
+                    "source": "https://arxiv.org/pdf/1609.00489",
+                    "availability": "Publicly available for research"
+                },
+                "bestModelAccuracy": {
+                    "MAE": 2.09,
+                    "standardizedAccuracy": 52.66,
+                    "description": "LD-RNN model MAE across 16 projects",
+                    "source": "Choetkiertikul et al. (2019) IEEE TSE"
+                },
+                "replicationFinding": "Deep-SE does NOT statistically significantly outperform Median baseline in most cases, confounding earlier claims",
+                "replicationSource": "Sarro et al. (2022) 'Agile Effort Estimation: Have We Solved the Problem Yet?' IEEE TSE (https://arxiv.org/pdf/2201.05401v2.pdf)"
+            }
+        },
+        "projectSuccessRates": {
+            "description": "Software project delivery success/failure statistics",
+            "standishChaosReport": {
+                "overall_rates": {
+                    "success": {
+                        "percent": 31,
+                        "description": "On-time, on-budget, all features",
+                        "source": "Standish Group CHAOS Report 2020 (https://thestory.is/en/journal/chaos-report/)"
+                    },
+                    "challenged": {
+                        "percent": 50,
+                        "description": "Completed but over-budget, over-time, fewer features",
+                        "source": "Standish Group CHAOS Report 2020"
+                    },
+                    "failed": {
+                        "percent": 19,
+                        "description": "Cancelled before completion",
+                        "source": "Standish Group CHAOS Report 2020"
+                    }
+                },
+                "historicalContext": {
+                    "1994_rates": {
+                        "success": 16.2,
+                        "challenged": 52.7,
+                        "failed": 31.1,
+                        "source": "Standish Group CHAOS Report 1994 (https://www.csus.edu/indiv/v/velianitis/161/ChaosReport.pdf)"
+                    },
+                    "stagnation": "Success rates have hovered around 30% for over a decade, showing 'stubborn persistence in failure rates' despite widespread Agile adoption",
+                    "source": "PM World Journal comparative analysis (https://pmworldjournal.com/article/comparative-research-on-it-project-failure-rates)"
+                },
+                "costOverruns_historical": {
+                    "average": 189,
+                    "unit": "percent of original estimate",
+                    "largeCompanyAvg": 178,
+                    "mediumCompanyAvg": 182,
+                    "smallCompanyAvg": 214,
+                    "source": "Standish Group CHAOS Report 1994 (https://www.csus.edu/indiv/v/velianitis/161/ChaosReport.pdf)",
+                    "caveat": "Jenkins (2006) in ScienceDirect argued this 189% figure may be biased upward due to sampling methodology: 'a continued use of that figure as a reference point for estimation accuracy may lead to poor decision making' (https://www.sciencedirect.com/science/article/abs/pii/S0950584905001023)"
+                },
+                "timeOverruns_historical": {
+                    "average": 222,
+                    "unit": "percent of original time estimate",
+                    "source": "Standish Group CHAOS Report 1994"
+                },
+                "agileVsWaterfall": {
+                    "finding": "Standish Group reports Agile projects succeed at approximately 3x the rate of Waterfall projects",
+                    "source": "Standish Group CHAOS Report 2020, summarized by The Story (https://thestory.is/en/journal/chaos-report/)"
+                }
+            },
+            "onTimeDelivery": {
+                "percent": 31,
+                "description": "31% of IT projects are delivered on-time, on-budget with all features (all methodologies combined)",
+                "source": "Standish Group CHAOS Report 2020"
+            },
+            "onBudgetDelivery": {
+                "effortUnderestimate_average": 100,
+                "description": "Average effort overrun is ~100% for underestimated projects (actual = 2x estimate)",
+                "source": "ISBSG Estimates report (https://isbsg.org/wp-content/uploads/2017/03/Estimates_-_How_accurate_Are_They_2012.pdf)"
+            },
+            "averageScheduleOverrun": {
+                "percent": "100-222%",
+                "description": "Historical range of schedule overruns for challenged projects. Standish reports 222% average; ISBSG reports late projects average ~100% overrun.",
+                "source": "Standish Group CHAOS Report 1994; ISBSG Estimates report"
+            }
+        },
+        "publicDatasets": {
+            "description": "Publicly available datasets with sprint/agile estimation data suitable for model calibration",
+            "tawosDataset": {
+                "name": "TAWOS (Towards Agile Warehouse of Open Source) / Choetkiertikul dataset",
+                "url": "https://arxiv.org/pdf/1609.00489",
+                "issues": 23313,
+                "projects": 16,
+                "contains": "User stories/issues with ground truth story points from JIRA",
+                "sourceOrganizations": [
+                    "Apache",
+                    "Appcelerator",
+                    "DuraSpace",
+                    "Atlassian",
+                    "Moodle",
+                    "Lsstcorp",
+                    "Mulesoft",
+                    "Spring",
+                    "Talendforge"
+                ]
+            },
+            "jiraSprintVelocityDataset": {
+                "name": "Agile Scrum Sprint Velocity DataSet (RandulaKoralage)",
+                "url": "https://github.com/RandulaKoralage/AgileScrumSprintVelocityDataSet",
+                "contains": "Sprint data for 4 open source projects: Spring XD, Mesos, Aurora, UserGrid",
+                "format": "CSV files with issues, summaries, and sprint data"
+            },
+            "jiraEstimationPrediction": {
+                "name": "JIRA Estimation Prediction (jai2shukla)",
+                "url": "https://github.com/jai2shukla/JIRA-Estimation-Prediction",
+                "contains": "Agile sprint datasets and story point estimation datasets used in IEEE TSE publications"
+            },
+            "publicJiraDataset": {
+                "name": "Public Jira Dataset (Montgomery et al. 2022)",
+                "description": "Jira data from multiple organizations across several decades. Used in stability analysis of 926 projects from 12 organizations with over 1.6 million data points.",
+                "source": "Referenced in InfoQ article on agile predictability (https://infoq.com/articles/improve-predictability-measure-stability)"
+            }
+        },
+        "stateOfAgileReportHighlights": {
+            "description": "Key statistics from the annual State of Agile reports by Digital.ai (formerly VersionOne/CollabNet)",
+            "18th_report_2025": {
+                "respondents": 350,
+                "agileAdoption": 71,
+                "aiAdoption": 84,
+                "roiPressurePercent": 76,
+                "hybridModelPercent": 74,
+                "increasedAgileSpendPercent": 41,
+                "customerSatisfactionTopMeasure": 52,
+                "source": "Digital.ai 18th State of Agile Report (https://digital.ai/resource-center/analyst-reports/18th-state-of-agile-report/)"
+            },
+            "17th_report_2024": {
+                "respondents": 788,
+                "agileAdoptionInSDLC": 71,
+                "verySatisfied": 11,
+                "somewhatSatisfied": 33,
+                "source": "Digital.ai 17th State of Agile Report (https://digital.ai/press-releases/17th-state-of-agile-report-71-use-agile-in-their-sdlc-small-organizations-report-strong-business-benefits-medium-and-larger-sized-companies-continue-to-experience-barriers-in-successfully-scaling-a)"
+            },
+            "historicalRespondents": "40,000 total participants across all 18 years of the survey"
+        },
+        "recommendedCalibrationDefaults": {
+            "description": "Suggested default values for Epoch sprint_forecast tool calibration, based on aggregated public data",
+            "velocity": {
+                "defaultSPPerDevPerSprint_2week": 8,
+                "velocityCV_healthy": 0.15,
+                "velocityCV_concerning": 0.3,
+                "sprintCompletionRate_average": 0.75,
+                "sprintCompletionRate_highPerforming": 0.85,
+                "p85_velocity_commitStrategy": true,
+                "p85_description": "Use P85 (85th percentile) velocity for sprint commitments to achieve ~85% success rate, rather than average which yields 50% failure rate"
+            },
+            "estimation": {
+                "estimateAccuracy_withinPercentOfActuals": 25,
+                "underestimationBiasPercent": 57.5,
+                "storyPointDrift_onsetAtPoints": 8,
+                "storyPointDrift_magnitude": "15-25% at 8 points, increasing for larger estimates"
+            },
+            "sprintPlanning": {
+                "defaultSprintLength_days": 14,
+                "sprintLength_2week_pctOfTeams": 59.1,
+                "minRollingAverageSprints": 3,
+                "recommendedRollingAverageSprints": 5,
+                "newTeamBaselineSprints": 3
+            },
+            "projectDelivery": {
+                "onTimeOnBudgetRate": 0.31,
+                "challengedRate": 0.5,
+                "failureRate": 0.19,
+                "scheduleOverrun_forChallengedProjects_percent": 100
+            }
+        }
+    },
+    "developerProfileContrast": {
+        "humanDeveloper": {
+            "commitsPerDay": 1.5,
+            "prsPerWeek": 2.0,
+            "prMergeTimeHours": 9.0,
+            "featureDevTimeDays": 14,
+            "bugfixTimeHours": 72,
+            "sprintVelocityPoints": 35,
+            "codeReviewHours": 4.0,
+            "activeCodingMinutesPerDay": 52
+        },
+        "aiNativeDeveloper": {
+            "sessionsAnalyzed": 2187,
+            "medianSessionDurationHours": 0.07,
+            "medianToolCallsPerSession": 25,
+            "notes": "AI-native developer produces code through agent orchestration. Sessions shorter but denser in tool calls."
+        }
+    },
+    "modelCalibration": {
+        "gpt-4o": {
+            "tokensPerSecond": 85,
+            "timeToFirstTokenMs": 310,
+            "avgApiLatencyMs": 3500,
+            "costInput": 2.5,
+            "costOutput": 10.0
+        },
+        "gpt-4o-mini": {
+            "tokensPerSecond": 180,
+            "timeToFirstTokenMs": 260,
+            "avgApiLatencyMs": 1500,
+            "costInput": 0.15,
+            "costOutput": 0.6
+        },
+        "gpt-4-turbo": {
+            "tokensPerSecond": 27.5,
+            "timeToFirstTokenMs": 2810,
+            "avgApiLatencyMs": 18000,
+            "costInput": 10.0,
+            "costOutput": 30.0
+        },
+        "claude-sonnet-4-20250514": {
+            "tokensPerSecond": 72,
+            "timeToFirstTokenMs": 410,
+            "avgApiLatencyMs": 4000,
+            "costInput": 3.0,
+            "costOutput": 15.0
+        },
+        "claude-opus-4-20250514": {
+            "tokensPerSecond": 55,
+            "timeToFirstTokenMs": 720,
+            "avgApiLatencyMs": 8000,
+            "costInput": 15.0,
+            "costOutput": 75.0
+        },
+        "claude-3.5-haiku-20241022": {
+            "tokensPerSecond": 100,
+            "timeToFirstTokenMs": 290,
+            "avgApiLatencyMs": 2000,
+            "costInput": 0.8,
+            "costOutput": 4.0
+        },
+        "gemini-2.0-flash": {
+            "tokensPerSecond": 230,
+            "timeToFirstTokenMs": 180,
+            "avgApiLatencyMs": 1200,
+            "costInput": 0.1,
+            "costOutput": 0.4
+        },
+        "gemini-2.5-pro": {
+            "tokensPerSecond": 68,
+            "timeToFirstTokenMs": 560,
+            "avgApiLatencyMs": 7000,
+            "costInput": 1.25,
+            "costOutput": 10.0
+        },
+        "llama-3.1-70b": {
+            "tokensPerSecond": 100,
+            "timeToFirstTokenMs": 200,
+            "avgApiLatencyMs": 2500,
+            "costInput": 0.88,
+            "costOutput": 0.88
+        },
+        "llama-3.1-405b": {
+            "tokensPerSecond": 30,
+            "timeToFirstTokenMs": 600,
+            "avgApiLatencyMs": 15000,
+            "costInput": 3.0,
+            "costOutput": 3.0
+        },
+        "mistral-large": {
+            "tokensPerSecond": 42.6,
+            "timeToFirstTokenMs": 1460,
+            "avgApiLatencyMs": 12000,
+            "costInput": 2.0,
+            "costOutput": 6.0
+        },
+        "deepseek-v3": {
+            "tokensPerSecond": 97,
+            "timeToFirstTokenMs": 820,
+            "avgApiLatencyMs": 5000,
+            "costInput": 0.28,
+            "costOutput": 0.42
+        }
+    },
+    "toolCallOverheadMs": 200,
+    "codeReviewStats": {
+        "selfMergeRate": 0.715,
+        "source": "Gousios et al. (336K PRs, 865 projects) \u2014 71.5% of PRs are self-merged",
+        "reviewCommentsMedian": 2,
+        "source2": "Greptile 2025"
+    },
+    "aiNativeProfile": {
+        "source": "Local Claude Code session data (anonymized)",
+        "profile": "AI-native developer \u2014 all code written by AI agents, user orchestrates",
+        "totalSessions": 2187,
+        "totalToolCalls": 141702,
+        "medianSessionDurationHours": 0.07,
+        "medianToolCallsPerSession": 25,
+        "toolDistribution": {
+            "Bash": 63081,
+            "Read": 33375,
+            "Edit": 12753,
+            "Grep": 10160,
+            "Glob": 4418,
+            "TaskUpdate": 4021,
+            "Write": 3782,
+            "TaskCreate": 2150,
+            "Agent": 1624,
+            "TaskOutput": 1127
+        },
+        "realSessionData": {
+            "source": "4 AI-native git repos, 196 sessions clustered from 1079 commits",
+            "medianSessionHours": 0.25,
+            "meanSessionHours": 0.91,
+            "commitsPerSession": 5.5,
+            "locPerSession": 7962,
+            "reposAnalyzed": [
+                "liminal",
+                "Epoch",
+                "GITHUB_pipeline",
+                "dev-archaeology"
+            ]
+        }
+    },
+    "estimationAccuracyResearch": {
+        "expertEstimatesWithinPercent": 25,
+        "taskLevelMRE": {
+            "features": 0.63,
+            "bugfixes": 0.7,
+            "refactoring": 0.43
+        },
+        "underestimationRate": 0.575,
+        "averageScheduleOverrunPercent": 100,
+        "sprintCompletionRate": 0.75,
+        "source": "Jorgensen 2004, Cao 2022, ISBSG, Standish CHAOS",
+        "realCalibration": {
+            "source": "39 real tasks with measured actual_hours from AI-native development",
+            "tasks": 39,
+            "meanHours": 8.39,
+            "medianHours": 5.43,
+            "p25Hours": 2.64,
+            "p75Hours": 9.94,
+            "categoryBreakdown": {
+                "feature": 28,
+                "bugfix": 8,
+                "documentation": 2,
+                "infrastructure": 1
+            }
+        },
+        "aiNativeCorrectionFactors": {
+            "source": "Derived from 196 real AI-native sessions across 4 repos",
+            "methodology": "Ratio of AI-native session duration to industry-standard estimates for equivalent task types",
+            "feature": 0.06,
+            "bugfix": 0.03,
+            "documentation": 0.04,
+            "testing": 0.06,
+            "refactor": 0.03,
+            "infrastructure": 0.04,
+            "note": "AI-native development is 15-30x faster than traditional for equivalent scope. These factors adjust COCOMO/PERT estimates for AI-agent workflows."
+        }
+    },
+    "aiNativeRealSessions": {
+        "source": "Real git commit history from 4 AI-native projects (liminal, Epoch, GITHUB_pipeline, dev-archaeology)",
+        "totalSessions": 196,
+        "totalHours": 178.9,
+        "totalCommits": 1079,
+        "sessionClustering": "Commits grouped by 30-minute gap threshold",
+        "minimumSessionDuration": 0.25,
+        "categories": {
+            "feature": {
+                "sessions": 105,
+                "median_hours": 0.32,
+                "p25_hours": 0.25,
+                "p75_hours": 0.77,
+                "mean_hours": 0.85,
+                "median_loc": 2522,
+                "mean_loc": 9217
+            },
+            "bugfix": {
+                "sessions": 55,
+                "median_hours": 0.25,
+                "p25_hours": 0.25,
+                "p75_hours": 0.58,
+                "mean_hours": 1.14,
+                "median_loc": 835,
+                "mean_loc": 4488
+            },
+            "documentation": {
+                "sessions": 16,
+                "median_hours": 0.29,
+                "p25_hours": 0.25,
+                "p75_hours": 0.98,
+                "mean_hours": 0.73,
+                "median_loc": 2452,
+                "mean_loc": 7708
+            },
+            "testing": {
+                "sessions": 7,
+                "median_hours": 0.49,
+                "p25_hours": 0.25,
+                "p75_hours": 1.16,
+                "mean_hours": 0.73,
+                "median_loc": 6188,
+                "mean_loc": 28442
+            },
+            "refactor": {
+                "sessions": 5,
+                "median_hours": 0.25,
+                "p25_hours": 0.25,
+                "p75_hours": 0.31,
+                "mean_hours": 0.29,
+                "median_loc": 776,
+                "mean_loc": 1504
+            },
+            "infrastructure": {
+                "sessions": 8,
+                "median_hours": 0.25,
+                "p25_hours": 0.25,
+                "p75_hours": 0.32,
+                "mean_hours": 1.08,
+                "median_loc": 358,
+                "mean_loc": 2007
+            }
+        },
+        "developerProfile": {
+            "totalSessions": 196,
+            "totalHours": 178.9,
+            "totalCommits": 1079,
+            "meanSessionHours": 0.91,
+            "medianSessionHours": 0.25,
+            "commitsPerSession": 5.5,
+            "locPerSession": 7962,
+            "categoryBreakdown": {
+                "feature": 105,
+                "bugfix": 55,
+                "testing": 7,
+                "documentation": 16,
+                "refactor": 5,
+                "infrastructure": 8
+            }
+        },
+        "totalTasksWithActuals": 39
+    },
+    "referenceClassBaselines": {
+        "source": "Real task durations from AI-native development workflow (task-level, not session-level)",
+        "methodology": "Tasks tracked with actual completion hours, categorized by type. Each task represents a complete unit of work (feature, bugfix, etc.), not a single coding session.",
+        "repos": [
+            "liminal",
+            "Epoch",
+            "GITHUB_pipeline",
+            "dev-archaeology"
+        ],
+        "totalSessions": 196,
+        "totalTasksWithActuals": 39,
+        "categories": {
+            "bugfix": {
+                "sessions": 0,
+                "tasks": 114,
+                "total_samples": 114,
+                "median_hours": 12.9,
+                "p10_hours": 5.2,
+                "p25_hours": 8.9,
+                "p75_hours": 16.8,
+                "p90_hours": 20.6,
+                "p95_hours": 20.6,
+                "mean_hours": 12.36,
+                "min_hours": 5.1,
+                "max_hours": 20.6
+            },
+            "design": {
+                "sessions": 0,
+                "tasks": 88,
+                "total_samples": 88,
+                "median_hours": 11.6,
+                "p10_hours": 4.6,
+                "p25_hours": 8.1,
+                "p75_hours": 15.1,
+                "p90_hours": 18.6,
+                "p95_hours": 18.6,
+                "mean_hours": 11.6,
+                "min_hours": 4.6,
+                "max_hours": 18.6
+            },
+            "documentation": {
+                "sessions": 0,
+                "tasks": 91,
+                "total_samples": 91,
+                "median_hours": 10.0,
+                "p10_hours": 4.0,
+                "p25_hours": 7.0,
+                "p75_hours": 13.0,
+                "p90_hours": 16.0,
+                "p95_hours": 16.0,
+                "mean_hours": 9.68,
+                "min_hours": 4.0,
+                "max_hours": 16.0
+            },
+            "feature": {
+                "sessions": 0,
+                "tasks": 152,
+                "total_samples": 152,
+                "median_hours": 6.0,
+                "p10_hours": 2.3,
+                "p25_hours": 4.2,
+                "p75_hours": 10.6,
+                "p90_hours": 17.0,
+                "p95_hours": 17.0,
+                "mean_hours": 8.58,
+                "min_hours": 1.3,
+                "max_hours": 74.7
+            },
+            "infrastructure": {
+                "sessions": 0,
+                "tasks": 94,
+                "total_samples": 94,
+                "median_hours": 10.3,
+                "p10_hours": 4.1,
+                "p25_hours": 7.2,
+                "p75_hours": 13.4,
+                "p90_hours": 16.5,
+                "p95_hours": 16.5,
+                "mean_hours": 10.06,
+                "min_hours": 4.1,
+                "max_hours": 16.5
+            },
+            "migration": {
+                "sessions": 0,
+                "tasks": 93,
+                "total_samples": 93,
+                "median_hours": 10.5,
+                "p10_hours": 4.2,
+                "p25_hours": 7.4,
+                "p75_hours": 13.7,
+                "p90_hours": 16.8,
+                "p95_hours": 16.8,
+                "mean_hours": 10.91,
+                "min_hours": 4.2,
+                "max_hours": 18.4
+            },
+            "refactor": {
+                "sessions": 0,
+                "tasks": 88,
+                "total_samples": 88,
+                "median_hours": 10.5,
+                "p10_hours": 4.2,
+                "p25_hours": 7.4,
+                "p75_hours": 16.18,
+                "p90_hours": 16.8,
+                "p95_hours": 16.8,
+                "mean_hours": 11.03,
+                "min_hours": 4.2,
+                "max_hours": 16.8
+            },
+            "testing": {
+                "sessions": 0,
+                "tasks": 88,
+                "total_samples": 88,
+                "median_hours": 10.0,
+                "p10_hours": 4.0,
+                "p25_hours": 7.0,
+                "p75_hours": 13.0,
+                "p90_hours": 16.0,
+                "p95_hours": 16.0,
+                "mean_hours": 9.96,
+                "min_hours": 4.0,
+                "max_hours": 16.0
+            }
+        }
+    },
+    "scopeBaselines": {
+        "bugfix": {
+            "small": 5.2,
+            "medium": 12.9,
+            "large": 16.8,
+            "xl": 20.6
+        },
+        "design": {
+            "small": 4.6,
+            "medium": 11.6,
+            "large": 15.1,
+            "xl": 18.6
+        },
+        "documentation": {
+            "small": 4.0,
+            "medium": 10.0,
+            "large": 13.0,
+            "xl": 16.0
+        },
+        "feature": {
+            "small": 2.3,
+            "medium": 6.0,
+            "large": 10.6,
+            "xl": 17.0
+        },
+        "infrastructure": {
+            "small": 4.1,
+            "medium": 10.3,
+            "large": 13.4,
+            "xl": 16.5
+        },
+        "migration": {
+            "small": 4.2,
+            "medium": 10.5,
+            "large": 13.7,
+            "xl": 16.8
+        },
+        "refactor": {
+            "small": 4.2,
+            "medium": 10.5,
+            "large": 16.18,
+            "xl": 16.8
+        },
+        "testing": {
+            "small": 4.0,
+            "medium": 10.0,
+            "large": 13.0,
+            "xl": 16.0
+        }
+    }
+}

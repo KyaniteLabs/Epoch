@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { formatJson, formatTable } from "./formatters.js";
+import { defined } from "../test-support.js";
+
 
 describe("formatJson", () => {
   it("formats a success result as pretty JSON", () => {
@@ -140,7 +142,7 @@ describe("formatTable", () => {
     const lines = out.split("\n").slice(1);
     const keyLines = lines.filter((l) => l.includes("x") || l.includes("longerKey"));
     for (const line of keyLines) {
-      const beforeValue = line.split(/\d/)[0]!;
+      const beforeValue = defined(line.split(/\d/)[0]);
       expect(beforeValue.length).toBeGreaterThan(0);
     }
   });

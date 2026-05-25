@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { tokenCostEstimate, compareModels } from "./cost.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Cost Estimation Tests
@@ -129,8 +131,8 @@ describe("compareModels", () => {
     });
 
     for (let i = 1; i < result.models.length; i++) {
-      const prev = result.models[i - 1]!;
-      const curr = result.models[i]!;
+      const prev = defined(result.models[i - 1]);
+      const curr = defined(result.models[i]);
       // Models with 0 cost go last
       if (prev.estimatedCost === 0) {
         expect(curr.estimatedCost).toBe(0);
@@ -151,8 +153,8 @@ describe("compareModels", () => {
     expect(result.sortBy).toBe("time");
 
     for (let i = 1; i < result.models.length; i++) {
-      expect(result.models[i]!.estimatedSeconds).toBeGreaterThanOrEqual(
-        result.models[i - 1]!.estimatedSeconds,
+      expect(defined(result.models[i]).estimatedSeconds).toBeGreaterThanOrEqual(
+        defined(result.models[i - 1]).estimatedSeconds,
       );
     }
   });
@@ -182,7 +184,7 @@ describe("compareModels", () => {
       reasoningDepth: "moderate",
     });
 
-    const tiers = new Set(result.models.map((e) => e!.qualityTier));
+    const tiers = new Set(result.models.map((e) => defined(e).qualityTier));
 
     expect(tiers.has("fast")).toBe(true);
     expect(tiers.has("standard")).toBe(true);

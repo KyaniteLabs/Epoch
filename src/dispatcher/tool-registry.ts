@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import { z } from "zod";
-import type { ToolResult, TaskType } from "../types/index.js";
+import type { ToolResult } from "../types/index.js";
 import {
   getCurrentTime,
   convertTimezone,
@@ -13,7 +13,6 @@ import {
 } from "../lib/temporal.js";
 import { addBusinessDays, countBusinessDays } from "../lib/calendar.js";
 import { dispatchTimeMath } from "../lib/internal/time-math-dispatch.js";
-import type { TimeMathOp } from "../lib/internal/time-math-dispatch.js";
 import {
   pertEstimate,
   cocomoEstimate,
@@ -28,7 +27,7 @@ import {
   getScopeGuide,
   inferScopeFromComplexity,
 } from "../lib/analytics.js";
-import { getCalibrationData, recordActual, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
@@ -796,7 +795,7 @@ update automatically to reduce estimation bias.`,
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes);
       if (!result.ok) {
         const messages: Record<string, string> = {
-          below_threshold: `Actual hours (${p.actual_hours}) below minimum threshold (0.25h).`,
+          below_threshold: `Actual hours (${p.actual_hours}) must be positive.`,
           duplicate: `An actual for estimate ${p.estimate_id} already exists. Each estimate can only have one actual.`,
           write_failed: "Failed to write to feedback storage — ensure ~/.epoch/ directory is writable.",
         };

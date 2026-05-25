@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
+import { defined } from "../test-support.js";
+
 
 // ---------------------------------------------------------------------------
 // Tool Registry Tests — Layer 3 (Estimation)
@@ -21,7 +23,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("pert_estimate computes PERT correctly", () => {
-    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("pert_estimate"));
     const result = tool.handler({
       optimistic: 2,
       most_likely: 4,
@@ -36,7 +38,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("pert_estimate returns error for invalid inputs", () => {
-    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("pert_estimate"));
     const result = tool.handler({
       optimistic: 10,
       most_likely: 5,
@@ -47,7 +49,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("cocomo_estimate returns effort estimates", () => {
-    const tool = TOOL_REGISTRY.get("cocomo_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("cocomo_estimate"));
     const result = tool.handler({
       kloc: 10,
       reasoning_complexity: 1.0,
@@ -68,7 +70,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("sprint_forecast returns sprint data", () => {
-    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const tool = defined(TOOL_REGISTRY.get("sprint_forecast"));
     const result = tool.handler({
       backlog_points: 100,
       velocity_history: [20, 25, 22, 23],
@@ -85,7 +87,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("critical_path computes path", () => {
-    const tool = TOOL_REGISTRY.get("critical_path")!;
+    const tool = defined(TOOL_REGISTRY.get("critical_path"));
     const result = tool.handler({
       tasks: [
         { name: "A", duration: 3, predecessors: [] },
@@ -100,7 +102,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("monte_carlo_schedule returns percentiles", () => {
-    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const tool = defined(TOOL_REGISTRY.get("monte_carlo_schedule"));
     const result = tool.handler({
       tasks: [
         { name: "T1", optimistic: 1, most_likely: 3, pessimistic: 8 },
@@ -119,7 +121,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("cocomo_validate returns validation report", () => {
-    const tool = TOOL_REGISTRY.get("cocomo_validate")!;
+    const tool = defined(TOOL_REGISTRY.get("cocomo_validate"));
     const result = tool.handler({});
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -133,7 +135,7 @@ describe("estimation tools via registry", () => {
   });
 
   it("cocomo_validate with dataset_filter filters results", () => {
-    const tool = TOOL_REGISTRY.get("cocomo_validate")!;
+    const tool = defined(TOOL_REGISTRY.get("cocomo_validate"));
     const result = tool.handler({
       dataset_filter: ["NASA93"],
     });
@@ -147,7 +149,7 @@ describe("estimation tools via registry", () => {
 
 describe("sprint_forecast edge cases", () => {
   it("rejects empty velocity history at schema level", () => {
-    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const tool = defined(TOOL_REGISTRY.get("sprint_forecast"));
     expect(() => tool.handler({
       backlog_points: 50,
       velocity_history: [],
@@ -157,7 +159,7 @@ describe("sprint_forecast edge cases", () => {
   });
 
   it("rejects zero backlog at schema level", () => {
-    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const tool = defined(TOOL_REGISTRY.get("sprint_forecast"));
     expect(() => tool.handler({
       backlog_points: 0,
       velocity_history: [10, 12],
@@ -167,7 +169,7 @@ describe("sprint_forecast edge cases", () => {
   });
 
   it("rejects all-zero velocity at schema level", () => {
-    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const tool = defined(TOOL_REGISTRY.get("sprint_forecast"));
     expect(() => tool.handler({
       backlog_points: 50,
       velocity_history: [0, 0, 0],
@@ -177,7 +179,7 @@ describe("sprint_forecast edge cases", () => {
   });
 
   it("computes pessimistic sprints with variance", () => {
-    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const tool = defined(TOOL_REGISTRY.get("sprint_forecast"));
     const result = tool.handler({
       backlog_points: 100,
       velocity_history: [20, 25, 22, 23, 18],
@@ -194,7 +196,7 @@ describe("sprint_forecast edge cases", () => {
   });
 
   it("falls back to 1.5x when only one velocity data point", () => {
-    const tool = TOOL_REGISTRY.get("sprint_forecast")!;
+    const tool = defined(TOOL_REGISTRY.get("sprint_forecast"));
     const result = tool.handler({
       backlog_points: 100,
       velocity_history: [25],
@@ -213,7 +215,7 @@ describe("sprint_forecast edge cases", () => {
 
 describe("monte_carlo_schedule edge cases", () => {
   it("rejects zero iterations at schema level", () => {
-    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const tool = defined(TOOL_REGISTRY.get("monte_carlo_schedule"));
     expect(() => tool.handler({
       tasks: [{ name: "T1", optimistic: 1, most_likely: 3, pessimistic: 8 }],
       iterations: 0,
@@ -221,7 +223,7 @@ describe("monte_carlo_schedule edge cases", () => {
   });
 
   it("rejects optimistic > most_likely at schema level", () => {
-    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const tool = defined(TOOL_REGISTRY.get("monte_carlo_schedule"));
     expect(() => tool.handler({
       tasks: [{ name: "Bad", optimistic: 10, most_likely: 3, pessimistic: 15 }],
       iterations: 100,
@@ -229,7 +231,7 @@ describe("monte_carlo_schedule edge cases", () => {
   });
 
   it("produces deterministic results with same seed", () => {
-    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const tool = defined(TOOL_REGISTRY.get("monte_carlo_schedule"));
     const input = {
       tasks: [
         { name: "A", optimistic: 2, most_likely: 5, pessimistic: 10 },
@@ -251,7 +253,7 @@ describe("monte_carlo_schedule edge cases", () => {
   });
 
   it("reports risk events for high-variance tasks", () => {
-    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const tool = defined(TOOL_REGISTRY.get("monte_carlo_schedule"));
     const result = tool.handler({
       tasks: [
         { name: "Stable", optimistic: 4, most_likely: 5, pessimistic: 6 },
@@ -265,12 +267,12 @@ describe("monte_carlo_schedule edge cases", () => {
       const data = result.data as Record<string, unknown>;
       const risks = data.riskEvents as Array<{ description: string }>;
       expect(risks.length).toBeGreaterThan(0);
-      expect(risks[0]!.description).toContain("Risky");
+      expect(defined(risks[0]).description).toContain("Risky");
     }
   });
 
   it("single task produces valid percentiles", () => {
-    const tool = TOOL_REGISTRY.get("monte_carlo_schedule")!;
+    const tool = defined(TOOL_REGISTRY.get("monte_carlo_schedule"));
     const result = tool.handler({
       tasks: [{ name: "Solo", optimistic: 1, most_likely: 2, pessimistic: 5 }],
       iterations: 10000,
@@ -293,7 +295,7 @@ describe("monte_carlo_schedule edge cases", () => {
 
 describe("pert_estimate reference class cross-check", () => {
   it("includes referenceClassCrossCheck when ai_native >= 0.7 and task_type provided", () => {
-    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("pert_estimate"));
     const result = tool.handler({
       optimistic: 2,
       most_likely: 6,
@@ -315,7 +317,7 @@ describe("pert_estimate reference class cross-check", () => {
   });
 
   it("omits cross-check when task_type is not provided", () => {
-    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("pert_estimate"));
     const result = tool.handler({
       optimistic: 2,
       most_likely: 4,
@@ -331,7 +333,7 @@ describe("pert_estimate reference class cross-check", () => {
   });
 
   it("omits cross-check when ai_native < 0.7", () => {
-    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("pert_estimate"));
     const result = tool.handler({
       optimistic: 2,
       most_likely: 4,
@@ -348,7 +350,7 @@ describe("pert_estimate reference class cross-check", () => {
   });
 
   it("includes recommendation when reference class is much lower than PERT", () => {
-    const tool = TOOL_REGISTRY.get("pert_estimate")!;
+    const tool = defined(TOOL_REGISTRY.get("pert_estimate"));
     // Large PERT spread: expected=10.67h, but AI-native feature/small baseline is 0.5h
     const result = tool.handler({
       optimistic: 3,

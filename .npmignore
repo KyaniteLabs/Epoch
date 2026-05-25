@@ -1,8 +1,5 @@
 src/
 *.test.ts
-docs/
-data/
-scripts/
 .omc/
 .omx/
 site/
