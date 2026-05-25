@@ -45,6 +45,7 @@ function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
 
 /** Resolve root options from Commander command chain. */
 function getRootOpts(cmd: Command): Record<string, unknown> {
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return cmd.parent!.opts() as Record<string, unknown>;
 }
 

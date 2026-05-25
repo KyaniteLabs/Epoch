@@ -175,7 +175,107 @@
         }
       ],
       "trend": "stable"
+    },
+    "src/entries/http.ts": {
+      "latest": {
+        "commit": "f99d794",
+        "timestamp": "2026-05-25T03:57:40.108Z",
+        "mi": 9,
+        "cognitive": 205,
+        "nesting": 6,
+        "lines": 707,
+        "maxCyclomatic": 86,
+        "entropy": 6.92
+      },
+      "history": [
+        {
+          "commit": "f99d794",
+          "timestamp": "2026-05-25T03:57:40.108Z",
+          "mi": 9,
+          "cognitive": 205,
+          "nesting": 6,
+          "lines": 707,
+          "maxCyclomatic": 86,
+          "entropy": 6.92
+        }
+      ],
+      "trend": "stable"
+    },
+    "src/lib/calibration-factors.ts": {
+      "latest": {
+        "commit": "2c752a4",
+        "timestamp": "2026-05-25T03:58:55.492Z",
+        "mi": 33.7,
+        "cognitive": 46,
+        "nesting": 4,
+        "lines": 90,
+        "maxCyclomatic": 13,
+        "entropy": 5.69
+      },
+      "history": [
+        {
+          "commit": "2c752a4",
+          "timestamp": "2026-05-25T03:58:55.492Z",
+          "mi": 33.7,
+          "cognitive": 46,
+          "nesting": 4,
+          "lines": 90,
+          "maxCyclomatic": 13,
+          "entropy": 5.69
+        }
+      ],
+      "trend": "stable"
+    },
+    "src/lib/internal/error-helpers.ts": {
+      "latest": {
+        "commit": "2c752a4",
+        "timestamp": "2026-05-25T03:59:05.424Z",
+        "mi": 79.5,
+        "cognitive": 0,
+        "nesting": 1,
+        "lines": 8,
+        "maxCyclomatic": 1,
+        "entropy": 3.73
+      },
+      "history": [
+        {
+          "commit": "2c752a4",
+          "timestamp": "2026-05-25T03:59:05.424Z",
+          "mi": 79.5,
+          "cognitive": 0,
+          "nesting": 1,
+          "lines": 8,
+          "maxCyclomatic": 1,
+          "entropy": 3.73
+        }
+      ],
+      "trend": "stable"
+    },
+    "src/lib/calibration-factors.test.ts": {
+      "latest": {
+        "commit": "2c752a4",
+        "timestamp": "2026-05-25T04:00:03.457Z",
+        "mi": 32.5,
+        "cognitive": 0,
+        "nesting": 4,
+        "lines": 125,
+        "maxCyclomatic": 1,
+        "entropy": 4.63
+      },
+      "history": [
+        {
+          "commit": "2c752a4",
+          "timestamp": "2026-05-25T04:00:03.457Z",
+          "mi": 32.5,
+          "cognitive": 0,
+          "nesting": 4,
+          "lines": 125,
+          "maxCyclomatic": 1,
+          "entropy": 4.63
+        }
+      ],
+      "trend": "stable"
     }
   },
-  "capturedAt": "2026-05-25T00:32:08.452Z"
+  "capturedAt": "2026-05-25T04:00:08.447Z"
 }
