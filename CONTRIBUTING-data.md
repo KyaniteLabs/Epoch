@@ -59,6 +59,18 @@ Our goal: build the most accurate open-source estimation database, powered by th
 
 ## How to Submit
 
+### Option A: Use `epoch share-data` (Recommended)
+
+If you use Epoch's CLI, you can export your anonymized data directly:
+
+```bash
+epoch share-data --description "Anonymized Epoch usage export" --validate
+```
+
+This produces a valid `estimation-record` schema file with no notes, team IDs, project names, or raw timestamps. Review the file, then follow the PR steps below.
+
+### Option B: Manual file creation
+
 ### 1. Fork the repo
 
 Standard GitHub fork workflow.

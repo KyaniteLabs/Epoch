@@ -634,6 +634,27 @@ epoch telemetry export     # Export all local data as anonymized JSON
 
 See [Privacy Policy](docs/PRIVACY.md) and [Telemetry Documentation](docs/TELEMETRY.md) for full details.
 
+## Where Your Data Lives
+
+By default, Epoch stores local data under `~/.epoch/` or `EPOCH_DATA_DIR`. Your local usage data is not automatically committed to GitHub and is not automatically submitted anywhere.
+
+```bash
+epoch data where     # Show local data file locations
+epoch data status    # Show data file counts, feedback health, telemetry config
+```
+
+## Sharing Data
+
+Use `epoch share-data --validate` to create a community-data JSON file suitable for `data/community/`. Review the file before opening a PR.
+
+```bash
+epoch share-data --description "Anonymized Epoch usage export" --validate
+```
+
+## Machine Labels
+
+`windows-receiver` is a historical label. The current receiver host is `ubuntu-receiver` at `100.113.174.74`. See [docs/ops/machines.md](docs/ops/machines.md) for the full inventory.
+
 ## License
 
 MIT License. See [LICENSE](./LICENSE) for full terms.

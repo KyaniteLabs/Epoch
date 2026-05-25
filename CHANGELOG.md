@@ -8,8 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- MCP Registry metadata (`server.json`) and automated registry publishing via `mcp-publisher` in the release workflow. Identifier: `io.github.KyaniteLabs/Epoch`.
-- MCP Registry badge and links in README, `llms.txt`, `docs/llms.txt`, `site/llms-full.txt`, and `site/index.html`.
+- `epoch data where` — show local Epoch data file locations (read-only, no network).
+- `epoch data status` — show local data file counts, feedback match rate, telemetry status, and reference database health.
+- `epoch share-data --validate --description` — export anonymized community data in valid `estimation-record` schema format.
+- `pnpm run dataset:build` and `pnpm run dataset:verify` scripts for the public aggregate benchmark.
+- `scripts/validate-public-benchmark.mjs` — validates `data/public-benchmark.json` against aggregate-only rules.
+- CI step for community data validation (`node scripts/validate-community-data.mjs`).
+- CI step for reference database verification (`node scripts/verify-reference-db.mjs`).
+- `docs/ops/machines.md` — canonical machine inventory (ubuntu-receiver, mac-mini, hermes-vps).
+- `docs/ops/epoch-fleet-audit.md` — runbook for live fleet auditing.
+- `scripts/audit-epoch-fleet.sh` — convenience script for SSH-based fleet audits.
+- `src/lib/data-status.ts` — read-only local data inspection functions.
+- `src/lib/community-export.ts` — community-data-compatible export with schema validation.
+- 22 new tests (9 data-status, 13 community-export).
+
+### Changed
+- `epoch share-data` now produces valid `data/community`-compatible files with `_schema`, `description`, and `records` fields instead of a raw array.
+- `windows-receiver` is documented as a historical alias only. Current references use `ubuntu-receiver`.
 
 ## [0.2.2] - 2026-05-07
 

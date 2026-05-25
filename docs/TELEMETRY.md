@@ -188,7 +188,45 @@ Provides instructions for deleting your data:
 
 ### `epoch share-data`
 
-Exports anonymized data formatted for community contribution to the Epoch GitHub repository. Produces a file suitable for submitting via Pull Request. See [CONTRIBUTING-data.md](../CONTRIBUTING-data.md) for the community contribution workflow.
+Exports anonymized data formatted for community contribution to the Epoch GitHub repository.
+
+```bash
+epoch share-data --description "Anonymized Epoch usage export" --validate
+```
+
+The export produces a file with this structure:
+
+```json
+{
+  "_schema": "estimation-record",
+  "description": "...",
+  "records": [
+    {
+      "estimated_hours": 8,
+      "actual_hours": 12,
+      "task_type": "feature",
+      "complexity": 3,
+      "timestamp": "2026-05-24T00:00:00Z"
+    }
+  ]
+}
+```
+
+**What is included:** task type, complexity (1-5), estimated hours, actual hours, date-only timestamp.
+
+**What is NOT included:** No notes, source names, team IDs, project names, estimate IDs, tool names, ratios, or time-of-day.
+
+Use `--validate` to verify the export against the community data schema before submitting.
+
+See [CONTRIBUTING-data.md](../CONTRIBUTING-data.md) for the community contribution workflow.
+
+### `epoch data where`
+
+Shows local Epoch data file locations. Read-only, no network calls, no telemetry submission.
+
+### `epoch data status`
+
+Shows local Epoch data status: file counts, feedback match rate, telemetry configuration, reference database health, and role hints.
 
 ## Rate Limits
 
@@ -244,7 +282,13 @@ epoch telemetry set-endpoint --endpoint http://localhost:3099/v1/telemetry
 epoch telemetry submit
 ```
 
-The built-in receiver verifies the signature and stores aggregate receipt metadata in `~/.epoch/telemetry-receipts.jsonl`; it does not duplicate raw telemetry records into the receipt log.
+The built-in receiver verifies the signature and writes three local files:
+
+- `~/.epoch/telemetry-records.jsonl` — shared anonymized records plus `received_at`
+- `~/.epoch/telemetry-record-keys.jsonl` — receiver-local SHA-256 dedupe keys
+- `~/.epoch/telemetry-receipts.jsonl` — aggregate receipts with accepted/deduplicated counts
+
+The shared records file contains only anonymized telemetry fields: `task_type`, `complexity`, `tool`, `estimated_hours`, `actual_hours`, `ratio`, `date`, and `received_at`. It does not store installation IDs, notes, project names, source text, team IDs, or dedupe keys.
 
 **Verification steps (server-side):**
 
@@ -252,8 +296,8 @@ The built-in receiver verifies the signature and stores aggregate receipt metada
 2. Compute HMAC-SHA256 of the raw body using `installation_id` from the payload as the key
 3. Compare with `X-Epoch-Signature` header (constant-time comparison)
 4. Validate `schema_version` is supported
-5. Deduplicate records by `(installation_id, date, task_type, estimated_hours)`
-6. Store or aggregate
+5. Deduplicate records by a receiver-local hash of `(installation_id, record)`
+6. Store anonymized records and aggregate receipts
 
 ### Configuring a custom endpoint
 
