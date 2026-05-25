@@ -1,9 +1,9 @@
 {
-  "success": true,
+  "success": false,
   "issues": [],
   "unusedExports": [],
   "unusedFiles": [],
   "unusedDeps": [],
   "unlistedDeps": [],
-  "summary": "No issues found"
+  "summary": "Error: spawn knip ENOENT"
 }
