@@ -217,6 +217,42 @@ describe("submitTelemetry", () => {
 		expect(result.error).toContain("rate limited");
 	});
 
+	it("allows trusted fleet jobs to bypass the submit interval", async () => {
+		const { saveConfig } = await import("./config.js");
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: new Date().toISOString(),
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(estimateId, 3, "force submit coverage");
+		process.env["EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS"] = "0";
+
+		let called = false;
+		globalThis.fetch = (async () => {
+			called = true;
+			return new Response(JSON.stringify({ accepted: 1, deduplicated: 0 }), {
+				status: 200,
+			});
+		}) as typeof fetch;
+
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+		process.env["EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS"] = "0";
+		const result = await submitTelemetry();
+		expect(result).toMatchObject({ ok: true, recordCount: 1 });
+		expect(called).toBe(true);
+	});
+
 	it("honors EPOCH_TELEMETRY=0 when config telemetry is enabled", async () => {
 		const { saveConfig } = await import("./config.js");
 		const { recordEstimate, recordActual } = await import("./feedback.js");

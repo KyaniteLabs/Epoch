@@ -80,7 +80,7 @@ install_macos_sender() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>com.kyanitelabs.epoch.telemetry-submit</string>
-<key>ProgramArguments</key><array><string>/bin/zsh</string><string>-lc</string><string>$node $cli telemetry submit --endpoint $ENDPOINT &gt;&gt; $HOME/.epoch/telemetry-submit.launchd.log 2&gt;&amp;1 || true</string></array>
+<key>ProgramArguments</key><array><string>/bin/zsh</string><string>-lc</string><string>EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS=0 $node $cli telemetry submit --endpoint $ENDPOINT &gt;&gt; $HOME/.epoch/telemetry-submit.launchd.log 2&gt;&amp;1 || true</string></array>
 <key>StartInterval</key><integer>3600</integer><key>RunAtLoad</key><true/>
 <key>StandardOutPath</key><string>$HOME/.epoch/telemetry-submit.launchd.log</string>
 <key>StandardErrorPath</key><string>$HOME/.epoch/telemetry-submit.launchd.log</string>
@@ -110,6 +110,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS=0
 ExecStart=$node $cli telemetry submit --endpoint $ENDPOINT
 SuccessExitStatus=0 1
 User=root
@@ -137,7 +138,10 @@ install_receiver_container() {
     log "FAIL: receiver install must run as root."
     exit 1
   fi
-  command -v docker >/dev/null 2>&1 || { log "FAIL: docker not found"; exit 1; }
+  command -v docker >/dev/null 2>&1 || {
+    log "FAIL: docker not found"
+    exit 1
+  }
   mkdir -p /srv/apps/epoch /srv/containers/nucbox/epoch /srv/data/epoch
   cat >/srv/apps/epoch/Dockerfile <<DOCKER
 FROM node:22-bookworm-slim
@@ -177,20 +181,23 @@ YAML
 
 ensure_epoch_package
 case "$ROLE" in
-  sender)
-    if [ "$OS" = "Darwin" ]; then install_macos_sender; else install_systemd_sender; fi
-    ;;
-  mac-consolidator)
-    [ "$OS" = "Darwin" ] || { log "FAIL: mac-consolidator role requires macOS"; exit 1; }
-    install_macos_sender
-    bash "$(cd "$(dirname "$0")" && pwd)/install-weekly-consolidate.sh"
-    ;;
-  receiver)
-    install_systemd_sender
-    install_receiver_container
-    ;;
-  *)
-    log "FAIL: unknown role '$ROLE'"
+sender)
+  if [ "$OS" = "Darwin" ]; then install_macos_sender; else install_systemd_sender; fi
+  ;;
+mac-consolidator)
+  [ "$OS" = "Darwin" ] || {
+    log "FAIL: mac-consolidator role requires macOS"
     exit 1
-    ;;
+  }
+  install_macos_sender
+  bash "$(cd "$(dirname "$0")" && pwd)/install-weekly-consolidate.sh"
+  ;;
+receiver)
+  install_systemd_sender
+  install_receiver_container
+  ;;
+*)
+  log "FAIL: unknown role '$ROLE'"
+  exit 1
+  ;;
 esac

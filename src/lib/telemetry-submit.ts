@@ -108,6 +108,28 @@ function receiverCount(value: unknown): number | undefined {
 		: undefined;
 }
 
+function telemetrySubmitIntervalHours(): number {
+	const raw = process.env["EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS"]?.trim();
+	if (raw === undefined || raw === "") return 1;
+	const parsed = Number(raw);
+	if (!Number.isFinite(parsed) || parsed < 0) return 1;
+	return parsed;
+}
+
+function shouldBypassTelemetrySubmitInterval(): boolean {
+	const raw = process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"]?.trim().toLowerCase();
+	return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function isTelemetrySubmitRateLimited(lastSubmissionAt: string | null): boolean {
+	if (!lastSubmissionAt || shouldBypassTelemetrySubmitInterval()) return false;
+	const intervalHours = telemetrySubmitIntervalHours();
+	if (intervalHours === 0) return false;
+	const hoursSinceLast =
+		(Date.now() - new Date(lastSubmissionAt).getTime()) / 3_600_000;
+	return hoursSinceLast < intervalHours;
+}
+
 export async function submitTelemetry(): Promise<SubmissionResult> {
 	const config = loadConfig();
 
@@ -128,16 +150,12 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 	}
 
 	const lastSub = config.telemetry.lastSubmissionAt;
-	if (lastSub) {
-		const hoursSinceLast =
-			(Date.now() - new Date(lastSub).getTime()) / 3_600_000;
-		if (hoursSinceLast < 1) {
-			return {
-				ok: false,
-				recordCount: 0,
-				error: "rate limited: less than 1 hour since last submission",
-			};
-		}
+	if (isTelemetrySubmitRateLimited(lastSub)) {
+		return {
+			ok: false,
+			recordCount: 0,
+			error: `rate limited: less than ${telemetrySubmitIntervalHours()} hour(s) since last submission`,
+		};
 	}
 
 	const records = extractAnonymizedRecords(lastSub ?? undefined);
@@ -226,11 +244,7 @@ export function maybeSubmitTelemetry(): void {
 		return;
 
 	const lastSub = config.telemetry.lastSubmissionAt;
-	if (lastSub) {
-		const hoursSinceLast =
-			(Date.now() - new Date(lastSub).getTime()) / 3_600_000;
-		if (hoursSinceLast < 1) return;
-	}
+	if (isTelemetrySubmitRateLimited(lastSub)) return;
 
 	submitTelemetry().catch(() => {
 		/* non-critical, silent */

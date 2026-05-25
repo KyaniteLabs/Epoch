@@ -1039,6 +1039,11 @@ export function createCliProgram(): Command {
 			"--endpoint <url>",
 			"Telemetry receiver URL to save before submitting",
 		)
+		.option("--force", "Bypass the local submit interval guard")
+		.option(
+			"--min-interval-hours <n>",
+			"Minimum hours between submits for this invocation",
+		)
 		.description(
 			"Submit queued anonymized telemetry to the configured endpoint",
 		)
@@ -1060,6 +1065,13 @@ export function createCliProgram(): Command {
 				const config = loadConfig();
 				config.telemetry.endpoint = endpoint;
 				saveConfig(config);
+			}
+
+			if (opts.force) process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"] = "1";
+			if (opts.minIntervalHours !== undefined) {
+				process.env["EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS"] = String(
+					opts.minIntervalHours,
+				);
 			}
 
 			const result = await submitTelemetry();
