@@ -613,11 +613,7 @@ describe("CLI tests", () => {
 			delete process.env["EPOCH_DATA_DIR"];
 			delete process.env["EPOCH_TELEMETRY"];
 			delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
-			try {
-				rmSync(TEST_DIR, { recursive: true, force: true });
-			} catch {
-				/* ok */
-			}
+			rmSync(TEST_DIR, { recursive: true, force: true });
 		});
 
 		it("sets endpoint while enabling telemetry", async () => {
@@ -696,6 +692,29 @@ describe("CLI tests", () => {
 			expect(output.endpoint).toBe("(not configured)");
 			expect(output.endpointConfigured).toBe(false);
 			expect(typeof output.queuedRecords).toBe("number");
+		});
+
+		it("reports EPOCH_TELEMETRY=0 override as disabled in telemetry status", async () => {
+			const { saveConfig } = await import("../lib/config.js");
+			saveConfig({
+				telemetry: {
+					enabled: true,
+					endpoint: "https://collector.example.net/v1/telemetry",
+					lastSubmissionAt: null,
+					lastSubmissionRecordCount: 0,
+					installationId: "test-id",
+				},
+			});
+			process.env["EPOCH_TELEMETRY"] = "0";
+
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, ["telemetry", "status"]);
+			const output = JSON.parse(capture.stdout.join("")) as {
+				enabled: boolean;
+			};
+
+			expect(capture.exitCode).toBe(0);
+			expect(output.enabled).toBe(false);
 		});
 	});
 });
