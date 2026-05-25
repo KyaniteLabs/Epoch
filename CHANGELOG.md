@@ -21,8 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/lib/data-status.ts` — read-only local data inspection functions.
 - `src/lib/community-export.ts` — community-data-compatible export with schema validation.
 - 22 new tests (9 data-status, 13 community-export).
+- `scripts/consolidate-and-improve.sh` — consolidates data from all fleet machines and rebuilds the bundled reference database.
+- `scripts/verify-reference-db.mjs` — validates the bundled reference database for CI.
 
 ### Changed
+- **Bundled reference database rebuilt from consolidated fleet data:** sample size 5,895 → 126,223 (21x increase). Correction factor 0.300 → 0.890 (realistic). Data from laptop (10,118 estimates), Mac mini (225 estimates), and NuC receiver (438 telemetry records) merged and self-improved.
+- README rewritten to clarify Epoch works accurately out of the box — no data collection or account required.
 - `epoch share-data` now produces valid `data/community`-compatible files with `_schema`, `description`, and `records` fields instead of a raw array.
 - `windows-receiver` is documented as a historical alias only. Current references use `ubuntu-receiver`.
 

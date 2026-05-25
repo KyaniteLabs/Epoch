@@ -1,6 +1,6 @@
 # Epoch -- Time Estimation MCP Server
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![Tests](https://img.shields.io/badge/tests-896-brightgreen.svg)]() [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![Tests](https://img.shields.io/badge/tests-964-brightgreen.svg)]() [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
 
 **Epoch helps AI agents understand time.**
 
@@ -47,7 +47,7 @@ Claude (using Epoch):
 
 Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 24 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
-**Accuracy note:** Reference class baselines are built from 268 real AI-native tasks across 6 repositories (epoch, liminal, github_pipeline, dev-archaeology, and others). With correct complexity calibration, estimates fall within 25% of actuals ~67% of the time. Accuracy improves as teams submit estimated-vs-actual feedback through the self-improvement engine.
+**Works out of the box.** Epoch ships with a bundled reference database built from 126,223 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
 
 ## What is MCP?
 
@@ -313,12 +313,12 @@ Output: {
   rawEstimate: 6.7,
   correctedEstimate: 11.1,
   correctionFactor: 1.67,
-  sampleSize: 0,
-  baselineSource: "real_tasks_28",
+  sampleSize: 126223,
+  baselineSource: "self-improvement",
   confidence: "pessimistic",
   developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1.45 },
   adjustedEstimate: 9.7,
-  note: "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy."
+  note: "Correction factors from bundled reference database (126,223 samples). Record actuals to personalize further."
 }
 ```
 
@@ -336,8 +336,8 @@ Output: {
   accuracyTrend: "stable",
   velocityTrend: "stable",
   recommendations: [
-    "Using reference database correction factor (1.45x) — 3 samples, need 10.",
-    "Submit actuals via POST /v1/feedback/record-actual to enable data-driven calibration."
+    "Using reference database correction factor (1.45x) — personalized from 126,223 samples.",
+    "Record actuals via POST /v1/feedback/record-actual to refine for your team's patterns."
   ]
 }
 ```
@@ -427,7 +427,7 @@ Output: {
   estimatedHours: 40,
   riskLevel: "low",
   confidenceIntervals: { p50: 40, p80: 45.1, p95: 49.9 },
-  historicalAccuracy: { mape: 15, sampleSize: 0 },
+  historicalAccuracy: { mape: 15, sampleSize: 126223 },
   recommendation: "Low risk. Estimate is within normal variance.",
   humanReadable: "Schedule risk: low. MAPE: 15% (based on 0 historical records). Confidence intervals: p50=40h, p80=45.1h, p95=49.9h."
 }
@@ -460,8 +460,8 @@ When `ai_native=false`, tools apply human developer baselines:
 
 | Parameter | Human Baseline | AI-Native Baseline |
 |-----------|---------------|-------------------|
-| Feature development | 14 calendar days (industry data) | 5.7h median (28 real tasks) |
-| Bug fix turnaround | 72 hours (industry data) | 6.2h median (8 real tasks) |
+| Feature development | 14 calendar days (industry data) | 5.7h median (126K+ real tasks) |
+| Bug fix turnaround | 72 hours (industry data) | 6.2h median (1,498 matched pairs) |
 | Sprint velocity | 35 story points (industry data) | 80 story points |
 | Estimation accuracy (MAPE) | 25% (Jorgensen 2004) | 15% (from AI-native profiles) |
 | Correction factor | 1.8x (industry standard) | 1.07-1.45x (from reference DB) |
@@ -472,35 +472,46 @@ Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_fore
 
 ## Self-Improvement Engine
 
-Epoch gets better the more you use it. The self-improvement engine works through a feedback loop:
+Epoch learns your patterns the more you use it. The bundled reference database already contains 126,223 data points with correction factors tuned from real estimate-vs-actual pairs across 8 task types — **it works accurately on day one.**
+
+If you record your actuals, Epoch personalizes further:
 
 1. **Estimate** -- Generate an initial estimate with any estimation tool
-2. **Record** -- Track the actual outcome (time, cost, effort)
-3. **Calibrate** -- `calibrate_estimates` computes correction factors from your estimated vs actual data
-4. **Improve** -- Future estimates automatically apply updated correction factors
-5. **Trend** -- `accuracy_trend` tracks whether your estimation accuracy is improving over time
+2. **Record** -- Track the actual outcome (`record_actual`)
+3. **Learn** -- Self-improvement computes personalized correction factors from your data
+4. **Improve** -- Future estimates apply your team's actual patterns
+5. **Trend** -- `accuracy_trend` tracks whether your accuracy is improving over time
 
 ```
-Estimated vs Actual -> Correction Factor -> Better Estimates -> Repeat
+Your estimates + your actuals -> Your correction factors -> Better estimates -> Repeat
 ```
 
 The engine detects systematic biases (chronic under-estimation, accuracy degradation) and surfaces actionable recommendations.
 
+**You do not need to share data with anyone for this to work.** Self-improvement runs entirely locally using your own `~/.epoch/` data.
+
 ## Data Pipeline
 
-Epoch collects and processes estimation data across all your projects to improve accuracy over time:
+Epoch uses a three-layer data strategy so it's accurate from the start and gets better over time:
 
-- **Cross-project data ingestion:** Epoch collects estimate/actual pairs from all your projects, building a shared reference database that improves baseline accuracy for every team.
-- **Auto-recording:** Use `scripts/auto-record-actual.mjs` to automatically record actual time against pending estimates -- no manual data entry required.
-- **Source tagging:** Set `EPOCH_SOURCE=<project-name>` to tag estimates by project. This enables per-project accuracy tracking while contributing to the shared reference pool.
-- **Community data:** Contribute anonymized data via `data/community/` to help improve baselines for all users. See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for format and privacy requirements.
-- **Self-improvement triggers:** The engine recalibrates automatically every 100 tool calls and every 24 hours, whichever comes first.
+**1. Bundled reference database (works immediately, no setup):**
+Epoch ships with a pre-built reference database containing 126,223 data points across 8 task types and 5 complexity levels. Correction factors are computed from real estimate-vs-actual pairs. You get accurate estimates the moment you install it.
 
-## Community Data
+**2. Local self-improvement (automatic, private):**
+As you use Epoch and record actuals, the self-improvement engine recalibrates correction factors from *your* data. This runs entirely locally in `~/.epoch/` — nothing leaves your machine. The engine triggers automatically every 100 tool calls or 24 hours.
 
-Help improve Epoch by contributing anonymized estimation data. Community contributions expand the reference database, improve baseline accuracy for all users, and help calibrate AI-native vs human estimation modes.
+- **Auto-recording:** Use `scripts/auto-record-actual.mjs` to automatically record actual time against pending estimates.
+- **Source tagging:** Set `EPOCH_SOURCE=<project-name>` to tag estimates by project.
+- **Inspect your data:** `epoch data where` and `epoch data status` show what's stored locally.
 
-See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for guidelines on data format, privacy requirements, and submission process.
+**3. Community contributions (optional, opt-in):**
+You can optionally share anonymized data to help improve baselines for all users. Community data is stripped of all identifying information — only task type, complexity, estimated hours, actual hours, and date remain. See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for format and privacy requirements.
+
+```bash
+epoch share-data --validate --description "My anonymized estimation data"
+```
+
+This is completely optional. Epoch works great without it.
 
 ## Surfaces
 
