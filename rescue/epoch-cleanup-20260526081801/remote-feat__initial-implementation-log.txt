@@ -1,0 +1,2 @@
+607babd fix: comprehensive QA remediation across all surfaces
+b4469d6 Add canary runner for cross-model API compatibility testing

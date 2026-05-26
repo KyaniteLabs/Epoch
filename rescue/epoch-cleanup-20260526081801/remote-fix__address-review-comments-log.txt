@@ -1,0 +1,3 @@
+8f03ecc chore: prepare v0.2.7 release
+408604b chore: prepare v0.2.6 release
+e1a078a fix: address code review — CI lint blocking + consolidation branch safety

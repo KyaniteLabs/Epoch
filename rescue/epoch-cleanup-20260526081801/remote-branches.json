@@ -1,0 +1,82 @@
+[
+  {
+    "branch": "origin/feat/initial-implementation",
+    "ahead_of_main": 2,
+    "behind_main": 236,
+    "merged_to_main": false,
+    "sha": "607babdfbfff87b51f015724a2bc696053b4bb7e",
+    "subject": "fix: comprehensive QA remediation across all surfaces"
+  },
+  {
+    "branch": "origin/fix/address-review-comments",
+    "ahead_of_main": 3,
+    "behind_main": 7,
+    "merged_to_main": false,
+    "sha": "8f03eccf5f0dedd551fb0cdfdc13b73061ad9256",
+    "subject": "chore: prepare v0.2.7 release"
+  },
+  {
+    "branch": "origin/fix/data-contribution-and-machine-truth",
+    "ahead_of_main": 16,
+    "behind_main": 10,
+    "merged_to_main": false,
+    "sha": "8229962b07bc7cc9eb31ba9654a455d81d61a46f",
+    "subject": "chore: update pnpm-lock.yaml"
+  },
+  {
+    "branch": "origin/fix/fleet-autonomy-sync",
+    "ahead_of_main": 6,
+    "behind_main": 6,
+    "merged_to_main": false,
+    "sha": "0892ea5529eda8a3f43219c1b55e0c67059a9411",
+    "subject": "test: cover forced telemetry submits after rebase"
+  },
+  {
+    "branch": "origin/fix/lint-and-tech-debt",
+    "ahead_of_main": 3,
+    "behind_main": 9,
+    "merged_to_main": false,
+    "sha": "5539676f667fdd83011863045dc0ecdb38dd46ca",
+    "subject": "fix: weekly consolidation pushes via PR instead of direct to main"
+  },
+  {
+    "branch": "origin/fix/server-json-v028",
+    "ahead_of_main": 1,
+    "behind_main": 4,
+    "merged_to_main": false,
+    "sha": "46c4ef7706ab8143dd346737a5e9f74b2f39d127",
+    "subject": "fix: update MCP registry metadata for v0.2.8"
+  },
+  {
+    "branch": "origin/fix/telemetry-cursor-partial-failure",
+    "ahead_of_main": 1,
+    "behind_main": 1,
+    "merged_to_main": false,
+    "sha": "49473476e5a54aaa953a7b81416c48c9d88028a4",
+    "subject": "fix: use precise telemetry cursor timestamp"
+  },
+  {
+    "branch": "origin/gh-pages",
+    "ahead_of_main": 6,
+    "behind_main": 256,
+    "merged_to_main": false,
+    "sha": "203620bc5730b91ab1b2b80142ac07c3de8ee3aa",
+    "subject": "deploy: update MCP client references for 2026"
+  },
+  {
+    "branch": "origin/release/v0.2.8",
+    "ahead_of_main": 1,
+    "behind_main": 5,
+    "merged_to_main": false,
+    "sha": "dc18887bdfca2165fdf7154dacc756db27074e85",
+    "subject": "chore: prepare v0.2.8 release"
+  },
+  {
+    "branch": "origin/release/v0.2.9",
+    "ahead_of_main": 1,
+    "behind_main": 3,
+    "merged_to_main": false,
+    "sha": "5b1c4937325159f66f2befb85b49129a4aa53fc1",
+    "subject": "chore: prepare v0.2.9 release"
+  }
+]

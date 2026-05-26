@@ -1,0 +1,7 @@
+ canary-runner.mjs            | 449 +++++++++++++++++++++++++++++++++++++++++++
+ docs/compatibility-matrix.md |  42 ++++
+ src/entries/cli.ts           |  23 ++-
+ src/entries/http.ts          | 144 +++++++++++++-
+ src/schemas/index.ts         |   2 +-
+ src/types/index.ts           |   4 +
+ 6 files changed, 658 insertions(+), 6 deletions(-)
