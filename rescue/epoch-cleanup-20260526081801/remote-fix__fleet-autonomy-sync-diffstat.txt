@@ -1,0 +1,19 @@
+ CHANGELOG.md                          |   15 +
+ package.json                          |    3 +-
+ scripts/auto-record-actual.mjs        |  336 +++---
+ scripts/epoch-fleet-bootstrap.sh      |  203 ++++
+ scripts/ingest-cross-project-data.mjs |  227 ++--
+ scripts/install-weekly-consolidate.sh |    2 +-
+ scripts/weekly-consolidate.sh         |   19 +-
+ server.json                           |    8 +-
+ src/entries/cli.test.ts               |   29 +-
+ src/entries/cli.ts                    | 2045 +++++++++++++++++++--------------
+ src/lib/community-export.test.ts      |  501 ++++----
+ src/lib/community-export.ts           |  554 ++++-----
+ src/lib/config.test.ts                |  421 ++++---
+ src/lib/config.ts                     |  160 +--
+ src/lib/telemetry-submit.test.ts      |  728 +++++++-----
+ src/lib/telemetry-submit.ts           |  393 ++++---
+ src/lib/temporal.test.ts              |  371 +++---
+ src/lib/temporal.ts                   |  406 +++----
+ 18 files changed, 3742 insertions(+), 2679 deletions(-)

@@ -1,0 +1,34 @@
+diff --git a/package.json b/package.json
+index 7d27452..7250d4f 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@kyanitelabs/epoch",
+-  "version": "0.2.8",
++  "version": "0.2.9",
+   "mcpName": "io.github.KyaniteLabs/Epoch",
+   "description": "Time Estimation MCP Server — 24 tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, and schedule risk. Self-improving. MCP + CLI + REST.",
+   "type": "module",
+diff --git a/server.json b/server.json
+index 1ad3bcb..a3a2896 100644
+--- a/server.json
++++ b/server.json
+@@ -3,7 +3,7 @@
+   "name": "io.github.KyaniteLabs/Epoch",
+   "title": "Epoch",
+   "description": "Epoch time estimation MCP server for PERT, COCOMO, Monte Carlo, calibration, cost, and risk.",
+-  "version": "0.2.8",
++  "version": "0.2.9",
+   "websiteUrl": "https://kyanitelabs.github.io/Epoch/",
+   "repository": {
+     "url": "https://github.com/KyaniteLabs/Epoch",
+@@ -13,7 +13,7 @@
+     {
+       "registryType": "npm",
+       "identifier": "@kyanitelabs/epoch",
+-      "version": "0.2.8",
++      "version": "0.2.9",
+       "runtimeHint": "npx",
+       "packageName": "@kyanitelabs/epoch",
+       "registryMetadata": {
