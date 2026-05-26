@@ -442,6 +442,9 @@ describe("submitTelemetry", () => {
 		});
 		expect(telemetry.lastSubmissionRecordCount).toBe(100);
 		expect(telemetry.lastSubmissionAcceptedCount).toBe(100);
+		expect(new Date(telemetry.lastSubmissionAt ?? "").getTime()).toBeLessThanOrEqual(
+			Date.now(),
+		);
 	});
 });
 
