@@ -1,0 +1,569 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-05-25T05:08:07.342Z",
+  "source": "self-improvement",
+  "sampleSize": 127524,
+  "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
+  "toolExecutionBenchmarks": {
+    "add_business_days": {
+      "p50_ms": 0.78,
+      "p95_ms": 4.75,
+      "mean_ms": 1.82,
+      "stddev_ms": 3.95,
+      "min_ms": 0.16,
+      "max_ms": 7.57,
+      "sampleCount": 5028
+    },
+    "calibrate_estimates": {
+      "p50_ms": 1.34,
+      "p95_ms": 9.44,
+      "mean_ms": 2.11,
+      "stddev_ms": 8.77,
+      "min_ms": 0.65,
+      "max_ms": 20.45,
+      "sampleCount": 2349
+    },
+    "cocomo_estimate": {
+      "p50_ms": 0.04,
+      "p95_ms": 0.52,
+      "mean_ms": 0.15,
+      "stddev_ms": 0.57,
+      "min_ms": 0,
+      "max_ms": 5.78,
+      "sampleCount": 2205
+    },
+    "convert_timezone": {
+      "p50_ms": 0.2,
+      "p95_ms": 1.04,
+      "mean_ms": 0.37,
+      "stddev_ms": 0.86,
+      "min_ms": 0.08,
+      "max_ms": 4.4,
+      "sampleCount": 1699
+    },
+    "count_business_days": {
+      "p50_ms": 0.44,
+      "p95_ms": 9.04,
+      "mean_ms": 1.56,
+      "stddev_ms": 8.36,
+      "min_ms": 0.2,
+      "max_ms": 14,
+      "sampleCount": 1742
+    },
+    "critical_path": {
+      "p50_ms": 0.08,
+      "p95_ms": 0.37,
+      "mean_ms": 0.13,
+      "stddev_ms": 0.38,
+      "min_ms": 0.01,
+      "max_ms": 4.41,
+      "sampleCount": 1105
+    },
+    "get_current_time": {
+      "p50_ms": 1.5,
+      "p95_ms": 10.04,
+      "mean_ms": 2.96,
+      "stddev_ms": 8.57,
+      "min_ms": 0.14,
+      "max_ms": 34.11,
+      "sampleCount": 5229
+    },
+    "monte_carlo_schedule": {
+      "p50_ms": 4.52,
+      "p95_ms": 11.35,
+      "mean_ms": 6.39,
+      "stddev_ms": 6.32,
+      "min_ms": 2.19,
+      "max_ms": 36.59,
+      "sampleCount": 867
+    },
+    "parse_duration": {
+      "p50_ms": 0.2,
+      "p95_ms": 1.08,
+      "mean_ms": 0.52,
+      "stddev_ms": 0.87,
+      "min_ms": 0.01,
+      "max_ms": 5.75,
+      "sampleCount": 4990
+    },
+    "pert_estimate": {
+      "p50_ms": 0.06,
+      "p95_ms": 1.89,
+      "mean_ms": 0.46,
+      "stddev_ms": 1.85,
+      "min_ms": 0.02,
+      "max_ms": 4.5,
+      "sampleCount": 43697
+    },
+    "reference_class_estimate": {
+      "p50_ms": 14.19,
+      "p95_ms": 63.2,
+      "mean_ms": 22.52,
+      "stddev_ms": 60.72,
+      "min_ms": 0.61,
+      "max_ms": 159.89,
+      "sampleCount": 29711
+    },
+    "sprint_forecast": {
+      "p50_ms": 0.04,
+      "p95_ms": 0.13,
+      "mean_ms": 0.09,
+      "stddev_ms": 0.23,
+      "min_ms": 0,
+      "max_ms": 3.99,
+      "sampleCount": 2310
+    },
+    "time_math": {
+      "p50_ms": 0.08,
+      "p95_ms": 0.5,
+      "mean_ms": 0.27,
+      "stddev_ms": 13.41,
+      "min_ms": 0.02,
+      "max_ms": 332.19,
+      "sampleCount": 2718
+    },
+    "token_time_bridge": {
+      "p50_ms": 1.11,
+      "p95_ms": 3.87,
+      "mean_ms": 1.56,
+      "stddev_ms": 2.96,
+      "min_ms": 0.55,
+      "max_ms": 7.76,
+      "sampleCount": 4005
+    },
+    "record_actual": {
+      "p50_ms": 1.16,
+      "p95_ms": 2.73,
+      "mean_ms": 1.31,
+      "stddev_ms": 1.69,
+      "min_ms": 0.08,
+      "max_ms": 6.18,
+      "sampleCount": 9183
+    },
+    "schedule_risk": {
+      "p50_ms": 8.65,
+      "p95_ms": 23.51,
+      "mean_ms": 10.27,
+      "stddev_ms": 17.51,
+      "min_ms": 3.89,
+      "max_ms": 52.34,
+      "sampleCount": 409
+    },
+    "compare_models": {
+      "p50_ms": 31.34,
+      "p95_ms": 50.57,
+      "mean_ms": 33.38,
+      "stddev_ms": 22.55,
+      "min_ms": 15.41,
+      "max_ms": 95.79,
+      "sampleCount": 240
+    },
+    "token_cost_estimate": {
+      "p50_ms": 6.36,
+      "p95_ms": 9.97,
+      "mean_ms": 6.39,
+      "stddev_ms": 3.58,
+      "min_ms": 3.09,
+      "max_ms": 15.04,
+      "sampleCount": 139
+    },
+    "accuracy_trend": {
+      "p50_ms": 14.37,
+      "p95_ms": 23.6,
+      "mean_ms": 12.75,
+      "stddev_ms": 9.72,
+      "min_ms": 5.31,
+      "max_ms": 44.09,
+      "sampleCount": 167
+    },
+    "cocomo_validate": {
+      "p50_ms": 1.3,
+      "p95_ms": 2.22,
+      "mean_ms": 1.16,
+      "stddev_ms": 0.96,
+      "min_ms": 0.52,
+      "max_ms": 3.33,
+      "sampleCount": 155
+    },
+    "cocomo_ground_truth": {
+      "p50_ms": 3.05,
+      "p95_ms": 3.05,
+      "mean_ms": 1.71,
+      "stddev_ms": 0,
+      "min_ms": 1.53,
+      "max_ms": 4.57,
+      "sampleCount": 34
+    },
+    "feedback_health": {
+      "p50_ms": 19.94,
+      "p95_ms": 230.76,
+      "mean_ms": 50.49,
+      "stddev_ms": 205.74,
+      "min_ms": 0.8,
+      "max_ms": 346.92,
+      "sampleCount": 444
+    },
+    "get_pending_estimates": {
+      "p50_ms": 17.09,
+      "p95_ms": 28.94,
+      "mean_ms": 17.11,
+      "stddev_ms": 12.57,
+      "min_ms": 0.93,
+      "max_ms": 50.22,
+      "sampleCount": 131
+    },
+    "batch_record_actuals": {
+      "p50_ms": 0.16,
+      "p95_ms": 3.99,
+      "mean_ms": 1.31,
+      "stddev_ms": 3.6,
+      "min_ms": 0.08,
+      "max_ms": 6.02,
+      "sampleCount": 41
+    }
+  },
+  "modelLatencyProfiles": {
+    "MiniMax-M2.1/MiniMax-M2.1": {
+      "taskSuccessRate": 0.9333,
+      "e2eLatency": {
+        "p50_s": 3.84,
+        "p95_s": 16.71,
+        "mean_s": 5.85
+      },
+      "tokensPerRound": {
+        "mean": 3229,
+        "meanPrompt": 3049,
+        "meanCompletion": 180
+      },
+      "sampleCount": 60
+    },
+    "MiniMax-M2.5/MiniMax-M2.5": {
+      "taskSuccessRate": 0.95,
+      "e2eLatency": {
+        "p50_s": 3.61,
+        "p95_s": 19.81,
+        "mean_s": 6.05
+      },
+      "tokensPerRound": {
+        "mean": 3161,
+        "meanPrompt": 2995,
+        "meanCompletion": 166
+      },
+      "sampleCount": 60
+    },
+    "MiniMax-M2.7/MiniMax-M2.7": {
+      "taskSuccessRate": 0.9667,
+      "e2eLatency": {
+        "p50_s": 9.35,
+        "p95_s": 19.55,
+        "mean_s": 9.6
+      },
+      "tokensPerRound": {
+        "mean": 3108,
+        "meanPrompt": 2947,
+        "meanCompletion": 161
+      },
+      "sampleCount": 60
+    },
+    "MiniMax-M2/MiniMax-M2": {
+      "taskSuccessRate": 0.9667,
+      "e2eLatency": {
+        "p50_s": 4.57,
+        "p95_s": 10.7,
+        "mean_s": 5.01
+      },
+      "tokensPerRound": {
+        "mean": 3186,
+        "meanPrompt": 3020,
+        "meanCompletion": 166
+      },
+      "sampleCount": 60
+    },
+    "gemma-4-e2b-it/gemma-4-e2b-it": {
+      "taskSuccessRate": 0.9,
+      "e2eLatency": {
+        "p50_s": 4.68,
+        "p95_s": 7.94,
+        "mean_s": 4.81
+      },
+      "tokensPerRound": {
+        "mean": 2500,
+        "meanPrompt": 2450,
+        "meanCompletion": 50
+      },
+      "sampleCount": 30
+    },
+    "lfm2-8b-a1b/lfm2-8b-a1b": {
+      "taskSuccessRate": 0.8,
+      "e2eLatency": {
+        "p50_s": 3.32,
+        "p95_s": 5.19,
+        "mean_s": 3.27
+      },
+      "tokensPerRound": {
+        "mean": 3161,
+        "meanPrompt": 3057,
+        "meanCompletion": 104
+      },
+      "sampleCount": 30
+    },
+    "qwen3.5-2b/qwen3.5-2b": {
+      "taskSuccessRate": 0.9667,
+      "e2eLatency": {
+        "p50_s": 4.36,
+        "p95_s": 11.25,
+        "mean_s": 5.37
+      },
+      "tokensPerRound": {
+        "mean": 3283,
+        "meanPrompt": 3170,
+        "meanCompletion": 114
+      },
+      "sampleCount": 30
+    }
+  },
+  "estimationAccuracy": {
+    "taskTypes": {
+      "calendar_calculation": {
+        "successRate": 0.7727,
+        "toolCallErrors": 9,
+        "validationErrors": 0,
+        "sampleCount": 44,
+        "correctionFactor": 1.29
+      },
+      "calibration": {
+        "successRate": 1,
+        "toolCallErrors": 2,
+        "validationErrors": 0,
+        "sampleCount": 22,
+        "correctionFactor": 1
+      },
+      "cocomo_estimation": {
+        "successRate": 0.9545,
+        "toolCallErrors": 2,
+        "validationErrors": 0,
+        "sampleCount": 22,
+        "correctionFactor": 1.05
+      },
+      "critical_path": {
+        "successRate": 1,
+        "toolCallErrors": 6,
+        "validationErrors": 1,
+        "sampleCount": 22,
+        "correctionFactor": 1
+      },
+      "monte_carlo": {
+        "successRate": 0.9394,
+        "toolCallErrors": 8,
+        "validationErrors": 4,
+        "sampleCount": 33,
+        "correctionFactor": 1.06
+      },
+      "other": {
+        "successRate": 1,
+        "toolCallErrors": 3,
+        "validationErrors": 3,
+        "sampleCount": 22,
+        "correctionFactor": 1
+      },
+      "pert_estimation": {
+        "successRate": 0.9394,
+        "toolCallErrors": 8,
+        "validationErrors": 4,
+        "sampleCount": 33,
+        "correctionFactor": 1.06
+      },
+      "reference_class": {
+        "successRate": 0.8636,
+        "toolCallErrors": 2,
+        "validationErrors": 2,
+        "sampleCount": 22,
+        "correctionFactor": 1.16
+      },
+      "sprint_forecast": {
+        "successRate": 1,
+        "toolCallErrors": 5,
+        "validationErrors": 11,
+        "sampleCount": 22,
+        "correctionFactor": 1
+      },
+      "temporal_calculation": {
+        "successRate": 0.9636,
+        "toolCallErrors": 1,
+        "validationErrors": 0,
+        "sampleCount": 55,
+        "correctionFactor": 1.04
+      },
+      "token_time_bridge": {
+        "successRate": 0.9697,
+        "toolCallErrors": 24,
+        "validationErrors": 4,
+        "sampleCount": 33,
+        "correctionFactor": 1.03
+      }
+    },
+    "correctionFactors": {
+      "global": 1.07,
+      "byTaskType": {
+        "calendar_calculation": 1.29,
+        "calibration": 1,
+        "cocomo_estimation": 1.05,
+        "critical_path": 1,
+        "monte_carlo": 1.06,
+        "other": 1,
+        "pert_estimation": 1.06,
+        "reference_class": 1.16,
+        "sprint_forecast": 1,
+        "temporal_calculation": 1.04,
+        "token_time_bridge": 1.03
+      },
+      "methodology": "Correction factor = 1 / success_rate. Based on 330 model-driven canary tests."
+    }
+  },
+  "tokenTimeCalibration": {
+    "MiniMax-M2": {
+      "avgTokensPerSecond": 1843.1,
+      "medianTokensPerSecond": 1861.9,
+      "avgPromptTokens": 3186,
+      "sampleCount": 36
+    },
+    "MiniMax-M2.1": {
+      "avgTokensPerSecond": 2089.4,
+      "medianTokensPerSecond": 1948.2,
+      "avgPromptTokens": 3229,
+      "sampleCount": 34
+    },
+    "MiniMax-M2.5": {
+      "avgTokensPerSecond": 2246.5,
+      "medianTokensPerSecond": 2129.9,
+      "avgPromptTokens": 3161,
+      "sampleCount": 34
+    },
+    "MiniMax-M2.7": {
+      "avgTokensPerSecond": 1566.3,
+      "medianTokensPerSecond": 1089.2,
+      "avgPromptTokens": 3108,
+      "sampleCount": 32
+    },
+    "gemma-4-e2b-it": {
+      "avgTokensPerSecond": 1808.9,
+      "medianTokensPerSecond": 1671.6,
+      "avgPromptTokens": 2500,
+      "sampleCount": 30
+    },
+    "lfm2-8b-a1b": {
+      "avgTokensPerSecond": 1630.6,
+      "medianTokensPerSecond": 1559.3,
+      "avgPromptTokens": 3161,
+      "sampleCount": 25
+    },
+    "qwen3.5-2b": {
+      "avgTokensPerSecond": 1681.1,
+      "medianTokensPerSecond": 1582.9,
+      "avgPromptTokens": 3283,
+      "sampleCount": 38
+    },
+    "_default": {
+      "avgTokensPerSecond": 1846.3,
+      "medianTokensPerSecond": 1685.9,
+      "sampleCount": 229,
+      "note": "Fallback for unknown models. Aggregated across all tested models."
+    }
+  },
+  "taskTypeCorrectionFactors": {
+    "bugfix": 1,
+    "design": 0.59,
+    "documentation": 1,
+    "feature": 0.71,
+    "infrastructure": 0.97,
+    "migration": 1.14,
+    "refactor": 0.65,
+    "testing": 0.7
+  },
+  "globalCorrectionFactor": 0.83,
+  "toolTaskCorrectionFactors": {
+    "pert_estimate": {
+      "feature": 1,
+      "documentation": 1,
+      "infrastructure": 1,
+      "refactor": 1,
+      "testing": 1,
+      "bugfix": 1
+    },
+    "reference_class_estimate": {
+      "feature": 0.52,
+      "testing": 0.5,
+      "documentation": 0.54,
+      "infrastructure": 0.65,
+      "bugfix": 0.5,
+      "design": 0.55,
+      "refactor": 0.37
+    },
+    "repo_audit_deploy_verify": {},
+    "repo_quality_fix_deploy_verify": {},
+    "repo_deploy_truth_finish": {},
+    "repo_commit_push_check": {},
+    "elixis_user_surface_redesign": {},
+    "elixis_pr85_merge_help": {},
+    "elixis_vps_surface_deploy": {},
+    "elixis_glm_classification_json_fix": {},
+    "elixis_real_llm_proof_call": {},
+    "receiver_smoke": {},
+    "monte_carlo_schedule": {},
+    "token_time_bridge": {
+      "infrastructure": 2.63
+    },
+    "critical_path": {},
+    "sprint_forecast": {
+      "feature": 0.83
+    },
+    "schedule_risk": {},
+    "cocomo_estimate": {}
+  },
+  "complexityCorrectionFactors": {
+    "feature": {
+      "1": 1,
+      "2": 0.83,
+      "3": 0.44,
+      "4": 1,
+      "5": 1
+    },
+    "testing": {
+      "3": 0.45,
+      "4": 1.45,
+      "5": 0.93
+    },
+    "documentation": {
+      "2": 1,
+      "3": 0.5,
+      "5": 1
+    },
+    "infrastructure": {
+      "1": 0.77,
+      "2": 1,
+      "3": 0.81,
+      "4": 0.35,
+      "5": 1
+    },
+    "frontend": {},
+    "git": {},
+    "deployment": {},
+    "bugfix": {
+      "1": 0.83,
+      "2": 0.83,
+      "3": 0.5,
+      "4": 0.65,
+      "5": 1
+    },
+    "verification": {},
+    "ops": {},
+    "design": {
+      "3": 0.47
+    },
+    "refactor": {
+      "2": 0.5,
+      "4": 0.37,
+      "5": 1
+    }
+  }
+}

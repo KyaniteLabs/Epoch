@@ -1,0 +1,268 @@
+diff --git a/src/data/reference-database.json b/src/data/reference-database.json
+index d6796f9..c480453 100644
+--- a/src/data/reference-database.json
++++ b/src/data/reference-database.json
+@@ -1,8 +1,8 @@
+ {
+   "version": "1.0.0",
+-  "generatedAt": "2026-05-25T05:08:07.342Z",
++  "generatedAt": "2026-05-25T00:32:54.861Z",
+   "source": "self-improvement",
+-  "sampleSize": 127524,
++  "sampleSize": 126223,
+   "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
+   "toolExecutionBenchmarks": {
+     "add_business_days": {
+@@ -60,13 +60,13 @@
+       "sampleCount": 1105
+     },
+     "get_current_time": {
+-      "p50_ms": 1.5,
++      "p50_ms": 1.49,
+       "p95_ms": 10.04,
+       "mean_ms": 2.96,
+       "stddev_ms": 8.57,
+       "min_ms": 0.14,
+-      "max_ms": 34.11,
+-      "sampleCount": 5229
++      "max_ms": 17.6,
++      "sampleCount": 5227
+     },
+     "monte_carlo_schedule": {
+       "p50_ms": 4.52,
+@@ -93,16 +93,16 @@
+       "stddev_ms": 1.85,
+       "min_ms": 0.02,
+       "max_ms": 4.5,
+-      "sampleCount": 43697
++      "sampleCount": 43667
+     },
+     "reference_class_estimate": {
+-      "p50_ms": 14.19,
+-      "p95_ms": 63.2,
+-      "mean_ms": 22.52,
+-      "stddev_ms": 60.72,
++      "p50_ms": 14.24,
++      "p95_ms": 63.46,
++      "mean_ms": 22.61,
++      "stddev_ms": 60.86,
+       "min_ms": 0.61,
+       "max_ms": 159.89,
+-      "sampleCount": 29711
++      "sampleCount": 29577
+     },
+     "sprint_forecast": {
+       "p50_ms": 0.04,
+@@ -132,13 +132,13 @@
+       "sampleCount": 4005
+     },
+     "record_actual": {
+-      "p50_ms": 1.16,
+-      "p95_ms": 2.73,
+-      "mean_ms": 1.31,
+-      "stddev_ms": 1.69,
++      "p50_ms": 1.18,
++      "p95_ms": 2.81,
++      "mean_ms": 1.34,
++      "stddev_ms": 1.74,
+       "min_ms": 0.08,
+       "max_ms": 6.18,
+-      "sampleCount": 9183
++      "sampleCount": 8547
+     },
+     "schedule_risk": {
+       "p50_ms": 8.65,
+@@ -195,22 +195,22 @@
+       "sampleCount": 34
+     },
+     "feedback_health": {
+-      "p50_ms": 19.94,
+-      "p95_ms": 230.76,
+-      "mean_ms": 50.49,
+-      "stddev_ms": 205.74,
+-      "min_ms": 0.8,
++      "p50_ms": 19.98,
++      "p95_ms": 231.28,
++      "mean_ms": 50.6,
++      "stddev_ms": 205.97,
++      "min_ms": 9.97,
+       "max_ms": 346.92,
+-      "sampleCount": 444
++      "sampleCount": 443
+     },
+     "get_pending_estimates": {
+-      "p50_ms": 17.09,
+-      "p95_ms": 28.94,
+-      "mean_ms": 17.11,
+-      "stddev_ms": 12.57,
+-      "min_ms": 0.93,
++      "p50_ms": 17.57,
++      "p95_ms": 29.79,
++      "mean_ms": 17.6,
++      "stddev_ms": 12.77,
++      "min_ms": 3.22,
+       "max_ms": 50.22,
+-      "sampleCount": 131
++      "sampleCount": 127
+     },
+     "batch_record_actuals": {
+       "p50_ms": 0.16,
+@@ -474,96 +474,101 @@
+     "bugfix": 1,
+     "design": 0.59,
+     "documentation": 1,
+-    "feature": 0.71,
+-    "infrastructure": 0.97,
++    "feature": 0.83,
++    "infrastructure": 1,
+     "migration": 1.14,
+     "refactor": 0.65,
+-    "testing": 0.7
++    "testing": 0.67
+   },
+-  "globalCorrectionFactor": 0.83,
++  "globalCorrectionFactor": 0.89,
+   "toolTaskCorrectionFactors": {
++    "reference_class_estimate": {
++      "infrastructure": 0.65,
++      "feature": 0.51,
++      "testing": 0.51,
++      "design": 0.55,
++      "bugfix": 0.5,
++      "refactor": 0.37,
++      "documentation": 0.5
++    },
+     "pert_estimate": {
+       "feature": 1,
+-      "documentation": 1,
+-      "infrastructure": 1,
+       "refactor": 1,
++      "migration": 1.14,
++      "design": 1.29,
+       "testing": 1,
+-      "bugfix": 1
++      "infrastructure": 1,
++      "bugfix": 1,
++      "documentation": 1
+     },
+-    "reference_class_estimate": {
+-      "feature": 0.52,
+-      "testing": 0.5,
+-      "documentation": 0.54,
+-      "infrastructure": 0.65,
+-      "bugfix": 0.5,
+-      "design": 0.55,
+-      "refactor": 0.37
++    "monte_carlo_schedule": {
++      "feature": 0.1
+     },
+-    "repo_audit_deploy_verify": {},
+-    "repo_quality_fix_deploy_verify": {},
+-    "repo_deploy_truth_finish": {},
+-    "repo_commit_push_check": {},
+-    "elixis_user_surface_redesign": {},
+-    "elixis_pr85_merge_help": {},
+-    "elixis_vps_surface_deploy": {},
+-    "elixis_glm_classification_json_fix": {},
+-    "elixis_real_llm_proof_call": {},
+-    "receiver_smoke": {},
+-    "monte_carlo_schedule": {},
+     "token_time_bridge": {
+-      "infrastructure": 2.63
++      "infrastructure": 2.61
++    },
++    "critical_path": {
++      "feature": 0.1
+     },
+-    "critical_path": {},
+     "sprint_forecast": {
+       "feature": 0.83
+     },
+-    "schedule_risk": {},
+-    "cocomo_estimate": {}
++    "schedule_risk": {
++      "refactor": 0.38
++    },
++    "cocomo_estimate": {},
++    "repo_audit_deploy_verify": {},
++    "repo_quality_fix_deploy_verify": {},
++    "repo_deploy_truth_finish": {},
++    "elixis_user_surface_redesign": {},
++    "elixis_glm_classification_json_fix": {},
++    "receiver_smoke": {}
+   },
+   "complexityCorrectionFactors": {
++    "infrastructure": {
++      "1": 0.77,
++      "2": 1,
++      "3": 0.65,
++      "4": 0.35,
++      "5": 1
++    },
+     "feature": {
+       "1": 1,
+-      "2": 0.83,
+-      "3": 0.44,
++      "2": 1.25,
++      "3": 0.29,
+       "4": 1,
+       "5": 1
+     },
+     "testing": {
+-      "3": 0.45,
+-      "4": 1.45,
+-      "5": 0.93
+-    },
+-    "documentation": {
+-      "2": 1,
++      "2": 1.34,
+       "3": 0.5,
+-      "5": 1
++      "4": 1.8,
++      "5": 0.93
+     },
+-    "infrastructure": {
+-      "1": 0.77,
+-      "2": 1,
+-      "3": 0.81,
+-      "4": 0.35,
+-      "5": 1
++    "design": {
++      "3": 0.47
+     },
+-    "frontend": {},
+-    "git": {},
+-    "deployment": {},
+     "bugfix": {
+       "1": 0.83,
+-      "2": 0.83,
++      "2": 1,
+       "3": 0.5,
+-      "4": 0.65,
++      "4": 0.83,
+       "5": 1
+     },
+-    "verification": {},
+-    "ops": {},
+-    "design": {
+-      "3": 0.47
+-    },
+     "refactor": {
++      "1": 1,
+       "2": 0.5,
++      "3": 0.29,
+       "4": 0.37,
+       "5": 1
+-    }
++    },
++    "documentation": {
++      "1": 0.16,
++      "2": 1,
++      "3": 0.5,
++      "5": 1
++    },
++    "frontend": {},
++    "ops": {}
+   }
+ }
+\ No newline at end of file
