@@ -121,7 +121,9 @@ function shouldBypassTelemetrySubmitInterval(): boolean {
 	return raw === "1" || raw === "true" || raw === "yes";
 }
 
-function isTelemetrySubmitRateLimited(lastSubmissionAt: string | null): boolean {
+function isTelemetrySubmitRateLimited(
+	lastSubmissionAt: string | null,
+): boolean {
 	if (!lastSubmissionAt || shouldBypassTelemetrySubmitInterval()) return false;
 	const intervalHours = telemetrySubmitIntervalHours();
 	if (intervalHours === 0) return false;
