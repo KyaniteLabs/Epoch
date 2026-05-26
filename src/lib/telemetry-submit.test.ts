@@ -8,303 +8,475 @@ const TEST_DIR = join(tmpdir(), `epoch-tel-sub-test-${Date.now()}`);
 const ORIGINAL_FETCH = globalThis.fetch;
 
 beforeEach(() => {
-  mkdirSync(TEST_DIR, { recursive: true });
-  process.env["EPOCH_DATA_DIR"] = TEST_DIR;
-  delete process.env["EPOCH_TELEMETRY"];
-  delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
+	mkdirSync(TEST_DIR, { recursive: true });
+	process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+	delete process.env["EPOCH_TELEMETRY"];
+	delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
 });
 
 afterEach(() => {
-  globalThis.fetch = ORIGINAL_FETCH;
-  delete process.env["EPOCH_DATA_DIR"];
-  delete process.env["EPOCH_TELEMETRY"];
-  delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
-  try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ok */ }
+	globalThis.fetch = ORIGINAL_FETCH;
+	delete process.env["EPOCH_DATA_DIR"];
+	delete process.env["EPOCH_TELEMETRY"];
+	delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
+	rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
 describe("extractAnonymizedRecords", () => {
-  it("returns empty array when no feedback data exists", async () => {
-    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
-    const records = extractAnonymizedRecords();
-    expect(Array.isArray(records)).toBe(true);
-  });
+	it("returns empty array when no feedback data exists", async () => {
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		const records = extractAnonymizedRecords();
+		expect(Array.isArray(records)).toBe(true);
+	});
 
-  it("strips estimate IDs, source, notes — keeps only categorical + numeric fields", async () => {
-    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
-    const records = extractAnonymizedRecords();
+	it("strips estimate IDs, source, notes — keeps only categorical + numeric fields", async () => {
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		const records = extractAnonymizedRecords();
 
-    for (const rec of records) {
-      expect(rec).toHaveProperty("task_type");
-      expect(rec).toHaveProperty("complexity");
-      expect(rec).toHaveProperty("tool");
-      expect(rec).toHaveProperty("estimated_hours");
-      expect(rec).toHaveProperty("actual_hours");
-      expect(rec).toHaveProperty("ratio");
-      expect(rec).toHaveProperty("date");
+		for (const rec of records) {
+			expect(rec).toHaveProperty("task_type");
+			expect(rec).toHaveProperty("complexity");
+			expect(rec).toHaveProperty("tool");
+			expect(rec).toHaveProperty("estimated_hours");
+			expect(rec).toHaveProperty("actual_hours");
+			expect(rec).toHaveProperty("ratio");
+			expect(rec).toHaveProperty("date");
 
-      // Must NOT have identifying fields
-      const obj = rec as unknown as Record<string, unknown>;
-      expect(obj["estimateId"]).toBeUndefined();
-      expect(obj["source"]).toBeUndefined();
-      expect(obj["notes"]).toBeUndefined();
-      expect(obj["teamId"]).toBeUndefined();
-    }
-  });
+			// Must NOT have identifying fields
+			const obj = rec as unknown as Record<string, unknown>;
+			expect(obj["estimateId"]).toBeUndefined();
+			expect(obj["source"]).toBeUndefined();
+			expect(obj["notes"]).toBeUndefined();
+			expect(obj["teamId"]).toBeUndefined();
+		}
+	});
 
-  it("truncates dates to YYYY-MM-DD only (no time component)", async () => {
-    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
-    const records = extractAnonymizedRecords();
+	it("truncates dates to YYYY-MM-DD only (no time component)", async () => {
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		const records = extractAnonymizedRecords();
 
-    for (const rec of records) {
-      expect(rec.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(rec.date).toHaveLength(10);
-    }
-  });
+		for (const rec of records) {
+			expect(rec.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+			expect(rec.date).toHaveLength(10);
+		}
+	});
 
-  it("computes ratio as actual/estimated", async () => {
-    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
-    const records = extractAnonymizedRecords();
+	it("computes ratio as actual/estimated", async () => {
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		const records = extractAnonymizedRecords();
 
-    for (const rec of records) {
-      const expected = Math.round((rec.actual_hours / rec.estimated_hours) * 10000) / 10000;
-      expect(rec.ratio).toBe(expected);
-    }
-  });
+		for (const rec of records) {
+			const expected =
+				Math.round((rec.actual_hours / rec.estimated_hours) * 10000) / 10000;
+			expect(rec.ratio).toBe(expected);
+		}
+	});
 
-  it("excludes records with invalid numeric values before computing ratios", async () => {
-    const { writeFileSync } = await import("node:fs");
-    const feedbackPath = join(TEST_DIR, "feedback.jsonl");
-    writeFileSync(feedbackPath, `${JSON.stringify({
-      estimateId: "zero-estimate",
-      tool: "pert_estimate",
-      taskType: "feature",
-      estimatedHours: 0,
-      actualHours: 1,
-      ratio: null,
-      completedAt: new Date().toISOString(),
-    })}\n`, "utf-8");
+	it("excludes records with invalid numeric values before computing ratios", async () => {
+		const { writeFileSync } = await import("node:fs");
+		const feedbackPath = join(TEST_DIR, "feedback.jsonl");
+		writeFileSync(
+			feedbackPath,
+			`${JSON.stringify({
+				estimateId: "zero-estimate",
+				tool: "pert_estimate",
+				taskType: "feature",
+				estimatedHours: 0,
+				actualHours: 1,
+				ratio: null,
+				completedAt: new Date().toISOString(),
+			})}\n`,
+			"utf-8",
+		);
 
-    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
-    expect(extractAnonymizedRecords()).toHaveLength(0);
-  });
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		expect(extractAnonymizedRecords()).toHaveLength(0);
+	});
 
-  it("excludes records at or before the exact submission cutoff", async () => {
-    const { recordEstimate, recordActual } = await import("./feedback.js");
-    const estimateId = recordEstimate(
-      "pert_estimate",
-      { task_type: "feature", complexity: 3 },
-      { expected: 2, unit: "hours" },
-    );
-    recordActual(estimateId, 3);
-    const cutoff = new Date(Date.now() + 1_000).toISOString();
+	it("excludes records at or before the exact submission cutoff", async () => {
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(estimateId, 3);
+		const cutoff = new Date(Date.now() + 1_000).toISOString();
 
-    const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
-    expect(extractAnonymizedRecords(cutoff)).toHaveLength(0);
-  });
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		expect(extractAnonymizedRecords(cutoff)).toHaveLength(0);
+	});
 });
 
 describe("buildPayload", () => {
-  it("includes schema_version, installation_id, epoch_version, records, generated_at", async () => {
-    const { buildPayload } = await import("./telemetry-submit.js");
-    const payload = buildPayload([]);
+	it("includes schema_version, installation_id, epoch_version, records, generated_at", async () => {
+		const { buildPayload } = await import("./telemetry-submit.js");
+		const payload = buildPayload([]);
 
-    expect(payload.schema_version).toBe(1);
-    expect(typeof payload.installation_id).toBe("string");
-    expect(payload.installation_id).toHaveLength(36); // UUID format
-    expect(typeof payload.epoch_version).toBe("string");
-    expect(Array.isArray(payload.records)).toBe(true);
-    expect(typeof payload.generated_at).toBe("string");
-  });
+		expect(payload.schema_version).toBe(1);
+		expect(typeof payload.installation_id).toBe("string");
+		expect(payload.installation_id).toHaveLength(36); // UUID format
+		expect(typeof payload.epoch_version).toBe("string");
+		expect(Array.isArray(payload.records)).toBe(true);
+		expect(typeof payload.generated_at).toBe("string");
+	});
 });
 
 describe("signPayload", () => {
-  it("produces a consistent HMAC for the same input", async () => {
-    const { buildPayload, signPayload } = await import("./telemetry-submit.js");
-    const payload = buildPayload([]);
-    const id = payload.installation_id;
+	it("produces a consistent HMAC for the same input", async () => {
+		const { buildPayload, signPayload } = await import("./telemetry-submit.js");
+		const payload = buildPayload([]);
+		const id = payload.installation_id;
 
-    const sig1 = signPayload(payload, id);
-    const sig2 = signPayload(payload, id);
+		const sig1 = signPayload(payload, id);
+		const sig2 = signPayload(payload, id);
 
-    expect(sig1).toBe(sig2);
-    expect(sig1).toMatch(/^[0-9a-f]{64}$/); // SHA-256 hex
-  });
+		expect(sig1).toBe(sig2);
+		expect(sig1).toMatch(/^[0-9a-f]{64}$/); // SHA-256 hex
+	});
 
-  it("produces different HMACs for different payloads", async () => {
-    const { buildPayload, signPayload } = await import("./telemetry-submit.js");
-    const payload1 = buildPayload([]);
-    const payload2 = buildPayload([{ task_type: "feature", complexity: 3, tool: "test", estimated_hours: 4, actual_hours: 5, ratio: 1.25, date: "2026-01-01" }]);
-    const id = payload1.installation_id;
+	it("produces different HMACs for different payloads", async () => {
+		const { buildPayload, signPayload } = await import("./telemetry-submit.js");
+		const payload1 = buildPayload([]);
+		const payload2 = buildPayload([
+			{
+				task_type: "feature",
+				complexity: 3,
+				tool: "test",
+				estimated_hours: 4,
+				actual_hours: 5,
+				ratio: 1.25,
+				date: "2026-01-01",
+			},
+		]);
+		const id = payload1.installation_id;
 
-    const sig1 = signPayload(payload1, id);
-    const sig2 = signPayload(payload2, id);
+		const sig1 = signPayload(payload1, id);
+		const sig2 = signPayload(payload2, id);
 
-    expect(sig1).not.toBe(sig2);
-  });
+		expect(sig1).not.toBe(sig2);
+	});
 });
 
 describe("submitTelemetry", () => {
-  it("returns error when telemetry is not enabled", async () => {
-    const { submitTelemetry } = await import("./telemetry-submit.js");
-    const result = await submitTelemetry();
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("not enabled");
-  });
+	it("returns error when telemetry is not enabled", async () => {
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("not enabled");
+	});
 
-  it("returns error when no endpoint is configured", async () => {
-    const { saveConfig } = await import("./config.js");
-    saveConfig({
-      telemetry: { enabled: true, endpoint: "", lastSubmissionAt: null, lastSubmissionRecordCount: 0, installationId: "test-id" },
-    });
-    const { submitTelemetry } = await import("./telemetry-submit.js");
-    const result = await submitTelemetry();
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("no endpoint");
-  });
+	it("returns error when no endpoint is configured", async () => {
+		const { saveConfig } = await import("./config.js");
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("no endpoint");
+	});
 
-  it("returns error when endpoint is the example.com placeholder", async () => {
-    const { saveConfig } = await import("./config.js");
-    saveConfig({
-      telemetry: {
-        enabled: true,
-        endpoint: "https://example.com/v1/telemetry",
-        lastSubmissionAt: null,
-        lastSubmissionRecordCount: 0,
-        installationId: "test-id",
-      },
-    });
-    const { submitTelemetry } = await import("./telemetry-submit.js");
-    const result = await submitTelemetry();
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("placeholder endpoint");
-  });
+	it("returns error when endpoint is the example.com placeholder", async () => {
+		const { saveConfig } = await import("./config.js");
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://example.com/v1/telemetry",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("placeholder endpoint");
+	});
 
-  it("returns error when rate limited", async () => {
-    const { saveConfig } = await import("./config.js");
-    saveConfig({
-      telemetry: {
-        enabled: true,
-        endpoint: "https://collector.example.net",
-        lastSubmissionAt: new Date().toISOString(),
-        lastSubmissionRecordCount: 0,
-        installationId: "test-id",
-      },
-    });
-    const { submitTelemetry } = await import("./telemetry-submit.js");
-    const result = await submitTelemetry();
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("rate limited");
-  });
+	it("returns error when rate limited", async () => {
+		const { saveConfig } = await import("./config.js");
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net",
+				lastSubmissionAt: new Date().toISOString(),
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("rate limited");
+	});
 
-  it("signs first-time submissions with the generated installation ID", async () => {
-    const { saveConfig, loadConfig } = await import("./config.js");
-    const { recordEstimate, recordActual } = await import("./feedback.js");
-    const estimateId = recordEstimate(
-      "pert_estimate",
-      { task_type: "feature", complexity: 3 },
-      { expected: 2, unit: "hours" },
-    );
-    recordActual(estimateId, 3);
-    saveConfig({
-      telemetry: {
-        enabled: true,
-        endpoint: "https://collector.example.net/v1/telemetry",
-        lastSubmissionAt: null,
-        lastSubmissionRecordCount: 0,
-        installationId: "",
-      },
-    });
+	it("allows trusted fleet jobs to bypass the submit interval", async () => {
+		const { saveConfig } = await import("./config.js");
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: new Date(Date.now() - 1_000).toISOString(),
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours", confidence: 0.8 },
+		);
+		recordActual(estimateId, 3, "force submit coverage real record");
+		process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"] = "1";
 
-    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-      const body = String(init?.body ?? "");
-      const payload = JSON.parse(body) as { installation_id: string };
-      const headers = init?.headers as Record<string, string>;
-      const expected = createHmac("sha256", payload.installation_id).update(body).digest("hex");
-      expect(payload.installation_id).toHaveLength(36);
-      expect(headers["X-Epoch-Signature"]).toBe(expected);
-      return new Response(JSON.stringify({ accepted: 1, deduplicated: 0 }), { status: 200 });
-    }) as typeof fetch;
+		let called = false;
+		globalThis.fetch = (async () => {
+			called = true;
+			return new Response(JSON.stringify({ accepted: 1, deduplicated: 0 }), {
+				status: 200,
+			});
+		}) as typeof fetch;
 
-    const { submitTelemetry } = await import("./telemetry-submit.js");
-    const result = await submitTelemetry();
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		expect(result).toMatchObject({ ok: true, recordCount: 1 });
+		expect(called).toBe(true);
+	});
 
-    expect(result).toEqual({ ok: true, recordCount: 1, accepted: 1, deduplicated: 0 });
-    expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(1);
-    expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(1);
-    expect(loadConfig().telemetry.lastSubmissionDeduplicatedCount).toBe(0);
-    expect(loadConfig().telemetry.totalRecordsAccepted).toBe(1);
-    expect(loadConfig().telemetry.totalRecordsDeduplicated).toBe(0);
-    expect(loadConfig().telemetry.installationId).toHaveLength(36);
-  });
+	it("honors EPOCH_TELEMETRY=0 when config telemetry is enabled", async () => {
+		const { saveConfig } = await import("./config.js");
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(estimateId, 3);
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		process.env["EPOCH_TELEMETRY"] = "0";
 
-  it("submits the whole queued backlog in receiver-sized chunks before advancing the cursor", async () => {
-    const { saveConfig, loadConfig } = await import("./config.js");
-    const { recordEstimate, recordActual } = await import("./feedback.js");
-    for (let index = 0; index < 101; index++) {
-      const estimateId = recordEstimate(
-        "pert_estimate",
-        { task_type: "feature", complexity: 3 },
-        { expected: 2, unit: "hours" },
-      );
-      recordActual(estimateId, 3);
-    }
-    saveConfig({
-      telemetry: {
-        enabled: true,
-        endpoint: "https://collector.example.net/v1/telemetry",
-        lastSubmissionAt: null,
-        lastSubmissionRecordCount: 0,
-        installationId: "test-id",
-      },
-    });
+		let called = false;
+		globalThis.fetch = (async () => {
+			called = true;
+			return new Response(null, { status: 200 });
+		}) as typeof fetch;
 
-    const chunkSizes: number[] = [];
-    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-      const payload = JSON.parse(String(init?.body ?? "")) as { records: unknown[] };
-      chunkSizes.push(payload.records.length);
-      return new Response(JSON.stringify({ accepted: payload.records.length, deduplicated: 0 }), { status: 200 });
-    }) as typeof fetch;
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
 
-    const { submitTelemetry } = await import("./telemetry-submit.js");
-    const result = await submitTelemetry();
+		expect(result).toEqual({
+			ok: false,
+			recordCount: 0,
+			error: "telemetry not enabled",
+		});
+		expect(called).toBe(false);
+	});
 
-    expect(result).toEqual({ ok: true, recordCount: 101, accepted: 101, deduplicated: 0 });
-    expect(chunkSizes).toEqual([100, 1]);
-    expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(101);
-    expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(101);
-  });
+	it("signs first-time submissions with the generated installation ID", async () => {
+		const { saveConfig, loadConfig } = await import("./config.js");
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(estimateId, 3);
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "",
+			},
+		});
+
+		globalThis.fetch = (async (
+			_input: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			const body = String(init?.body ?? "");
+			const payload = JSON.parse(body) as { installation_id: string };
+			const headers = init?.headers as Record<string, string>;
+			const expected = createHmac("sha256", payload.installation_id)
+				.update(body)
+				.digest("hex");
+			expect(payload.installation_id).toHaveLength(36);
+			expect(headers["X-Epoch-Signature"]).toBe(expected);
+			return new Response(JSON.stringify({ accepted: 1, deduplicated: 0 }), {
+				status: 200,
+			});
+		}) as typeof fetch;
+
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+
+		expect(result).toEqual({
+			ok: true,
+			recordCount: 1,
+			accepted: 1,
+			deduplicated: 0,
+		});
+		expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(1);
+		expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(1);
+		expect(loadConfig().telemetry.lastSubmissionDeduplicatedCount).toBe(0);
+		expect(loadConfig().telemetry.totalRecordsAccepted).toBe(1);
+		expect(loadConfig().telemetry.totalRecordsDeduplicated).toBe(0);
+		expect(loadConfig().telemetry.installationId).toHaveLength(36);
+	});
+
+	it("submits the whole queued backlog in receiver-sized chunks before advancing the cursor", async () => {
+		const { saveConfig, loadConfig } = await import("./config.js");
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		for (let index = 0; index < 101; index++) {
+			const estimateId = recordEstimate(
+				"pert_estimate",
+				{ task_type: "feature", complexity: 3 },
+				{ expected: 2, unit: "hours" },
+			);
+			recordActual(estimateId, 3);
+		}
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+
+		const chunkSizes: number[] = [];
+		globalThis.fetch = (async (
+			_input: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			const payload = JSON.parse(String(init?.body ?? "")) as {
+				records: unknown[];
+			};
+			chunkSizes.push(payload.records.length);
+			return new Response(
+				JSON.stringify({ accepted: payload.records.length, deduplicated: 0 }),
+				{ status: 200 },
+			);
+		}) as typeof fetch;
+
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+
+		expect(result).toEqual({
+			ok: true,
+			recordCount: 101,
+			accepted: 101,
+			deduplicated: 0,
+		});
+		expect(chunkSizes).toEqual([100, 1]);
+		expect(loadConfig().telemetry.lastSubmissionRecordCount).toBe(101);
+		expect(loadConfig().telemetry.lastSubmissionAcceptedCount).toBe(101);
+	});
+
+	it("advances telemetry counters for successful chunks before later chunks fail", async () => {
+		const { saveConfig, loadConfig } = await import("./config.js");
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		for (let index = 0; index < 101; index++) {
+			const estimateId = recordEstimate(
+				"pert_estimate",
+				{ task_type: "feature", complexity: 3 },
+				{ expected: 2, unit: "hours" },
+			);
+			recordActual(estimateId, 3);
+		}
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+
+		let calls = 0;
+		globalThis.fetch = (async (
+			_input: string | URL | Request,
+			init?: RequestInit,
+		) => {
+			calls++;
+			const payload = JSON.parse(String(init?.body ?? "")) as {
+				records: unknown[];
+			};
+			if (calls === 2) {
+				return new Response("receiver unavailable", { status: 503 });
+			}
+			return new Response(
+				JSON.stringify({ accepted: payload.records.length, deduplicated: 0 }),
+				{ status: 200 },
+			);
+		}) as typeof fetch;
+
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		const telemetry = loadConfig().telemetry;
+
+		expect(result).toMatchObject({
+			ok: false,
+			recordCount: 100,
+			accepted: 100,
+			deduplicated: 0,
+		});
+		expect(telemetry.lastSubmissionRecordCount).toBe(100);
+		expect(telemetry.lastSubmissionAcceptedCount).toBe(100);
+	});
 });
 
 describe("maybeSubmitTelemetry", () => {
-  it("does nothing for the first 99 calls", async () => {
-    const { maybeSubmitTelemetry, resetCallCount } = await import("./telemetry-submit.js");
-    resetCallCount();
-    // Should not throw or do anything observable
-    for (let i = 0; i < 99; i++) {
-      maybeSubmitTelemetry();
-    }
-    // No error means it correctly skipped
-    expect(true).toBe(true);
-  });
+	it("does nothing for the first 99 calls", async () => {
+		const { maybeSubmitTelemetry, resetCallCount } = await import(
+			"./telemetry-submit.js"
+		);
+		resetCallCount();
+		// Should not throw or do anything observable
+		for (let i = 0; i < 99; i++) {
+			maybeSubmitTelemetry();
+		}
+		// No error means it correctly skipped
+		expect(true).toBe(true);
+	});
 });
 
 describe("exportToFile", () => {
-  it("writes anonymized records to a file", async () => {
-    const { exportToFile } = await import("./telemetry-submit.js");
-    const path = exportToFile();
-    expect(existsSync(path)).toBe(true);
+	it("writes anonymized records to a file", async () => {
+		const { exportToFile } = await import("./telemetry-submit.js");
+		const path = exportToFile();
+		expect(existsSync(path)).toBe(true);
 
-    const { readFileSync } = await import("node:fs");
-    const content = readFileSync(path, "utf-8");
-    const records = JSON.parse(content);
-    expect(Array.isArray(records)).toBe(true);
-  });
+		const { readFileSync } = await import("node:fs");
+		const content = readFileSync(path, "utf-8");
+		const records = JSON.parse(content);
+		expect(Array.isArray(records)).toBe(true);
+	});
 
-  it("writes to custom path when provided", async () => {
-    const { exportToFile } = await import("./telemetry-submit.js");
-    const customPath = join(TEST_DIR, "custom-export.json");
-    const path = exportToFile(customPath);
-    expect(path).toBe(customPath);
-    expect(existsSync(customPath)).toBe(true);
-  });
+	it("writes to custom path when provided", async () => {
+		const { exportToFile } = await import("./telemetry-submit.js");
+		const customPath = join(TEST_DIR, "custom-export.json");
+		const path = exportToFile(customPath);
+		expect(path).toBe(customPath);
+		expect(existsSync(customPath)).toBe(true);
+	});
 });

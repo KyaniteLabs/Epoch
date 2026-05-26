@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-05-25
+
+### Fixed
+- Added required `mcpName` npm metadata for MCP Registry validation.
+
+## [0.2.6] - 2026-05-25
+
 ### Added
 - `epoch data where` — show local Epoch data file locations (read-only, no network).
 - `epoch data status` — show local data file counts, feedback match rate, telemetry status, and reference database health.
@@ -29,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README rewritten to clarify Epoch works accurately out of the box — no data collection or account required.
 - `epoch share-data` now produces valid `data/community`-compatible files with `_schema`, `description`, and `records` fields instead of a raw array.
 - `windows-receiver` is documented as a historical alias only. Current references use `ubuntu-receiver`.
+- Release metadata now includes explicit npm package ownership for MCP Registry publishing.
+- Telemetry endpoint env overrides remain runtime-only and are not persisted back into local config.
+- Telemetry submission and status now honor `EPOCH_TELEMETRY=0` disable overrides consistently.
+- Telemetry submission cursors now advance after each successful chunk to avoid duplicate retries after partial failures.
+- Community export validation now rejects schema-invalid required field types.
+- Fleet ingestion scripts now create missing data directories and preserve distinct sessions while deduplicating.
+- Weekly consolidation avoids destructive reset fallback unless checkout back to `main` succeeds.
+- `addDays` now handles invalid input dates without throwing.
 
 ## [0.2.2] - 2026-05-07
 
