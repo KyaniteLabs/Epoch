@@ -19,6 +19,7 @@ export interface AnonymizedRecord {
 	actual_hours: number;
 	ratio: number;
 	date: string;
+	completed_at: string;
 }
 
 export interface SubmissionPayload {
@@ -72,6 +73,7 @@ export function extractAnonymizedRecords(
 				ratio:
 					Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
 				date: rec.completedAt.slice(0, 10),
+				completed_at: new Date(rec.completedAt).toISOString(),
 			}),
 		);
 }
@@ -172,7 +174,7 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 	try {
 		for (let offset = 0; offset < records.length; offset += 100) {
 			const chunk = records.slice(offset, offset + 100);
-			const chunkCursor = chunk.at(-1)?.date;
+			const chunkCursor = chunk.at(-1)?.completed_at;
 			const payload = buildPayload(chunk);
 			const signature = signPayload(payload, payload.installation_id);
 			const response = await fetch(config.telemetry.endpoint, {
@@ -216,11 +218,7 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 
 			config.telemetry.installationId = payload.installation_id;
 			if (chunkCursor) {
-				const cursorMs = Math.min(
-					Date.now(),
-					new Date(`${chunkCursor}T23:59:59.999Z`).getTime(),
-				);
-				config.telemetry.lastSubmissionAt = new Date(cursorMs).toISOString();
+				config.telemetry.lastSubmissionAt = chunkCursor;
 			}
 			config.telemetry.lastSubmissionRecordCount += chunk.length;
 			config.telemetry.lastSubmissionAcceptedCount = accepted;

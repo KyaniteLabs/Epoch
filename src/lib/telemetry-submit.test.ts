@@ -41,6 +41,7 @@ describe("extractAnonymizedRecords", () => {
 			expect(rec).toHaveProperty("actual_hours");
 			expect(rec).toHaveProperty("ratio");
 			expect(rec).toHaveProperty("date");
+			expect(rec).toHaveProperty("completed_at");
 
 			// Must NOT have identifying fields
 			const obj = rec as unknown as Record<string, unknown>;
@@ -147,6 +148,7 @@ describe("signPayload", () => {
 				actual_hours: 5,
 				ratio: 1.25,
 				date: "2026-01-01",
+				completed_at: "2026-01-01T00:00:00.000Z",
 			},
 		]);
 		const id = payload1.installation_id;
@@ -442,9 +444,12 @@ describe("submitTelemetry", () => {
 		});
 		expect(telemetry.lastSubmissionRecordCount).toBe(100);
 		expect(telemetry.lastSubmissionAcceptedCount).toBe(100);
-		expect(new Date(telemetry.lastSubmissionAt ?? "").getTime()).toBeLessThanOrEqual(
-			Date.now(),
+		expect(telemetry.lastSubmissionAt).toMatch(
+			/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
 		);
+		expect(
+			new Date(telemetry.lastSubmissionAt ?? "").getTime(),
+		).toBeLessThanOrEqual(Date.now());
 	});
 });
 
