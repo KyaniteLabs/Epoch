@@ -1,0 +1,22 @@
+# These owners are responsible for reviewing changes to the following areas.
+# Last updated: 2026-05-29
+
+# CI/CD and workflows
+/.github/workflows/ @simongonzalezdc
+
+# Security policy
+/SECURITY.md @simongonzalezdc
+
+# Package manifest and lockfile
+/package.json @simongonzalezdc
+/pnpm-lock.yaml @simongonzalezdc
+
+# Build and TypeScript config
+/tsconfig.json @simongonzalezdc
+
+# Tool registry and dispatcher
+/src/dispatcher/ @simongonzalezdc
+
+# Data schemas
+/src/schemas/ @simongonzalezdc
+/data/schemas/ @simongonzalezdc

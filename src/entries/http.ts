@@ -537,6 +537,29 @@ export function createApiApp(): Hono {
 
   app.use("*", cors());
 
+  // ---- Security headers ----------------------------------------------------
+  app.use("*", async (_c, next) => {
+    await next();
+    _c.header("X-Content-Type-Options", "nosniff");
+    _c.header("X-Frame-Options", "DENY");
+    _c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+    _c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    _c.header("X-Request-Id", crypto.randomUUID());
+  });
+
+  // ---- Request logging -----------------------------------------------------
+  app.use("/v1/*", async (c, next) => {
+    const start = Date.now();
+    const method = c.req.method;
+    const path = c.req.path;
+    await next();
+    const duration = Date.now() - start;
+    const status = c.res.status;
+    if (process.env["EPOCH_LOG_REQUESTS"] === "1") {
+      console.log(`[epoch] ${method} ${path} ${status} ${duration}ms`);
+    }
+  });
+
   // ---- Rate limiter (in-memory sliding window) ------------------------------
   const rateLimitWindowMs = 60_000;
   const rateLimitMax = Number.isFinite(parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10))
