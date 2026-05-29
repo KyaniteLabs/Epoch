@@ -11,6 +11,8 @@ updates:
         versions: ["4.x"]
       - dependency-name: typescript
         versions: ["6.x"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     labels:
       - dependencies
     commit-message:
