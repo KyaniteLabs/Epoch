@@ -43,6 +43,9 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
+      - name: Check ops scripts
+        run: pnpm run ops:check
+
       - name: Test
         run: pnpm test -- --coverage
 

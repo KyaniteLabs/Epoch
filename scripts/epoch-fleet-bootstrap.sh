@@ -177,6 +177,11 @@ YAML
   (cd /srv/containers/nucbox/epoch && docker compose up -d --build)
   curl -fsS "http://127.0.0.1:$PORT/health"
   printf '\n'
+  local script_dir
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  if [ -x "$script_dir/install-epoch-receiver-watchdog.sh" ]; then
+    bash "$script_dir/install-epoch-receiver-watchdog.sh" "$script_dir/epoch-receiver-watchdog.sh"
+  fi
 }
 
 ensure_epoch_package

@@ -85,7 +85,7 @@
 #### 5.2.1 Layer 1 — Core Temporal Primitives: current time retrieval, timezone conversion, timestamp parsing, duration calculation, elapsed-time tracking
 #### 5.2.2 Layer 2 — Calendar Math: business days calculation, holiday awareness, working hours, schedule constraint checking, recurring pattern detection
 #### 5.2.3 Layer 3 — Software Estimation Algorithms: PERT three-point estimation, COCOMO-style parametric models (LLM-adapted), Story Point velocity tracking, Critical Path Method, function point analysis
-#### 5.2.4 Layer 4 — Data Integration: Jira API, Asana API, Toggl/ClickUp/Harvest time tracking APIs, Git commit history, calendar APIs for actual time data
+#### 5.2.4 Layer 4 — Data Integration: Jira, Asana, Toggl/ClickUp/Harvest time tracking, Git commit history, and calendar connectors for actual time data
 #### 5.2.5 Layer 5 — Advanced Analytics: Monte Carlo simulation for schedule risk, confidence intervals, planning fallacy correction factors, team-specific velocity calibration, estimation accuracy tracking
 ### 5.3 MCP Protocol Integration
 #### 5.3.1 Tool design for context efficiency: registry-based dispatch model (Harness v2 pattern); 11 consolidated tools rather than 130+ endpoint mappings
