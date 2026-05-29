@@ -21,13 +21,13 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ac6db6d3c1f721f886538a378a2d73e85697340a # v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: pnpm
@@ -59,11 +59,19 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: "0.3.0"
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          URL="https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_${OS}_${ARCH}.tar.gz"
+          echo "Downloading mcp-publisher v${MCP_PUBLISHER_VERSION} from ${URL}"
+          curl -fsSL -o mcp-publisher.tar.gz "${URL}"
+          tar xzf mcp-publisher.tar.gz mcp-publisher
           ./mcp-publisher --help
+          rm -f mcp-publisher.tar.gz
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc
       - name: Publish server metadata
