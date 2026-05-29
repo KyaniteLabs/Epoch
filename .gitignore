@@ -9,6 +9,8 @@ dist/
 .omc/
 coverage/
 *.log
+*.pem
+*.key
 .claude/
 .omx/
 canary-report.json
