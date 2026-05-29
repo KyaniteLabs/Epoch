@@ -45,7 +45,7 @@ export async function dispatch(
         const estimateId = recordEstimate(toolName, rawInput, data as Record<string, unknown>, resolveSource());
         const d = data as Record<string, unknown>;
         if (hasHourEstimate(d)) {
-          d.feedbackToken = estimateId;
+          d.feedbackRef = estimateId;
         }
       }
     }

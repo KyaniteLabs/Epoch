@@ -3,24 +3,16 @@
 Generated locally by the CheckYourself scan & scaffold CLI (`tools/checkyourself.py`).
 No secret values are included. Review before sharing with an AI assistant.
 
-- Generated at: 2026-05-29T15:43:19+00:00
+- Generated at: 2026-05-29T16:19:47+00:00
 - Project root: `/tmp/epoch-check`
-- Files scanned: 290
+- Files scanned: 294
 
 ## Deterministic findings (local scan only)
 
 > These are cheap, high-confidence checks. The full CheckYourself diagnostic, run by your
 > AI assistant, sweeps the entire production surface and explains, ranks, and fixes findings.
 
-Counts — P0: 1, P1: 0, P2: 0, P3: 0
-
-### [P0] CY-001 — Possible hardcoded secrets in source
-
-One or more files contain patterns that look like live credentials. Rotate anything real, move it to environment variables, and confirm it is gitignored.
-
-Recommended first move: Rotate anything real, remove it from source, load it from environment variables, and confirm history exposure.
-
-- src/dispatcher/tool-registry.ts (possible hardcoded secret; value omitted)
+- No deterministic issues found by this lightweight scan. (This is not a clean bill of health.)
 
 ## Detected stack signals
 
@@ -126,20 +118,20 @@ Recommended first move: Rotate anything real, remove it from source, load it fro
   .gitignore
   .npmignore
   .npmrc
+  .nvmrc
   .windsurfrules
   AGENTS.md
   CHANGELOG.md
+  CHECKYOURSELF_PROJECT_CONTEXT.generated.md
   CLAUDE.md
+  CODEOWNERS
   CONTRIBUTING-data.md
   CONTRIBUTING.md
   LICENSE
   README.md
+  SECURITY.md
   canary-runner.mjs
   eslint.config.js
-  llms.txt
-  package.json
-  pnpm-lock.yaml
-  server.json
   docs/
     PRIVACY.md
     TELEMETRY.md

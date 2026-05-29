@@ -52,7 +52,7 @@ describe("dispatch", () => {
     }
   });
 
-  it("dispatches pert_estimate with feedbackToken", async () => {
+  it("dispatches pert_estimate with feedbackRef", async () => {
     const result = await dispatch("pert_estimate", {
       optimistic: 2,
       most_likely: 5,
@@ -62,7 +62,7 @@ describe("dispatch", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data).toHaveProperty("expected", 5.33);
-      expect(result.data).toHaveProperty("feedbackToken", "test-estimate-id");
+      expect(result.data).toHaveProperty("feedbackRef", "test-estimate-id");
     }
   });
 
@@ -75,12 +75,12 @@ describe("dispatch", () => {
     expect((result.data as Record<string, unknown>).total_duration).toBe(3);
   });
 
-  it("dispatches temporal tools without feedbackToken", async () => {
+  it("dispatches temporal tools without feedbackRef", async () => {
     const result = await dispatch("get_current_time", { timezone: "UTC" });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data).toHaveProperty("iso");
-      expect(result.data).not.toHaveProperty("feedbackToken");
+      expect(result.data).not.toHaveProperty("feedbackRef");
     }
   });
 

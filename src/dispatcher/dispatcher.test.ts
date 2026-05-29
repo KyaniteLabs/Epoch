@@ -26,7 +26,7 @@ describe("dispatch", () => {
     expect(data.expected).toBe(5);
   });
 
-  it("includes feedbackToken in estimation responses", async () => {
+  it("includes feedbackRef in estimation responses", async () => {
     const result = await dispatch("pert_estimate", {
       optimistic: 2,
       most_likely: 4,
@@ -37,9 +37,9 @@ describe("dispatch", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const data = result.data as { expected: number; feedbackToken?: string };
-    expect(data.feedbackToken).toBeDefined();
-    expect(typeof data.feedbackToken).toBe("string");
+    const data = result.data as { expected: number; feedbackRef?: string };
+    expect(data.feedbackRef).toBeDefined();
+    expect(typeof data.feedbackRef).toBe("string");
   });
 
   it("rejects pert_estimate with invalid input (optimistic > most_likely)", async () => {
