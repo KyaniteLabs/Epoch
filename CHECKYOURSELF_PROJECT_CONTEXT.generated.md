@@ -3,7 +3,7 @@
 Generated locally by the CheckYourself scan & scaffold CLI (`tools/checkyourself.py`).
 No secret values are included. Review before sharing with an AI assistant.
 
-- Generated at: 2026-05-29T16:19:47+00:00
+- Generated at: 2026-05-29T16:21:13+00:00
 - Project root: `/tmp/epoch-check`
 - Files scanned: 294
 
