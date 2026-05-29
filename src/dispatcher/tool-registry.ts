@@ -168,7 +168,7 @@ const businessDayOutput = {
   },
 } satisfies Record<string, unknown>;
 
-const feedbackTokenField = { type: "string", description: "Token for recording actual hours via record_actual" };
+const feedbackRefField = { type: "string", description: "Token for recording actual hours via record_actual" };
 
 const pertOutput = {
   type: "object",
@@ -187,7 +187,7 @@ const pertOutput = {
     humanReadable: { type: "string", description: "Human-readable summary" },
     referenceClassCrossCheck: { type: "object", description: "Reference class estimate for comparison (AI-native only)", properties: { estimate: { type: "number" }, scope: { type: "string" }, baselineSource: { type: "string" }, sampleSize: { type: "number" } } },
     recommendation: { type: "string", description: "When reference class disagrees significantly with PERT, explains which to trust" },
-    feedbackToken: feedbackTokenField,
+    feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
 
@@ -201,7 +201,7 @@ const cocomoOutput = {
     assumptions: { type: "array", items: { type: "string" } },
     aiSpeedup: { type: "number", description: "AI speedup factor (nominal / LLM-adjusted)" },
     speedupCategory: { type: "string", enum: ["moderate", "significant", "extreme"], description: "Qualitative speedup category" },
-    feedbackToken: feedbackTokenField,
+    feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
 
@@ -220,7 +220,7 @@ const sprintOutput = {
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     velocityCv: { type: "number" },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × totalHours)" },
-    feedbackToken: feedbackTokenField,
+    feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
 
@@ -259,7 +259,7 @@ const monteCarloOutput = {
     humanReadable: { type: "string", description: "Human-readable summary" },
     estimatedHours: { type: "number", description: "Median estimate in hours (p50 × 8)" },
     estimatedCost: { type: "number", description: "Estimated AI token cost at p50 (50k tokens/hour × estimatedHours)" },
-    feedbackToken: feedbackTokenField,
+    feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
 
@@ -282,7 +282,7 @@ const tokenTimeOutput = {
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" },
-    feedbackToken: feedbackTokenField,
+    feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
 
@@ -295,7 +295,7 @@ const referenceClassOutput = {
     sampleSize: { type: "number" },
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × correctedEstimate)" },
-    feedbackToken: feedbackTokenField,
+    feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
 
