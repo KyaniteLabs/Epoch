@@ -1,0 +1,7 @@
+interface:
+  display_name: "Epoch"
+  short_description: "Grounded time, cost, and risk estimates"
+  default_prompt: "Use $epoch to estimate the time, schedule risk, and model cost for this task."
+
+policy:
+  allow_implicit_invocation: true
