@@ -678,7 +678,7 @@ MIT License. See [LICENSE](./LICENSE) for full terms.
 
 ## Part of KyaniteLabs
 
-Open-source tools by [KyaniteLabs](https://kyanitelabs.tech). Related projects:
+More from [KyaniteLabs](https://kyanitelabs.tech). Related projects:
 
 - **[mcp-video](https://github.com/KyaniteLabs/mcp-video)** — guardrailed video-editing MCP server for AI agents
 - **[DialectOS](https://github.com/KyaniteLabs/DialectOS)** — Spanish dialect localization MCP server & CLI
