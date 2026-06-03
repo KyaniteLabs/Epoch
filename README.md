@@ -673,3 +673,15 @@ epoch share-data --description "Anonymized Epoch usage export" --validate
 ## License
 
 MIT License. See [LICENSE](./LICENSE) for full terms.
+
+---
+
+## Part of KyaniteLabs
+
+Open-source tools by [KyaniteLabs](https://kyanitelabs.tech). Related projects:
+
+- **[mcp-video](https://github.com/KyaniteLabs/mcp-video)** — guardrailed video-editing MCP server for AI agents
+- **[DialectOS](https://github.com/KyaniteLabs/DialectOS)** — Spanish dialect localization MCP server & CLI
+- **[checkyourself](https://github.com/KyaniteLabs/checkyourself)** — local-first production-readiness checks for AI-built code
+
+→ More at **[kyanitelabs.tech](https://kyanitelabs.tech)**
