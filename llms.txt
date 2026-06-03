@@ -12,12 +12,17 @@ Epoch gives AI agents 24 structured tools for grounded time estimation, calendar
 - Business-day and timezone calculations
 - LLM token cost and model comparison
 - Estimate calibration from actuals
+- Agent skill workflows for choosing the right Epoch MCP or CLI tool
 
 ## Key paths
 - `README.md`: public overview and quick start
 - `docs/llms.txt`: expanded AI-readable tool reference
+- `skills/epoch/SKILL.md`: public agent skill for time, cost, schedule, and feedback workflows
 - `src/`: MCP server, CLI, REST API, and estimation engines
 - `package.json`: npm package metadata for `@kyanitelabs/epoch`
+
+## Agent skill
+Invoke `$epoch` in compatible agent hosts when the user needs grounded duration estimates, calendar math, token/model cost comparison, deadline risk, or actuals recording. The skill tells the agent when to use the MCP server, the CLI, or the feedback loop.
 
 ## MCP Registry
 

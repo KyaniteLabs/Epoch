@@ -11,6 +11,7 @@ Install: claude mcp add epoch -- npx @kyanitelabs/epoch
 npm: https://www.npmjs.com/package/@kyanitelabs/epoch
 MCP Registry: https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch
 GitHub: https://github.com/KyaniteLabs/Epoch
+Agent skill: skills/epoch/SKILL.md, invoked as $epoch in compatible agent hosts
 
 ---
 
@@ -21,6 +22,10 @@ GitHub: https://github.com/KyaniteLabs/Epoch
 ## What
 
 Epoch is a Model Context Protocol (MCP) server that gives AI agents data-driven time estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into callable tools with built-in feedback loops for self-improvement.
+
+## Agent Skill
+
+The public skill at `skills/epoch/SKILL.md` teaches agents how to route user questions to Epoch's MCP or CLI surfaces. Use `$epoch` when an agent needs time estimation, business-day math, model-cost comparison, deadline risk, or estimate-vs-actual feedback.
 
 ## Architecture
 

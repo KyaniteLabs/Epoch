@@ -12,6 +12,11 @@ TypeScript | vitest | tsup | zod | MCP SDK
 - `pnpm run typecheck` — tsc --noEmit
 - `node canary-runner.mjs` — cross-model function-calling canary
 
+## Public Agent Skill
+- `skills/epoch/SKILL.md` is the public skill for this repo.
+- Invoke `$epoch` in compatible agent hosts when a task needs time estimates, business-day math, model-cost comparison, schedule risk, or estimate-vs-actual feedback.
+- Keep the skill aligned with the MCP tool list, CLI commands, and feedback-token workflow when those surfaces change.
+
 ## Architecture
 ```
 src/index.ts          — MCP server entry (stdio transport)
