@@ -2,4 +2,4 @@
 # introspection checks. Installs the published package and launches the stdio server.
 FROM node:22-slim
 RUN npm install -g @kyanitelabs/epoch
-ENTRYPOINT ["epoch"]
+ENTRYPOINT ["node", "/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js"]
