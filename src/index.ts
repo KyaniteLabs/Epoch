@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { startMcpServer } from "./entries/mcp.js";
 import { startHttpServer } from "./entries/http.js";
@@ -96,8 +97,21 @@ function main(): void {
   });
 }
 
-const isEntrypoint = process.argv[1] !== undefined
-  && import.meta.url === pathToFileURL(process.argv[1]).href;
+function isCurrentFileEntrypoint(): boolean {
+  const entrypoint = process.argv[1];
+
+  if (!entrypoint) {
+    return false;
+  }
+
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(entrypoint)).href;
+  } catch {
+    return import.meta.url === pathToFileURL(entrypoint).href;
+  }
+}
+
+const isEntrypoint = isCurrentFileEntrypoint();
 
 if (isEntrypoint) {
   main();
