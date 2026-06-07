@@ -123,6 +123,20 @@ describe("listTools", () => {
       expect(t.description).toBeTruthy();
     }
   });
+
+  it("describes routing boundaries for similar MCP tools", () => {
+    const descriptions = Object.fromEntries(
+      listTools().map((tool) => [tool.name, tool.description.toLowerCase()]),
+    );
+
+    expect(descriptions.time_math).toContain("single-purpose");
+    expect(descriptions.time_math).toContain("get_current_time");
+    expect(descriptions.time_math).toContain("convert_timezone");
+    expect(descriptions.token_time_bridge).toContain("use token_cost_estimate");
+    expect(descriptions.token_cost_estimate).toContain("use token_time_bridge");
+    expect(descriptions.cocomo_validate).toContain("use cocomo_ground_truth");
+    expect(descriptions.cocomo_ground_truth).toContain("use cocomo_validate");
+  });
 });
 
 // ---------------------------------------------------------------------------
