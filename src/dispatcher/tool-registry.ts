@@ -377,7 +377,8 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "time_math",
     "Performs compound time-math operations. Dispatches to the appropriate " +
       "sub-operation based on the 'operation' parameter. " +
-      "Operations: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.",
+      "Operations: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration. " +
+      "Use this for multi-step or dynamic time operations; for single-purpose calls use get_current_time, convert_timezone, parse_duration, add_business_days, or count_business_days.",
     timeMathSchema,
     timeMathOutput,
     (input) => {
@@ -637,7 +638,8 @@ for improving estimation accuracy.`,
 
 Uses model-specific calibration data (tokens/second, reasoning overhead,
 tool-call latency) to estimate how long a task will actually take.
-Bridges the gap between token-space (how agents reason) and time-space (what humans need).`,
+Bridges the gap between token-space (how agents reason) and time-space (what humans need).
+Use token_cost_estimate instead when dollar cost matters too.`,
     tokenTimeBridgeSchema,
     tokenTimeOutput,
     (input) => {
@@ -661,7 +663,8 @@ Bridges the gap between token-space (how agents reason) and time-space (what hum
     `Estimate wall-clock time AND dollar cost for LLM token usage.
 
 Combines token-to-time mapping with model-specific pricing data.
-Returns cost breakdown (input/output/overhead) alongside the time estimate.`,
+Returns cost breakdown (input/output/overhead) alongside the time estimate.
+Use token_time_bridge when you only need wall-clock time and not dollar cost.`,
     tokenCostEstimateSchema,
     tokenTimeOutput,
     (input) => {
@@ -752,7 +755,8 @@ Uses industry baseline (25% MAPE) when no historical data is available.`,
     `Validate COCOMO estimation model against 195 real historical projects.
 
 Runs the COCOMO Basic formula against projects from NASA93, COCOMO81, Albrecht, and Kemerer datasets.
-Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjustments.`,
+Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjustments.
+Use cocomo_ground_truth for the full multi-model benchmark across all COCOMO and AI-adjusted models.`,
     cocomoValidateSchema,
     { type: "object", properties: { projectsEvaluated: { type: "number" }, mape: { type: "number" }, bias: { type: "number" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
@@ -768,7 +772,8 @@ Reports overall MAPE, bias, per-type accuracy, and recommended coefficient adjus
     `Validate all COCOMO estimation models against 240 real historical projects with known effort.
 
 Runs 6 models in parallel: COCOMO Basic, COCOMO II Nominal, COCOMO II + AI 12x speedup, and AI + developer profile at human/hybrid/ai_native gradients.
-Reports MAPE, MMRE, PRED(25), PRED(50), bias per model, with breakdowns by dataset and project type.`,
+Reports MAPE, MMRE, PRED(25), PRED(50), bias per model, with breakdowns by dataset and project type.
+Use cocomo_validate for a quicker Basic COCOMO-only validation pass.`,
     cocomoGroundTruthSchema,
     { type: "object", properties: { projectsEvaluated: { type: "number" }, models: { type: "array" }, winner: { type: "string" }, conclusion: { type: "string" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
