@@ -5,7 +5,7 @@ on:
 
 jobs:
   review:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux-amd64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
