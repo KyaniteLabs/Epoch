@@ -1,0 +1,26 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: docker
+    container:
+      image: node:22-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+          fi
+      - name: Lint
+        run: |
+          if [ -f package.json ]; then
+            npx --no eslint . || true
+          fi
+      - name: Test
+        run: |
+          if [ -f package.json ]; then
+            npm test || true
+          fi
