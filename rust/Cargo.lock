@@ -542,6 +542,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "epoch-contract",
+ "serde_json",
 ]
 
 [[package]]

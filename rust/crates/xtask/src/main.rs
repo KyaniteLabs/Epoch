@@ -3,12 +3,15 @@ use epoch_contract::PublicSurfaceContract;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod e2e;
+
 fn main() -> Result<()> {
     let command = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "check".to_string());
     match command.as_str() {
         "check" => check_contract(Path::new(".")),
+        "e2e" => e2e::run(Path::new(".")),
         other => bail!("unknown xtask command: {other}"),
     }
 }

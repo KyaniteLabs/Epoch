@@ -1,0 +1,1046 @@
+{
+  "claim": "Rust clone exposes >=100% of the TypeScript public surface",
+  "coverage": {
+    "cli_commands": {
+      "expected": 39,
+      "ok": 39,
+      "passing": 39,
+      "percent": 100.0,
+      "wired": 39
+    },
+    "http_routes": {
+      "expected": 11,
+      "ok": 11,
+      "passing": 11,
+      "percent": 100.0,
+      "wired": 11
+    },
+    "http_tools": {
+      "expected": 24,
+      "ok": 24,
+      "passing": 24,
+      "percent": 100.0,
+      "wired": 24
+    },
+    "mcp_metadata": {
+      "expected": 24,
+      "ok": 24,
+      "passing": 24,
+      "percent": 100.0,
+      "wired": 24
+    },
+    "mcp_tools": {
+      "expected": 24,
+      "ok": 24,
+      "passing": 24,
+      "percent": 100.0,
+      "wired": 24
+    }
+  },
+  "expected": {
+    "cli_commands": 39,
+    "http_routes": 11,
+    "tools": 24,
+    "write_tools": 2
+  },
+  "failures": [],
+  "gate": "rust-promotion-e2e",
+  "mcp": {
+    "initialize_ok": true,
+    "tools_listed": 24
+  },
+  "overall_surface_percent": 100.0,
+  "package_name": "@kyanitelabs/epoch",
+  "pass": true,
+  "source_of_truth": "docs/superpowers/contracts/epoch-public-surface.json",
+  "surfaces": [
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "get-current-time",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "convert-timezone",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "parse-duration",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "time-math",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "add-business-days",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "count-business-days",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "pert-estimate",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "cocomo-estimate",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "sprint-forecast",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "critical-path",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "monte-carlo-schedule",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "reference-class-estimate",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "calibrate-estimates",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "token-time-bridge",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "token-cost-estimate",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "compare-models",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "accuracy-trend",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "schedule-risk",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "cocomo-validate",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "record-actual",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "get-pending-estimates",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "batch-record-actuals",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "feedback-health",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "cocomo-ground-truth",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "self-improve",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry status",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry preview",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry export",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry enable",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry set-endpoint",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry submit",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry disable",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "telemetry delete-data",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "share-data",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "data",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "data where",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "data status",
+      "wired": true
+    },
+    {
+      "adapter": "cli",
+      "category": "cli_commands",
+      "detail": "exit 0",
+      "ok": true,
+      "surface": "list-tools",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/get_current_time",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/convert_timezone",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/parse_duration",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/time_math",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/add_business_days",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/count_business_days",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/pert_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/cocomo_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/sprint_forecast",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/critical_path",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/monte_carlo_schedule",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/reference_class_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/calibrate_estimates",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/token_time_bridge",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/token_cost_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/compare_models",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/accuracy_trend",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/schedule_risk",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/cocomo_validate",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/cocomo_ground_truth",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/record_actual",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/get_pending_estimates",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/batch_record_actuals",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_tools",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/feedback_health",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /health",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /v1/tools",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/tools/:toolName",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 202",
+      "ok": true,
+      "surface": "POST /v1/telemetry",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /.well-known/ai-plugin.json",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /llms.txt",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /openapi.json",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/feedback/record-actual",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /v1/feedback/pending",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "POST /v1/feedback/batch-record-actuals",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_routes",
+      "detail": "status 200",
+      "ok": true,
+      "surface": "GET /v1/feedback/health",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "get_current_time",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "convert_timezone",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "parse_duration",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "time_math",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "add_business_days",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "count_business_days",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "pert_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "cocomo_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "sprint_forecast",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "critical_path",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "monte_carlo_schedule",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "reference_class_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "calibrate_estimates",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "token_time_bridge",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "token_cost_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "compare_models",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "accuracy_trend",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "schedule_risk",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "cocomo_validate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "cocomo_ground_truth",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "record_actual",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "get_pending_estimates",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "batch_record_actuals",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_metadata",
+      "detail": "name+description+inputSchema+annotations present",
+      "ok": true,
+      "surface": "feedback_health",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "get_current_time",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "convert_timezone",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "parse_duration",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "time_math",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "add_business_days",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "count_business_days",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "pert_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "cocomo_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "sprint_forecast",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "critical_path",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "monte_carlo_schedule",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "reference_class_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "calibrate_estimates",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "token_time_bridge",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "token_cost_estimate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "compare_models",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "accuracy_trend",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "schedule_risk",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "cocomo_validate",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "cocomo_ground_truth",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "record_actual",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "get_pending_estimates",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "batch_record_actuals",
+      "wired": true
+    },
+    {
+      "adapter": "mcp",
+      "category": "mcp_tools",
+      "detail": "structuredContent ok",
+      "ok": true,
+      "surface": "feedback_health",
+      "wired": true
+    }
+  ],
+  "write_tool_adapters": {
+    "batch_record_actuals": {
+      "cli": true,
+      "http": true,
+      "mcp": true
+    },
+    "record_actual": {
+      "cli": true,
+      "http": true,
+      "mcp": true
+    }
+  }
+}
