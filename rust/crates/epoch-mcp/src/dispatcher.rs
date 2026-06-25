@@ -185,8 +185,14 @@ impl RustToolDispatcher {
 
     fn dispatch_cocomo_estimate(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
-        let iterative_cycles =
-            optional_f64(object, &["iterative_cycles", "iterativeCycles"])?.unwrap_or(1.0);
+        // Zod clamps iterative_cycles to [0.5, 10.0] before the handler
+        // normalizes literal cycle counts (> 2) into a multiplier.
+        let iterative_cycles = enforce_bounds(
+            optional_f64(object, &["iterative_cycles", "iterativeCycles"])?.unwrap_or(1.0),
+            &["iterative_cycles", "iterativeCycles"],
+            Some(0.5),
+            Some(10.0),
+        )?;
         let iterative_cycles = if iterative_cycles > 2.0 {
             1.0 + iterative_cycles.min(10.0) * 0.1
         } else {
@@ -195,24 +201,20 @@ impl RustToolDispatcher {
 
         to_value(cocomo_estimate(CocomoParams {
             kloc: required_f64(object, &["kloc"])?,
-            reasoning_complexity: optional_f64(
+            reasoning_complexity: cocomo_factor(
                 object,
                 &["reasoning_complexity", "reasoningComplexity"],
-            )?
-            .unwrap_or(1.0),
-            context_completeness: optional_f64(
+            )?,
+            context_completeness: cocomo_factor(
                 object,
                 &["context_completeness", "contextCompleteness"],
-            )?
-            .unwrap_or(1.0),
-            transformation_impact: optional_f64(
+            )?,
+            transformation_impact: cocomo_factor(
                 object,
                 &["transformation_impact", "transformationImpact"],
-            )?
-            .unwrap_or(1.0),
+            )?,
             iterative_cycles,
-            human_oversight: optional_f64(object, &["human_oversight", "humanOversight"])?
-                .unwrap_or(1.0),
+            human_oversight: cocomo_factor(object, &["human_oversight", "humanOversight"])?,
         })?)
     }
 
@@ -235,20 +237,29 @@ impl RustToolDispatcher {
 
     fn dispatch_monte_carlo_schedule(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
+        let tasks = required_monte_carlo_tasks(object, &["tasks"])?;
+        // Zod enforces `tasks.min(1)`; the core returns a placeholder result
+        // (isError: false) for an empty list, so guard it at dispatch.
+        if tasks.is_empty() {
+            return Err(empty_array_error(&["tasks"]));
+        }
         let iterations = optional_usize(object, &["iterations"])?.unwrap_or(10_000);
+        if !(1..=100_000).contains(&iterations) {
+            return Err(range_error(&["iterations"], "between 1 and 100000"));
+        }
         let seed = optional_i64(object, &["seed"])?;
-        to_value(monte_carlo_sim(
-            required_monte_carlo_tasks(object, &["tasks"])?,
-            iterations,
-            seed,
-        ))
+        to_value(monte_carlo_sim(tasks, iterations, seed))
     }
 
     fn dispatch_reference_class_estimate(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
         let task_type =
             parse_task_type(Some(&required_string(object, &["task_type", "taskType"])?))?;
-        let complexity = optional_f64(object, &["complexity"])?.unwrap_or(3.0);
+        // Strict `z.number().min(1).max(5)` (no coercion), defaulting to 3.
+        let complexity = match optional_f64_strict(object, &["complexity"])? {
+            Some(value) => enforce_bounds(value, &["complexity"], Some(1.0), Some(5.0))?,
+            None => 3.0,
+        };
         let scope = parse_scope(optional_string(object, &["scope"])?.as_deref())?;
         let team_id = optional_string(object, &["team_id", "teamId"])?;
         let records = self.historical_records(CalibrationFilters {
@@ -298,7 +309,7 @@ impl RustToolDispatcher {
     fn dispatch_compare_models(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
         to_value(compare_models(CompareModelsParams {
-            tokens: required_f64(object, &["tokens"])?,
+            tokens: enforce_positive(required_f64(object, &["tokens"])?, &["tokens"])?,
             tool_calls: optional_u32(object, &["tool_calls", "toolCalls"])?.unwrap_or(0),
             reasoning_depth: parse_reasoning_depth(
                 optional_string(object, &["reasoning_depth", "reasoningDepth"])?.as_deref(),
@@ -337,7 +348,10 @@ impl RustToolDispatcher {
             estimated_hours: required_f64(object, &["estimated_hours", "estimatedHours"])?,
             task_type,
             ai_native: ai_native_ratio(object)?,
-            complexity: optional_f64(object, &["complexity"])?,
+            // Strict `z.number().min(1).max(5)` (no coercion), optional.
+            complexity: optional_f64_strict(object, &["complexity"])?
+                .map(|value| enforce_bounds(value, &["complexity"], Some(1.0), Some(5.0)))
+                .transpose()?,
             records,
         }))
     }
@@ -363,7 +377,11 @@ impl RustToolDispatcher {
     fn dispatch_record_actual(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
         let estimate_id = required_string(object, &["estimate_id", "estimateId"])?;
-        let actual_hours = required_f64(object, &["actual_hours", "actualHours"])?;
+        // Strict `z.number().positive()` (no string/boolean coercion).
+        let actual_hours = enforce_positive(
+            required_f64_strict(object, &["actual_hours", "actualHours"])?,
+            &["actual_hours"],
+        )?;
         let notes = optional_string(object, &["notes"])?;
         self.feedback
             .record_actual_detailed(
@@ -424,6 +442,13 @@ impl RustToolDispatcher {
     fn dispatch_batch_record_actuals(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
         let entries = required_batch_entries(object, &["entries"])?;
+        // Zod enforces `entries.min(1).max(500)`.
+        if entries.is_empty() {
+            return Err(empty_array_error(&["entries"]));
+        }
+        if entries.len() > 500 {
+            return Err(range_error(&["entries"], "at most 500 entries"));
+        }
         let result = self
             .feedback
             .batch_record_actuals(&entries, Utc::now().to_rfc3339());
@@ -554,6 +579,10 @@ fn required_f64(object: &Map<String, Value>, keys: &[&str]) -> Result<f64, ToolE
     optional_f64(object, keys)?.ok_or_else(|| missing(keys, "number"))
 }
 
+/// Coercing number reader — mirrors Zod `z.coerce.number()`, which runs
+/// `Number(value)` before validating. That accepts numeric strings and
+/// booleans (true => 1, false => 0). Use the `_strict` variant below for
+/// fields declared as a plain `z.number()`, which reject strings/booleans.
 fn optional_f64(object: &Map<String, Value>, keys: &[&str]) -> Result<Option<f64>, ToolError> {
     let Some(value) = get(object, keys) else {
         return Ok(None);
@@ -561,6 +590,7 @@ fn optional_f64(object: &Map<String, Value>, keys: &[&str]) -> Result<Option<f64
     let parsed = match value {
         Value::Number(number) => number.as_f64(),
         Value::String(raw) => raw.parse::<f64>().ok(),
+        Value::Bool(flag) => Some(if *flag { 1.0 } else { 0.0 }),
         Value::Null => return Ok(None),
         _ => None,
     };
@@ -568,6 +598,84 @@ fn optional_f64(object: &Map<String, Value>, keys: &[&str]) -> Result<Option<f64
         .filter(|value| value.is_finite())
         .map(Some)
         .ok_or_else(|| wrong_type(keys, "finite number"))
+}
+
+/// Strict number reader — mirrors Zod `z.number()` (no coercion): only a JSON
+/// number is accepted; strings and booleans are rejected as wrong types.
+fn required_f64_strict(object: &Map<String, Value>, keys: &[&str]) -> Result<f64, ToolError> {
+    optional_f64_strict(object, keys)?.ok_or_else(|| missing(keys, "number"))
+}
+
+fn optional_f64_strict(
+    object: &Map<String, Value>,
+    keys: &[&str],
+) -> Result<Option<f64>, ToolError> {
+    match get(object, keys) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(number)) => number
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .map(Some)
+            .ok_or_else(|| wrong_type(keys, "finite number")),
+        Some(_) => Err(wrong_type(keys, "number")),
+    }
+}
+
+/// Inclusive range guard mirroring Zod `.min()` / `.max()`.
+fn enforce_bounds(
+    value: f64,
+    keys: &[&str],
+    min: Option<f64>,
+    max: Option<f64>,
+) -> Result<f64, ToolError> {
+    if let Some(min) = min
+        && value < min
+    {
+        return Err(range_error(
+            keys,
+            &format!("greater than or equal to {min}"),
+        ));
+    }
+    if let Some(max) = max
+        && value > max
+    {
+        return Err(range_error(keys, &format!("less than or equal to {max}")));
+    }
+    Ok(value)
+}
+
+/// Exclusive positivity guard mirroring Zod `.positive()` (> 0).
+fn enforce_positive(value: f64, keys: &[&str]) -> Result<f64, ToolError> {
+    if value > 0.0 {
+        Ok(value)
+    } else {
+        Err(range_error(keys, "greater than 0"))
+    }
+}
+
+fn range_error(keys: &[&str], constraint: &str) -> ToolError {
+    ToolError::new(
+        format!("Field {} must be {constraint}.", keys[0]),
+        format!("Pass {} as a number {constraint}.", keys[0]),
+    )
+}
+
+fn empty_array_error(keys: &[&str]) -> ToolError {
+    ToolError::new(
+        format!("{} must contain at least 1 element.", keys[0]),
+        format!("Pass a non-empty array for {}.", keys[0]),
+    )
+}
+
+/// COCOMO cost-driver multiplier: coerced number defaulting to 1.0, clamped to
+/// the Zod `[0.5, 2.0]` band.
+fn cocomo_factor(object: &Map<String, Value>, keys: &[&str]) -> Result<f64, ToolError> {
+    enforce_bounds(
+        optional_f64(object, keys)?.unwrap_or(1.0),
+        keys,
+        Some(0.5),
+        Some(2.0),
+    )
 }
 
 fn required_i64(object: &Map<String, Value>, keys: &[&str]) -> Result<i64, ToolError> {
@@ -724,7 +832,11 @@ fn required_batch_entries(
             })?;
             Ok(BatchActualEntry {
                 estimate_id: required_string(entry, &["estimate_id", "estimateId"])?,
-                actual_hours: required_f64(entry, &["actual_hours", "actualHours"])?,
+                // Strict `z.number().positive()` per-entry.
+                actual_hours: enforce_positive(
+                    required_f64_strict(entry, &["actual_hours", "actualHours"])?,
+                    &["actual_hours"],
+                )?,
                 notes: optional_string(entry, &["notes"])?,
             })
         })
@@ -733,7 +845,7 @@ fn required_batch_entries(
 
 fn token_params(object: &Map<String, Value>) -> Result<TokenCostParams, ToolError> {
     Ok(TokenCostParams {
-        tokens: required_f64(object, &["tokens"])?,
+        tokens: enforce_positive(required_f64(object, &["tokens"])?, &["tokens"])?,
         model: required_string(object, &["model"])?,
         tool_calls: optional_u32(object, &["tool_calls", "toolCalls"])?.unwrap_or(0),
         reasoning_depth: parse_reasoning_depth(
@@ -893,7 +1005,7 @@ fn wrong_task(index: usize) -> ToolError {
 #[cfg(test)]
 mod tests {
     use super::{RustToolDispatcher, dispatch_stateless};
-    use epoch_contract::tool_names;
+    use epoch_contract::{ToolError, tool_names};
     use serde_json::{Value, json};
 
     #[test]
@@ -907,6 +1019,103 @@ mod tests {
                 .expect("retry hint")
                 .contains("get_current_time")
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Adversarial parity with the TypeScript Zod schemas. Each case mirrors a
+    // `scripts/rust-adversarial-contract.ts` diff: malformed input the TS
+    // dispatcher rejects must also be rejected here, and input TS accepts must
+    // be accepted, so the Rust-replaces-TypeScript promotion stays compatible.
+    // ---------------------------------------------------------------------
+
+    fn reject(tool: &str, args: Value) -> ToolError {
+        dispatch_stateless(tool, args).expect_err("expected adversarial input to be rejected")
+    }
+
+    #[test]
+    fn strict_number_fields_reject_string_coercion() {
+        // record_actual.actual_hours and schedule_risk.complexity are plain
+        // `z.number()` in TS (no coercion): strings must be rejected.
+        reject(
+            "record_actual",
+            json!({ "estimate_id": "abc", "actual_hours": "5" }),
+        );
+        reject(
+            "schedule_risk",
+            json!({ "estimated_hours": 8, "complexity": "3" }),
+        );
+    }
+
+    #[test]
+    fn numeric_range_bounds_match_zod() {
+        // cocomo reasoning_complexity max 2.0
+        reject(
+            "cocomo_estimate",
+            json!({ "kloc": 2, "reasoning_complexity": 99 }),
+        );
+        // monte_carlo iterations max 100000
+        reject(
+            "monte_carlo_schedule",
+            json!({
+                "tasks": [{ "name": "A", "optimistic": 1, "most_likely": 2, "pessimistic": 4 }],
+                "iterations": 100001,
+            }),
+        );
+        // schedule_risk complexity max 5
+        reject(
+            "schedule_risk",
+            json!({ "estimated_hours": 8, "complexity": 50 }),
+        );
+        // token_cost tokens must be positive
+        reject(
+            "token_cost_estimate",
+            json!({ "tokens": -1000, "model": "gpt-4o-mini" }),
+        );
+        // reference_class complexity min 1
+        reject(
+            "reference_class_estimate",
+            json!({ "task_type": "feature", "complexity": 0 }),
+        );
+    }
+
+    #[test]
+    fn empty_arrays_are_rejected() {
+        // The cores return placeholder/no-op results for these, so the guard
+        // lives in the dispatcher to match Zod `.min(1)`.
+        reject(
+            "monte_carlo_schedule",
+            json!({ "tasks": [], "iterations": 100 }),
+        );
+        reject("batch_record_actuals", json!({ "entries": [] }));
+    }
+
+    #[test]
+    fn coerced_number_fields_accept_boolean_like_zod() {
+        // pert uses `z.coerce.number()`, which coerces true => 1.0.
+        let mut dispatcher = RustToolDispatcher::new();
+        let result = dispatcher
+            .dispatch(
+                "pert_estimate",
+                json!({ "optimistic": 1, "most_likely": true, "pessimistic": 4 }),
+            )
+            .expect("boolean most_likely coerces to 1.0");
+        assert_eq!(result["mostLikely"], 1.0);
+    }
+
+    #[test]
+    fn pert_tolerates_overflowing_variance_like_typescript() {
+        // TS only finite-checks expected/stdDev, accepting an extreme
+        // pessimistic value whose variance overflows; the dispatch must not
+        // reject it.
+        let mut dispatcher = RustToolDispatcher::new();
+        let result = dispatcher
+            .dispatch(
+                "pert_estimate",
+                json!({ "optimistic": 1, "most_likely": 2, "pessimistic": 1e308 }),
+            )
+            .expect("extreme pessimistic is accepted");
+        // Non-finite variance serializes to JSON null, matching TS.
+        assert!(result.get("variance").is_some_and(Value::is_null));
     }
 
     #[test]
