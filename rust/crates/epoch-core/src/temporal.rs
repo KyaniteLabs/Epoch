@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use chrono_tz::Tz;
 use epoch_contract::{DateDiffResult, DurationResult, TemporalResult, ToolError};
 
@@ -203,19 +203,29 @@ pub fn add_days(date: &str, days: i64) -> String {
         .to_string()
 }
 
-pub fn diff_dates(start: &str, end: &str) -> DateDiffResult {
-    let start_date = parse_datetime(start).unwrap_or_else(|_| Utc.timestamp_opt(0, 0).unwrap());
-    let end_date = parse_datetime(end).unwrap_or_else(|_| Utc.timestamp_opt(0, 0).unwrap());
+pub fn diff_dates(start: &str, end: &str) -> Result<DateDiffResult, ToolError> {
+    let start_date = parse_datetime(start).map_err(|()| {
+        ToolError::new(
+            format!("Invalid start date: \"{start}\"."),
+            "Use ISO-8601 format like \"2026-05-01\" or \"2026-05-01T00:00:00Z\".",
+        )
+    })?;
+    let end_date = parse_datetime(end).map_err(|()| {
+        ToolError::new(
+            format!("Invalid end date: \"{end}\"."),
+            "Use ISO-8601 format like \"2026-05-01\" or \"2026-05-01T00:00:00Z\".",
+        )
+    })?;
     let total_seconds = (end_date - start_date).num_seconds();
     let abs_seconds = total_seconds.abs();
     let sign = if total_seconds < 0 { -1 } else { 1 };
 
-    DateDiffResult {
+    Ok(DateDiffResult {
         days: sign * (abs_seconds / 86400),
         hours: sign * ((abs_seconds % 86400) / 3600),
         minutes: sign * ((abs_seconds % 3600) / 60),
         total_seconds,
-    }
+    })
 }
 
 fn format_temporal(instant: DateTime<Utc>, tz: Tz, timezone: &str) -> TemporalResult {
@@ -308,12 +318,22 @@ mod tests {
 
     #[test]
     fn diffs_dates_with_signed_parts() {
-        let result = diff_dates("2026-05-03", "2026-05-01");
+        let result = diff_dates("2026-05-03", "2026-05-01").expect("valid dates succeed");
         assert_eq!(result.days, -2);
         assert_eq!(result.total_seconds, -2 * 86400);
 
-        let partial = diff_dates("2026-05-01T10:00:00Z", "2026-05-01T11:30:00Z");
+        let partial = diff_dates("2026-05-01T10:00:00Z", "2026-05-01T11:30:00Z")
+            .expect("valid timestamps succeed");
         assert_eq!(partial.hours, 1);
         assert_eq!(partial.minutes, 30);
+    }
+
+    #[test]
+    fn diff_dates_rejects_invalid_inputs() {
+        let err = diff_dates("not-a-date", "2026-05-01").expect_err("invalid start fails");
+        assert!(err.message.contains("Invalid start date"));
+
+        let err = diff_dates("2026-05-01", "bad-date").expect_err("invalid end fails");
+        assert!(err.message.contains("Invalid end date"));
     }
 }
