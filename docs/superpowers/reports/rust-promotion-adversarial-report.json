@@ -13,19 +13,19 @@
   },
   "meta": {
     "packageVersion": "0.2.9",
-    "rustBinary": "rust/target/debug/epoch-mcp",
+    "rustBinary": "rust/target/release/epoch-mcp",
     "totalCases": 43
   },
   "summary": {
     "total": 43,
-    "pass": 32,
-    "fail": 11,
-    "compatibilityRate": 74.4,
+    "pass": 43,
+    "fail": 0,
+    "compatibilityRate": 100,
     "bySeverity": {
-      "none": 32,
+      "none": 43,
       "low": 0,
-      "medium": 2,
-      "high": 9,
+      "medium": 0,
+      "high": 0,
       "critical": 0
     },
     "byCategory": {
@@ -41,8 +41,8 @@
       },
       "wrong-type": {
         "total": 7,
-        "pass": 4,
-        "fail": 3
+        "pass": 7,
+        "fail": 0
       },
       "invalid-date-tz": {
         "total": 5,
@@ -56,13 +56,13 @@
       },
       "numeric-extreme": {
         "total": 8,
-        "pass": 2,
-        "fail": 6
+        "pass": 8,
+        "fail": 0
       },
       "empty-array": {
         "total": 4,
-        "pass": 2,
-        "fail": 2
+        "pass": 4,
+        "fail": 0
       },
       "unknown-tool": {
         "total": 5,
@@ -70,163 +70,9 @@
         "fail": 0
       }
     },
-    "highSeverityDiffCount": 9
+    "highSeverityDiffCount": 0
   },
-  "highSeverityDiffs": [
-    {
-      "id": "record-actual-hours-string",
-      "category": "wrong-type",
-      "tool": "record_actual",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"actual_hours\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "schedule-risk-complexity-string",
-      "category": "wrong-type",
-      "tool": "schedule_risk",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"complexity\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "cocomo-factor-out-of-range",
-      "category": "numeric-extreme",
-      "tool": "cocomo_estimate",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 2,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 2\",\n    \"path\": [\n      \"reasoning_complexity\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "monte-carlo-iterations-over-cap",
-      "category": "numeric-extreme",
-      "tool": "monte_carlo_schedule",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 100000,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 100000\",\n    \"path\": [\n      \"iterations\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "schedule-risk-complexity-over-max",
-      "category": "numeric-extreme",
-      "tool": "schedule_risk",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 5,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 5\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "token-cost-negative-tokens",
-      "category": "numeric-extreme",
-      "tool": "token_cost_estimate",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": false,\n    \"exact\": false,\n    \"message\": \"Number must be greater than 0\",\n    \"path\": [\n      \"tokens\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "reference-class-complexity-zero",
-      "category": "numeric-extreme",
-      "tool": "reference_class_estimate",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 1\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "monte-carlo-empty-tasks",
-      "category": "empty-array",
-      "tool": "monte_carlo_schedule",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"tasks\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    },
-    {
-      "id": "batch-empty-entries",
-      "category": "empty-array",
-      "tool": "batch_record_actuals",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
-      "ts": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"entries\"\n    ]\n  }\n]"
-      },
-      "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
-      }
-    }
-  ],
+  "highSeverityDiffs": [],
   "cases": [
     {
       "id": "json-broken-brace",
@@ -524,13 +370,13 @@
         "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"actual_hours\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field actual_hours must be a number."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "schedule-risk-complexity-string",
@@ -543,13 +389,13 @@
         "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"complexity\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field complexity must be a number."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "pert-most-likely-bool",
@@ -562,13 +408,13 @@
         "detail": "dispatch returned ok"
       },
       "rust": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "Field most_likely must be a finite number."
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
       },
-      "verdict": "fail",
-      "severity": "medium",
-      "diff": "Rust REJECTS input the TypeScript server accepts — functional regression after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "convert-invalid-tz",
@@ -771,13 +617,13 @@
         "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 2,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 2\",\n    \"path\": [\n      \"reasoning_complexity\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field reasoning_complexity must be less than or equal to 2."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "monte-carlo-iterations-over-cap",
@@ -790,13 +636,13 @@
         "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 100000,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 100000\",\n    \"path\": [\n      \"iterations\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field iterations must be between 1 and 100000."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "schedule-risk-complexity-over-max",
@@ -809,13 +655,13 @@
         "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 5,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 5\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field complexity must be less than or equal to 5."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "pert-overflow-pessimistic",
@@ -828,13 +674,13 @@
         "detail": "dispatch returned ok"
       },
       "rust": {
-        "polarity": "rejected",
-        "rejectKind": "validation",
-        "detail": "Computation produced invalid result."
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
       },
-      "verdict": "fail",
-      "severity": "medium",
-      "diff": "Rust REJECTS input the TypeScript server accepts — functional regression after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "token-cost-negative-tokens",
@@ -847,13 +693,13 @@
         "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": false,\n    \"exact\": false,\n    \"message\": \"Number must be greater than 0\",\n    \"path\": [\n      \"tokens\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field tokens must be greater than 0."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "reference-class-complexity-zero",
@@ -866,13 +712,13 @@
         "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 1\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field complexity must be greater than or equal to 1."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "critical-path-empty-tasks",
@@ -904,13 +750,13 @@
         "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"tasks\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "tasks must contain at least 1 element."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "sprint-empty-velocity",
@@ -942,13 +788,13 @@
         "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"entries\"\n    ]\n  }\n]"
       },
       "rust": {
-        "polarity": "accepted",
-        "rejectKind": "none",
-        "detail": "tool returned isError:false"
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "entries must contain at least 1 element."
       },
-      "verdict": "fail",
-      "severity": "high",
-      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
     },
     {
       "id": "unknown-plain",

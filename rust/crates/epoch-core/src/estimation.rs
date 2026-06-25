@@ -45,7 +45,12 @@ pub fn pert_estimate(
     let variance = std_dev * std_dev;
     let expected_hours = unit.to_hours(expected);
 
-    if !all_finite(&[expected, std_dev, variance, expected_hours]) {
+    // Match the TypeScript guard, which only checks `expected` and `stdDev`.
+    // With an extreme pessimistic value the variance (std_dev^2) can overflow
+    // to a non-finite value while expected/std_dev stay finite; TS accepts that
+    // case and serializes the non-finite variance as JSON null, so Rust must
+    // too rather than rejecting an input the TS server handles.
+    if !all_finite(&[expected, std_dev]) {
         return Err(ToolError::new(
             "Computation produced invalid result.",
             "Ensure all inputs are finite numbers and optimistic < mostLikely < pessimistic.",
