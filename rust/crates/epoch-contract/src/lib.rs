@@ -10,6 +10,60 @@ pub struct PublicSurfaceContract {
     pub cli_command_paths: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolError {
+    pub is_error: bool,
+    pub message: String,
+    pub retry_hint: Option<String>,
+}
+
+impl ToolError {
+    pub fn new(message: impl Into<String>, retry_hint: impl Into<String>) -> Self {
+        Self {
+            is_error: true,
+            message: message.into(),
+            retry_hint: Some(retry_hint.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TemporalResult {
+    pub iso: String,
+    pub human_readable: String,
+    pub timezone: String,
+    pub utc_offset: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DurationResult {
+    pub input: String,
+    pub total_seconds: f64,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DateDiffResult {
+    pub days: i64,
+    pub hours: i64,
+    pub minutes: i64,
+    pub total_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BusinessDayResult {
+    pub start_date: String,
+    pub end_date: String,
+    pub business_days: i64,
+    pub country_code: String,
+    pub human_readable: String,
+}
+
 impl PublicSurfaceContract {
     pub fn parse(raw: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(raw)
@@ -26,7 +80,10 @@ impl PublicSurfaceContract {
             ));
         }
         if self.write_tool_names != ["record_actual", "batch_record_actuals"] {
-            return Err(format!("unexpected write tools: {:?}", self.write_tool_names));
+            return Err(format!(
+                "unexpected write tools: {:?}",
+                self.write_tool_names
+            ));
         }
         if self.http_routes.len() != 11 {
             return Err(format!(

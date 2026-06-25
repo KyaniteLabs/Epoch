@@ -1,5 +1,8 @@
 pub use epoch_contract::PublicSurfaceContract;
 
+pub mod calendar;
+pub mod temporal;
+
 pub fn crate_label() -> &'static str {
     "epoch-core"
 }
