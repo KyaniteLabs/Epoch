@@ -46,6 +46,7 @@
     "rust:check": "cargo test --manifest-path rust/Cargo.toml --workspace && cargo run --manifest-path rust/Cargo.toml -p xtask -- check",
     "promotion:rust-parity": "tsx src/contract/rust-parity-cli.ts --report-only",
     "promotion:rust-parity:gate": "tsx src/contract/rust-parity-cli.ts",
+    "promotion:rust-adversarial": "tsx scripts/rust-adversarial-contract.ts",
     "verify:rust-milestone0": "pnpm run contract:inventory && pnpm run typecheck && pnpm test && pnpm run rust:check"
   },
   "keywords": [
