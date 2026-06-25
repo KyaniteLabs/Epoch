@@ -41,6 +41,7 @@
     "dataset:verify": "node scripts/validate-public-benchmark.mjs",
     "contract:inventory": "tsx src/contract/export-public-surface.ts",
     "rust:check": "cargo test --manifest-path rust/Cargo.toml --workspace && cargo run --manifest-path rust/Cargo.toml -p xtask -- check",
+    "promotion:rust-adversarial": "tsx scripts/rust-adversarial-contract.ts",
     "verify:rust-milestone0": "pnpm run contract:inventory && pnpm run typecheck && pnpm test && pnpm run rust:check"
   },
   "keywords": [

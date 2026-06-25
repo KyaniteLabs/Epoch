@@ -1,0 +1,1049 @@
+{
+  "report": "rust-promotion-adversarial-compatibility",
+  "description": "Adversarial accept/reject comparison between the TypeScript Epoch dispatcher and the Rust epoch-mcp binary, gating the Rust-replaces-TypeScript promotion.",
+  "methodology": {
+    "typescript": "src/dispatcher dispatch() — handlers Zod-parse first; raw cases use JSON.parse to mirror the transport layer.",
+    "rust": "rust/target epoch-mcp binary driven with one JSON-RPC tools/call per case (one process per case for crash isolation).",
+    "severityModel": {
+      "critical": "Rust crashed or hung on input TypeScript handled.",
+      "high": "TypeScript rejects but Rust accepts (malformed input slips through after promotion).",
+      "medium": "Rust rejects but TypeScript accepts (functional regression).",
+      "none": "Same accept/reject polarity (compatible)."
+    }
+  },
+  "meta": {
+    "packageVersion": "0.2.9",
+    "rustBinary": "rust/target/debug/epoch-mcp",
+    "totalCases": 43
+  },
+  "summary": {
+    "total": 43,
+    "pass": 32,
+    "fail": 11,
+    "compatibilityRate": 74.4,
+    "bySeverity": {
+      "none": 32,
+      "low": 0,
+      "medium": 2,
+      "high": 9,
+      "critical": 0
+    },
+    "byCategory": {
+      "malformed-json": {
+        "total": 5,
+        "pass": 5,
+        "fail": 0
+      },
+      "missing-required": {
+        "total": 6,
+        "pass": 6,
+        "fail": 0
+      },
+      "wrong-type": {
+        "total": 7,
+        "pass": 4,
+        "fail": 3
+      },
+      "invalid-date-tz": {
+        "total": 5,
+        "pass": 5,
+        "fail": 0
+      },
+      "bad-feedback-id": {
+        "total": 3,
+        "pass": 3,
+        "fail": 0
+      },
+      "numeric-extreme": {
+        "total": 8,
+        "pass": 2,
+        "fail": 6
+      },
+      "empty-array": {
+        "total": 4,
+        "pass": 2,
+        "fail": 2
+      },
+      "unknown-tool": {
+        "total": 5,
+        "pass": 5,
+        "fail": 0
+      }
+    },
+    "highSeverityDiffCount": 9
+  },
+  "highSeverityDiffs": [
+    {
+      "id": "record-actual-hours-string",
+      "category": "wrong-type",
+      "tool": "record_actual",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"actual_hours\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "schedule-risk-complexity-string",
+      "category": "wrong-type",
+      "tool": "schedule_risk",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"complexity\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "cocomo-factor-out-of-range",
+      "category": "numeric-extreme",
+      "tool": "cocomo_estimate",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 2,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 2\",\n    \"path\": [\n      \"reasoning_complexity\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "monte-carlo-iterations-over-cap",
+      "category": "numeric-extreme",
+      "tool": "monte_carlo_schedule",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 100000,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 100000\",\n    \"path\": [\n      \"iterations\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "schedule-risk-complexity-over-max",
+      "category": "numeric-extreme",
+      "tool": "schedule_risk",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 5,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 5\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "token-cost-negative-tokens",
+      "category": "numeric-extreme",
+      "tool": "token_cost_estimate",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": false,\n    \"exact\": false,\n    \"message\": \"Number must be greater than 0\",\n    \"path\": [\n      \"tokens\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "reference-class-complexity-zero",
+      "category": "numeric-extreme",
+      "tool": "reference_class_estimate",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 1\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "monte-carlo-empty-tasks",
+      "category": "empty-array",
+      "tool": "monte_carlo_schedule",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"tasks\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    },
+    {
+      "id": "batch-empty-entries",
+      "category": "empty-array",
+      "tool": "batch_record_actuals",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion.",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"entries\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "json-broken-brace",
+      "category": "malformed-json",
+      "note": "json-broken-brace",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "JSON.parse threw: Expected property name or '}' in JSON at position 1 (line 1 column 2)"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "jsonrpc error -32700: Parse error: key must be a string at line 1 column 2."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "json-trailing-colon",
+      "category": "malformed-json",
+      "note": "json-trailing-colon",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "JSON.parse threw: Unexpected token '}', \"{\"optimistic\":}\" is not valid JSON"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "jsonrpc error -32700: Parse error: expected value at line 1 column 15."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "json-not-json",
+      "category": "malformed-json",
+      "note": "json-not-json",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "JSON.parse threw: Unexpected token 'h', \"this is not\"... is not valid JSON"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "jsonrpc error -32700: Parse error: expected ident at line 1 column 2."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "json-truncated",
+      "category": "malformed-json",
+      "note": "json-truncated",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "JSON.parse threw: Unexpected end of JSON input"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "jsonrpc error -32700: Parse error: EOF while parsing a value at line 1 column 30."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "json-bare-array",
+      "category": "malformed-json",
+      "note": "json-bare-array",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "JSON.parse threw: Unexpected token ']', \"[1, 2, 3,]\" is not valid JSON"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "transport",
+        "detail": "jsonrpc error -32700: Parse error: trailing comma at line 1 column 10."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "pert-missing-pessimistic",
+      "category": "missing-required",
+      "note": "pert-missing-pessimistic",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"nan\",\n    \"path\": [\n      \"pessimistic\"\n    ],\n    \"message\": \"Expected number, received nan\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required number field: pessimistic."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "convert-missing-target-tz",
+      "category": "missing-required",
+      "note": "convert-missing-target-tz",
+      "tool": "convert_timezone",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"target_tz\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required string field: target_tz."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "token-cost-missing-model",
+      "category": "missing-required",
+      "note": "token-cost-missing-model",
+      "tool": "token_cost_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"string\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"model\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required string field: model."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "record-actual-missing-hours",
+      "category": "missing-required",
+      "note": "record-actual-missing-hours",
+      "tool": "record_actual",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"actual_hours\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required number field: actual_hours."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "critical-path-missing-tasks",
+      "category": "missing-required",
+      "note": "critical-path-missing-tasks",
+      "tool": "critical_path",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"array\",\n    \"received\": \"undefined\",\n    \"path\": [\n      \"tasks\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required task array field: tasks."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "reference-class-missing-task-type",
+      "category": "missing-required",
+      "note": "reference-class-missing-task-type",
+      "tool": "reference_class_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"expected\": \"'feature' | 'bugfix' | 'refactor' | 'migration' | 'infrastructure' | 'documentation' | 'testing' | 'design'\",\n    \"received\": \"undefined\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"task_type\"\n    ],\n    \"message\": \"Required\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required string field: task_type."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "pert-optimistic-object",
+      "category": "wrong-type",
+      "note": "pert-optimistic-object",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"nan\",\n    \"path\": [\n      \"optimistic\"\n    ],\n    \"message\": \"Expected number, received nan\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field optimistic must be a finite number."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "sprint-velocity-string",
+      "category": "wrong-type",
+      "note": "sprint-velocity-string",
+      "tool": "sprint_forecast",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"array\",\n    \"received\": \"string\",\n    \"path\": [\n      \"velocity_history\"\n    ],\n    \"message\": \"Expected array, received string\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required number array field: velocity_history."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "critical-path-tasks-string",
+      "category": "wrong-type",
+      "note": "critical-path-tasks-string",
+      "tool": "critical_path",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"array\",\n    \"received\": \"string\",\n    \"path\": [\n      \"tasks\"\n    ],\n    \"message\": \"Expected array, received string\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Missing required task array field: tasks."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "arguments-is-array",
+      "category": "wrong-type",
+      "note": "arguments-is-array",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"object\",\n    \"received\": \"array\",\n    \"path\": [],\n    \"message\": \"Expected object, received array\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Tool input must be a JSON object."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "record-actual-hours-string",
+      "category": "wrong-type",
+      "note": "record-actual-hours-string",
+      "tool": "record_actual",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"actual_hours\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "schedule-risk-complexity-string",
+      "category": "wrong-type",
+      "note": "schedule-risk-complexity-string",
+      "tool": "schedule_risk",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"invalid_type\",\n    \"expected\": \"number\",\n    \"received\": \"string\",\n    \"path\": [\n      \"complexity\"\n    ],\n    \"message\": \"Expected number, received string\"\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "pert-most-likely-bool",
+      "category": "wrong-type",
+      "note": "pert-most-likely-bool",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "dispatch returned ok"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Field most_likely must be a finite number."
+      },
+      "verdict": "fail",
+      "severity": "medium",
+      "diff": "Rust REJECTS input the TypeScript server accepts — functional regression after promotion."
+    },
+    {
+      "id": "convert-invalid-tz",
+      "category": "invalid-date-tz",
+      "note": "convert-invalid-tz",
+      "tool": "convert_timezone",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid target timezone: \"Mars/Phobos\". Use IANA identifiers like 'Asia/Tokyo'."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid target timezone: \"Mars/Phobos\". Use IANA identifiers like 'Asia/Tokyo'."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "current-time-invalid-tz",
+      "category": "invalid-date-tz",
+      "note": "current-time-invalid-tz",
+      "tool": "get_current_time",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid timezone: \"Not/AZone\". Use IANA identifiers like 'America/New_York'."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid timezone: \"Not/AZone\". Use IANA identifiers like 'America/New_York'."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "convert-invalid-timestamp",
+      "category": "invalid-date-tz",
+      "note": "convert-invalid-timestamp",
+      "tool": "convert_timezone",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid timestamp: \"not-a-timestamp\". Use ISO-8601 format like \"2026-05-01T14:30:00Z\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid timestamp: \"not-a-timestamp\". Use ISO-8601 format like \"2026-05-01T14:30:00Z\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "add-business-days-bad-date",
+      "category": "invalid-date-tz",
+      "note": "add-business-days-bad-date",
+      "tool": "add_business_days",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid date: \"2026-13-45\". Use ISO-8601 format like \"2026-05-01\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid date: \"2026-13-45\". Use ISO-8601 format like \"2026-05-01\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "count-business-days-bad-range",
+      "category": "invalid-date-tz",
+      "note": "count-business-days-bad-range",
+      "tool": "count_business_days",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid date: \"garbage\". Use ISO-8601 format like \"2026-05-01\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Invalid date: \"garbage\". Use ISO-8601 format like \"2026-05-01\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "record-actual-unknown-id",
+      "category": "bad-feedback-id",
+      "note": "record-actual-unknown-id",
+      "tool": "record_actual",
+      "ts": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "dispatch returned ok"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "record-actual-empty-id",
+      "category": "bad-feedback-id",
+      "note": "record-actual-empty-id",
+      "tool": "record_actual",
+      "ts": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "dispatch returned ok"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "batch-unknown-ids",
+      "category": "bad-feedback-id",
+      "note": "batch-unknown-ids",
+      "tool": "batch_record_actuals",
+      "ts": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "dispatch returned ok"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "pert-negative-optimistic",
+      "category": "numeric-extreme",
+      "note": "pert-negative-optimistic",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": false,\n    \"exact\": false,\n    \"message\": \"Number must be greater than 0\",\n    \"path\": [\n      \"optimistic\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "PERT values must satisfy 0 < optimistic <= most_likely <= pessimistic. Got optimistic=-1, most_likely=2, pessimistic=4."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "cocomo-negative-kloc",
+      "category": "numeric-extreme",
+      "note": "cocomo-negative-kloc",
+      "tool": "cocomo_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": false,\n    \"exact\": false,\n    \"message\": \"Number must be greater than 0\",\n    \"path\": [\n      \"kloc\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "KLOC must be positive."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "cocomo-factor-out-of-range",
+      "category": "numeric-extreme",
+      "note": "cocomo-factor-out-of-range",
+      "tool": "cocomo_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 2,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 2\",\n    \"path\": [\n      \"reasoning_complexity\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "monte-carlo-iterations-over-cap",
+      "category": "numeric-extreme",
+      "note": "monte-carlo-iterations-over-cap",
+      "tool": "monte_carlo_schedule",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 100000,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 100000\",\n    \"path\": [\n      \"iterations\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "schedule-risk-complexity-over-max",
+      "category": "numeric-extreme",
+      "note": "schedule-risk-complexity-over-max",
+      "tool": "schedule_risk",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_big\",\n    \"maximum\": 5,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be less than or equal to 5\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "pert-overflow-pessimistic",
+      "category": "numeric-extreme",
+      "note": "pert-overflow-pessimistic",
+      "tool": "pert_estimate",
+      "ts": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "dispatch returned ok"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Computation produced invalid result."
+      },
+      "verdict": "fail",
+      "severity": "medium",
+      "diff": "Rust REJECTS input the TypeScript server accepts — functional regression after promotion."
+    },
+    {
+      "id": "token-cost-negative-tokens",
+      "category": "numeric-extreme",
+      "note": "token-cost-negative-tokens",
+      "tool": "token_cost_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 0,\n    \"type\": \"number\",\n    \"inclusive\": false,\n    \"exact\": false,\n    \"message\": \"Number must be greater than 0\",\n    \"path\": [\n      \"tokens\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "reference-class-complexity-zero",
+      "category": "numeric-extreme",
+      "note": "reference-class-complexity-zero",
+      "tool": "reference_class_estimate",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"number\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Number must be greater than or equal to 1\",\n    \"path\": [\n      \"complexity\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "critical-path-empty-tasks",
+      "category": "empty-array",
+      "note": "critical-path-empty-tasks",
+      "tool": "critical_path",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"tasks\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Task list must not be empty."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "monte-carlo-empty-tasks",
+      "category": "empty-array",
+      "note": "monte-carlo-empty-tasks",
+      "tool": "monte_carlo_schedule",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"tasks\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "sprint-empty-velocity",
+      "category": "empty-array",
+      "note": "sprint-empty-velocity",
+      "tool": "sprint_forecast",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"velocity_history\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "velocity_history cannot be empty. Provide at least one sprint's velocity."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "batch-empty-entries",
+      "category": "empty-array",
+      "note": "batch-empty-entries",
+      "tool": "batch_record_actuals",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 1,\n    \"type\": \"array\",\n    \"inclusive\": true,\n    \"exact\": false,\n    \"message\": \"Array must contain at least 1 element(s)\",\n    \"path\": [\n      \"entries\"\n    ]\n  }\n]"
+      },
+      "rust": {
+        "polarity": "accepted",
+        "rejectKind": "none",
+        "detail": "tool returned isError:false"
+      },
+      "verdict": "fail",
+      "severity": "high",
+      "diff": "TypeScript REJECTS this input but Rust ACCEPTS it — malformed payload would pass after promotion."
+    },
+    {
+      "id": "unknown-plain",
+      "category": "unknown-tool",
+      "note": "unknown-plain",
+      "tool": "no_such_tool",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"no_such_tool\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"no_such_tool\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "unknown-typo",
+      "category": "unknown-tool",
+      "note": "unknown-typo",
+      "tool": "pert_estimat",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"pert_estimat\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"pert_estimat\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "unknown-empty",
+      "category": "unknown-tool",
+      "note": "unknown-empty",
+      "tool": "",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "unknown-proto",
+      "category": "unknown-tool",
+      "note": "unknown-proto",
+      "tool": "__proto__",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"__proto__\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"__proto__\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    },
+    {
+      "id": "unknown-casing",
+      "category": "unknown-tool",
+      "note": "unknown-casing",
+      "tool": "PERT_ESTIMATE",
+      "ts": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"PERT_ESTIMATE\"."
+      },
+      "rust": {
+        "polarity": "rejected",
+        "rejectKind": "validation",
+        "detail": "Unknown tool: \"PERT_ESTIMATE\"."
+      },
+      "verdict": "pass",
+      "severity": "none",
+      "diff": "Same accept/reject polarity."
+    }
+  ]
+}
