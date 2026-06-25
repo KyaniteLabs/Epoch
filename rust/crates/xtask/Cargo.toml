@@ -9,3 +9,4 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 epoch-contract = { path = "../epoch-contract" }
+serde_json.workspace = true
