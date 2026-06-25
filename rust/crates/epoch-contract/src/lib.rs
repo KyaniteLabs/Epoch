@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -604,6 +605,153 @@ pub struct CocomoGroundTruthResult {
     pub by_type: BTreeMap<String, CocomoBestBreakdown>,
     pub winner: String,
     pub conclusion: String,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EstimateRecord {
+    pub id: String,
+    pub tool: String,
+    pub inputs: BTreeMap<String, Value>,
+    pub outputs: BTreeMap<String, Value>,
+    pub estimated_at: String,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ActualRecord {
+    pub estimate_id: String,
+    pub actual_hours: f64,
+    pub notes: Option<String>,
+    pub reported_at: String,
+    pub completed_at: Option<String>,
+    #[serde(alias = "calibration_provenance")]
+    pub calibration_provenance: Option<CalibrationProvenance>,
+    #[serde(alias = "calibration_usage")]
+    pub calibration_usage: Option<CalibrationUsage>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CalibrationProvenance {
+    Prospective,
+    BackfilledRealSession,
+    BackfilledCalibration,
+    Synthetic,
+    Smoke,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CalibrationUsage {
+    Correction,
+    Baseline,
+    Exclude,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackMatchedRecord {
+    pub task_type: TaskType,
+    pub estimated_hours: f64,
+    pub actual_hours: f64,
+    pub team_id: Option<String>,
+    pub tool: Option<String>,
+    pub complexity: Option<f64>,
+    pub completed_at: String,
+    pub calibration_provenance: CalibrationProvenance,
+    pub calibration_usage: CalibrationUsage,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingEstimateRecord {
+    #[serde(flatten)]
+    pub estimate: EstimateRecord,
+    pub has_actual: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchActualEntry {
+    pub estimate_id: String,
+    pub actual_hours: f64,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchResult {
+    pub total: usize,
+    pub succeeded: usize,
+    pub failed: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordActualFailureReason {
+    BelowThreshold,
+    Duplicate,
+    WriteFailed,
+    SyntheticId,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackMetricSummary {
+    pub estimates: usize,
+    pub actuals: usize,
+    pub matched_pairs: usize,
+    pub mape: Option<f64>,
+    pub mdape: Option<f64>,
+    pub capped_mdape: Option<f64>,
+    pub bias: Option<f64>,
+    pub trend: Option<AccuracyTrendDirection>,
+    pub recommendation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackProvenanceSummary {
+    pub correction_records: usize,
+    pub baseline_records: usize,
+    pub excluded_records: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackSelfImprovement {
+    pub ready_types: Vec<String>,
+    pub calls_until_update: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackDataQuality {
+    pub overall_mdape: Option<f64>,
+    pub overall_capped_mdape: Option<f64>,
+    pub outlier_ratio: f64,
+    pub recommendation: String,
+    pub data_completeness_score: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedbackHealthReport {
+    pub total_estimates: usize,
+    pub total_actuals: usize,
+    pub matched_pairs: usize,
+    pub seed_records_filtered: usize,
+    pub provenance: FeedbackProvenanceSummary,
+    pub match_rate: f64,
+    pub by_tool: BTreeMap<String, FeedbackMetricSummary>,
+    pub by_task_type: BTreeMap<String, FeedbackMetricSummary>,
+    pub self_improvement: FeedbackSelfImprovement,
+    pub data_quality: FeedbackDataQuality,
     pub human_readable: String,
 }
 

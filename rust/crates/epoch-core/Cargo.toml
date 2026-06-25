@@ -10,6 +10,6 @@ repository.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 epoch-contract = { path = "../epoch-contract" }
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
