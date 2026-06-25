@@ -1,6 +1,6 @@
 use epoch_contract::{
-    AccuracyMetrics, AccuracyTrendDirection, CalibrationResult, ConfidenceLevel,
-    ReferenceClassEstimate, ScopeSignal, TaskType,
+    AccuracyMetrics, AccuracyTrend, AccuracyTrendDirection, AccuracyWindow, CalibrationResult,
+    ConfidenceLevel, ReferenceClassEstimate, ScopeSignal, TaskType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -270,6 +270,134 @@ pub fn calibrate_estimates(
     }
 }
 
+pub fn compute_accuracy_trend(
+    records: &[HistoricalRecord],
+    requested_window_size: Option<usize>,
+) -> AccuracyTrend {
+    let requested_window_size = requested_window_size.unwrap_or(50);
+    let total_estimates = records.len();
+    let total_with_actuals = records.len();
+
+    if records.is_empty() {
+        return AccuracyTrend {
+            windows: Vec::new(),
+            overall_trend: AccuracyTrendDirection::Stable,
+            current_mape: 0.0,
+            industry_baseline_mape: industry_baseline_mape(),
+            improvement_vs_industry: industry_baseline_mape(),
+            total_estimates: 0,
+            total_with_actuals: 0,
+            human_readable:
+                "No historical estimation data available. Start recording estimates and actuals to track accuracy trends."
+                    .to_string(),
+        };
+    }
+
+    let mut sorted = records.to_vec();
+    sorted.sort_by(|left, right| {
+        left.completed_at
+            .as_deref()
+            .unwrap_or("")
+            .cmp(right.completed_at.as_deref().unwrap_or(""))
+    });
+
+    let min_window_size = 10;
+    let mut window_size = requested_window_size;
+    if sorted.len() >= window_size * 2 {
+        let remainder = sorted.len() % window_size;
+        if remainder > 0 && remainder < window_size / 2 {
+            let num_windows = sorted.len().div_ceil(window_size);
+            window_size = sorted.len().div_ceil(num_windows);
+        }
+    }
+    window_size = window_size.max(min_window_size);
+
+    if sorted.len() < window_size {
+        let metrics = compute_accuracy_metrics(&sorted);
+        let window = AccuracyWindow {
+            period: format!("Window 1 (estimates 1-{})", sorted.len()),
+            date_range: date_range(&sorted),
+            mape: metrics.mape,
+            mdape: metrics.mdape,
+            bias: metrics.bias,
+            sample_size: sorted.len(),
+        };
+        let industry_baseline = industry_baseline_mape();
+        let current_mape = metrics.mape;
+        let improvement_vs_industry = round1(industry_baseline - current_mape);
+        let windows = vec![window];
+        return AccuracyTrend {
+            windows: windows.clone(),
+            overall_trend: AccuracyTrendDirection::Stable,
+            current_mape,
+            industry_baseline_mape: industry_baseline,
+            improvement_vs_industry,
+            total_estimates,
+            total_with_actuals,
+            human_readable: build_trend_human_readable(
+                AccuracyTrendDirection::Stable,
+                current_mape,
+                industry_baseline,
+                improvement_vs_industry,
+                &windows,
+            ),
+        };
+    }
+
+    let mut windows = Vec::new();
+    for (window_index, start) in (0..sorted.len()).step_by(window_size).enumerate() {
+        let end = (start + window_size).min(sorted.len());
+        let window_records = &sorted[start..end];
+        if window_records.is_empty() {
+            break;
+        }
+        let metrics = compute_accuracy_metrics(window_records);
+        windows.push(AccuracyWindow {
+            period: format!(
+                "Window {} (estimates {}-{})",
+                window_index + 1,
+                start + 1,
+                end
+            ),
+            date_range: date_range(window_records),
+            mape: metrics.mape,
+            mdape: metrics.mdape,
+            bias: metrics.bias,
+            sample_size: window_records.len(),
+        });
+    }
+
+    let first_mdape = windows.first().map(|window| window.mdape).unwrap_or(0.0);
+    let last_mdape = windows.last().map(|window| window.mdape).unwrap_or(0.0);
+    let current_mape = windows.last().map(|window| window.mape).unwrap_or(0.0);
+    let overall_trend = if last_mdape < first_mdape * 0.85 {
+        AccuracyTrendDirection::Improving
+    } else if last_mdape > first_mdape * 1.15 {
+        AccuracyTrendDirection::Degrading
+    } else {
+        AccuracyTrendDirection::Stable
+    };
+    let industry_baseline = industry_baseline_mape();
+    let improvement_vs_industry = round1(industry_baseline - current_mape);
+
+    AccuracyTrend {
+        windows: windows.clone(),
+        overall_trend,
+        current_mape,
+        industry_baseline_mape: industry_baseline,
+        improvement_vs_industry,
+        total_estimates,
+        total_with_actuals,
+        human_readable: build_trend_human_readable(
+            overall_trend,
+            current_mape,
+            industry_baseline,
+            improvement_vs_industry,
+            &windows,
+        ),
+    }
+}
+
 fn empty_accuracy_metrics() -> AccuracyMetrics {
     AccuracyMetrics {
         mape: 0.0,
@@ -280,6 +408,86 @@ fn empty_accuracy_metrics() -> AccuracyMetrics {
         sample_size: 0,
         trend: AccuracyTrendDirection::Stable,
     }
+}
+
+fn build_trend_human_readable(
+    trend: AccuracyTrendDirection,
+    current_mape: f64,
+    industry_baseline: f64,
+    improvement_vs_industry: f64,
+    windows: &[AccuracyWindow],
+) -> String {
+    let vs_industry = if improvement_vs_industry > 0.0 {
+        format!(
+            "{}% better than industry baseline ({}%)",
+            format_number(improvement_vs_industry),
+            format_number(industry_baseline)
+        )
+    } else if improvement_vs_industry < 0.0 {
+        format!(
+            "{}% worse than industry baseline ({}%)",
+            format_number(improvement_vs_industry.abs()),
+            format_number(industry_baseline)
+        )
+    } else {
+        format!(
+            "equal to industry baseline ({}%)",
+            format_number(industry_baseline)
+        )
+    };
+
+    let last_mdape = windows.last().map(|window| window.mdape).unwrap_or(0.0);
+    let estimate_count = windows
+        .iter()
+        .map(|window| window.sample_size)
+        .sum::<usize>();
+    let window_summary = if windows.len() == 1 {
+        format!(
+            "1 window (MdAPE: {}%, MAPE: {}%)",
+            format_number(last_mdape),
+            format_number(windows.first().map(|window| window.mape).unwrap_or(0.0))
+        )
+    } else {
+        let min_mdape = windows
+            .iter()
+            .map(|window| window.mdape)
+            .fold(f64::INFINITY, f64::min);
+        let max_mdape = windows
+            .iter()
+            .map(|window| window.mdape)
+            .fold(f64::NEG_INFINITY, f64::max);
+        format!(
+            "{} windows, MdAPE range: {}% to {}%",
+            windows.len(),
+            format_number(min_mdape),
+            format_number(max_mdape)
+        )
+    };
+
+    format!(
+        "Accuracy trend is {}. Current MdAPE: {}% (MAPE: {}%), {vs_industry}. {window_summary} across {estimate_count} estimates.",
+        trend.as_str(),
+        format_number(last_mdape),
+        format_number(current_mape)
+    )
+}
+
+fn date_range(records: &[HistoricalRecord]) -> Option<String> {
+    let first = records.first()?;
+    let last = records.last()?;
+    Some(format!(
+        "{} to {}",
+        date_prefix(first.completed_at.as_deref().unwrap_or("")),
+        date_prefix(last.completed_at.as_deref().unwrap_or(""))
+    ))
+}
+
+fn date_prefix(value: &str) -> String {
+    value.chars().take(10).collect()
+}
+
+fn industry_baseline_mape() -> f64 {
+    25.0
 }
 
 fn avg_percentage_error(records: &[&HistoricalRecord]) -> f64 {
@@ -540,8 +748,8 @@ fn format_number(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        HistoricalRecord, calibrate_estimates, compute_accuracy_metrics, get_scope_guide,
-        infer_scope_from_complexity, reference_class_estimate,
+        HistoricalRecord, calibrate_estimates, compute_accuracy_metrics, compute_accuracy_trend,
+        get_scope_guide, infer_scope_from_complexity, reference_class_estimate, round1,
     };
     use epoch_contract::{AccuracyTrendDirection, ConfidenceLevel, ScopeSignal, TaskType};
     use serde_json::json;
@@ -756,6 +964,93 @@ mod tests {
         assert!(result.recommendations[0].contains("1 samples, need 5"));
     }
 
+    #[test]
+    fn accuracy_trend_returns_empty_baseline_without_records() {
+        let result = compute_accuracy_trend(&[], None);
+
+        assert!(result.windows.is_empty());
+        assert_eq!(result.overall_trend, AccuracyTrendDirection::Stable);
+        assert_eq!(result.current_mape, 0.0);
+        assert_eq!(result.industry_baseline_mape, 25.0);
+        assert_eq!(result.improvement_vs_industry, 25.0);
+        assert_eq!(result.total_estimates, 0);
+        assert!(result.human_readable.contains("No historical"));
+    }
+
+    #[test]
+    fn accuracy_trend_uses_single_window_for_small_samples() {
+        let records = dated_records(5, |_| 10.0);
+        let result = compute_accuracy_trend(&records, Some(50));
+
+        assert_eq!(result.windows.len(), 1);
+        assert_eq!(result.windows[0].period, "Window 1 (estimates 1-5)");
+        assert_eq!(
+            result.windows[0].date_range.as_deref(),
+            Some("2026-01-01 to 2026-01-05")
+        );
+        assert_eq!(result.total_estimates, 5);
+        assert_eq!(result.total_with_actuals, 5);
+        assert_eq!(result.overall_trend, AccuracyTrendDirection::Stable);
+    }
+
+    #[test]
+    fn accuracy_trend_detects_improving_stable_and_degrading() {
+        let improving = [
+            dated_records(50, |_| 60.0),
+            dated_records_with_offset(50, 50, |_| 10.0),
+        ]
+        .concat();
+        let stable = dated_records(100, |_| 30.0);
+        let degrading = [
+            dated_records(50, |_| 10.0),
+            dated_records_with_offset(50, 50, |_| 80.0),
+        ]
+        .concat();
+
+        assert_eq!(
+            compute_accuracy_trend(&improving, Some(50)).overall_trend,
+            AccuracyTrendDirection::Improving
+        );
+        assert_eq!(
+            compute_accuracy_trend(&stable, Some(50)).overall_trend,
+            AccuracyTrendDirection::Stable
+        );
+        assert_eq!(
+            compute_accuracy_trend(&degrading, Some(50)).overall_trend,
+            AccuracyTrendDirection::Degrading
+        );
+    }
+
+    #[test]
+    fn accuracy_trend_redistributes_windows_to_avoid_tiny_tail() {
+        let records = dated_records(120, |_| 20.0);
+        let result = compute_accuracy_trend(&records, Some(50));
+        let last_window = result.windows.last().expect("last window");
+
+        assert!(result.windows.len() >= 2);
+        assert!(last_window.sample_size >= 25);
+    }
+
+    #[test]
+    fn accuracy_trend_serializes_ts_shape_and_human_summary() {
+        let records = dated_records(100, |_| 30.0);
+        let result = compute_accuracy_trend(&records, Some(50));
+
+        assert_eq!(result.windows.len(), 2);
+        assert!(result.human_readable.contains("Accuracy trend is stable"));
+        assert!(result.human_readable.contains("MdAPE"));
+
+        let serialized = serde_json::to_value(&result).expect("serializes");
+        assert_eq!(serialized["overallTrend"], json!("stable"));
+        assert_eq!(serialized["industryBaselineMape"], json!(25.0));
+        assert_eq!(serialized["totalWithActuals"], json!(100));
+        assert_eq!(serialized["windows"][0]["sampleSize"], json!(50));
+        assert_eq!(
+            serialized["windows"][0]["dateRange"],
+            json!("2026-01-01 to 2026-02-19")
+        );
+    }
+
     fn record(task_type: TaskType, estimated_hours: f64, actual_hours: f64) -> HistoricalRecord {
         HistoricalRecord {
             task_type,
@@ -766,5 +1061,37 @@ mod tests {
             complexity: None,
             completed_at: None,
         }
+    }
+
+    fn dated_records(count: usize, error_fn: impl Fn(usize) -> f64) -> Vec<HistoricalRecord> {
+        dated_records_with_offset(count, 0, error_fn)
+    }
+
+    fn dated_records_with_offset(
+        count: usize,
+        day_offset: usize,
+        error_fn: impl Fn(usize) -> f64,
+    ) -> Vec<HistoricalRecord> {
+        (0..count)
+            .map(|index| {
+                let estimated_hours = 10.0;
+                let error = error_fn(index);
+                let actual_hours = round1(estimated_hours * (1.0 + error / 100.0));
+                let day = day_offset + index + 1;
+                let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+                    .expect("valid date")
+                    .checked_add_days(chrono::Days::new((day - 1) as u64))
+                    .expect("date in range");
+                HistoricalRecord {
+                    task_type: TaskType::Feature,
+                    estimated_hours,
+                    actual_hours,
+                    team_id: None,
+                    tool: None,
+                    complexity: None,
+                    completed_at: Some(format!("{date}T00:00:00Z")),
+                }
+            })
+            .collect()
     }
 }

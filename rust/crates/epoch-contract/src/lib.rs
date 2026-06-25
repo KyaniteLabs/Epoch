@@ -497,6 +497,30 @@ pub struct CalibrationResult {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct AccuracyWindow {
+    pub period: String,
+    pub date_range: Option<String>,
+    pub mape: f64,
+    pub mdape: f64,
+    pub bias: f64,
+    pub sample_size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AccuracyTrend {
+    pub windows: Vec<AccuracyWindow>,
+    pub overall_trend: AccuracyTrendDirection,
+    pub current_mape: f64,
+    pub industry_baseline_mape: f64,
+    pub improvement_vs_industry: f64,
+    pub total_estimates: usize,
+    pub total_with_actuals: usize,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfidenceIntervals {
     pub p50: f64,
     pub p80: f64,
