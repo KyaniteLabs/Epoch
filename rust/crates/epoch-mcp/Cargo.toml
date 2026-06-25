@@ -7,4 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+chrono.workspace = true
 epoch-contract = { path = "../epoch-contract" }
+epoch-core = { path = "../epoch-core" }
+epoch-data = { path = "../epoch-data" }
+serde.workspace = true
+serde_json.workspace = true

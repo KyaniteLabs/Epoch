@@ -1,3 +1,6 @@
+pub mod dispatcher;
+
+pub use dispatcher::{RustToolDispatcher, ToolValueResult, dispatch_stateless};
 pub use epoch_contract::{
     PublicSurfaceContract, ToolAnnotations, ToolMetadata, find_tool, tool_names, tool_registry,
     write_tool_names,

@@ -132,7 +132,12 @@ dependencies = [
 name = "epoch-mcp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "epoch-contract",
+ "epoch-core",
+ "epoch-data",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
