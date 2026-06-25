@@ -35,4 +35,35 @@ describe("public surface inventory", () => {
 		expect(collectHttpRoutes(createApiApp())).toEqual(EXPECTED_HTTP_ROUTES);
 		expect(EXPECTED_HTTP_ROUTES).toHaveLength(11);
 	});
+
+	it("exports a JSON-safe contract artifact shape", () => {
+		const json = JSON.stringify(
+			{
+				package_name: "@kyanitelabs/epoch",
+				mcp_tool_names: EXPECTED_MCP_TOOL_NAMES,
+				write_tool_names: EXPECTED_WRITE_TOOL_NAMES,
+				http_routes: EXPECTED_HTTP_ROUTES,
+				cli_command_paths: EXPECTED_CLI_COMMAND_PATHS,
+			},
+			null,
+			2,
+		);
+
+		const parsed = JSON.parse(json) as {
+			package_name: string;
+			mcp_tool_names: string[];
+			write_tool_names: string[];
+			http_routes: string[];
+			cli_command_paths: string[];
+		};
+
+		expect(parsed.package_name).toBe("@kyanitelabs/epoch");
+		expect(parsed.mcp_tool_names).toHaveLength(24);
+		expect(parsed.write_tool_names).toEqual([
+			"record_actual",
+			"batch_record_actuals",
+		]);
+		expect(parsed.http_routes).toHaveLength(11);
+		expect(parsed.cli_command_paths).toHaveLength(39);
+	});
 });
