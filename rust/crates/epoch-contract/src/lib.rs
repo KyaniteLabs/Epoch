@@ -521,6 +521,94 @@ pub struct AccuracyTrend {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct CocomoProject {
+    pub id: u32,
+    pub kloc: f64,
+    pub effort_person_months: f64,
+    #[serde(rename = "type")]
+    pub project_type: Option<String>,
+    pub language: Option<String>,
+    pub year: Option<u32>,
+    pub category: Option<String>,
+    pub function_points: Option<f64>,
+    pub effort_work_hours: Option<f64>,
+    pub duration_months: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CocomoDataset {
+    pub name: String,
+    pub projects: Vec<CocomoProject>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CocomoBasicCoefficients {
+    pub a: f64,
+    pub b: f64,
+    pub c: Option<f64>,
+    pub d: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CocomoProjectTypeMetrics {
+    pub mape: f64,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CocomoRecommendedAdjustment {
+    pub parameter: String,
+    pub current_value: f64,
+    pub recommended_value: f64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CocomoValidationReport {
+    pub projects_evaluated: usize,
+    pub mape: f64,
+    pub bias: f64,
+    pub by_project_type: BTreeMap<String, CocomoProjectTypeMetrics>,
+    pub recommended_adjustments: Vec<CocomoRecommendedAdjustment>,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CocomoModelMetrics {
+    pub name: String,
+    pub mape: f64,
+    pub mmre: f64,
+    pub pred25: f64,
+    pub pred50: f64,
+    pub bias: f64,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CocomoBestBreakdown {
+    pub count: usize,
+    pub best_model: String,
+    pub best_mape: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CocomoGroundTruthResult {
+    pub projects_evaluated: usize,
+    pub models: Vec<CocomoModelMetrics>,
+    pub by_dataset: BTreeMap<String, CocomoBestBreakdown>,
+    pub by_type: BTreeMap<String, CocomoBestBreakdown>,
+    pub winner: String,
+    pub conclusion: String,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ConfidenceIntervals {
     pub p50: f64,
     pub p80: f64,
