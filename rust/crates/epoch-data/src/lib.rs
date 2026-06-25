@@ -2,6 +2,12 @@ use epoch_contract::{CocomoBasicCoefficients, CocomoDataset};
 use serde::{Deserialize, Serialize, de::Error as _};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+/// Reference-database fallback when no `globalCorrectionFactor` is available.
+/// Mirrors the TypeScript `getGlobalCorrectionFactor()` default in
+/// `src/lib/self-improve.ts`.
+pub const DEFAULT_GLOBAL_CORRECTION_FACTOR: f64 = 1.07;
 
 pub const BUNDLED_COCOMO_CALIBRATION_JSON: &str =
     include_str!("../../../../data/cocomo-calibration-data.json");
@@ -74,6 +80,54 @@ pub fn bundled_reference_database() -> Result<Value, serde_json::Error> {
     serde_json::from_str(BUNDLED_REFERENCE_DATABASE_JSON)
 }
 
+/// Resolve the global correction factor exactly like the TypeScript
+/// `getGlobalCorrectionFactor()` (`src/lib/self-improve.ts`): prefer a
+/// `reference-database.json` under `$EPOCH_DATA_DIR`, then `$HOME/.epoch`, then
+/// the bundled copy, and read its `globalCorrectionFactor` (default 1.07).
+///
+/// Keeping the same resolution as TypeScript is what makes the Rust developer
+/// profile, calibration fallback, and COCOMO ground-truth metrics agree with
+/// the TS contract in every environment — not just where `~/.epoch` happens to
+/// exist.
+pub fn resolve_global_correction_factor() -> f64 {
+    resolve_reference_database()
+        .as_ref()
+        .and_then(|db| db.get("globalCorrectionFactor"))
+        .and_then(Value::as_f64)
+        .unwrap_or(DEFAULT_GLOBAL_CORRECTION_FACTOR)
+}
+
+/// Load the reference database following the TypeScript resolution order:
+/// `$EPOCH_DATA_DIR/reference-database.json`, then
+/// `$HOME/.epoch/reference-database.json`, then the bundled copy.
+fn resolve_reference_database() -> Option<Value> {
+    reference_database_candidates()
+        .iter()
+        .find_map(|path| {
+            std::fs::read_to_string(path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        })
+        .or_else(|| bundled_reference_database().ok())
+}
+
+fn reference_database_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(dir) = std::env::var_os("EPOCH_DATA_DIR") {
+        candidates.push(PathBuf::from(dir).join("reference-database.json"));
+    }
+    if let Some(home) = home_dir() {
+        candidates.push(home.join(".epoch").join("reference-database.json"));
+    }
+    candidates
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 pub fn crate_label() -> &'static str {
     "epoch-data"
 }
@@ -82,7 +136,7 @@ pub fn crate_label() -> &'static str {
 mod tests {
     use super::{
         bundled_cocomo_basic_coefficients, bundled_cocomo_calibration, bundled_reference_database,
-        bundled_supplementary_database, crate_label,
+        bundled_supplementary_database, crate_label, resolve_global_correction_factor,
     };
     use epoch_core::cocomo::{cocomo_validate, cocomo_validate_ground_truth};
 
@@ -134,8 +188,12 @@ mod tests {
             None,
         )
         .expect("bundled validation succeeds");
-        let ground_truth = cocomo_validate_ground_truth(&calibration.datasets, None)
-            .expect("bundled ground truth succeeds");
+        let ground_truth = cocomo_validate_ground_truth(
+            &calibration.datasets,
+            None,
+            resolve_global_correction_factor(),
+        )
+        .expect("bundled ground truth succeeds");
 
         assert_eq!(report.projects_evaluated, 182);
         assert_eq!(ground_truth.projects_evaluated, 182);
@@ -155,6 +213,15 @@ mod tests {
         .expect("filtered bundled validation succeeds");
 
         assert_eq!(report.projects_evaluated, 93);
+    }
+
+    #[test]
+    fn resolves_a_positive_global_correction_factor() {
+        // Resolution is environment-dependent (EPOCH_DATA_DIR → ~/.epoch →
+        // bundled), but every source yields a positive, finite factor.
+        let factor = resolve_global_correction_factor();
+        assert!(factor.is_finite());
+        assert!(factor > 0.0);
     }
 
     #[test]

@@ -6,6 +6,7 @@ pub mod cocomo;
 pub mod cost;
 pub mod estimation;
 pub mod feedback;
+pub mod profiles;
 pub mod risk;
 pub mod temporal;
 

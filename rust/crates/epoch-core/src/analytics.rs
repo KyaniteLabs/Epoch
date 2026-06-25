@@ -29,8 +29,6 @@ struct ReferenceCategory {
     p75_hours: f64,
 }
 
-const GLOBAL_CORRECTION_FACTOR: f64 = 1.07;
-
 pub fn infer_scope_from_complexity(complexity: f64) -> ScopeSignal {
     if complexity <= 2.0 {
         ScopeSignal::Small
@@ -197,6 +195,7 @@ pub fn calibrate_estimates(
     period_days: u32,
     minimum_samples: usize,
     records: &[HistoricalRecord],
+    global_correction_factor: f64,
 ) -> CalibrationResult {
     if records.len() >= minimum_samples {
         let metrics = compute_accuracy_metrics(records);
@@ -253,12 +252,13 @@ pub fn calibrate_estimates(
         }
     } else {
         CalibrationResult {
-            correction_factor: GLOBAL_CORRECTION_FACTOR,
+            correction_factor: global_correction_factor,
             accuracy_trend: AccuracyTrendDirection::Stable,
             velocity_trend: "stable".to_string(),
             recommendations: vec![
                 format!(
-                    "Using reference database correction factor ({GLOBAL_CORRECTION_FACTOR}x) — {} samples, need {minimum_samples}.",
+                    "Using reference database correction factor ({}x) — {} samples, need {minimum_samples}.",
+                    format_number(global_correction_factor),
                     records.len()
                 ),
                 "Submit actuals via POST /v1/feedback/record-actual to enable data-driven calibration."
@@ -918,7 +918,7 @@ mod tests {
             record(TaskType::Feature, 10.0, 12.0),
             record(TaskType::Feature, 10.0, 0.01),
         ];
-        let result = calibrate_estimates("team-a", 90, 5, &records);
+        let result = calibrate_estimates("team-a", 90, 5, &records, 1.07);
 
         assert!(result.correction_factor < 1.5);
         assert_eq!(result.accuracy_trend, AccuracyTrendDirection::Degrading);
@@ -941,7 +941,7 @@ mod tests {
             record(TaskType::Feature, 10.0, 30.0),
             record(TaskType::Feature, 10.0, 40.0),
         ];
-        let result = calibrate_estimates("team-a", 90, 5, &records);
+        let result = calibrate_estimates("team-a", 90, 5, &records, 1.07);
 
         assert_eq!(result.accuracy_trend, AccuracyTrendDirection::Degrading);
         assert_eq!(result.velocity_trend, "slowing");
@@ -956,7 +956,7 @@ mod tests {
     #[test]
     fn calibrate_estimates_falls_back_with_too_few_samples() {
         let records = vec![record(TaskType::Feature, 10.0, 12.0)];
-        let result = calibrate_estimates("team-a", 90, 5, &records);
+        let result = calibrate_estimates("team-a", 90, 5, &records, 1.07);
 
         assert_eq!(result.correction_factor, 1.07);
         assert_eq!(result.accuracy_trend, AccuracyTrendDirection::Stable);

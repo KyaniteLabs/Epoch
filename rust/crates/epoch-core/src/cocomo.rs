@@ -240,6 +240,7 @@ pub fn cocomo_validate(
 pub fn cocomo_validate_ground_truth(
     datasets: &[CocomoDataset],
     dataset_filter: Option<&[String]>,
+    global_correction_factor: f64,
 ) -> Result<CocomoGroundTruthResult, ToolError> {
     if datasets.is_empty() {
         return Err(ToolError::new(
@@ -262,7 +263,7 @@ pub fn cocomo_validate_ground_truth(
                 actual: project.effort_person_months,
                 dataset: dataset.name.clone(),
                 project_type: project_type.clone(),
-                models: predict_all(project.kloc, &project_type),
+                models: predict_all(project.kloc, &project_type, global_correction_factor),
             });
         }
     }
@@ -456,7 +457,7 @@ fn best_breakdown(
         .collect()
 }
 
-fn predict_all(kloc: f64, project_type: &str) -> PredictionSet {
+fn predict_all(kloc: f64, project_type: &str, global_correction_factor: f64) -> PredictionSet {
     let coeffs = default_coefficients()
         .get(project_type)
         .copied()
@@ -469,9 +470,9 @@ fn predict_all(kloc: f64, project_type: &str) -> PredictionSet {
         basic,
         nominal,
         ai_speedup,
-        ai_profile_0: ai_speedup * profile_correction_factor(0.0),
-        ai_profile_05: ai_speedup * profile_correction_factor(0.5),
-        ai_profile_1: ai_speedup * profile_correction_factor(1.0),
+        ai_profile_0: ai_speedup * profile_correction_factor(0.0, global_correction_factor),
+        ai_profile_05: ai_speedup * profile_correction_factor(0.5, global_correction_factor),
+        ai_profile_1: ai_speedup * profile_correction_factor(1.0, global_correction_factor),
     }
 }
 
@@ -593,8 +594,10 @@ impl PredictionSet {
     }
 }
 
-fn profile_correction_factor(ai_ratio: f64) -> f64 {
-    round2(1.8 + (1.07 - 1.8) * ai_ratio.clamp(0.0, 1.0))
+fn profile_correction_factor(ai_ratio: f64, global_correction_factor: f64) -> f64 {
+    // Mirror the developer-profile gradient so the COCOMO "AI + Profile" models
+    // use the same resolved global correction factor as the enrichment path.
+    crate::profiles::developer_profile(ai_ratio, global_correction_factor).correction_factor
 }
 
 fn average(values: &[f64]) -> f64 {
@@ -743,14 +746,14 @@ mod tests {
 
     #[test]
     fn ground_truth_returns_error_without_data_or_matching_filter() {
-        assert!(cocomo_validate_ground_truth(&[], None).is_err());
+        assert!(cocomo_validate_ground_truth(&[], None, 1.07).is_err());
 
         let datasets = vec![dataset(
             "dataset-a",
             vec![project(1, 10.0, 24.0, Some("organic"))],
         )];
         let filter = vec!["missing".to_string()];
-        let result = cocomo_validate_ground_truth(&datasets, Some(&filter));
+        let result = cocomo_validate_ground_truth(&datasets, Some(&filter), 1.07);
         assert!(result.is_err());
         assert!(result.unwrap_err().message.contains("No valid projects"));
     }
@@ -758,7 +761,7 @@ mod tests {
     #[test]
     fn ground_truth_compares_six_models_and_picks_winner() {
         let datasets = sample_ground_truth_datasets();
-        let result = cocomo_validate_ground_truth(&datasets, None).expect("valid");
+        let result = cocomo_validate_ground_truth(&datasets, None, 1.07).expect("valid");
 
         assert_eq!(result.projects_evaluated, 4);
         assert_eq!(result.models.len(), 6);
@@ -784,7 +787,7 @@ mod tests {
     fn ground_truth_respects_dataset_filter() {
         let datasets = sample_ground_truth_datasets();
         let filter = vec!["NASA93".to_string()];
-        let result = cocomo_validate_ground_truth(&datasets, Some(&filter)).expect("valid");
+        let result = cocomo_validate_ground_truth(&datasets, Some(&filter), 1.07).expect("valid");
 
         assert_eq!(result.projects_evaluated, 2);
         assert!(result.by_dataset.contains_key("NASA93"));
@@ -794,7 +797,7 @@ mod tests {
     #[test]
     fn ground_truth_serializes_ts_shape_and_valid_pred_ranges() {
         let datasets = sample_ground_truth_datasets();
-        let result = cocomo_validate_ground_truth(&datasets, None).expect("valid");
+        let result = cocomo_validate_ground_truth(&datasets, None, 1.07).expect("valid");
 
         for metrics in &result.models {
             assert!((0.0..=1.0).contains(&metrics.pred25));
