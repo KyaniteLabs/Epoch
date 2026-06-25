@@ -33,6 +33,7 @@ pub struct RustHttpResponse {
 #[derive(Debug, Clone, Default)]
 pub struct RustHttpRouter {
     dispatcher: RustToolDispatcher,
+    telemetry_events: Vec<Value>,
 }
 
 impl RustHttpRouter {
@@ -41,11 +42,18 @@ impl RustHttpRouter {
     }
 
     pub fn with_dispatcher(dispatcher: RustToolDispatcher) -> Self {
-        Self { dispatcher }
+        Self {
+            dispatcher,
+            telemetry_events: Vec::new(),
+        }
     }
 
     pub fn dispatcher(&self) -> &RustToolDispatcher {
         &self.dispatcher
+    }
+
+    pub fn telemetry_events(&self) -> &[Value] {
+        &self.telemetry_events
     }
 
     pub fn route(&mut self, method: HttpMethod, path: &str, body: Value) -> RustHttpResponse {
@@ -56,13 +64,7 @@ impl RustHttpRouter {
                 "tools": tool_registry().len(),
             })),
             (HttpMethod::Get, "/v1/tools") => ok(tools_body()),
-            (HttpMethod::Post, "/v1/telemetry") => RustHttpResponse {
-                status: 202,
-                body: json!({
-                    "accepted": true,
-                    "message": "Telemetry ingestion is a no-op in the Rust adapter library.",
-                }),
-            },
+            (HttpMethod::Post, "/v1/telemetry") => self.record_telemetry(body),
             (HttpMethod::Get, "/.well-known/ai-plugin.json") => ok(plugin_manifest()),
             (HttpMethod::Get, "/llms.txt") => ok(Value::String(llms_txt())),
             (HttpMethod::Get, "/openapi.json") => ok(openapi_body()),
@@ -97,6 +99,18 @@ impl RustHttpRouter {
             Ok(data) => ok(data),
             Err(error) if error.message.contains("Unknown tool") => error_response(404, error),
             Err(error) => error_response(422, error),
+        }
+    }
+
+    fn record_telemetry(&mut self, body: Value) -> RustHttpResponse {
+        self.telemetry_events.push(body);
+        RustHttpResponse {
+            status: 202,
+            body: json!({
+                "accepted": true,
+                "storedEvents": self.telemetry_events.len(),
+                "mode": "local-rust-runtime",
+            }),
         }
     }
 }
@@ -225,6 +239,23 @@ mod tests {
         let openapi = router.route(HttpMethod::Get, "/openapi.json", json!({}));
         assert_eq!(openapi.status, 200);
         assert_eq!(openapi.body["openapi"], "3.1.0");
+    }
+
+    #[test]
+    fn records_telemetry_payloads_locally() {
+        let mut router = RustHttpRouter::new();
+
+        let response = router.route(
+            HttpMethod::Post,
+            "/v1/telemetry",
+            json!({ "event": "tool-call", "tool": "pert_estimate" }),
+        );
+
+        assert_eq!(response.status, 202);
+        assert_eq!(response.body["accepted"], true);
+        assert_eq!(response.body["storedEvents"], 1);
+        assert_eq!(router.telemetry_events().len(), 1);
+        assert_eq!(router.telemetry_events()[0]["tool"], "pert_estimate");
     }
 
     #[test]
