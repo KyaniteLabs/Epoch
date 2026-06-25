@@ -8,6 +8,7 @@ members = [
   "crates/epoch-cli",
   "crates/epoch-http",
   "crates/epoch-canary",
+  "crates/xtask",
 ]
 
 [workspace.package]
