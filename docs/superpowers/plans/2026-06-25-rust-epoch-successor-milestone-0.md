@@ -221,7 +221,7 @@ export const EXPECTED_CLI_COMMAND_PATHS = [
   "telemetry submit",
   "telemetry disable",
   "telemetry delete-data",
-  "telemetry share-data",
+  "share-data",
   "data",
   "data where",
   "data status",
