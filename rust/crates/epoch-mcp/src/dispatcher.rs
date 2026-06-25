@@ -5,7 +5,8 @@ use epoch_contract::{
 };
 use epoch_core::{
     analytics::{
-        HistoricalRecord, calibrate_estimates, compute_accuracy_trend, reference_class_estimate,
+        HistoricalRecord, calibrate_estimates, compute_accuracy_trend, get_scope_guide,
+        infer_scope_from_complexity, reference_class_estimate,
     },
     calendar::{add_business_days, count_business_days},
     cocomo::{cocomo_validate, cocomo_validate_ground_truth},
@@ -18,11 +19,13 @@ use epoch_core::{
         pert_estimate, sprint_forecast,
     },
     feedback::{CalibrationFilters, FeedbackStore},
+    profiles::{DeveloperProfile, developer_profile},
     risk::{CalibrationRecord, ScheduleRiskParams, schedule_risk},
     temporal::{
         add_days, convert_timezone, diff_dates, format_elapsed, get_current_time, parse_duration,
     },
 };
+use epoch_data::resolve_global_correction_factor;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -180,7 +183,76 @@ impl RustToolDispatcher {
         let most_likely = required_f64(object, &["most_likely", "mostLikely"])?;
         let pessimistic = required_f64(object, &["pessimistic"])?;
         let unit = parse_time_unit(optional_string(object, &["unit"])?.as_deref())?;
-        to_value(pert_estimate(optimistic, most_likely, pessimistic, unit)?)
+        let mut data = to_value(pert_estimate(optimistic, most_likely, pessimistic, unit)?)?;
+
+        let ai_ratio = ai_native_ratio(object)?;
+        let profile = developer_profile(ai_ratio, resolve_global_correction_factor());
+        let expected = data
+            .get("expected")
+            .and_then(Value::as_f64)
+            .unwrap_or_default();
+        if let Some(out) = data.as_object_mut() {
+            out.insert(
+                "developerProfile".to_string(),
+                profile_value(&profile, &["mode", "correctionFactor"]),
+            );
+            out.insert(
+                "adjustedEstimate".to_string(),
+                json!(round2(expected * profile.correction_factor)),
+            );
+        }
+
+        // Cross-check against the reference class for AI-native workflows, mirroring
+        // the TypeScript dispatcher (src/dispatcher/tool-registry.ts). Only read
+        // task_type when the AI ratio qualifies, matching the TS guard.
+        let cross_check_task_type = if ai_ratio >= 0.7 {
+            optional_string(object, &["task_type", "taskType"])?
+        } else {
+            None
+        };
+        if let Some(task_type_raw) = cross_check_task_type {
+            let task_type = parse_task_type(Some(&task_type_raw))?;
+            let complexity = if expected <= 1.0 {
+                1.0
+            } else if expected <= 4.0 {
+                2.0
+            } else if expected <= 8.0 {
+                3.0
+            } else if expected <= 20.0 {
+                4.0
+            } else {
+                5.0
+            };
+            let scope = infer_scope_from_complexity(complexity);
+            let records = self.historical_records(CalibrationFilters {
+                task_type: Some(task_type),
+                ..CalibrationFilters::default()
+            });
+            let reference = reference_class_estimate(&records, task_type, 3.0, Some(scope), true);
+            let reference_estimate = round2(reference.corrected_estimate);
+            if let Some(out) = data.as_object_mut() {
+                out.insert(
+                    "referenceClassCrossCheck".to_string(),
+                    json!({
+                        "estimate": reference_estimate,
+                        "scope": scope.as_str(),
+                        "baselineSource": reference.baseline_source,
+                        "sampleSize": reference.sample_size,
+                    }),
+                );
+                if reference_estimate < expected * 0.5 {
+                    out.insert(
+                        "recommendation".to_string(),
+                        json!(format!(
+                            "For AI-native {} work, reference_class_estimate ({reference_estimate}h) is typically more accurate than PERT ({expected}h). AI agents finish local-prep tasks 3-10x faster than PERT pessimistic scenarios suggest.",
+                            task_type.as_str()
+                        )),
+                    );
+                }
+            }
+        }
+
+        Ok(data)
     }
 
     fn dispatch_cocomo_estimate(&mut self, input: &Value) -> ToolValueResult {
@@ -193,7 +265,7 @@ impl RustToolDispatcher {
             iterative_cycles
         };
 
-        to_value(cocomo_estimate(CocomoParams {
+        let mut data = to_value(cocomo_estimate(CocomoParams {
             kloc: required_f64(object, &["kloc"])?,
             reasoning_complexity: optional_f64(
                 object,
@@ -213,19 +285,42 @@ impl RustToolDispatcher {
             iterative_cycles,
             human_oversight: optional_f64(object, &["human_oversight", "humanOversight"])?
                 .unwrap_or(1.0),
-        })?)
+        })?)?;
+
+        let profile =
+            developer_profile(ai_native_ratio(object)?, resolve_global_correction_factor());
+        if let Some(out) = data.as_object_mut() {
+            out.insert(
+                "developerProfile".to_string(),
+                profile_value(&profile, &["mode", "correctionFactor"]),
+            );
+        }
+        Ok(data)
     }
 
     fn dispatch_sprint_forecast(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
-        to_value(sprint_forecast(SprintForecastParams {
+        let mut data = to_value(sprint_forecast(SprintForecastParams {
             backlog_points: required_f64(object, &["backlog_points", "backlogPoints"])?,
             velocity_history: required_f64_array(object, &["velocity_history", "velocityHistory"])?,
             sprint_length_days: optional_f64(object, &["sprint_length_days", "sprintLengthDays"])?
                 .unwrap_or(14.0),
             hours_per_sprint: optional_f64(object, &["hours_per_sprint", "hoursPerSprint"])?
                 .unwrap_or(300.0),
-        })?)
+        })?)?;
+
+        let profile =
+            developer_profile(ai_native_ratio(object)?, resolve_global_correction_factor());
+        if let Some(out) = data.as_object_mut() {
+            out.insert(
+                "developerProfile".to_string(),
+                profile_value(
+                    &profile,
+                    &["mode", "sprintVelocityPoints", "correctionFactor"],
+                ),
+            );
+        }
+        Ok(data)
     }
 
     fn dispatch_critical_path(&mut self, input: &Value) -> ToolValueResult {
@@ -256,13 +351,50 @@ impl RustToolDispatcher {
             task_type: Some(task_type),
             ..CalibrationFilters::default()
         });
-        to_value(reference_class_estimate(
+        let result = reference_class_estimate(
             &records,
             task_type,
             complexity,
             scope,
             ai_native_bool(object)?,
-        ))
+        );
+        let raw_estimate = result.raw_estimate;
+        let mut data = to_value(result)?;
+
+        let profile =
+            developer_profile(ai_native_ratio(object)?, resolve_global_correction_factor());
+        let note = if records.len() >= 5 {
+            format!(
+                "Based on {} historical records for \"{}\" tasks.",
+                records.len(),
+                task_type.as_str()
+            )
+        } else {
+            "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.".to_string()
+        };
+        if let Some(out) = data.as_object_mut() {
+            if let Some(scope_guide) = get_scope_guide(task_type) {
+                out.insert("scopeGuide".to_string(), json!(scope_guide));
+            }
+            out.insert(
+                "developerProfile".to_string(),
+                profile_value(
+                    &profile,
+                    &[
+                        "mode",
+                        "estimationMape",
+                        "underestimationBias",
+                        "correctionFactor",
+                    ],
+                ),
+            );
+            out.insert(
+                "adjustedEstimate".to_string(),
+                json!(round2(raw_estimate * profile.correction_factor)),
+            );
+            out.insert("note".to_string(), json!(note));
+        }
+        Ok(data)
     }
 
     fn dispatch_calibrate_estimates(&mut self, input: &Value) -> ToolValueResult {
@@ -281,6 +413,7 @@ impl RustToolDispatcher {
             period_days,
             minimum_samples,
             &records,
+            resolve_global_correction_factor(),
         ))
     }
 
@@ -357,7 +490,11 @@ impl RustToolDispatcher {
         let object = object(input)?;
         let filter = optional_string_array(object, &["dataset_filter", "datasetFilter"])?;
         let datasets = epoch_data::bundled_cocomo_datasets().map_err(data_error)?;
-        to_value(cocomo_validate_ground_truth(&datasets, filter.as_deref())?)
+        to_value(cocomo_validate_ground_truth(
+            &datasets,
+            filter.as_deref(),
+            resolve_global_correction_factor(),
+        )?)
     }
 
     fn dispatch_record_actual(&mut self, input: &Value) -> ToolValueResult {
@@ -836,6 +973,28 @@ fn to_value<T: Serialize>(value: T) -> ToolValueResult {
             "Report this serialization failure with the tool input that caused it.",
         )
     })
+}
+
+/// Build the developer-profile enrichment object from the requested camelCase
+/// field subset, mirroring the per-tool shapes in the TypeScript dispatcher.
+fn profile_value(profile: &DeveloperProfile, fields: &[&str]) -> Value {
+    let mut map = Map::new();
+    for field in fields {
+        let value = match *field {
+            "mode" => json!(profile.mode),
+            "correctionFactor" => json!(profile.correction_factor),
+            "sprintVelocityPoints" => json!(profile.sprint_velocity_points),
+            "estimationMape" => json!(profile.estimation_mape),
+            "underestimationBias" => json!(profile.underestimation_bias),
+            _ => continue,
+        };
+        map.insert((*field).to_string(), value);
+    }
+    Value::Object(map)
+}
+
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
 }
 
 fn data_error(error: serde_json::Error) -> ToolError {

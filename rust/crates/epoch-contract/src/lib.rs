@@ -61,6 +61,11 @@ pub struct DateDiffResult {
     pub days: i64,
     pub hours: i64,
     pub minutes: i64,
+    // The TypeScript `diff` contract emits this field in snake_case
+    // (`total_seconds`) — unlike DurationResult's camelCase `totalSeconds` —
+    // so keep the wire name snake_case to preserve parity.
+    #[serde(rename = "total_seconds")]
+    #[schemars(rename = "total_seconds")]
     pub total_seconds: i64,
 }
 

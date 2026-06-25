@@ -260,17 +260,28 @@ pub fn compare_models(params: CompareModelsParams) -> ModelComparison {
     let mut models = MODEL_PROFILES
         .iter()
         .map(|profile| {
-            let estimate = token_cost_estimate(TokenCostParams {
+            let time_mapping = token_time_bridge(&TokenCostParams {
                 tokens: params.tokens,
                 model: profile.model.to_string(),
                 tool_calls: params.tool_calls,
                 reasoning_depth: params.reasoning_depth,
             });
+            // TS `compareModels` sums the RAW per-component costs and rounds the
+            // total once — unlike `token_cost_estimate`, which rounds each
+            // component first. Reusing the latter double-rounds and diverges by
+            // a cent fraction, so compute the cost the same way TS does here.
+            let prompt_tokens = time_mapping.breakdown.prompt_tokens;
+            let completion_tokens = time_mapping.breakdown.completion_tokens;
+            let input_cost = prompt_tokens * profile.cost_input / 1_000_000.0;
+            let output_cost = completion_tokens * profile.cost_output / 1_000_000.0;
+            let tool_call_overhead_cost =
+                params.tool_calls as f64 * AVG_TOOL_CALL_TOKENS * profile.cost_output / 1_000_000.0;
+            let estimated_cost = round4(input_cost + output_cost + tool_call_overhead_cost);
             ModelComparisonEntry {
                 model: profile.model.to_string(),
-                estimated_seconds: estimate.estimated_seconds,
-                estimated_minutes: estimate.estimated_minutes,
-                estimated_cost: estimate.estimated_cost,
+                estimated_seconds: time_mapping.estimated_seconds,
+                estimated_minutes: time_mapping.estimated_minutes,
+                estimated_cost,
                 cost_available: true,
                 quality_tier: quality_tier(profile.model),
                 tokens_per_second: profile.tokens_per_second,
