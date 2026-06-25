@@ -136,7 +136,7 @@ impl RustToolDispatcher {
                     &operands,
                     &["end_date", "to_date", "endDate", "toDate", "end"],
                 )?;
-                to_value(diff_dates(&start, &end))
+                to_value(diff_dates(&start, &end)?)
             }
             "convert_tz" => {
                 let timestamp = required_string(&operands, &["timestamp"])?;
