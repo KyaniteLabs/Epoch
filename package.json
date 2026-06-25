@@ -40,6 +40,8 @@
     "dataset:build": "node scripts/export-public-benchmark.mjs",
     "dataset:verify": "node scripts/validate-public-benchmark.mjs",
     "contract:inventory": "tsx src/contract/export-public-surface.ts",
+    "benchmark:rust-promotion": "tsx src/benchmarks/rust-promotion.ts",
+    "benchmark:rust-promotion:smoke": "tsx src/benchmarks/rust-promotion.ts --smoke",
     "rust:check": "cargo test --manifest-path rust/Cargo.toml --workspace && cargo run --manifest-path rust/Cargo.toml -p xtask -- check",
     "verify:rust-milestone0": "pnpm run contract:inventory && pnpm run typecheck && pnpm test && pnpm run rust:check"
   },
