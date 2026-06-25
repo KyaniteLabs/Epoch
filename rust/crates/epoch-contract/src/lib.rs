@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+pub mod registry;
+pub use registry::{
+    CLI_COMMAND_PATHS, ESTIMATE_HOUR_FIELDS, HTTP_ROUTES, PACKAGE_NAME, READ_ONLY_ANNOTATIONS,
+    TOOL_REGISTRY, ToolAnnotations, ToolCategory, ToolMetadata, WRITE_ANNOTATIONS, find_tool,
+    tool_cli_commands, tool_has_feedback_ref_candidate_output, tool_names, tool_registry,
+    write_tool_names,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PublicSurfaceContract {
     pub package_name: String,
@@ -798,32 +806,49 @@ impl PublicSurfaceContract {
         serde_json::from_str(raw)
     }
 
+    pub fn milestone_zero() -> Self {
+        Self {
+            package_name: PACKAGE_NAME.to_string(),
+            mcp_tool_names: tool_names(),
+            write_tool_names: write_tool_names(),
+            http_routes: HTTP_ROUTES
+                .iter()
+                .map(|route| (*route).to_string())
+                .collect(),
+            cli_command_paths: CLI_COMMAND_PATHS
+                .iter()
+                .map(|command| (*command).to_string())
+                .collect(),
+        }
+    }
+
     pub fn validate_milestone_zero(&self) -> Result<(), String> {
-        if self.package_name != "@kyanitelabs/epoch" {
+        if self.package_name != PACKAGE_NAME {
             return Err(format!("unexpected package name: {}", self.package_name));
         }
-        if self.mcp_tool_names.len() != 24 {
+        let expected = Self::milestone_zero();
+        if self.mcp_tool_names != expected.mcp_tool_names {
             return Err(format!(
-                "expected 24 MCP tools, got {}",
-                self.mcp_tool_names.len(),
+                "unexpected MCP tools: expected {:?}, got {:?}",
+                expected.mcp_tool_names, self.mcp_tool_names,
             ));
         }
-        if self.write_tool_names != ["record_actual", "batch_record_actuals"] {
+        if self.write_tool_names != expected.write_tool_names {
             return Err(format!(
-                "unexpected write tools: {:?}",
-                self.write_tool_names
+                "unexpected write tools: expected {:?}, got {:?}",
+                expected.write_tool_names, self.write_tool_names
             ));
         }
-        if self.http_routes.len() != 11 {
+        if self.http_routes != expected.http_routes {
             return Err(format!(
-                "expected 11 HTTP routes, got {}",
-                self.http_routes.len(),
+                "unexpected HTTP routes: expected {:?}, got {:?}",
+                expected.http_routes, self.http_routes
             ));
         }
-        if self.cli_command_paths.len() != 39 {
+        if self.cli_command_paths != expected.cli_command_paths {
             return Err(format!(
-                "expected 39 CLI command paths, got {}",
-                self.cli_command_paths.len(),
+                "unexpected CLI commands: expected {:?}, got {:?}",
+                expected.cli_command_paths, self.cli_command_paths
             ));
         }
         Ok(())
@@ -832,7 +857,12 @@ impl PublicSurfaceContract {
 
 #[cfg(test)]
 mod tests {
-    use super::PublicSurfaceContract;
+    use super::{
+        CLI_COMMAND_PATHS, HTTP_ROUTES, PublicSurfaceContract, READ_ONLY_ANNOTATIONS,
+        TOOL_REGISTRY, WRITE_ANNOTATIONS, find_tool, tool_cli_commands,
+        tool_has_feedback_ref_candidate_output, tool_names, write_tool_names,
+    };
+    use std::collections::BTreeSet;
 
     const SURFACE: &str =
         include_str!("../../../../docs/superpowers/contracts/epoch-public-surface.json");
@@ -845,5 +875,70 @@ mod tests {
             .expect("valid milestone 0 surface");
         assert_eq!(contract.mcp_tool_names[0], "get_current_time");
         assert_eq!(contract.mcp_tool_names[23], "feedback_health");
+    }
+
+    #[test]
+    fn canonical_registry_matches_exported_public_surface() {
+        let exported = PublicSurfaceContract::parse(SURFACE).expect("valid contract JSON");
+        let expected = PublicSurfaceContract::milestone_zero();
+
+        assert_eq!(exported, expected);
+        assert_eq!(TOOL_REGISTRY.len(), 24);
+        assert_eq!(HTTP_ROUTES.len(), 11);
+        assert_eq!(CLI_COMMAND_PATHS.len(), 39);
+    }
+
+    #[test]
+    fn registry_names_are_unique_and_ordered() {
+        let names = tool_names();
+        let unique = names.iter().collect::<BTreeSet<_>>();
+
+        assert_eq!(unique.len(), names.len());
+        assert_eq!(names.first().map(String::as_str), Some("get_current_time"));
+        assert_eq!(names.last().map(String::as_str), Some("feedback_health"));
+        assert!(
+            TOOL_REGISTRY
+                .iter()
+                .all(|tool| !tool.description.is_empty())
+        );
+    }
+
+    #[test]
+    fn write_tools_have_write_annotations() {
+        assert_eq!(
+            write_tool_names(),
+            vec![
+                "record_actual".to_string(),
+                "batch_record_actuals".to_string()
+            ]
+        );
+        assert_eq!(
+            find_tool("record_actual").map(|tool| tool.annotations),
+            Some(WRITE_ANNOTATIONS)
+        );
+        assert_eq!(
+            find_tool("pert_estimate").map(|tool| tool.annotations),
+            Some(READ_ONLY_ANNOTATIONS)
+        );
+    }
+
+    #[test]
+    fn cli_tool_commands_are_public_cli_commands() {
+        let all_commands = CLI_COMMAND_PATHS.iter().copied().collect::<BTreeSet<_>>();
+        for command in tool_cli_commands() {
+            assert!(
+                all_commands.contains(command.as_str()),
+                "missing CLI command for tool: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn feedback_ref_candidates_match_hour_estimate_tools() {
+        assert!(tool_has_feedback_ref_candidate_output("pert_estimate"));
+        assert!(tool_has_feedback_ref_candidate_output("token_time_bridge"));
+        assert!(tool_has_feedback_ref_candidate_output("schedule_risk"));
+        assert!(!tool_has_feedback_ref_candidate_output("parse_duration"));
+        assert!(!tool_has_feedback_ref_candidate_output("record_actual"));
     }
 }
