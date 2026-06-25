@@ -90,6 +90,8 @@ name = "epoch-cli"
 version = "0.1.0"
 dependencies = [
  "epoch-contract",
+ "epoch-mcp",
+ "serde_json",
 ]
 
 [[package]]
@@ -126,6 +128,9 @@ name = "epoch-http"
 version = "0.1.0"
 dependencies = [
  "epoch-contract",
+ "epoch-mcp",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

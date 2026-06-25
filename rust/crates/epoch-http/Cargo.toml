@@ -8,3 +8,6 @@ repository.workspace = true
 
 [dependencies]
 epoch-contract = { path = "../epoch-contract" }
+epoch-mcp = { path = "../epoch-mcp" }
+serde.workspace = true
+serde_json.workspace = true
