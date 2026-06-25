@@ -128,6 +128,18 @@ pub enum RiskLevel {
     Low,
     Medium,
     High,
+    Critical,
+}
+
+impl RiskLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -378,6 +390,44 @@ pub struct ModelComparison {
     pub tokens: f64,
     pub models: Vec<ModelComparisonEntry>,
     pub sort_by: String,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfidenceIntervals {
+    pub p50: f64,
+    pub p80: f64,
+    pub p95: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalAccuracy {
+    pub mape: f64,
+    pub mdape: f64,
+    pub sample_size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskTypeRisk {
+    pub risk_level: RiskLevel,
+    pub mdape: f64,
+    pub sample_size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRiskAssessment {
+    pub estimated_hours: f64,
+    pub estimated_token_cost: f64,
+    pub risk_level: RiskLevel,
+    pub confidence_intervals: ConfidenceIntervals,
+    pub historical_accuracy: HistoricalAccuracy,
+    pub capped_mdape: f64,
+    pub recommendation: String,
+    pub task_type_breakdown: BTreeMap<String, TaskTypeRisk>,
     pub human_readable: String,
 }
 

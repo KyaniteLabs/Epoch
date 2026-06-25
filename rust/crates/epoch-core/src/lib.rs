@@ -3,6 +3,7 @@ pub use epoch_contract::PublicSurfaceContract;
 pub mod calendar;
 pub mod cost;
 pub mod estimation;
+pub mod risk;
 pub mod temporal;
 
 pub fn crate_label() -> &'static str {
