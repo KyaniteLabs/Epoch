@@ -393,6 +393,108 @@ pub struct ModelComparison {
     pub human_readable: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskType {
+    Feature,
+    Bugfix,
+    Refactor,
+    Migration,
+    Infrastructure,
+    Documentation,
+    Testing,
+    Design,
+}
+
+impl TaskType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Feature => "feature",
+            Self::Bugfix => "bugfix",
+            Self::Refactor => "refactor",
+            Self::Migration => "migration",
+            Self::Infrastructure => "infrastructure",
+            Self::Documentation => "documentation",
+            Self::Testing => "testing",
+            Self::Design => "design",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ScopeSignal {
+    Small,
+    Medium,
+    Large,
+    Xl,
+}
+
+impl ScopeSignal {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+            Self::Xl => "xl",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AccuracyTrendDirection {
+    Improving,
+    Degrading,
+    Stable,
+}
+
+impl AccuracyTrendDirection {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Improving => "improving",
+            Self::Degrading => "degrading",
+            Self::Stable => "stable",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AccuracyMetrics {
+    pub mape: f64,
+    pub mdape: f64,
+    pub capped_mdape: f64,
+    pub bias: f64,
+    pub variance: f64,
+    #[serde(rename = "sample_size")]
+    pub sample_size: usize,
+    pub trend: AccuracyTrendDirection,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceClassEstimate {
+    pub raw_estimate: f64,
+    pub corrected_estimate: f64,
+    pub correction_factor: f64,
+    pub sample_size: usize,
+    pub baseline_source: String,
+    pub scope_used: ScopeSignal,
+    pub scope_inferred: bool,
+    pub confidence: ConfidenceLevel,
+    pub estimated_token_cost: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationResult {
+    pub correction_factor: f64,
+    pub accuracy_trend: AccuracyTrendDirection,
+    pub velocity_trend: String,
+    pub recommendations: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfidenceIntervals {
