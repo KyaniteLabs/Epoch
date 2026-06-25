@@ -47,7 +47,9 @@ Subsequent plans should use this milestone as the base and split work by tool fa
 | `src/contract/export-public-surface.ts` | Create | Writes the inventory JSON artifact |
 | `docs/superpowers/contracts/epoch-public-surface.json` | Create | Tracked contract artifact consumed by Rust |
 | `package.json` | Modify | Add contract and Rust verification scripts |
+| `.gitignore` | Modify | Ignore Rust build output |
 | `rust/Cargo.toml` | Create | Rust workspace root |
+| `rust/Cargo.lock` | Create | Locked Rust dependency graph |
 | `rust/crates/epoch-contract/Cargo.toml` | Create | Contract crate manifest |
 | `rust/crates/epoch-contract/src/lib.rs` | Create | Typed Rust contract reader and schema-bearing structs |
 | `rust/crates/epoch-core/Cargo.toml` | Create | Core crate manifest |
@@ -460,7 +462,9 @@ git commit -m "build: export Epoch public surface contract"
 ### Task 3: Rust Workspace Skeleton
 
 **Files:**
+- Modify: `.gitignore`
 - Create: `rust/Cargo.toml`
+- Create: `rust/Cargo.lock`
 - Create: `rust/crates/epoch-contract/Cargo.toml`
 - Create: `rust/crates/epoch-contract/src/lib.rs`
 - Create: `rust/crates/epoch-core/Cargo.toml`
@@ -668,7 +672,7 @@ Expected: no matches.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add rust
+git add .gitignore rust
 git commit -m "build: add Rust Epoch workspace skeleton"
 ```
 
