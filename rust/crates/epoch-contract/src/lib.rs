@@ -253,6 +253,134 @@ pub struct MonteCarloResult {
     pub human_readable: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfidenceLevel {
+    Likely,
+    Optimistic,
+    Pessimistic,
+}
+
+impl ConfidenceLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Likely => "likely",
+            Self::Optimistic => "optimistic",
+            Self::Pessimistic => "pessimistic",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningDepth {
+    Shallow,
+    Moderate,
+    Deep,
+}
+
+impl ReasoningDepth {
+    pub fn multiplier(self) -> f64 {
+        match self {
+            Self::Shallow => 1.0,
+            Self::Moderate => 2.5,
+            Self::Deep => 5.0,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shallow => "shallow",
+            Self::Moderate => "moderate",
+            Self::Deep => "deep",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum QualityTier {
+    Fast,
+    Standard,
+    Premium,
+}
+
+impl QualityTier {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Standard => "standard",
+            Self::Premium => "premium",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenTimeBreakdown {
+    pub prompt_tokens: f64,
+    pub completion_tokens: f64,
+    pub tool_overhead_seconds: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenTimeMapping {
+    pub tokens: f64,
+    pub model: String,
+    pub estimated_seconds: f64,
+    pub estimated_minutes: f64,
+    pub confidence: ConfidenceLevel,
+    pub urgency: UrgencyCategory,
+    pub breakdown: TokenTimeBreakdown,
+    pub human_readable: String,
+    pub estimated_token_cost: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenCostBreakdown {
+    pub input_cost: f64,
+    pub output_cost: f64,
+    pub tool_call_overhead_cost: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenCostEstimate {
+    pub tokens: f64,
+    pub model: String,
+    pub estimated_seconds: f64,
+    pub estimated_minutes: f64,
+    pub estimated_cost: f64,
+    pub cost_breakdown: TokenCostBreakdown,
+    pub time_breakdown: TokenTimeBreakdown,
+    pub confidence: ConfidenceLevel,
+    pub urgency: UrgencyCategory,
+    pub human_readable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelComparisonEntry {
+    pub model: String,
+    pub estimated_seconds: f64,
+    pub estimated_minutes: f64,
+    pub estimated_cost: f64,
+    pub cost_available: bool,
+    pub quality_tier: QualityTier,
+    pub tokens_per_second: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelComparison {
+    pub tokens: f64,
+    pub models: Vec<ModelComparisonEntry>,
+    pub sort_by: String,
+    pub human_readable: String,
+}
+
 impl PublicSurfaceContract {
     pub fn parse(raw: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(raw)

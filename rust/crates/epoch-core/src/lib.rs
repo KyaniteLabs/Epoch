@@ -1,6 +1,7 @@
 pub use epoch_contract::PublicSurfaceContract;
 
 pub mod calendar;
+pub mod cost;
 pub mod estimation;
 pub mod temporal;
 
