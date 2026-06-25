@@ -532,7 +532,9 @@ pub struct AccuracyTrend {
 #[serde(rename_all = "camelCase")]
 pub struct CocomoProject {
     pub id: u32,
+    #[serde(default, deserialize_with = "nullable_f64")]
     pub kloc: f64,
+    #[serde(default, deserialize_with = "nullable_f64")]
     pub effort_person_months: f64,
     #[serde(rename = "type")]
     pub project_type: Option<String>,
@@ -542,6 +544,13 @@ pub struct CocomoProject {
     pub function_points: Option<f64>,
     pub effort_work_hours: Option<f64>,
     pub duration_months: Option<f64>,
+}
+
+fn nullable_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<f64>::deserialize(deserializer).map(|value| value.unwrap_or(0.0))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

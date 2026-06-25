@@ -116,6 +116,9 @@ name = "epoch-data"
 version = "0.1.0"
 dependencies = [
  "epoch-contract",
+ "epoch-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
