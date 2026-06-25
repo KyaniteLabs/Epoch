@@ -108,6 +108,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "epoch-contract",
+ "serde_json",
 ]
 
 [[package]]
