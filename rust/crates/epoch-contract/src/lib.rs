@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PublicSurfaceContract {
@@ -199,6 +200,57 @@ pub struct SprintForecastResult {
     pub confidence: SprintConfidence,
     pub velocity_cv: f64,
     pub estimated_token_cost: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CpmTask {
+    pub name: String,
+    pub duration: f64,
+    pub predecessors: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CpmResult {
+    pub critical_path: Vec<String>,
+    pub slack_per_task: BTreeMap<String, f64>,
+    pub total_duration: f64,
+    pub merge_bias_adjustment: f64,
+    #[serde(rename = "estimatedHours")]
+    pub estimated_hours: f64,
+    #[serde(rename = "estimatedTokenCost")]
+    pub estimated_token_cost: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MonteCarloTask {
+    pub name: String,
+    pub optimistic: f64,
+    pub most_likely: f64,
+    pub pessimistic: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskEvent {
+    pub description: String,
+    pub probability: f64,
+    pub impact_days: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MonteCarloResult {
+    pub p10: String,
+    pub p50: String,
+    pub p80: String,
+    pub p95: String,
+    pub estimated_hours: f64,
+    pub estimated_cost: f64,
+    pub critical_path_probability: f64,
+    pub converged: bool,
+    pub risk_events: Vec<RiskEvent>,
+    pub human_readable: String,
 }
 
 impl PublicSurfaceContract {
