@@ -73,6 +73,7 @@ type LedgerSummary = {
 	runCount: number;
 	totalSoakHours: number;
 	continuousSoakHours: number;
+	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
@@ -584,6 +585,7 @@ function buildSummary(
 			.filter((run) => run.observabilityLevel === "release")
 			.map((run) => run.soakHours),
 	);
+	const totalSoakHours = numberSum(ledger.runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
 	return {
@@ -591,8 +593,9 @@ function buildSummary(
 		ledger: rel(ledgerPath),
 		readiness,
 		runCount: ledger.runs.length,
-		totalSoakHours: numberSum(ledger.runs.map((run) => run.soakHours)),
+		totalSoakHours,
 		continuousSoakHours,
+		continuityLostHours: Math.max(0, totalSoakHours - continuousSoakHours),
 		releaseTaggedSoakHours,
 		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
@@ -615,6 +618,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  runs:                ${summary.runCount}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
+			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  decision:            ${summary.readiness.decision}`,

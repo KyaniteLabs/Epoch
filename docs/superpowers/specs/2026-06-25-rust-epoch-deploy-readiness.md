@@ -145,7 +145,7 @@ The ledger writes cumulative readiness artifacts next to the packet by default:
 - `.epoch-promotion/soak-ledger.json` stores every measured packet run.
 - `readiness-input-cumulative.json` sums measured soak hours and failures, then uses the longest clean continuous window as `continuousSoakHours`.
 - `readiness-assessment-cumulative.json` scores the cumulative evidence with the same deploy-readiness gates.
-- `soak-ledger-summary.json` shows total soak hours, continuous clean soak hours, release-tagged soak hours, latest run, and current decision.
+- `soak-ledger-summary.json` shows total soak hours, continuous clean soak hours, continuity lost to gaps, release-tagged soak hours, latest run, and current decision.
 
 The ledger is conservative:
 
@@ -162,7 +162,7 @@ To keep a long soak resumable, use the runner instead of hand-looping packet plu
 pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
 ```
 
-The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. Re-run the same command until the summary reports `targetReached: true`, or raise `--max-runs` when a supervised machine is expected to keep running. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation by raising `--max-runs` and/or `--min-seconds`; manual restarts separated by more than the ledger's continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
 Before canarying or replacing TypeScript, run the final promotion gate against the runner summary:
 

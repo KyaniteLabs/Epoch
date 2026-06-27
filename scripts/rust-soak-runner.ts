@@ -50,6 +50,7 @@ type LedgerSummary = {
 	runCount: number;
 	totalSoakHours: number;
 	continuousSoakHours: number;
+	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
@@ -80,6 +81,7 @@ type RunnerSummary = {
 	readiness: ReadinessAssessment;
 	totalSoakHours: number;
 	continuousSoakHours: number;
+	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	rustBinarySha256: string | null;
 	remainingSoakHours: number;
@@ -286,6 +288,10 @@ function parseLedgerSummary(path: string): LedgerSummary {
 		runCount: raw.runCount,
 		totalSoakHours: raw.totalSoakHours,
 		continuousSoakHours: raw.continuousSoakHours,
+		continuityLostHours:
+			typeof raw.continuityLostHours === "number"
+				? raw.continuityLostHours
+				: Math.max(0, raw.totalSoakHours - raw.continuousSoakHours),
 		releaseTaggedSoakHours: raw.releaseTaggedSoakHours,
 		rustBinarySha256:
 			typeof raw.rustBinarySha256 === "string" ? raw.rustBinarySha256 : null,
@@ -541,6 +547,7 @@ function buildRunnerSummary(
 		readiness: ledgerSummary.readiness,
 		totalSoakHours: ledgerSummary.totalSoakHours,
 		continuousSoakHours: ledgerSummary.continuousSoakHours,
+		continuityLostHours: ledgerSummary.continuityLostHours,
 		releaseTaggedSoakHours: ledgerSummary.releaseTaggedSoakHours,
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
@@ -568,6 +575,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  runs started:        ${summary.runsStarted}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
+			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  remaining hours:     ${summary.remainingSoakHours.toFixed(4)}`,
 			`  readiness:           ${summary.readiness.decision}`,
