@@ -63,6 +63,10 @@ type PacketSummary = {
 			canaryRequires: "tool";
 			replaceRequires: "release";
 		};
+		binary: {
+			rustBinary: string | null;
+			rustBinarySha256: string | null;
+		};
 	};
 	files: {
 		parity: string;
@@ -201,11 +205,32 @@ function rel(path: string): string {
 	return relative(REPO_ROOT, path);
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function binaryEvidence(shadowSoak: unknown): PacketSummary["evidence"]["binary"] {
+	if (!isObject(shadowSoak) || !isObject(shadowSoak.meta)) {
+		return { rustBinary: null, rustBinarySha256: null };
+	}
+	return {
+		rustBinary:
+			typeof shadowSoak.meta.rustBinary === "string"
+				? shadowSoak.meta.rustBinary
+				: null,
+		rustBinarySha256:
+			typeof shadowSoak.meta.rustBinarySha256 === "string"
+				? shadowSoak.meta.rustBinarySha256
+				: null,
+	};
+}
+
 function buildSummary(
 	outputDir: string,
 	readinessInput: ReadinessInput,
 	readiness: ReadinessAssessment,
 	releaseTag: string | undefined,
+	shadowSoak: unknown,
 ): PacketSummary {
 	return {
 		generatedAt: new Date().toISOString(),
@@ -239,6 +264,7 @@ function buildSummary(
 				canaryRequires: "tool",
 				replaceRequires: "release",
 			},
+			binary: binaryEvidence(shadowSoak),
 		},
 		files: {
 			parity: rel(resolve(outputDir, "parity.json")),
@@ -267,6 +293,7 @@ function printSummary(summary: PacketSummary): void {
 			`  rollback rehearsed:  ${summary.evidence.rollback.rehearsed}`,
 			`  observability:       ${summary.evidence.observability.level}`,
 			`  release tag:         ${summary.evidence.observability.releaseTag ?? "none"}`,
+			`  binary sha256:       ${summary.evidence.binary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  summary file:        ${summary.files.summary}`,
 			"",
 		].join("\n"),
@@ -349,12 +376,14 @@ async function main(): Promise<void> {
 		parity: readJson(rollbackPath),
 		perf: readJson(perfPath),
 	});
+	const shadowSoak = readJson(shadowPath);
 	const readiness = assessDeployReadiness(readinessInput);
 	const summary = buildSummary(
 		outputDir,
 		readinessInput,
 		readiness,
 		options.releaseTag,
+		shadowSoak,
 	);
 
 	writeJson(readinessInputPath, readinessInput);

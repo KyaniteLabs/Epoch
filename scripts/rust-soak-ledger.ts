@@ -38,6 +38,8 @@ type LedgerRun = {
 	startedAt: string;
 	endedAt: string;
 	releaseTag: string | null;
+	rustBinary: string | null;
+	rustBinarySha256: string | null;
 	publicSurfaceMatch: boolean;
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
@@ -72,6 +74,7 @@ type LedgerSummary = {
 	totalSoakHours: number;
 	continuousSoakHours: number;
 	releaseTaggedSoakHours: number;
+	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
 	replaceSoakHoursRequired: number;
@@ -241,6 +244,11 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 		startedAt: stringField(value, "startedAt", value.generatedAt),
 		endedAt: stringField(value, "endedAt", value.generatedAt),
 		releaseTag: typeof value.releaseTag === "string" ? value.releaseTag : null,
+		rustBinary: typeof value.rustBinary === "string" ? value.rustBinary : null,
+		rustBinarySha256:
+			typeof value.rustBinarySha256 === "string"
+				? value.rustBinarySha256
+				: null,
 		publicSurfaceMatch: booleanField(value, "publicSurfaceMatch", false),
 		outputParityPercent: numberField(value, "outputParityPercent", 0),
 		errorCompatibilityPercent: numberField(
@@ -324,6 +332,25 @@ function packetReadiness(summary: unknown): {
 	};
 }
 
+function packetBinaryIdentity(shadowSoak: unknown): {
+	rustBinary: string | null;
+	rustBinarySha256: string | null;
+} {
+	if (!isObject(shadowSoak) || !isObject(shadowSoak.meta)) {
+		return { rustBinary: null, rustBinarySha256: null };
+	}
+	return {
+		rustBinary:
+			typeof shadowSoak.meta.rustBinary === "string"
+				? shadowSoak.meta.rustBinary
+				: null,
+		rustBinarySha256:
+			typeof shadowSoak.meta.rustBinarySha256 === "string"
+				? shadowSoak.meta.rustBinarySha256
+				: null,
+	};
+}
+
 function packetWindow(
 	shadowSoak: unknown,
 	generatedAt: string,
@@ -361,6 +388,7 @@ function ledgerRunFromPacket(
 	const generatedAt = packetGeneratedAt(summary);
 	const releaseTag = packetReleaseTag(summary);
 	const readiness = packetReadiness(summary);
+	const binary = packetBinaryIdentity(shadowSoak);
 	const window = packetWindow(
 		shadowSoak,
 		generatedAt,
@@ -372,6 +400,8 @@ function ledgerRunFromPacket(
 		startedAt: window.startedAt,
 		endedAt: window.endedAt,
 		releaseTag,
+		rustBinary: binary.rustBinary,
+		rustBinarySha256: binary.rustBinarySha256,
 		publicSurfaceMatch: readinessInput.parity.publicSurfaceMatch,
 		outputParityPercent: readinessInput.parity.outputParityPercent,
 		errorCompatibilityPercent: readinessInput.parity.errorCompatibilityPercent,
@@ -405,6 +435,23 @@ function upsertRun(ledger: SoakLedger, run: LedgerRun): SoakLedger {
 		updatedAt: new Date().toISOString(),
 		runs,
 	};
+}
+
+function ledgerBinarySha256(runs: LedgerRun[]): string | null {
+	if (runs.length === 0) return null;
+	const missingIdentity = runs.find((run) => !run.rustBinarySha256);
+	if (missingIdentity) {
+		throw new Error(
+			`Soak run ${missingIdentity.id} is missing rustBinarySha256; start a fresh ledger or regenerate the packet with current tooling.`,
+		);
+	}
+	const identities = new Set(runs.map((run) => run.rustBinarySha256));
+	if (identities.size > 1) {
+		throw new Error(
+			`Mixed Rust binary identities in soak ledger: ${Array.from(identities).join(", ")}. Use a separate ledger per binary build.`,
+		);
+	}
+	return runs[0]?.rustBinarySha256 ?? null;
 }
 
 type SoakInterval = { startMs: number; endMs: number };
@@ -536,6 +583,7 @@ function buildSummary(
 			.map((run) => run.soakHours),
 	);
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
+	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
 	return {
 		generatedAt: new Date().toISOString(),
 		ledger: rel(ledgerPath),
@@ -544,6 +592,7 @@ function buildSummary(
 		totalSoakHours: numberSum(ledger.runs.map((run) => run.soakHours)),
 		continuousSoakHours,
 		releaseTaggedSoakHours,
+		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,
 		replaceSoakHoursRequired: 72,
@@ -565,6 +614,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
+			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,
 			`  ledger:              ${summary.files.ledger}`,
@@ -602,6 +652,7 @@ try {
 		packetShadowSoak,
 	);
 	const ledger = upsertRun(parseLedger(ledgerPath), latestRun);
+	ledgerBinarySha256(ledger.runs);
 	const cumulative = cumulativeInput(ledger.runs);
 	const assessment = assessDeployReadiness(cumulative);
 	const summary = buildSummary(

@@ -9,8 +9,9 @@
 // ---------------------------------------------------------------------------
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runRustParity, type ParityDiff, type ParityReport } from "../src/contract/rust-parity.js";
@@ -58,6 +59,7 @@ type ShadowSoakReport = {
 		iterationsCompleted: number;
 		minSecondsRequested: number;
 		rustBinary: string | null;
+		rustBinarySha256: string | null;
 		releaseTag: string | null;
 	};
 	publicSurfaceMatch: boolean;
@@ -184,6 +186,15 @@ function dataLossIncidentCount(diffs: readonly ParityDiff[]): number {
 	return diffs.filter((diff) => STATEFUL_TOOLS.has(diff.tool)).length;
 }
 
+function sha256File(path: string | null): string | null {
+	if (!path) return null;
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function relOrNull(path: string | null): string | null {
+	return path ? relative(REPO_ROOT, path) : null;
+}
+
 async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 	if (!options.noBuild) buildReleaseCli();
 
@@ -281,6 +292,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 	const endedAt = new Date(endedAtMs).toISOString();
 	const unresolvedTelemetryAnomalies =
 		crashes + unclassifiedFailures + dataLossIncidents;
+	const rustBinarySha256 = sha256File(rustBinary);
 
 	return {
 		meta: {
@@ -290,7 +302,8 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 			iterationsRequested: options.iterations,
 			iterationsCompleted: iterations.length,
 			minSecondsRequested: options.minSeconds,
-			rustBinary,
+			rustBinary: relOrNull(rustBinary),
+			rustBinarySha256,
 			releaseTag: options.releaseTag ?? null,
 		},
 		publicSurfaceMatch,
@@ -329,6 +342,7 @@ function printSummary(report: ShadowSoakReport): void {
 			`  observability:       ${report.observabilityLevel}`,
 			`  release tag:         ${report.meta.releaseTag ?? "none"}`,
 			`  rust binary:         ${report.meta.rustBinary ?? "unavailable"}`,
+			`  binary sha256:       ${report.meta.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			"",
 		].join("\n"),
 	);

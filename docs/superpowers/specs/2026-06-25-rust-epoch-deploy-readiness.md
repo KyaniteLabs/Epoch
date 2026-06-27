@@ -111,7 +111,7 @@ The command writes a git-ignored packet under `.epoch-promotion/latest/` by defa
 
 - `parity.json` from the strict TypeScript-vs-Rust parity gate.
 - `perf.json` from the promotion benchmark smoke run.
-- `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons, including both `soakHours` and `continuousSoakHours`.
+- `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons, including `soakHours`, `continuousSoakHours`, and the SHA-256 of the Rust binary under test.
 - `shadow-soak-rollback.json` after the rollback rehearsal enriches the parity evidence.
 - `readiness-input.json`, `readiness-assessment.json`, and `promotion-packet.json`.
 
@@ -140,6 +140,7 @@ The ledger is conservative:
 
 - It sums crashes, data-loss incidents, unresolved telemetry anomalies, and unclassified failures across all runs.
 - It uses the worst observed compatibility and performance percentages across all runs.
+- It fails closed if any run is missing `rustBinarySha256` or if runs from different Rust binary hashes are mixed in one ledger.
 - It only credits clean contiguous observation windows toward `continuousSoakHours`; short orchestration gaps can preserve continuity but do not earn soak credit.
 - It counts rollback as ready only after at least one successful rehearsal.
 - It reports `observabilityLevel: release` only when all accumulated soak hours came from release-tagged comparison packets.
