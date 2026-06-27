@@ -56,6 +56,7 @@ type LedgerRun = {
 	p95LatencyImprovementPercent: number;
 	startupImprovementPercent: number;
 	memoryImprovementPercent: number;
+	performanceEvidenceMode: "smoke" | "qualified";
 	readinessDecision: string;
 	readinessFailingGate: string | null;
 };
@@ -75,6 +76,7 @@ type LedgerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	qualifiedPerformanceEvidence: boolean;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -290,6 +292,8 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 			"memoryImprovementPercent",
 			0,
 		),
+		performanceEvidenceMode:
+			value.performanceEvidenceMode === "qualified" ? "qualified" : "smoke",
 		readinessDecision: stringField(value, "readinessDecision", "UNKNOWN"),
 		readinessFailingGate:
 			typeof value.readinessFailingGate === "string"
@@ -352,6 +356,15 @@ function packetBinaryIdentity(shadowSoak: unknown): {
 	};
 }
 
+function packetPerformanceEvidenceMode(
+	summary: unknown,
+): "smoke" | "qualified" {
+	if (!isObject(summary) || !isObject(summary.evidence)) return "smoke";
+	const performance = summary.evidence.performance;
+	if (!isObject(performance)) return "smoke";
+	return performance.evidenceMode === "qualified" ? "qualified" : "smoke";
+}
+
 function packetWindow(
 	shadowSoak: unknown,
 	generatedAt: string,
@@ -390,6 +403,7 @@ function ledgerRunFromPacket(
 	const releaseTag = packetReleaseTag(summary);
 	const readiness = packetReadiness(summary);
 	const binary = packetBinaryIdentity(shadowSoak);
+	const performanceEvidenceMode = packetPerformanceEvidenceMode(summary);
 	const window = packetWindow(
 		shadowSoak,
 		generatedAt,
@@ -422,6 +436,7 @@ function ledgerRunFromPacket(
 			readinessInput.perf.p95LatencyImprovementPercent,
 		startupImprovementPercent: readinessInput.perf.startupImprovementPercent,
 		memoryImprovementPercent: readinessInput.perf.memoryImprovementPercent,
+		performanceEvidenceMode,
 		readinessDecision: readiness.decision,
 		readinessFailingGate: readiness.failingGate,
 	};
@@ -594,6 +609,9 @@ function buildSummary(
 	const totalSoakHours = numberSum(ledger.runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
+	const qualifiedPerformanceEvidence = ledger.runs.some(
+		(run) => run.performanceEvidenceMode === "qualified",
+	);
 	return {
 		generatedAt: new Date().toISOString(),
 		ledger: rel(ledgerPath),
@@ -603,6 +621,7 @@ function buildSummary(
 		continuousSoakHours,
 		continuityLostHours: Math.max(0, totalSoakHours - continuousSoakHours),
 		releaseTaggedSoakHours,
+		qualifiedPerformanceEvidence,
 		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,
@@ -626,6 +645,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
+			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,

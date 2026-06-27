@@ -21,6 +21,7 @@ type RunnerState = {
 	runsStarted: number | null;
 	maxRuns: number | null;
 	untilTarget: boolean | null;
+	benchmarkMode: string | null;
 };
 type LedgerRun = {
 	id: string;
@@ -39,6 +40,7 @@ type LedgerRun = {
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
 	observabilityLevel: string | null;
+	performanceEvidenceMode: "smoke" | "qualified";
 	readinessDecision: string | null;
 	readinessFailingGate: string | null;
 };
@@ -61,6 +63,7 @@ type SoakStatus = {
 	continuityLostHours: number;
 	continuousGapSeconds: number;
 	releaseTaggedSoakHours: number;
+	qualifiedPerformanceEvidence: boolean;
 	remainingCanaryHours: number;
 	remainingReplaceHours: number;
 	latestRun: LedgerRun | null;
@@ -188,6 +191,8 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 		errorCompatibilityPercent: numberField(raw, "errorCompatibilityPercent"),
 		unclassifiedFailures: numberField(raw, "unclassifiedFailures"),
 		observabilityLevel: stringField(raw, "observabilityLevel"),
+		performanceEvidenceMode:
+			raw.performanceEvidenceMode === "qualified" ? "qualified" : "smoke",
 		readinessDecision: stringField(raw, "readinessDecision"),
 		readinessFailingGate: stringField(raw, "readinessFailingGate"),
 	};
@@ -225,6 +230,7 @@ function parseRunnerState(raw: unknown): RunnerState | null {
 				? (raw.maxRuns as number | null)
 				: null,
 		untilTarget: booleanField(raw, "untilTarget"),
+		benchmarkMode: stringField(raw, "benchmarkMode"),
 	};
 }
 
@@ -330,6 +336,9 @@ export function buildSoakStatus(input: {
 			)
 			.map((run) => run.soakHours),
 	);
+	const qualifiedPerformanceEvidence = runs.some(
+		(run) => run.performanceEvidenceMode === "qualified",
+	);
 	const warnings: string[] = [];
 
 	if ((ledger?.ignoredRunCount ?? 0) > 0) {
@@ -382,6 +391,7 @@ export function buildSoakStatus(input: {
 		),
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		releaseTaggedSoakHours,
+		qualifiedPerformanceEvidence,
 		remainingCanaryHours: Math.max(0, CANARY_SOAK_HOURS - continuousCleanSoakHours),
 		remainingReplaceHours: Math.max(
 			0,
@@ -415,6 +425,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  continuity lost:     ${formatHours(status.continuityLostHours)}h`,
 		`  max clean gap:       ${status.continuousGapSeconds}s`,
 		`  release-tagged soak: ${formatHours(status.releaseTaggedSoakHours)}h`,
+		`  qualified perf:      ${status.qualifiedPerformanceEvidence}`,
 		`  canary remaining:    ${formatHours(status.remainingCanaryHours)}h`,
 		`  replace remaining:   ${formatHours(status.remainingReplaceHours)}h`,
 		`  binary sha256:       ${status.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,

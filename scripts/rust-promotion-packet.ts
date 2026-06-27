@@ -23,6 +23,7 @@ type CliOptions = {
 	outputDir: string;
 	iterations: number;
 	minSeconds: number;
+	benchmarkMode: "smoke" | "qualified";
 	releaseTag?: string;
 	keepExisting: boolean;
 	quiet: boolean;
@@ -43,6 +44,10 @@ type PacketSummary = {
 			p95LatencyImprovementPercent: number;
 			startupImprovementPercent: number;
 			memoryImprovementPercent: number;
+			evidenceMode: "smoke" | "qualified";
+			smoke: boolean;
+			toolsBenchmarked: number | null;
+			iterationsScale: number | null;
 		};
 		reliability: {
 			soakHours: number;
@@ -87,6 +92,7 @@ function parseArgs(argv: string[]): CliOptions {
 		outputDir: DEFAULT_OUTPUT_DIR,
 		iterations: 3,
 		minSeconds: 0,
+		benchmarkMode: "smoke",
 		keepExisting: false,
 		quiet: false,
 	};
@@ -100,6 +106,12 @@ function parseArgs(argv: string[]): CliOptions {
 			options.iterations = positiveInteger(args[++i], "--iterations");
 		} else if (arg === "--min-seconds") {
 			options.minSeconds = nonNegativeNumber(args[++i], "--min-seconds");
+		} else if (arg === "--benchmark-mode") {
+			const mode = args[++i];
+			if (mode !== "smoke" && mode !== "qualified") {
+				throw new Error("--benchmark-mode must be smoke or qualified.");
+			}
+			options.benchmarkMode = mode;
 		} else if (arg === "--release-tag") {
 			options.releaseTag = nonEmptyString(args[++i], "--release-tag");
 		} else if (arg === "--keep-existing") {
@@ -152,6 +164,7 @@ function usage(): string {
 		"  --output-dir, -o <dir>  Local packet directory (default: .epoch-promotion/latest)",
 		"  --iterations <n>        Shadow-soak parity iterations (default: 3)",
 		"  --min-seconds <n>       Minimum shadow-soak wall time (default: 0)",
+		"  --benchmark-mode <m>    Performance benchmark mode: smoke or qualified (default: smoke)",
 		"  --release-tag <tag>     Mark TS-oracle comparisons as release observability evidence",
 		"  --keep-existing         Do not remove the output directory before writing",
 		"  --quiet                 Suppress progress and summary output",
@@ -225,12 +238,37 @@ function binaryEvidence(shadowSoak: unknown): PacketSummary["evidence"]["binary"
 	};
 }
 
+function performanceEvidence(
+	readinessInput: ReadinessInput,
+	perfReport: unknown,
+): PacketSummary["evidence"]["performance"] {
+	const meta =
+		isObject(perfReport) && isObject(perfReport.meta) ? perfReport.meta : null;
+	const summary =
+		isObject(perfReport) && isObject(perfReport.summary) ? perfReport.summary : null;
+	const smoke = meta ? meta.smoke === true : true;
+	return {
+		...readinessInput.perf,
+		evidenceMode: smoke ? "smoke" : "qualified",
+		smoke,
+		toolsBenchmarked:
+			summary && typeof summary.toolsBenchmarked === "number"
+				? summary.toolsBenchmarked
+				: null,
+		iterationsScale:
+			meta && typeof meta.iterationsScale === "number"
+				? meta.iterationsScale
+				: null,
+	};
+}
+
 function buildSummary(
 	outputDir: string,
 	readinessInput: ReadinessInput,
 	readiness: ReadinessAssessment,
 	releaseTag: string | undefined,
 	shadowSoak: unknown,
+	perfReport: unknown,
 ): PacketSummary {
 	return {
 		generatedAt: new Date().toISOString(),
@@ -243,7 +281,7 @@ function buildSummary(
 					readinessInput.parity.errorCompatibilityPercent,
 				unclassifiedFailures: readinessInput.parity.unclassifiedFailures,
 			},
-			performance: readinessInput.perf,
+			performance: performanceEvidence(readinessInput, perfReport),
 			reliability: {
 				soakHours: readinessInput.parity.soakHours,
 				continuousSoakHours: readinessInput.parity.continuousSoakHours,
@@ -288,6 +326,7 @@ function printSummary(summary: PacketSummary): void {
 			`  error compatibility: ${summary.evidence.compatibility.errorCompatibilityPercent}%`,
 			`  median improvement:  ${summary.evidence.performance.medianLatencyImprovementPercent.toFixed(2)}%`,
 			`  p95 improvement:     ${summary.evidence.performance.p95LatencyImprovementPercent.toFixed(2)}%`,
+			`  perf evidence:       ${summary.evidence.performance.evidenceMode}`,
 			`  soak hours:          ${summary.evidence.reliability.soakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.evidence.reliability.continuousSoakHours.toFixed(4)}`,
 			`  rollback rehearsed:  ${summary.evidence.rollback.rehearsed}`,
@@ -333,14 +372,21 @@ async function main(): Promise<void> {
 	], options);
 	writeFileSync(parityPath, parity);
 
-	runPackageManager("promotion benchmark smoke", [
+	const benchmarkArgs = [
 		"exec",
 		"tsx",
 		"src/benchmarks/rust-promotion.ts",
-		"--smoke",
 		"--output",
 		perfPath,
-	], options);
+	];
+	if (options.benchmarkMode === "smoke") {
+		benchmarkArgs.push("--smoke");
+	}
+	runPackageManager(
+		`promotion benchmark ${options.benchmarkMode}`,
+		benchmarkArgs,
+		options,
+	);
 
 	const shadowArgs = [
 		"exec",
@@ -376,6 +422,7 @@ async function main(): Promise<void> {
 		parity: readJson(rollbackPath),
 		perf: readJson(perfPath),
 	});
+	const perfReport = readJson(perfPath);
 	const shadowSoak = readJson(shadowPath);
 	const readiness = assessDeployReadiness(readinessInput);
 	const summary = buildSummary(
@@ -384,6 +431,7 @@ async function main(): Promise<void> {
 		readiness,
 		options.releaseTag,
 		shadowSoak,
+		perfReport,
 	);
 
 	writeJson(readinessInputPath, readinessInput);

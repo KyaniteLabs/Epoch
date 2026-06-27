@@ -66,6 +66,7 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		p95LatencyImprovementPercent: 90,
 		startupImprovementPercent: 90,
 		memoryImprovementPercent: 90,
+		performanceEvidenceMode: "qualified",
 		...overrides,
 	};
 }
@@ -275,6 +276,48 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 		expect(result.reason).toContain("release-tagged cumulative soak evidence");
 	});
 
+	it("blocks replacement from cumulative evidence without qualified performance proof", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				totalSoakHours: 72,
+				continuousSoakHours: 72,
+				releaseTaggedSoakHours: 72,
+				qualifiedPerformanceEvidence: false,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("qualified non-smoke performance");
+	});
+
+	it("passes replacement from cumulative summary with qualified performance proof", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				totalSoakHours: 72,
+				continuousSoakHours: 72,
+				releaseTaggedSoakHours: 72,
+				qualifiedPerformanceEvidence: true,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(true);
+		expect(result.reason).toContain("Strict ledger scorer reached replace");
+	});
+
 	it("blocks cumulative evidence when the current binary hash differs", () => {
 		const result = assessPromotionGateFromLedgerSummary(
 			ledgerSummary(),
@@ -317,6 +360,24 @@ describe("assessPromotionGateFromLedger", () => {
 
 		expect(result.ok).toBe(true);
 		expect(result.reason).toContain("Strict ledger scorer reached replace");
+	});
+
+	it("blocks replacement when 72-hour ledger evidence only has smoke performance proof", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([
+				ledgerRun({
+					endedAt: "2026-06-30T00:00:00.000Z",
+					soakHours: 72,
+					continuousSoakHours: 72,
+					performanceEvidenceMode: "smoke",
+				}),
+			]),
+			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("qualified non-smoke performance");
 	});
 
 	it("blocks direct ledger evidence before the required continuous soak window", () => {

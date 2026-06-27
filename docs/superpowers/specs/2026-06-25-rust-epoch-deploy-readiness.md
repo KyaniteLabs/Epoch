@@ -70,9 +70,9 @@ Metrics:
 Thresholds:
 
 - `CANARY` requires at least 10% median latency improvement and no regression greater than 5% on p95 or memory.
-- `REPLACE` requires at least 20% median latency improvement, at least 10% p95 improvement, and no regression in startup or memory.
+- `REPLACE` requires at least 20% median latency improvement, at least 10% p95 improvement, no regression in startup or memory, and qualified non-smoke benchmark evidence.
 
-Raw benchmark reports fail closed when p95, startup, or memory measurements are missing. Missing evidence is not treated as zero regression.
+Raw benchmark reports fail closed when p95, startup, or memory measurements are missing. Missing evidence is not treated as zero regression. Smoke benchmark packets may support shadow and canary confidence, but they are not sufficient replacement evidence; at least one cumulative ledger run must carry `qualifiedPerformanceEvidence: true` before the replacement gate can pass.
 
 ### 5. Soak Reliability Gate
 
@@ -123,7 +123,7 @@ pnpm run promotion:rust-packet -- --iterations 3
 The command writes a git-ignored packet under `.epoch-promotion/latest/` by default:
 
 - `parity.json` from the strict TypeScript-vs-Rust parity gate.
-- `perf.json` from the promotion benchmark smoke run.
+- `perf.json` from the promotion benchmark run. The default packet path uses smoke mode for fast repeated soak packets; replacement evidence must include a non-smoke qualified benchmark report.
 - `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons, including `soakHours`, `continuousSoakHours`, and the SHA-256 of the Rust binary under test.
 - `shadow-soak-rollback.json` after the rollback rehearsal enriches the parity evidence.
 - `readiness-input.json`, `readiness-assessment.json`, and `promotion-packet.json`.
@@ -152,7 +152,7 @@ The ledger writes cumulative readiness artifacts next to the packet by default:
 The ledger is conservative:
 
 - It sums crashes, data-loss incidents, unresolved telemetry anomalies, and unclassified failures across all runs.
-- It uses the worst observed compatibility and performance percentages across all runs.
+- It uses the worst observed compatibility and performance percentages across all runs, and tracks whether any run included qualified non-smoke benchmark evidence.
 - It fails closed if any run is missing `rustBinarySha256` or if runs from different Rust binary hashes are mixed in one ledger.
 - It only credits clean contiguous observation windows toward `continuousSoakHours`; orchestration gaps up to 120 seconds can preserve continuity but do not earn soak credit.
 - It counts rollback as ready only after at least one successful rehearsal.
@@ -164,7 +164,7 @@ To keep a long soak resumable, use the runner instead of hand-looping packet plu
 pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
 ```
 
-The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's 120-second continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. `--until-target` keeps running only while the first blocker is `soak`; if compatibility, performance, rollback, observability, or binary identity blocks promotion, it stops with `stopReason: "non-soak-gate-blocked"`. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's 120-second continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. `--until-target` keeps running only while the first blocker is `soak`; if compatibility, performance, rollback, observability, binary identity, or qualified performance evidence blocks promotion, it stops with `stopReason: "non-soak-gate-blocked"`. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence plus any extra promotion-gate evidence quality requirements; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
 Before canarying or replacing TypeScript, run the final promotion gate against the runner summary:
 
@@ -178,7 +178,7 @@ For a long replacement-target runner that is still active, check the cumulative 
 pnpm run promotion:rust-gate -- --target canary --ledger .epoch-promotion/soak-ledger.json
 ```
 
-The gate exits 0 only when the strict scorer reached the requested target, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, the required total and continuous soak hours are present, and replacement evidence is release-tagged. `--ledger` reads the durable cumulative ledger directly; `--ledger-summary` is also available for a previously written cumulative summary. Runner summaries are additionally rejected if they were produced with `--target-hours`. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
+The gate exits 0 only when the strict scorer reached the requested target, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, the required total and continuous soak hours are present, and replacement evidence is release-tagged with qualified non-smoke benchmark proof. `--ledger` reads the durable cumulative ledger directly; `--ledger-summary` is also available for a previously written cumulative summary. Runner summaries are additionally rejected if they were produced with `--target-hours`. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
 
 A replacement-target runner summary may be checked against the canary gate; this lets one long replacement soak unlock canary as soon as the strict scorer reaches `CANARY`, while still failing closed until it later reaches `REPLACE`.
 
@@ -190,12 +190,18 @@ While a long soak is active, monitor the durable ledger without touching the in-
 pnpm run promotion:rust-soak-status -- --ledger .epoch-promotion/soak-ledger.json
 ```
 
-The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings.
+The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, qualified performance evidence, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings.
 
 For replacement evidence, the runner requires a release tag:
 
 ```bash
 pnpm run promotion:rust-soak-runner -- --target replace --release-tag <release-or-commit-id> --max-runs 1
+```
+
+To add the qualified benchmark evidence required for replacement, run a controlled packet with the full benchmark mode and append it to the same binary-specific ledger:
+
+```bash
+pnpm run promotion:rust-soak-runner -- --target replace --release-tag <release-or-commit-id> --benchmark-mode qualified --max-runs 1
 ```
 
 `--target-hours` is only for local smoke tests of the runner path. Production promotion still depends on the deploy-readiness scorer's fixed 24-hour canary and 72-hour replacement gates, and deployment automation must ignore `smokeTargetReached`.

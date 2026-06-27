@@ -32,6 +32,7 @@ type StopReason =
 	| "non-soak-gate-blocked";
 type TargetHoursSource = "default" | "override";
 type StopSatisfiedBy = "scorer" | "target-hours-override" | null;
+type BenchmarkMode = "smoke" | "qualified";
 
 type CliOptions = {
 	target: Target;
@@ -40,6 +41,7 @@ type CliOptions = {
 	ledgerPath: string;
 	iterations: number;
 	minSeconds: number;
+	benchmarkMode: BenchmarkMode;
 	maxRuns: number | null;
 	untilTarget: boolean;
 	releaseTag?: string;
@@ -56,6 +58,7 @@ type LedgerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	qualifiedPerformanceEvidence: boolean;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -82,12 +85,14 @@ type RunnerSummary = {
 	untilTarget: boolean;
 	iterationsPerPacket: number;
 	minSecondsPerPacket: number;
+	benchmarkMode: BenchmarkMode;
 	releaseTag: string | null;
 	readiness: ReadinessAssessment;
 	totalSoakHours: number;
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	qualifiedPerformanceEvidence: boolean;
 	rustBinarySha256: string | null;
 	remainingSoakHours: number;
 	files: {
@@ -124,6 +129,7 @@ function parseArgs(argv: string[]): CliOptions {
 		ledgerPath: DEFAULT_LEDGER,
 		iterations: DEFAULT_ITERATIONS,
 		minSeconds: DEFAULT_MIN_SECONDS,
+		benchmarkMode: "smoke",
 		maxRuns: DEFAULT_MAX_RUNS,
 		untilTarget: false,
 		requireTarget: false,
@@ -146,6 +152,12 @@ function parseArgs(argv: string[]): CliOptions {
 			options.iterations = positiveInteger(args[++i], "--iterations");
 		} else if (arg === "--min-seconds") {
 			options.minSeconds = nonNegativeNumber(args[++i], "--min-seconds");
+		} else if (arg === "--benchmark-mode") {
+			const mode = args[++i];
+			if (mode !== "smoke" && mode !== "qualified") {
+				throw new Error("--benchmark-mode must be smoke or qualified.");
+			}
+			options.benchmarkMode = mode;
 		} else if (arg === "--max-runs") {
 			options.maxRuns = positiveInteger(args[++i], "--max-runs");
 			maxRunsProvided = true;
@@ -226,6 +238,7 @@ function usage(): string {
 		"  --ledger <path>            Cumulative ledger file (default: .epoch-promotion/soak-ledger.json)",
 		"  --iterations <n>           Shadow-soak iterations per packet (default: 3)",
 		"  --min-seconds <n>          Minimum shadow-soak seconds per packet (default: 60)",
+		"  --benchmark-mode <m>       Performance benchmark mode per packet: smoke or qualified (default: smoke)",
 		"  --max-runs <n>             Maximum packets to run this invocation (default: 1)",
 		"  --until-target             Keep starting packets until the target is reached",
 		"  --release-tag <tag>        Mark packet comparisons as release evidence",
@@ -288,6 +301,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 		typeof raw.totalSoakHours !== "number" ||
 		typeof raw.continuousSoakHours !== "number" ||
 		typeof raw.releaseTaggedSoakHours !== "number" ||
+		typeof raw.qualifiedPerformanceEvidence !== "boolean" ||
 		typeof raw.continuousGapSeconds !== "number" ||
 		typeof raw.canarySoakHoursRequired !== "number" ||
 		typeof raw.replaceSoakHoursRequired !== "number" ||
@@ -307,6 +321,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 				? raw.continuityLostHours
 				: Math.max(0, raw.totalSoakHours - raw.continuousSoakHours),
 		releaseTaggedSoakHours: raw.releaseTaggedSoakHours,
+		qualifiedPerformanceEvidence: raw.qualifiedPerformanceEvidence,
 		rustBinarySha256:
 			typeof raw.rustBinarySha256 === "string" ? raw.rustBinarySha256 : null,
 		continuousGapSeconds: raw.continuousGapSeconds,
@@ -461,6 +476,7 @@ function writeRunState(
 		runsStarted,
 		maxRuns: options.maxRuns,
 		untilTarget: options.untilTarget,
+		benchmarkMode: options.benchmarkMode,
 	});
 }
 
@@ -475,6 +491,8 @@ function packetArgs(options: CliOptions): string[] {
 		String(options.iterations),
 		"--min-seconds",
 		String(options.minSeconds),
+		"--benchmark-mode",
+		options.benchmarkMode,
 		"--quiet",
 	];
 	if (options.releaseTag) {
@@ -508,6 +526,13 @@ function scorerMeetsTarget(readiness: ReadinessAssessment, target: Target): bool
 	);
 }
 
+function hasRequiredPerformanceEvidence(
+	summary: LedgerSummary,
+	target: Target,
+): boolean {
+	return target !== "replace" || summary.qualifiedPerformanceEvidence;
+}
+
 function targetStatus(
 	summary: LedgerSummary,
 	target: Target,
@@ -517,7 +542,10 @@ function targetStatus(
 	if (summary.continuousSoakHours < targetHours) {
 		return { reached: false, satisfiedBy: null };
 	}
-	if (scorerMeetsTarget(summary.readiness, target)) {
+	if (
+		scorerMeetsTarget(summary.readiness, target) &&
+		hasRequiredPerformanceEvidence(summary, target)
+	) {
 		return { reached: true, satisfiedBy: "scorer" };
 	}
 	if (usesTargetHoursOverride && summary.readiness.failingGate === "soak") {
@@ -547,7 +575,9 @@ function buildRunnerSummary(
 		targetHours,
 		targetHoursSource === "override",
 	);
-	const targetReached = scorerMeetsTarget(ledgerSummary.readiness, options.target);
+	const targetReached =
+		scorerMeetsTarget(ledgerSummary.readiness, options.target) &&
+		hasRequiredPerformanceEvidence(ledgerSummary, options.target);
 
 	return {
 		generatedAt: new Date().toISOString(),
@@ -564,12 +594,14 @@ function buildRunnerSummary(
 		untilTarget: options.untilTarget,
 		iterationsPerPacket: options.iterations,
 		minSecondsPerPacket: options.minSeconds,
+		benchmarkMode: options.benchmarkMode,
 		releaseTag: options.releaseTag ?? null,
 		readiness: ledgerSummary.readiness,
 		totalSoakHours: ledgerSummary.totalSoakHours,
 		continuousSoakHours: ledgerSummary.continuousSoakHours,
 		continuityLostHours: ledgerSummary.continuityLostHours,
 		releaseTaggedSoakHours: ledgerSummary.releaseTaggedSoakHours,
+		qualifiedPerformanceEvidence: ledgerSummary.qualifiedPerformanceEvidence,
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
 			0,
@@ -595,9 +627,11 @@ function printSummary(summary: RunnerSummary): void {
 			`  stop reason:         ${summary.stopReason}`,
 			`  runs started:        ${summary.runsStarted}`,
 			`  until target:        ${summary.untilTarget}`,
+			`  benchmark mode:      ${summary.benchmarkMode}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
+			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  remaining hours:     ${summary.remainingSoakHours.toFixed(4)}`,
 			`  readiness:           ${summary.readiness.decision}`,

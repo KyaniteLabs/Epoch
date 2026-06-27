@@ -99,6 +99,7 @@ const ledgerRunSchema = z.object({
 	p95LatencyImprovementPercent: z.number(),
 	startupImprovementPercent: z.number(),
 	memoryImprovementPercent: z.number(),
+	performanceEvidenceMode: z.enum(["smoke", "qualified"]).default("smoke"),
 });
 
 const soakLedgerSchema = z.object({
@@ -112,6 +113,7 @@ const ledgerSummarySchema = z.object({
 	totalSoakHours: z.number().nonnegative(),
 	continuousSoakHours: z.number().nonnegative(),
 	releaseTaggedSoakHours: z.number().nonnegative(),
+	qualifiedPerformanceEvidence: z.boolean().default(false),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
 		decision: deployReadinessDecisionSchema,
@@ -387,6 +389,15 @@ export function assessPromotionGateFromLedgerSummary(
 			"Replacement requires release-tagged cumulative soak evidence.",
 		);
 	}
+	if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Replacement requires qualified non-smoke performance benchmark evidence.",
+		);
+	}
 	if (DECISION_RANK[decision] < targetRank(target)) {
 		return result(
 			false,
@@ -563,6 +574,9 @@ export function buildGateLedgerSummary(
 		totalSoakHours,
 		continuousSoakHours,
 		releaseTaggedSoakHours,
+		qualifiedPerformanceEvidence: runs.some(
+			(run) => run.performanceEvidenceMode === "qualified",
+		),
 		rustBinarySha256: readinessInput.parity.rustBinarySha256,
 		readiness: assessDeployReadiness(readinessInput),
 	};

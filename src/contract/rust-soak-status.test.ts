@@ -61,12 +61,14 @@ describe("buildSoakStatus", () => {
 		expect(status.continuousCleanSoakHours).toBe(1);
 		expect(status.continuousGapSeconds).toBe(120);
 		expect(status.releaseTaggedSoakHours).toBe(1);
+		expect(status.qualifiedPerformanceEvidence).toBe(false);
 		expect(status.remainingCanaryHours).toBe(23);
 		expect(status.remainingReplaceHours).toBe(71);
 		expect(status.rustBinarySha256).toBe(RUST_BINARY_SHA256);
 		expect(status.warnings).toEqual([]);
 		expect(formatSoakStatus(status)).toContain("runner:              active");
 		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
+		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
 	});
 
 	it("does not count release-observable runs without release tags as release-tagged soak", () => {
