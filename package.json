@@ -52,6 +52,7 @@
     "promotion:rust-packet": "tsx scripts/rust-promotion-packet.ts",
     "promotion:rust-soak-ledger": "tsx scripts/rust-soak-ledger.ts",
     "promotion:rust-soak-runner": "tsx scripts/rust-soak-runner.ts",
+    "promotion:rust-soak-status": "tsx src/contract/rust-soak-status.ts",
     "promotion:rust-gate": "tsx src/contract/rust-promotion-gate.ts",
     "promotion:rust-e2e": "cargo build --manifest-path rust/Cargo.toml -p epoch-cli -p epoch-mcp -p epoch-http && cargo run --manifest-path rust/Cargo.toml -p xtask -- e2e",
     "verify:rust-milestone0": "pnpm run contract:inventory && pnpm run typecheck && pnpm test && pnpm run rust:check"

@@ -154,7 +154,7 @@ The ledger is conservative:
 - It sums crashes, data-loss incidents, unresolved telemetry anomalies, and unclassified failures across all runs.
 - It uses the worst observed compatibility and performance percentages across all runs.
 - It fails closed if any run is missing `rustBinarySha256` or if runs from different Rust binary hashes are mixed in one ledger.
-- It only credits clean contiguous observation windows toward `continuousSoakHours`; short orchestration gaps can preserve continuity but do not earn soak credit.
+- It only credits clean contiguous observation windows toward `continuousSoakHours`; orchestration gaps up to 120 seconds can preserve continuity but do not earn soak credit.
 - It counts rollback as ready only after at least one successful rehearsal.
 - It reports `observabilityLevel: release` only when all accumulated soak hours came from release-tagged comparison packets.
 
@@ -164,7 +164,7 @@ To keep a long soak resumable, use the runner instead of hand-looping packet plu
 pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
 ```
 
-The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. `--until-target` keeps running only while the first blocker is `soak`; if compatibility, performance, rollback, observability, or binary identity blocks promotion, it stops with `stopReason: "non-soak-gate-blocked"`. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's 120-second continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. `--until-target` keeps running only while the first blocker is `soak`; if compatibility, performance, rollback, observability, or binary identity blocks promotion, it stops with `stopReason: "non-soak-gate-blocked"`. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
 Before canarying or replacing TypeScript, run the final promotion gate against the runner summary:
 
@@ -177,6 +177,14 @@ The gate exits 0 only when the strict scorer reached the requested target, the s
 A replacement-target runner summary may be checked against the canary gate; this lets one long replacement soak unlock canary as soon as the strict scorer reaches `CANARY`, while still failing closed until it later reaches `REPLACE`.
 
 The runner uses `.epoch-promotion/soak-runner.lock` to prevent double-counting from overlapping runners and `.epoch-promotion/soak-runner-state.json` as an in-progress sentinel. If a previous runner died before cleanup, the next invocation fails closed until the interrupted run is investigated.
+
+While a long soak is active, monitor the durable ledger without touching the in-progress packet directory:
+
+```bash
+pnpm run promotion:rust-soak-status -- --ledger .epoch-promotion/soak-ledger.json
+```
+
+The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings.
 
 For replacement evidence, the runner requires a release tag:
 
