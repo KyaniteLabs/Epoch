@@ -102,6 +102,8 @@ type CliOptions = {
 	include?: string[];
 };
 
+const DEFAULT_TOOL_TIMEOUT_MS = 10_000;
+
 // ---------------------------------------------------------------------------
 // Tool registry
 // ---------------------------------------------------------------------------
@@ -522,6 +524,7 @@ function invokeTool(
 ): Promise<{ stdout: string; stderr: string; exitCode: number; ms: number }> {
 	return new Promise((resolve, reject) => {
 		const start = process.hrtime.bigint();
+		const timeoutMs = benchmarkToolTimeoutMs();
 		const child = spawn(binary, args, {
 			env: { ...process.env, ...env },
 			stdio: ["ignore", "pipe", "pipe"],
@@ -529,6 +532,12 @@ function invokeTool(
 
 		let stdout = "";
 		let stderr = "";
+		let timedOut = false;
+		const timeout = setTimeout(() => {
+			timedOut = true;
+			stderr += `\nTimed out after ${timeoutMs}ms: ${binary} ${args.join(" ")}`;
+			child.kill("SIGKILL");
+		}, timeoutMs);
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
@@ -538,13 +547,26 @@ function invokeTool(
 			stderr += chunk;
 		});
 
-		child.on("error", reject);
+		child.on("error", (error) => {
+			clearTimeout(timeout);
+			reject(error);
+		});
 		child.on("close", (exitCode) => {
+			clearTimeout(timeout);
 			const end = process.hrtime.bigint();
 			const ms = Number(end - start) / 1_000_000;
-			resolve({ stdout, stderr, exitCode: exitCode ?? 1, ms });
+			resolve({ stdout, stderr, exitCode: timedOut ? 124 : (exitCode ?? 1), ms });
 		});
 	});
+}
+
+function benchmarkToolTimeoutMs(): number {
+	const raw = process.env["EPOCH_BENCHMARK_TOOL_TIMEOUT_MS"];
+	if (!raw) return DEFAULT_TOOL_TIMEOUT_MS;
+	const parsed = Number(raw);
+	return Number.isFinite(parsed) && parsed > 0
+		? Math.round(parsed)
+		: DEFAULT_TOOL_TIMEOUT_MS;
 }
 
 async function measureTool(
