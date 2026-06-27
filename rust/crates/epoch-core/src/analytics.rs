@@ -61,6 +61,19 @@ pub fn reference_class_estimate(
     scope: Option<ScopeSignal>,
     ai_native: bool,
 ) -> ReferenceClassEstimate {
+    reference_class_estimate_with_correction_factor(
+        records, task_type, complexity, scope, ai_native, None,
+    )
+}
+
+pub fn reference_class_estimate_with_correction_factor(
+    records: &[HistoricalRecord],
+    task_type: TaskType,
+    complexity: f64,
+    scope: Option<ScopeSignal>,
+    ai_native: bool,
+    sparse_reference_correction_factor: Option<f64>,
+) -> ReferenceClassEstimate {
     let filtered = records
         .iter()
         .filter(|record| record.task_type == task_type && record.estimated_hours > 0.0)
@@ -79,7 +92,9 @@ pub fn reference_class_estimate(
     } else if using_ai_baselines {
         1.0
     } else {
-        industry_correction_factor(task_type)
+        sparse_reference_correction_factor
+            .filter(|factor| factor.is_finite())
+            .unwrap_or_else(|| industry_correction_factor(task_type))
     };
     let sample_size = filtered.len();
     let complexity_multiplier = complexity_multiplier(complexity);
@@ -749,7 +764,8 @@ fn format_number(value: f64) -> String {
 mod tests {
     use super::{
         HistoricalRecord, calibrate_estimates, compute_accuracy_metrics, compute_accuracy_trend,
-        get_scope_guide, infer_scope_from_complexity, reference_class_estimate, round1,
+        get_scope_guide, infer_scope_from_complexity, reference_class_estimate,
+        reference_class_estimate_with_correction_factor, round1,
     };
     use epoch_contract::{AccuracyTrendDirection, ConfidenceLevel, ScopeSignal, TaskType};
     use serde_json::json;
@@ -785,6 +801,22 @@ mod tests {
         assert_eq!(small.correction_factor, 1.8);
         assert_eq!(small.confidence, ConfidenceLevel::Pessimistic);
         assert!(large.raw_estimate > small.raw_estimate);
+    }
+
+    #[test]
+    fn reference_class_accepts_sparse_reference_database_correction_factor() {
+        let result = reference_class_estimate_with_correction_factor(
+            &[],
+            TaskType::Feature,
+            4.0,
+            Some(ScopeSignal::Large),
+            false,
+            Some(1.0),
+        );
+
+        assert_eq!(result.raw_estimate, 12.7);
+        assert_eq!(result.correction_factor, 1.0);
+        assert_eq!(result.corrected_estimate, 12.7);
     }
 
     #[test]

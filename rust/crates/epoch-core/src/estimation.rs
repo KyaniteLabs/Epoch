@@ -57,7 +57,7 @@ pub fn pert_estimate(
         ));
     }
 
-    let expected = round2(expected);
+    let rounded_expected = round2(expected);
     let std_deviation = round2(std_dev);
     let variance = round2(variance);
     let confidence_95 = [
@@ -74,7 +74,7 @@ pub fn pert_estimate(
         optimistic,
         most_likely,
         pessimistic,
-        expected,
+        expected: rounded_expected,
         variance,
         std_deviation,
         confidence_95,
@@ -84,7 +84,7 @@ pub fn pert_estimate(
         risk_level: compute_pert_risk_level(optimistic, most_likely, pessimistic),
         human_readable: format!(
             "Expected: {} {}. 95% confidence: {} to {} {}. 99% confidence: {} to {} {}.",
-            format_number(expected),
+            format_number(rounded_expected),
             unit.as_str(),
             format_number(confidence_95[0]),
             format_number(confidence_95[1]),
@@ -756,6 +756,17 @@ mod tests {
         assert_eq!(serialized["confidence95"], json!([1.67, 8.33]));
         assert_eq!(serialized["urgencyCategory"], json!("medium"));
         assert_eq!(serialized["riskLevel"], json!("high"));
+    }
+
+    #[test]
+    fn pert_confidence_bounds_use_unrounded_expected_value() {
+        let result =
+            pert_estimate(2.0, 5.0, 10.0, TimeUnit::Hours).expect("PERT estimate succeeds");
+
+        assert_eq!(result.expected, 5.33);
+        assert_eq!(result.std_deviation, 1.33);
+        assert_eq!(result.confidence_95, [2.67, 8.0]);
+        assert_eq!(result.confidence_99, [1.33, 9.33]);
     }
 
     #[test]

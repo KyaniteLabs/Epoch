@@ -7,6 +7,7 @@ use epoch_core::{
     analytics::{
         HistoricalRecord, calibrate_estimates, compute_accuracy_trend, get_scope_guide,
         infer_scope_from_complexity, reference_class_estimate,
+        reference_class_estimate_with_correction_factor,
     },
     calendar::{add_business_days, count_business_days},
     cocomo::{cocomo_validate, cocomo_validate_ground_truth},
@@ -25,7 +26,7 @@ use epoch_core::{
         add_days, convert_timezone, diff_dates, format_elapsed, get_current_time, parse_duration,
     },
 };
-use epoch_data::resolve_global_correction_factor;
+use epoch_data::{resolve_global_correction_factor, resolve_reference_correction_factor};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -362,12 +363,18 @@ impl RustToolDispatcher {
             task_type: Some(task_type),
             ..CalibrationFilters::default()
         });
-        let result = reference_class_estimate(
+        let ai_native = ai_native_bool(object)?;
+        let result = reference_class_estimate_with_correction_factor(
             &records,
             task_type,
             complexity,
             scope,
-            ai_native_bool(object)?,
+            ai_native,
+            Some(resolve_reference_correction_factor(
+                task_type,
+                Some("reference_class_estimate"),
+                Some(complexity),
+            )),
         );
         let raw_estimate = result.raw_estimate;
         let mut data = to_value(result)?;

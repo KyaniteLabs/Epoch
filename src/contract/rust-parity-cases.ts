@@ -141,6 +141,14 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     expect: "ok",
   },
   {
+    name: "pert_estimate/confidence-rounding-boundary",
+    tool: "pert_estimate",
+    cliCommand: "pert-estimate",
+    input: { optimistic: 2, most_likely: 5, pessimistic: 10 },
+    expect: "ok",
+    note: "Pins confidence-bound rounding to the TypeScript oracle: round the final bound, not the expected value first.",
+  },
+  {
     name: "pert_estimate/invalid-order",
     tool: "pert_estimate",
     cliCommand: "pert-estimate",
@@ -212,6 +220,14 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     cliCommand: "reference-class-estimate",
     input: { task_type: "bugfix", complexity: 2, scope: "small" },
     expect: "ok",
+  },
+  {
+    name: "reference_class_estimate/feature-large-hybrid",
+    tool: "reference_class_estimate",
+    cliCommand: "reference-class-estimate",
+    input: { task_type: "feature", complexity: 4, scope: "large", ai_native: 0.5 },
+    expect: "ok",
+    note: "Pins sparse-data correction-factor lookup for non-AI-native reference-class estimates.",
   },
   {
     name: "calibrate_estimates/baseline",

@@ -1,4 +1,4 @@
-use epoch_contract::{CocomoBasicCoefficients, CocomoDataset};
+use epoch_contract::{CocomoBasicCoefficients, CocomoDataset, TaskType};
 use serde::{Deserialize, Serialize, de::Error as _};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -97,6 +97,126 @@ pub fn resolve_global_correction_factor() -> f64 {
         .unwrap_or(DEFAULT_GLOBAL_CORRECTION_FACTOR)
 }
 
+/// Resolve the sparse-data correction factor for `reference_class_estimate`
+/// using the same priority order as TypeScript `getCorrectionFactorForTaskType`:
+/// complexity-aware, tool-specific, task-type, canary task-type, industry.
+pub fn resolve_reference_correction_factor(
+    task_type: TaskType,
+    tool: Option<&str>,
+    complexity: Option<f64>,
+) -> f64 {
+    let Some(db) = resolve_reference_database() else {
+        return industry_correction_factor(task_type);
+    };
+
+    reference_correction_factor_from_db(&db, task_type, tool, complexity)
+}
+
+fn reference_correction_factor_from_db(
+    db: &Value,
+    task_type: TaskType,
+    tool: Option<&str>,
+    complexity: Option<f64>,
+) -> f64 {
+    if let Some(complexity) = complexity {
+        if let Some(factor) = complexity_correction_factor(db, task_type, complexity) {
+            return factor;
+        }
+    }
+
+    if let Some(tool) = tool {
+        if let Some(factor) =
+            nested_factor(db, "toolTaskCorrectionFactors", tool, task_type.as_str())
+        {
+            return factor;
+        }
+    }
+
+    if let Some(factor) = top_level_factor(db, "taskTypeCorrectionFactors", task_type.as_str()) {
+        return factor;
+    }
+
+    let canary_key = canary_task_key(task_type);
+    if let Some(factor) = db
+        .get("estimationAccuracy")
+        .and_then(|value| value.get("correctionFactors"))
+        .and_then(|value| value.get("byTaskType"))
+        .and_then(|value| value.get(canary_key))
+        .and_then(Value::as_f64)
+    {
+        return factor;
+    }
+    if let Some(factor) = db
+        .get("estimationAccuracy")
+        .and_then(|value| value.get("taskTypes"))
+        .and_then(|value| value.get(canary_key))
+        .and_then(|value| value.get("correctionFactor"))
+        .and_then(Value::as_f64)
+    {
+        return factor;
+    }
+
+    industry_correction_factor(task_type)
+}
+
+fn complexity_correction_factor(db: &Value, task_type: TaskType, complexity: f64) -> Option<f64> {
+    let complexity_key = json_number_key(complexity);
+    nested_factor(
+        db,
+        "complexityCorrectionFactors",
+        task_type.as_str(),
+        &complexity_key,
+    )
+}
+
+fn nested_factor(db: &Value, section: &str, first: &str, second: &str) -> Option<f64> {
+    db.get(section)?
+        .get(first)?
+        .get(second)?
+        .as_f64()
+        .filter(|value| value.is_finite())
+}
+
+fn top_level_factor(db: &Value, section: &str, key: &str) -> Option<f64> {
+    db.get(section)?
+        .get(key)?
+        .as_f64()
+        .filter(|value| value.is_finite())
+}
+
+fn json_number_key(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
+}
+
+fn canary_task_key(task_type: TaskType) -> &'static str {
+    match task_type {
+        TaskType::Feature => "pert_estimation",
+        TaskType::Bugfix => "calendar_calculation",
+        TaskType::Refactor | TaskType::Migration => "cocomo_estimation",
+        TaskType::Infrastructure => "token_time_bridge",
+        TaskType::Documentation => "other",
+        TaskType::Testing => "calibration",
+        TaskType::Design => "reference_class",
+    }
+}
+
+fn industry_correction_factor(task_type: TaskType) -> f64 {
+    match task_type {
+        TaskType::Feature => 1.8,
+        TaskType::Bugfix => 1.4,
+        TaskType::Refactor => 2.0,
+        TaskType::Migration => 2.2,
+        TaskType::Infrastructure => 1.9,
+        TaskType::Documentation => 1.3,
+        TaskType::Testing => 1.5,
+        TaskType::Design => 1.7,
+    }
+}
+
 /// Load the reference database following the TypeScript resolution order:
 /// `$EPOCH_DATA_DIR/reference-database.json`, then
 /// `$HOME/.epoch/reference-database.json`, then the bundled copy.
@@ -136,8 +256,10 @@ pub fn crate_label() -> &'static str {
 mod tests {
     use super::{
         bundled_cocomo_basic_coefficients, bundled_cocomo_calibration, bundled_reference_database,
-        bundled_supplementary_database, crate_label, resolve_global_correction_factor,
+        bundled_supplementary_database, crate_label, reference_correction_factor_from_db,
+        resolve_global_correction_factor,
     };
+    use epoch_contract::TaskType;
     use epoch_core::cocomo::{cocomo_validate, cocomo_validate_ground_truth};
 
     #[test]
@@ -222,6 +344,37 @@ mod tests {
         let factor = resolve_global_correction_factor();
         assert!(factor.is_finite());
         assert!(factor > 0.0);
+    }
+
+    #[test]
+    fn resolves_reference_correction_factor_with_typescript_priority_order() {
+        let db = bundled_reference_database().expect("bundled reference database parses");
+
+        // Complexity-aware factors win over tool/task factors.
+        assert_eq!(
+            reference_correction_factor_from_db(
+                &db,
+                TaskType::Feature,
+                Some("reference_class_estimate"),
+                Some(4.0),
+            ),
+            1.0,
+        );
+        // Without a complexity match, the reference_class_estimate tool factor wins.
+        assert_eq!(
+            reference_correction_factor_from_db(
+                &db,
+                TaskType::Feature,
+                Some("reference_class_estimate"),
+                None,
+            ),
+            0.51,
+        );
+        // Without a tool match, fall back to the aggregate task-type factor.
+        assert_eq!(
+            reference_correction_factor_from_db(&db, TaskType::Design, None, None),
+            0.59,
+        );
     }
 
     #[test]

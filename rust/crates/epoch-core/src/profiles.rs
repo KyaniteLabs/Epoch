@@ -7,11 +7,13 @@
 //
 // The human anchor values are the bundled-data medians from
 // `data/supplementary-database.json` (which equal the TypeScript fallbacks):
-// feature-dev 14d, bugfix 72h, velocity 35pts, estimation MAPE 25%,
-// underestimation rate 0.575. The AI-native anchor is the fixed empirical
-// constant set. Only the correction factor depends on the resolved global
-// correction factor (`epoch_data::resolve_global_correction_factor()`), passed
-// in so this crate stays free of filesystem/data dependencies.
+// feature-dev 14d, bugfix 72h, velocity 35pts, estimation MAPE 25%.
+// TypeScript divides the bundled `underestimationRate` value (0.575) by 100
+// while building this profile, so the wire-compatible human anchor is 0.00575.
+// The AI-native anchor is the fixed empirical constant set. Only the correction
+// factor depends on the resolved global correction factor
+// (`epoch_data::resolve_global_correction_factor()`), passed in so this crate
+// stays free of filesystem/data dependencies.
 // ---------------------------------------------------------------------------
 
 /// Human anchor (fully human, `ai_ratio = 0.0`).
@@ -19,7 +21,7 @@ const HUMAN_FEATURE_DEV_TIME_DAYS: f64 = 14.0;
 const HUMAN_BUGFIX_TIME_HOURS: f64 = 72.0;
 const HUMAN_SPRINT_VELOCITY_POINTS: f64 = 35.0;
 const HUMAN_ESTIMATION_MAPE: f64 = 25.0;
-const HUMAN_UNDERESTIMATION_BIAS: f64 = 0.575;
+const HUMAN_UNDERESTIMATION_BIAS: f64 = 0.00575;
 const HUMAN_CORRECTION_FACTOR: f64 = 1.8;
 
 /// AI-native anchor (fully AI-native, `ai_ratio = 1.0`).
@@ -119,7 +121,7 @@ mod tests {
         assert_eq!(profile.correction_factor, 1.8);
         assert_eq!(profile.sprint_velocity_points, 35.0);
         assert_eq!(profile.estimation_mape, 25.0);
-        assert_eq!(profile.underestimation_bias, 0.575);
+        assert_eq!(profile.underestimation_bias, 0.006);
     }
 
     #[test]
@@ -128,6 +130,7 @@ mod tests {
         let profile = developer_profile(0.5, 1.0);
         assert_eq!(profile.mode, "hybrid");
         assert_eq!(profile.correction_factor, 1.4);
+        assert_eq!(profile.underestimation_bias, 0.103);
         // lerp(1.8, 1.07, 0.5) = 1.435 -> 1.44
         let bundled = developer_profile(0.5, 1.07);
         assert_eq!(bundled.correction_factor, 1.44);
