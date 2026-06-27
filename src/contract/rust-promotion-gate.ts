@@ -443,6 +443,14 @@ function boolSome(values: boolean[]): boolean {
 	return values.some(Boolean);
 }
 
+function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
+	return (
+		run.performanceEvidenceMode === "qualified" &&
+		run.observabilityLevel === "release" &&
+		run.releaseTag !== null
+	);
+}
+
 function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 	if (runs.length === 0) return null;
 	const missingIdentity = runs.find((run) => !run.rustBinarySha256);
@@ -585,7 +593,7 @@ export function buildGateLedgerSummary(
 		continuousSoakHours,
 		releaseTaggedSoakHours,
 		qualifiedPerformanceEvidence: runs.some(
-			(run) => run.performanceEvidenceMode === "qualified",
+			hasReleaseQualifiedPerformanceEvidence,
 		),
 		rustBinarySha256: readinessInput.parity.rustBinarySha256,
 		readiness: assessDeployReadiness(readinessInput),

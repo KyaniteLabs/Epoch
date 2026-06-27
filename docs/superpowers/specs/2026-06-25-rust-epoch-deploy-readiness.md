@@ -72,7 +72,7 @@ Thresholds:
 - `CANARY` requires at least 10% median latency improvement and no regression greater than 5% on p95 or memory.
 - `REPLACE` requires at least 20% median latency improvement, at least 10% p95 improvement, no regression in startup or memory, and qualified non-smoke benchmark evidence.
 
-Raw benchmark reports fail closed when p95, startup, or memory measurements are missing. Missing evidence is not treated as zero regression. Smoke benchmark packets may support shadow and canary confidence, but they are not sufficient replacement evidence; at least one cumulative ledger run must carry `qualifiedPerformanceEvidence: true` before the replacement gate can pass.
+Raw benchmark reports fail closed when p95, startup, or memory measurements are missing. Missing evidence is not treated as zero regression. Smoke benchmark packets may support shadow and canary confidence, but they are not sufficient replacement evidence; at least one release-tagged cumulative ledger run must carry qualified non-smoke performance evidence before the replacement gate can pass.
 
 ### 5. Soak Reliability Gate
 
@@ -178,7 +178,7 @@ For a long replacement-target runner that is still active, check the cumulative 
 pnpm run promotion:rust-gate -- --target canary --ledger .epoch-promotion/soak-ledger.json
 ```
 
-The gate exits 0 only when the strict scorer reached the requested target, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, the required total and continuous soak hours are present, and replacement evidence is release-tagged with qualified non-smoke benchmark proof. `--ledger` reads the durable cumulative ledger directly; `--ledger-summary` is also available for a previously written cumulative summary. Runner summaries are additionally rejected if they were produced with `--target-hours`, and replacement-target runner summaries must also carry `qualifiedPerformanceEvidence: true`. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
+The gate exits 0 only when the strict scorer reached the requested target, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, the required total and continuous soak hours are present, and replacement evidence is release-tagged with qualified non-smoke benchmark proof. `--ledger` reads the durable cumulative ledger directly; `--ledger-summary` is also available for a previously written cumulative summary. Raw cumulative ledgers only set `qualifiedPerformanceEvidence` from release-tagged qualified runs, so untagged local benchmark packets cannot satisfy the replacement gate. Runner summaries are additionally rejected if they were produced with `--target-hours`, and replacement-target runner summaries must also carry `qualifiedPerformanceEvidence: true`. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
 
 A replacement-target runner summary may be checked against the canary gate; this lets one long replacement soak unlock canary as soon as the strict scorer reaches `CANARY`, while still failing closed until it later reaches `REPLACE`.
 
@@ -190,7 +190,7 @@ While a long soak is active, monitor the durable ledger without touching the in-
 pnpm run promotion:rust-soak-status -- --ledger .epoch-promotion/soak-ledger.json
 ```
 
-The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, qualified performance evidence, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings. An active replacement runner also warns while qualified non-smoke performance evidence is absent; that soak can keep accumulating hours, but the replacement gate will remain closed until a qualified benchmark run is in the ledger.
+The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, release-tagged qualified performance evidence, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings. An active replacement runner also warns while release-tagged qualified non-smoke performance evidence is absent; that soak can keep accumulating hours, but the replacement gate will remain closed until a release-tagged qualified benchmark run is in the ledger.
 
 For replacement evidence, the runner requires a release tag:
 

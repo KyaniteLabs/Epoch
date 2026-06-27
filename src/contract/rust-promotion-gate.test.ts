@@ -401,6 +401,35 @@ describe("assessPromotionGateFromLedger", () => {
 		expect(result.reason).toContain("qualified non-smoke performance");
 	});
 
+	it("blocks replacement when qualified performance evidence is not release-tagged", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([
+				ledgerRun({
+					endedAt: "2026-06-30T00:00:00.000Z",
+					soakHours: 72,
+					continuousSoakHours: 72,
+					performanceEvidenceMode: "smoke",
+				}),
+				ledgerRun({
+					id: "run-2",
+					generatedAt: "2026-06-30T00:01:00.000Z",
+					startedAt: "2026-06-30T00:01:00.000Z",
+					endedAt: "2026-06-30T00:01:00.000Z",
+					releaseTag: null,
+					observabilityLevel: "tool",
+					soakHours: 0,
+					continuousSoakHours: 0,
+					performanceEvidenceMode: "qualified",
+				}),
+			]),
+			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("qualified non-smoke performance");
+	});
+
 	it("blocks direct ledger evidence before the required continuous soak window", () => {
 		const result = assessPromotionGateFromLedger(
 			ledger([

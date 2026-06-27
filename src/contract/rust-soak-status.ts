@@ -86,7 +86,7 @@ const MAX_CONTINUOUS_GAP_MS = 120_000;
 const CANARY_SOAK_HOURS = 24;
 const REPLACE_SOAK_HOURS = 72;
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
-	"Replacement runner has not recorded qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a qualified benchmark run is in the ledger.";
+	"Replacement runner has not recorded release-tagged qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a release-tagged qualified benchmark run is in the ledger.";
 
 function usage(): string {
 	return [
@@ -240,6 +240,14 @@ function numberSum(values: number[]): number {
 	return values.reduce((total, value) => total + value, 0);
 }
 
+function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
+	return (
+		run.performanceEvidenceMode === "qualified" &&
+		run.observabilityLevel === "release" &&
+		run.releaseTag !== null
+	);
+}
+
 function cleanIntervalForRun(
 	run: LedgerRun,
 ): { startMs: number; endMs: number } | null {
@@ -339,7 +347,7 @@ export function buildSoakStatus(input: {
 			.map((run) => run.soakHours),
 	);
 	const qualifiedPerformanceEvidence = runs.some(
-		(run) => run.performanceEvidenceMode === "qualified",
+		hasReleaseQualifiedPerformanceEvidence,
 	);
 	const warnings: string[] = [];
 

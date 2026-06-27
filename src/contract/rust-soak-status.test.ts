@@ -4,7 +4,7 @@ import { buildSoakStatus, formatSoakStatus } from "./rust-soak-status.js";
 const RUST_BINARY_SHA256 =
 	"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
-	"Replacement runner has not recorded qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a qualified benchmark run is in the ledger.";
+	"Replacement runner has not recorded release-tagged qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a release-tagged qualified benchmark run is in the ledger.";
 
 function run(overrides: Record<string, unknown> = {}) {
 	return {
@@ -99,6 +99,37 @@ describe("buildSoakStatus", () => {
 
 		expect(status.qualifiedPerformanceEvidence).toBe(true);
 		expect(status.warnings).toEqual([]);
+	});
+
+	it("does not count untagged qualified evidence for replacement status", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					releaseTag: null,
+					observabilityLevel: "tool",
+					performanceEvidenceMode: "qualified",
+				}),
+			]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.qualifiedPerformanceEvidence).toBe(false);
+		expect(status.warnings).toContain(
+			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
+		);
 	});
 
 	it("does not count release-observable runs without release tags as release-tagged soak", () => {

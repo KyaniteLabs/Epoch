@@ -180,6 +180,14 @@ function boolSome(values: boolean[]): boolean {
 	return values.some(Boolean);
 }
 
+function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
+	return (
+		run.performanceEvidenceMode === "qualified" &&
+		run.observabilityLevel === "release" &&
+		run.releaseTag !== null
+	);
+}
+
 function parseLedger(path: string): SoakLedger {
 	if (!existsSync(path)) {
 		return { version: 1, updatedAt: new Date(0).toISOString(), runs: [] };
@@ -610,7 +618,7 @@ function buildSummary(
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
 	const qualifiedPerformanceEvidence = ledger.runs.some(
-		(run) => run.performanceEvidenceMode === "qualified",
+		hasReleaseQualifiedPerformanceEvidence,
 	);
 	return {
 		generatedAt: new Date().toISOString(),
