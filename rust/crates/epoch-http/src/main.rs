@@ -8,10 +8,13 @@ use std::{
 };
 
 fn main() {
-    let address = std::env::args()
-        .nth(1)
-        .or_else(|| std::env::var("EPOCH_HTTP_ADDR").ok())
-        .unwrap_or_else(|| "127.0.0.1:8787".to_string());
+    let arg = std::env::args().nth(1);
+    if arg.as_deref().is_some_and(is_help_arg) {
+        print_usage();
+        return;
+    }
+
+    let address = resolve_address(arg.as_deref(), |name| std::env::var(name).ok());
     let listener = TcpListener::bind(&address).unwrap_or_else(|error| {
         eprintln!("failed to bind {address}: {error}");
         std::process::exit(1);
@@ -27,6 +30,63 @@ fn main() {
             }
             Err(error) => eprintln!("connection failed: {error}"),
         }
+    }
+}
+
+fn print_usage() {
+    println!(
+        "Usage: epoch-http [HOST:PORT]\n\
+         \n\
+         Environment:\n\
+           EPOCH_HTTP_ADDR  Full listen address, for example 127.0.0.1:8787\n\
+           EPOCH_HOST       Listen host when EPOCH_HTTP_ADDR is not set (default: 127.0.0.1)\n\
+           EPOCH_PORT       Listen port when EPOCH_HTTP_ADDR is not set (default: 3000)\n\
+           PORT             Fallback listen port when EPOCH_PORT is not set"
+    );
+}
+
+fn is_help_arg(arg: &str) -> bool {
+    matches!(arg, "-h" | "--help")
+}
+
+fn resolve_address<F>(arg: Option<&str>, get_env: F) -> String
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if let Some(address) = arg.and_then(non_empty) {
+        return address.to_string();
+    }
+    if let Some(address) = env_value(&get_env, "EPOCH_HTTP_ADDR") {
+        return address;
+    }
+
+    let host = env_value(&get_env, "EPOCH_HOST").unwrap_or_else(|| "127.0.0.1".to_string());
+    let port = env_value(&get_env, "EPOCH_PORT")
+        .or_else(|| env_value(&get_env, "PORT"))
+        .unwrap_or_else(|| "3000".to_string());
+    format!("{host}:{port}")
+}
+
+fn env_value<F>(get_env: &F, name: &str) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    get_env(name).and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn non_empty(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
     }
 }
 
@@ -135,9 +195,18 @@ fn format_response(response: RustHttpResponse) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_response, parse_request};
+    use super::{format_response, is_help_arg, parse_request, resolve_address};
     use epoch_http::HttpMethod;
     use serde_json::json;
+    use std::collections::HashMap;
+
+    fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map = vars
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect::<HashMap<_, _>>();
+        move |name| map.get(name).cloned()
+    }
 
     #[test]
     fn parses_get_query_and_post_json() {
@@ -165,5 +234,54 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200 OK"));
         assert!(response.contains("application/json"));
         assert!(response.ends_with("{\"ok\":true}"));
+    }
+
+    #[test]
+    fn resolves_typescript_compatible_http_address() {
+        assert_eq!(resolve_address(None, env(&[])), "127.0.0.1:3000");
+        assert_eq!(
+            resolve_address(
+                None,
+                env(&[("EPOCH_HOST", "0.0.0.0"), ("EPOCH_PORT", "3099")])
+            ),
+            "0.0.0.0:3099"
+        );
+        assert_eq!(
+            resolve_address(None, env(&[("PORT", "4000")])),
+            "127.0.0.1:4000"
+        );
+        assert_eq!(
+            resolve_address(None, env(&[("EPOCH_PORT", "3099"), ("PORT", "4000")])),
+            "127.0.0.1:3099"
+        );
+    }
+
+    #[test]
+    fn resolves_explicit_http_address_first() {
+        assert_eq!(
+            resolve_address(
+                Some("127.0.0.1:5050"),
+                env(&[("EPOCH_HTTP_ADDR", "0.0.0.0:8080")])
+            ),
+            "127.0.0.1:5050"
+        );
+        assert_eq!(
+            resolve_address(
+                None,
+                env(&[
+                    ("EPOCH_HTTP_ADDR", "0.0.0.0:8787"),
+                    ("EPOCH_HOST", "127.0.0.1"),
+                    ("EPOCH_PORT", "3000")
+                ])
+            ),
+            "0.0.0.0:8787"
+        );
+    }
+
+    #[test]
+    fn recognizes_help_args() {
+        assert!(is_help_arg("--help"));
+        assert!(is_help_arg("-h"));
+        assert!(!is_help_arg("127.0.0.1:3000"));
     }
 }
