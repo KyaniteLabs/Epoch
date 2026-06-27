@@ -6,6 +6,9 @@ import {
 	type ReadinessInput,
 } from "./rust-deploy-readiness.js";
 
+const RUST_BINARY_SHA256 =
+	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 /**
  * A fully replacement-ready evidence bundle. Individual tests clone this and
  * weaken exactly one dimension to assert how the ladder steps down.
@@ -17,6 +20,7 @@ function replaceReadyInput(): ReadinessInput {
 			outputParityPercent: 100,
 			errorCompatibilityPercent: 100,
 			unclassifiedFailures: 0,
+			rustBinarySha256: RUST_BINARY_SHA256,
 			soakHours: 72,
 			continuousSoakHours: 72,
 			crashes: 0,
@@ -65,6 +69,7 @@ describe("assessDeployReadiness", () => {
 				outputParityPercent: 98.9,
 				errorCompatibilityPercent: 97.9,
 				unclassifiedFailures: 1,
+				rustBinarySha256: RUST_BINARY_SHA256,
 				soakHours: 12,
 				continuousSoakHours: 12,
 				crashes: 0,
@@ -121,6 +126,15 @@ describe("assessDeployReadiness", () => {
 		expect(result.failingGate).toBe("performance");
 	});
 
+	it("keeps otherwise-ready evidence in SHADOW without a binary identity", () => {
+		const result = assessDeployReadiness(
+			withParity({ rustBinarySha256: null }),
+		);
+
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("binary-identity");
+	});
+
 	it("never promotes to CANARY without rollback, soak, or observability evidence", () => {
 		// Regression guard: shadow-grade compatibility alone must not clear canary.
 		const result = assessDeployReadiness({
@@ -129,6 +143,7 @@ describe("assessDeployReadiness", () => {
 				outputParityPercent: 99.6,
 				errorCompatibilityPercent: 99.6,
 				unclassifiedFailures: 0,
+				rustBinarySha256: RUST_BINARY_SHA256,
 				soakHours: 0,
 				continuousSoakHours: 0,
 				crashes: 0,
@@ -218,6 +233,7 @@ describe("assessDeployReadinessFromJson", () => {
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
+				rustBinarySha256: null,
 				soakHours: 0,
 				continuousSoakHours: 0,
 				rollbackValidated: false,
@@ -234,7 +250,7 @@ describe("assessDeployReadinessFromJson", () => {
 
 		const result = assessDeployReadiness(input);
 		expect(result.decision).toBe("SHADOW");
-		expect(result.failingGate).toBe("soak");
+		expect(result.failingGate).toBe("binary-identity");
 	});
 
 	it("does not promote when cumulative soak lacks a continuous clean window", () => {
@@ -244,6 +260,7 @@ describe("assessDeployReadinessFromJson", () => {
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
+				rustBinarySha256: RUST_BINARY_SHA256,
 				soakHours: 72,
 				crashes: 0,
 				dataLossIncidents: 0,
@@ -271,6 +288,7 @@ describe("assessDeployReadinessFromJson", () => {
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				diffs: [],
+				meta: { rustBinarySha256: RUST_BINARY_SHA256 },
 				soakHours: 72,
 				continuousSoakHours: 72,
 				crashes: 0,
@@ -307,6 +325,7 @@ describe("assessDeployReadinessFromJson", () => {
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
+				rustBinarySha256: RUST_BINARY_SHA256,
 				soakHours: 72,
 				continuousSoakHours: 72,
 				crashes: 0,
@@ -325,6 +344,17 @@ describe("assessDeployReadinessFromJson", () => {
 
 		expect(result.decision).toBe("CANARY");
 		expect(result.failingGate).toBe("compatibility");
+	});
+
+	it("throws when binary identity is malformed", () => {
+		const ready = replaceReadyInput();
+
+		expect(() =>
+			assessDeployReadinessFromJson({
+				parity: { ...ready.parity, rustBinarySha256: "not-a-sha256" },
+				perf: ready.perf,
+			}),
+		).toThrow();
 	});
 
 	it("throws on structurally invalid evidence", () => {

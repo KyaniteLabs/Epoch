@@ -47,7 +47,16 @@ Thresholds:
 - `CANARY` requires at least 99.5% pass rate with no unclassified failures.
 - `REPLACE` requires 100% pass rate on the approved compatibility suite with the exception record signed off.
 
-### 3. Performance Gate
+### 3. Binary Identity Gate
+
+Promotion evidence must identify the exact Rust binary that produced the parity and soak observations.
+
+Thresholds:
+
+- `CANARY` requires a valid `rustBinarySha256` attached to the readiness evidence.
+- `REPLACE` requires the same binary identity, and cumulative soak ledgers must contain exactly one Rust binary hash.
+
+### 4. Performance Gate
 
 Rust must be materially better than TypeScript before replacement.
 
@@ -63,7 +72,7 @@ Thresholds:
 - `CANARY` requires at least 10% median latency improvement and no regression greater than 5% on p95 or memory.
 - `REPLACE` requires at least 20% median latency improvement, at least 10% p95 improvement, and no regression in startup or memory.
 
-### 4. Soak Reliability Gate
+### 5. Soak Reliability Gate
 
 Rust must survive sustained use without data loss, panics, or contract drift.
 
@@ -72,7 +81,7 @@ Thresholds:
 - `CANARY` requires at least 24 total measured soak hours and a 24-hour continuous clean soak window with zero crashes and zero data-loss incidents.
 - `REPLACE` requires at least 72 total measured soak hours and a 72-hour continuous clean soak window with zero crashes, zero data-loss incidents, and no unresolved telemetry anomalies.
 
-### 5. Rollback Gate
+### 6. Rollback Gate
 
 Rollback must be simple and tested.
 
@@ -81,7 +90,7 @@ Thresholds:
 - `CANARY` requires a validated rollback that completes in one deploy step.
 - `REPLACE` requires rollback evidence from a successful rehearsal and a recovery point that preserves local state.
 
-### 6. Observability Gate
+### 7. Observability Gate
 
 Rust must expose enough signal to prove correctness and diagnose regressions.
 
@@ -98,6 +107,8 @@ Readiness decisions are computed from parity and performance evidence:
 - `perf.json` for latency, startup, and memory evidence.
 
 The scorer (`pnpm run contract:rust-readiness`) accepts either a single combined `readiness.json` with top-level `parity` and `perf` keys, or the two evidence files passed separately. It emits the decision, the first failing gate, and a short rationale that can be pasted into a release note.
+
+For `CANARY` or `REPLACE`, parity evidence must include `rustBinarySha256`, either at `parity.rustBinarySha256` or in the raw packet metadata. Missing or malformed binary identity keeps the decision in `SHADOW`.
 
 ## Promotion Packet Workflow
 

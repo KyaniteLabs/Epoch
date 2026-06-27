@@ -14,6 +14,7 @@ export const parityEvidenceSchema = z.object({
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
+	rustBinarySha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
 	soakHours: z.number().nonnegative(),
 	continuousSoakHours: z.number().nonnegative(),
 	crashes: z.number().int().nonnegative(),
@@ -67,6 +68,11 @@ function objectField(object: JsonObject, key: string): JsonObject | undefined {
 	return isObject(value) ? value : undefined;
 }
 
+function stringField(object: JsonObject, key: string): string | undefined {
+	const value = object[key];
+	return typeof value === "string" ? value : undefined;
+}
+
 function arrayField(object: JsonObject, key: string): unknown[] | undefined {
 	const value = object[key];
 	return Array.isArray(value) ? value : undefined;
@@ -110,10 +116,15 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 	const errorCompatibilityPercent = numberField(raw, "errorCompatibilityPercent") ?? 0;
 	const toolsCovered = arrayField(raw, "toolsCovered") ?? [];
 	const unclassifiedFailures = numberField(raw, "unclassifiedFailures") ?? diffs.length;
+	const meta = objectField(raw, "meta");
+	const rustBinarySha256 =
+		stringField(raw, "rustBinarySha256") ??
+		(meta ? stringField(meta, "rustBinarySha256") : undefined) ??
+		null;
 	const soakHours = numberField(raw, "soakHours") ?? 0;
 	const continuousSoakHours =
 		numberField(raw, "continuousSoakHours") ??
-		(objectField(raw, "meta") ? soakHours : 0);
+		(meta ? soakHours : 0);
 
 	return parityEvidenceSchema.parse({
 		publicSurfaceMatch:
@@ -121,6 +132,7 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 		outputParityPercent,
 		errorCompatibilityPercent,
 		unclassifiedFailures,
+		rustBinarySha256,
 		soakHours,
 		continuousSoakHours,
 		crashes: numberField(raw, "crashes") ?? 0,
@@ -218,6 +230,10 @@ function canaryGates(input: ReadinessInput): Gate[] {
 				parity.unclassifiedFailures === 0,
 		},
 		{
+			gate: "binary-identity",
+			ok: parity.rustBinarySha256 !== null,
+		},
+		{
 			gate: "performance",
 			ok:
 				perf.medianLatencyImprovementPercent >= 10 &&
@@ -252,6 +268,10 @@ function replaceGates(input: ReadinessInput): Gate[] {
 				parity.errorCompatibilityPercent >= 100 &&
 				parity.unclassifiedFailures === 0 &&
 				parity.compatibilityExceptionsApproved,
+		},
+		{
+			gate: "binary-identity",
+			ok: parity.rustBinarySha256 !== null,
 		},
 		{
 			gate: "performance",

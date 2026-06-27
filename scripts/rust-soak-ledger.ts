@@ -513,6 +513,7 @@ function longestContinuousCleanSoakHours(runs: LedgerRun[]): number {
 function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 	const totalSoakHours = numberSum(runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
+	const rustBinarySha256 = ledgerBinarySha256(runs);
 	const releaseSoakHours = numberSum(
 		runs
 			.filter((run) => run.observabilityLevel === "release")
@@ -536,6 +537,7 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
+			rustBinarySha256,
 			soakHours: totalSoakHours,
 			continuousSoakHours,
 			crashes: numberSum(runs.map((run) => run.crashes)),
