@@ -190,7 +190,7 @@ While a long soak is active, monitor the durable ledger without touching the in-
 pnpm run promotion:rust-soak-status -- --ledger .epoch-promotion/soak-ledger.json
 ```
 
-The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, qualified performance evidence, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings.
+The status command is read-only. It reports whether the recorded runner process is active, completed soak hours, continuous clean soak hours, the continuity-gap threshold, release-tagged soak, qualified performance evidence, remaining canary/replacement hours, the Rust binary hash, and any ledger warnings. An active replacement runner also warns while qualified non-smoke performance evidence is absent; that soak can keep accumulating hours, but the replacement gate will remain closed until a qualified benchmark run is in the ledger.
 
 For replacement evidence, the runner requires a release tag:
 

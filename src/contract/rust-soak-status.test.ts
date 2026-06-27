@@ -3,6 +3,8 @@ import { buildSoakStatus, formatSoakStatus } from "./rust-soak-status.js";
 
 const RUST_BINARY_SHA256 =
 	"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
+	"Replacement runner has not recorded qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a qualified benchmark run is in the ledger.";
 
 function run(overrides: Record<string, unknown> = {}) {
 	return {
@@ -65,10 +67,38 @@ describe("buildSoakStatus", () => {
 		expect(status.remainingCanaryHours).toBe(23);
 		expect(status.remainingReplaceHours).toBe(71);
 		expect(status.rustBinarySha256).toBe(RUST_BINARY_SHA256);
-		expect(status.warnings).toEqual([]);
+		expect(status.warnings).toEqual([
+			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
+		]);
 		expect(formatSoakStatus(status)).toContain("runner:              active");
 		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
 		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
+		expect(formatSoakStatus(status)).toContain(
+			`warning:             ${REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING}`,
+		);
+	});
+
+	it("clears the replacement performance warning when qualified evidence exists", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ performanceEvidenceMode: "qualified" })]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.qualifiedPerformanceEvidence).toBe(true);
+		expect(status.warnings).toEqual([]);
 	});
 
 	it("does not count release-observable runs without release tags as release-tagged soak", () => {

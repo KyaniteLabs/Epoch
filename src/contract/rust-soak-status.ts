@@ -85,6 +85,8 @@ const DEFAULT_STATE = ".epoch-promotion/soak-runner-state.json";
 const MAX_CONTINUOUS_GAP_MS = 120_000;
 const CANARY_SOAK_HOURS = 24;
 const REPLACE_SOAK_HOURS = 72;
+const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
+	"Replacement runner has not recorded qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a qualified benchmark run is in the ledger.";
 
 function usage(): string {
 	return [
@@ -352,6 +354,13 @@ export function buildSoakStatus(input: {
 	}
 	if (!activeRunner && runnerState !== null) {
 		warnings.push("Runner state exists, but the recorded process is not alive.");
+	}
+	if (
+		activeRunner &&
+		runnerState?.target === "replace" &&
+		!qualifiedPerformanceEvidence
+	) {
+		warnings.push(REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING);
 	}
 	if (
 		runs.some(
