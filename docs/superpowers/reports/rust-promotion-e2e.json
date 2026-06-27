@@ -8,6 +8,13 @@
       "percent": 100.0,
       "wired": 39
     },
+    "http_deploy_env": {
+      "expected": 4,
+      "ok": 4,
+      "passing": 4,
+      "percent": 100.0,
+      "wired": 4
+    },
     "http_routes": {
       "expected": 11,
       "ok": 11,
@@ -644,6 +651,38 @@
       "detail": "status 200",
       "ok": true,
       "surface": "GET /v1/feedback/health",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_deploy_env",
+      "detail": "status 200, health true",
+      "ok": true,
+      "surface": "EPOCH_HOST + EPOCH_PORT",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_deploy_env",
+      "detail": "status 200, health true",
+      "ok": true,
+      "surface": "PORT fallback",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_deploy_env",
+      "detail": "status 200, health true",
+      "ok": true,
+      "surface": "EPOCH_HTTP_ADDR",
+      "wired": true
+    },
+    {
+      "adapter": "http",
+      "category": "http_deploy_env",
+      "detail": "exit Some(0), documents env true",
+      "ok": true,
+      "surface": "--help",
       "wired": true
     },
     {

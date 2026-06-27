@@ -8,6 +8,7 @@
 //!   and the CLI dispatcher.
 //! - 39 CLI command paths, each run through the real `epoch-cli` binary.
 //! - 11 HTTP routes, each hit against the real `epoch-http` server.
+//! - HTTP deploy configuration compatibility with the TypeScript env contract.
 //! - MCP function-calling metadata (`tools/list`: name, description,
 //!   inputSchema, annotations) for all 24 tools.
 //!
@@ -29,12 +30,13 @@ use std::time::Duration;
 
 const REPORT_PATH: &str = "docs/superpowers/reports/rust-promotion-e2e.json";
 const CONTRACT_PATH: &str = "docs/superpowers/contracts/epoch-public-surface.json";
-const COVERAGE_CATEGORIES: [&str; 5] = [
+const COVERAGE_CATEGORIES: [&str; 6] = [
     "mcp_metadata",
     "mcp_tools",
     "http_tools",
     "cli_commands",
     "http_routes",
+    "http_deploy_env",
 ];
 
 /// One probed public surface and whether the Rust clone exposes and runs it.
@@ -85,6 +87,7 @@ pub fn run(repo_root: &Path) -> Result<()> {
     let mut surfaces = cli_sweep(&binaries.cli, &contract)?;
     let mcp = mcp_sweep(&binaries.mcp, &contract)?;
     surfaces.extend(http_sweep(&binaries.http, &contract)?);
+    surfaces.extend(http_deploy_env_sweep(&binaries.http)?);
     surfaces.extend(mcp.surfaces);
 
     let report = build_report(&contract, &surfaces, mcp.initialize_ok, mcp.tools_listed);
@@ -453,6 +456,148 @@ fn http_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surfac
     let _ = child.kill();
     let _ = child.wait();
     work
+}
+
+fn http_deploy_env_sweep(bin: &Path) -> Result<Vec<Surface>> {
+    let checks = [
+        HttpDeployCheck::env_port("EPOCH_HOST + EPOCH_PORT", "EPOCH_PORT")?,
+        HttpDeployCheck::env_port("PORT fallback", "PORT")?,
+        HttpDeployCheck::env_addr("EPOCH_HTTP_ADDR")?,
+        HttpDeployCheck::help(),
+    ];
+    checks
+        .into_iter()
+        .map(|check| check.run(bin))
+        .collect::<Result<Vec<_>>>()
+}
+
+struct HttpDeployCheck {
+    surface: &'static str,
+    env: Vec<(&'static str, String)>,
+    mode: HttpDeployCheckMode,
+}
+
+enum HttpDeployCheckMode {
+    Health { addr: String },
+    Help,
+}
+
+impl HttpDeployCheck {
+    fn env_port(surface: &'static str, port_var: &'static str) -> Result<Self> {
+        let port = free_port()?;
+        Ok(Self {
+            surface,
+            env: vec![
+                ("EPOCH_HOST", "127.0.0.1".to_string()),
+                (port_var, port.to_string()),
+            ],
+            mode: HttpDeployCheckMode::Health {
+                addr: format!("127.0.0.1:{port}"),
+            },
+        })
+    }
+
+    fn env_addr(surface: &'static str) -> Result<Self> {
+        let port = free_port()?;
+        let addr = format!("127.0.0.1:{port}");
+        Ok(Self {
+            surface,
+            env: vec![("EPOCH_HTTP_ADDR", addr.clone())],
+            mode: HttpDeployCheckMode::Health { addr },
+        })
+    }
+
+    fn help() -> Self {
+        Self {
+            surface: "--help",
+            env: Vec::new(),
+            mode: HttpDeployCheckMode::Help,
+        }
+    }
+
+    fn run(self, bin: &Path) -> Result<Surface> {
+        match self.mode {
+            HttpDeployCheckMode::Health { ref addr } => Ok(self.run_health(bin, addr)),
+            HttpDeployCheckMode::Help => self.run_help(bin),
+        }
+    }
+
+    fn run_health(&self, bin: &Path, addr: &str) -> Surface {
+        let mut command = Command::new(bin);
+        clear_http_env(&mut command);
+        for (name, value) in &self.env {
+            command.env(name, value);
+        }
+        command.stdout(Stdio::null()).stderr(Stdio::null());
+
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return http_deploy_surface(self.surface, false, format!("spawn failed: {error}"));
+            }
+        };
+        let result = (|| -> Result<(u16, String)> {
+            wait_for_server(addr)?;
+            http_request(addr, "GET", "/health", None)
+        })();
+        let _ = child.kill();
+        let _ = child.wait();
+
+        match result {
+            Ok((status, body)) => {
+                let ok = status == 200 && health_body_ok(&body);
+                http_deploy_surface(self.surface, ok, format!("status {status}, health {ok}"))
+            }
+            Err(error) => http_deploy_surface(self.surface, false, error.to_string()),
+        }
+    }
+
+    fn run_help(&self, bin: &Path) -> Result<Surface> {
+        let mut command = Command::new(bin);
+        clear_http_env(&mut command);
+        let output = command
+            .arg("--help")
+            .output()
+            .with_context(|| format!("failed to run {} --help", bin.display()))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let ok = output.status.success()
+            && stdout.contains("EPOCH_PORT")
+            && stdout.contains("PORT")
+            && stdout.contains("EPOCH_HTTP_ADDR");
+        Ok(http_deploy_surface(
+            self.surface,
+            ok,
+            format!(
+                "exit {:?}, documents env {}",
+                output.status.code(),
+                stdout.contains("EPOCH_PORT")
+            ),
+        ))
+    }
+}
+
+fn clear_http_env(command: &mut Command) {
+    for name in ["EPOCH_HTTP_ADDR", "EPOCH_HOST", "EPOCH_PORT", "PORT"] {
+        command.env_remove(name);
+    }
+}
+
+fn health_body_ok(body: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(body) else {
+        return false;
+    };
+    value.get("status").and_then(Value::as_str) == Some("ok")
+}
+
+fn http_deploy_surface(surface: &'static str, ok: bool, detail: String) -> Surface {
+    Surface {
+        category: "http_deploy_env",
+        surface: surface.to_string(),
+        adapter: "http",
+        wired: ok,
+        ok,
+        detail,
+    }
 }
 
 fn http_surface(category: &'static str, surface: String, status: u16) -> Surface {
