@@ -48,6 +48,7 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		generatedAt: "2026-06-27T00:00:00.000Z",
 		startedAt: "2026-06-27T00:00:00.000Z",
 		endedAt: "2026-06-28T00:00:00.000Z",
+		releaseTag: "candidate-1",
 		rustBinarySha256: RUST_BINARY_SHA256,
 		publicSurfaceMatch: true,
 		outputParityPercent: 100,
@@ -333,6 +334,24 @@ describe("assessPromotionGateFromLedger", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("canary requires 24");
+	});
+
+	it("blocks replacement when release observability lacks a durable release tag", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([
+				ledgerRun({
+					endedAt: "2026-06-30T00:00:00.000Z",
+					releaseTag: null,
+					soakHours: 72,
+					continuousSoakHours: 72,
+				}),
+			]),
+			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("release-tagged cumulative soak evidence");
 	});
 
 	it("fails closed when a durable ledger mixes Rust binary identities", () => {

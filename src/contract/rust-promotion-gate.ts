@@ -81,6 +81,7 @@ const ledgerRunSchema = z.object({
 	generatedAt: z.string(),
 	startedAt: z.string(),
 	endedAt: z.string(),
+	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	publicSurfaceMatch: z.boolean(),
 	outputParityPercent: z.number().min(0).max(100),
@@ -503,7 +504,9 @@ export function buildGateLedgerSummary(
 	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
 	const releaseTaggedSoakHours = numberSum(
 		runs
-			.filter((run) => run.observabilityLevel === "release")
+			.filter(
+				(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
 			.map((run) => run.soakHours),
 	);
 	const allSoakIsRelease =
