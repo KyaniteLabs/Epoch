@@ -324,7 +324,10 @@ export function buildSoakStatus(input: {
 	const continuousCleanSoakHours = longestContinuousCleanSoakHours(runs);
 	const releaseTaggedSoakHours = numberSum(
 		runs
-			.filter((run) => run.observabilityLevel === "release")
+			.filter(
+				(run) =>
+					run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
 			.map((run) => run.soakHours),
 	);
 	const warnings: string[] = [];

@@ -517,7 +517,10 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 	const rustBinarySha256 = ledgerBinarySha256(runs);
 	const releaseSoakHours = numberSum(
 		runs
-			.filter((run) => run.observabilityLevel === "release")
+			.filter(
+				(run) =>
+					run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
 			.map((run) => run.soakHours),
 	);
 	const allSoakIsRelease =
@@ -582,7 +585,10 @@ function buildSummary(
 ): LedgerSummary {
 	const releaseTaggedSoakHours = numberSum(
 		ledger.runs
-			.filter((run) => run.observabilityLevel === "release")
+			.filter(
+				(run) =>
+					run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
 			.map((run) => run.soakHours),
 	);
 	const totalSoakHours = numberSum(ledger.runs.map((run) => run.soakHours));

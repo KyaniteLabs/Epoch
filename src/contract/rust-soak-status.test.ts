@@ -69,6 +69,20 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
 	});
 
+	it("does not count release-observable runs without release tags as release-tagged soak", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ releaseTag: null })]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.totalCompletedSoakHours).toBe(1);
+		expect(status.continuousCleanSoakHours).toBe(1);
+		expect(status.releaseTaggedSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(71);
+	});
+
 	it("preserves continuity across bounded runner bookkeeping gaps", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
