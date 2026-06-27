@@ -235,6 +235,43 @@ describe("buildSoakStatus", () => {
 		);
 	});
 
+	it("does not mark a live runner active for a different ledger", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger-a.json",
+			ledgerRaw: ledger([run()]),
+			stateRaw: {
+				pid: 123,
+				target: "replace",
+				ledger: ".epoch-promotion/soak-ledger-b.json",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(false);
+		expect(status.warnings).toContain(
+			"Runner is active for .epoch-promotion/soak-ledger-b.json, not .epoch-promotion/soak-ledger-a.json.",
+		);
+	});
+
+	it("warns when a live runner state cannot be tied to the requested ledger", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run()]),
+			stateRaw: {
+				pid: 123,
+				target: "replace",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(false);
+		expect(status.warnings).toContain(
+			"Runner state is missing its ledger path; cannot prove it is writing this ledger.",
+		);
+	});
+
 	it("ignores malformed ledger entries instead of crediting soak", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",

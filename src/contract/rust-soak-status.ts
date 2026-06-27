@@ -318,6 +318,10 @@ function rel(path: string): string {
 	return relative(REPO_ROOT, path);
 }
 
+function sameRepoPath(left: string, right: string): boolean {
+	return resolve(REPO_ROOT, left) === resolve(REPO_ROOT, right);
+}
+
 export function buildSoakStatus(input: {
 	ledgerPath: string;
 	ledgerRaw: unknown | null;
@@ -329,8 +333,13 @@ export function buildSoakStatus(input: {
 	const runs = ledger?.runs ?? [];
 	const latestRun = runs.at(-1) ?? null;
 	const runnerState = parseRunnerState(input.stateRaw ?? null);
-	const activeRunner =
+	const runnerProcessAlive =
 		input.runnerAlive ?? (runnerState ? isRunnerProcessAlive(runnerState) : false);
+	const runnerLedgerMatches =
+		runnerState?.ledger !== null &&
+		runnerState?.ledger !== undefined &&
+		sameRepoPath(runnerState.ledger, input.ledgerPath);
+	const activeRunner = runnerProcessAlive && runnerLedgerMatches;
 	const identities = new Set(
 		runs
 			.map((run) => run.rustBinarySha256)
@@ -360,8 +369,18 @@ export function buildSoakStatus(input: {
 	if (identities.size > 1) {
 		warnings.push("Soak ledger contains multiple Rust binary identities.");
 	}
-	if (!activeRunner && runnerState !== null) {
+	if (!runnerProcessAlive && runnerState !== null) {
 		warnings.push("Runner state exists, but the recorded process is not alive.");
+	}
+	if (runnerProcessAlive && runnerState?.ledger === null) {
+		warnings.push(
+			"Runner state is missing its ledger path; cannot prove it is writing this ledger.",
+		);
+	}
+	if (runnerProcessAlive && runnerState?.ledger && !runnerLedgerMatches) {
+		warnings.push(
+			`Runner is active for ${runnerState.ledger}, not ${rel(resolve(REPO_ROOT, input.ledgerPath))}.`,
+		);
 	}
 	if (
 		activeRunner &&
