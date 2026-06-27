@@ -49,6 +49,7 @@ describe("buildSoakStatus", () => {
 				target: "replace",
 				packetDir: ".epoch-promotion/latest",
 				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
 				runsStarted: 1,
 				maxRuns: null,
 				untilTarget: true,
@@ -74,6 +75,9 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
 		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
 		expect(formatSoakStatus(status)).toContain(
+			"runner release tag:  candidate-1",
+		);
+		expect(formatSoakStatus(status)).toContain(
 			`warning:             ${REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING}`,
 		);
 	});
@@ -88,6 +92,7 @@ describe("buildSoakStatus", () => {
 				target: "replace",
 				packetDir: ".epoch-promotion/latest",
 				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
 				runsStarted: 1,
 				maxRuns: null,
 				untilTarget: true,
@@ -117,6 +122,7 @@ describe("buildSoakStatus", () => {
 				target: "replace",
 				packetDir: ".epoch-promotion/latest",
 				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
 				runsStarted: 1,
 				maxRuns: null,
 				untilTarget: true,
@@ -269,6 +275,45 @@ describe("buildSoakStatus", () => {
 		expect(status.activeRunner).toBe(false);
 		expect(status.warnings).toContain(
 			"Runner state is missing its ledger path; cannot prove it is writing this ledger.",
+		);
+	});
+
+	it("warns when an active replacement runner state is missing a release tag", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ performanceEvidenceMode: "qualified" })]),
+			stateRaw: {
+				pid: 123,
+				target: "replace",
+				ledger: ".epoch-promotion/soak-ledger.json",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.warnings).toContain(
+			"Replacement runner state is missing releaseTag; cannot prove which candidate is still soaking.",
+		);
+	});
+
+	it("warns when active runner and latest ledger release tags diverge", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ performanceEvidenceMode: "qualified" })]),
+			stateRaw: {
+				pid: 123,
+				target: "replace",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-2",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.warnings).toContain(
+			"Runner release tag candidate-2 does not match latest ledger run candidate-1.",
 		);
 	});
 

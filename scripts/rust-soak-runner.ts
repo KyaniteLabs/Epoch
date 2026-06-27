@@ -473,6 +473,7 @@ function writeRunState(
 		target: options.target,
 		packetDir: options.packetDir,
 		ledger: options.ledgerPath,
+		releaseTag: options.releaseTag ?? null,
 		runsStarted,
 		maxRuns: options.maxRuns,
 		untilTarget: options.untilTarget,

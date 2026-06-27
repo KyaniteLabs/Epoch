@@ -18,6 +18,7 @@ type RunnerState = {
 	target: Target | null;
 	packetDir: string | null;
 	ledger: string | null;
+	releaseTag: string | null;
 	runsStarted: number | null;
 	maxRuns: number | null;
 	untilTarget: boolean | null;
@@ -224,6 +225,7 @@ function parseRunnerState(raw: unknown): RunnerState | null {
 		target: target === "canary" || target === "replace" ? target : null,
 		packetDir: stringField(raw, "packetDir"),
 		ledger: stringField(raw, "ledger"),
+		releaseTag: stringField(raw, "releaseTag"),
 		runsStarted: Number.isInteger(raw.runsStarted)
 			? Number(raw.runsStarted)
 			: null,
@@ -382,6 +384,21 @@ export function buildSoakStatus(input: {
 			`Runner is active for ${runnerState.ledger}, not ${rel(resolve(REPO_ROOT, input.ledgerPath))}.`,
 		);
 	}
+	if (activeRunner && runnerState?.target === "replace" && !runnerState.releaseTag) {
+		warnings.push(
+			"Replacement runner state is missing releaseTag; cannot prove which candidate is still soaking.",
+		);
+	}
+	if (
+		activeRunner &&
+		runnerState?.releaseTag &&
+		latestRun?.releaseTag &&
+		runnerState.releaseTag !== latestRun.releaseTag
+	) {
+		warnings.push(
+			`Runner release tag ${runnerState.releaseTag} does not match latest ledger run ${latestRun.releaseTag}.`,
+		);
+	}
 	if (
 		activeRunner &&
 		runnerState?.target === "replace" &&
@@ -474,6 +491,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		lines.push(
 			`  runner target:       ${status.runnerState.target ?? "unknown"}`,
 			`  runner started:      ${status.runnerState.startedAt ?? "unknown"}`,
+			`  runner release tag:  ${status.runnerState.releaseTag ?? "unknown"}`,
 		);
 	}
 	for (const warning of status.warnings) {
