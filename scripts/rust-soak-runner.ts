@@ -26,7 +26,10 @@ import type {
 } from "../src/contract/rust-deploy-readiness.js";
 
 type Target = "canary" | "replace";
-type StopReason = "target-reached" | "max-runs-exhausted";
+type StopReason =
+	| "target-reached"
+	| "max-runs-exhausted"
+	| "non-soak-gate-blocked";
 type TargetHoursSource = "default" | "override";
 type StopSatisfiedBy = "scorer" | "target-hours-override" | null;
 
@@ -523,6 +526,10 @@ function targetStatus(
 	return { reached: false, satisfiedBy: null };
 }
 
+function canMoreSoakReachTarget(summary: LedgerSummary): boolean {
+	return summary.readiness.failingGate === "soak";
+}
+
 function buildRunnerSummary(
 	options: CliOptions,
 	ledgerSummary: LedgerSummary,
@@ -624,6 +631,7 @@ try {
 			reached: false,
 			satisfiedBy: null,
 		};
+		let stopReason: StopReason = "max-runs-exhausted";
 
 		while (options.maxRuns === null || runsStarted < options.maxRuns) {
 			writeRunState(statePath, options, runsStarted);
@@ -641,16 +649,20 @@ try {
 				options.targetHoursOverride ?? REQUIRED_SOAK_HOURS[options.target],
 				options.targetHoursOverride !== undefined,
 			);
-			if (latestStatus.reached) break;
+			if (latestStatus.reached) {
+				stopReason = "target-reached";
+				break;
+			}
+			if (options.untilTarget && !canMoreSoakReachTarget(latestLedgerSummary)) {
+				stopReason = "non-soak-gate-blocked";
+				break;
+			}
 		}
 
 		if (!latestLedgerSummary) {
 			throw new Error("No soak runs were started.");
 		}
 
-		const stopReason: StopReason = latestStatus.reached
-			? "target-reached"
-			: "max-runs-exhausted";
 		const runnerSummary = buildRunnerSummary(
 			options,
 			latestLedgerSummary,
