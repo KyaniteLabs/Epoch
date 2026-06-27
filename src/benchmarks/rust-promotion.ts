@@ -78,6 +78,7 @@ type BenchmarkReport = {
 		rustCli: string;
 		dataDir: string;
 		iterationsScale: number;
+		maxIterationsPerTool: number;
 		smoke: boolean;
 	};
 	summary: {
@@ -98,11 +99,13 @@ type CliOptions = {
 	format: "json" | "table";
 	smoke: boolean;
 	iterationsScale: number;
+	maxIterationsPerTool: number;
 	skipBuild: boolean;
 	include?: string[];
 };
 
 const DEFAULT_TOOL_TIMEOUT_MS = 10_000;
+const DEFAULT_QUALIFIED_MAX_ITERATIONS_PER_TOOL = 10;
 
 // ---------------------------------------------------------------------------
 // Tool registry
@@ -398,6 +401,7 @@ function parseCliOptions(): CliOptions {
 		format: "json",
 		smoke: false,
 		iterationsScale: 1,
+		maxIterationsPerTool: DEFAULT_QUALIFIED_MAX_ITERATIONS_PER_TOOL,
 		skipBuild: false,
 	};
 
@@ -415,6 +419,8 @@ function parseCliOptions(): CliOptions {
 			options.smoke = true;
 		} else if (arg === "--iterations-scale") {
 			options.iterationsScale = Number(args[++i]);
+		} else if (arg === "--max-iterations-per-tool") {
+			options.maxIterationsPerTool = Number(args[++i]);
 		} else if (arg === "--skip-build") {
 			options.skipBuild = true;
 		} else if (arg === "--include") {
@@ -423,6 +429,16 @@ function parseCliOptions(): CliOptions {
 			printHelp();
 			process.exit(0);
 		}
+	}
+
+	if (!Number.isFinite(options.iterationsScale) || options.iterationsScale <= 0) {
+		throw new Error("--iterations-scale must be a positive number");
+	}
+	if (
+		!Number.isFinite(options.maxIterationsPerTool) ||
+		options.maxIterationsPerTool < 1
+	) {
+		throw new Error("--max-iterations-per-tool must be at least 1");
 	}
 
 	return options;
@@ -436,6 +452,8 @@ Options:
   --format <json|table>   Output format (default: json)
   --smoke                 Run with minimal iterations for a quick smoke test
   --iterations-scale <n>  Multiply default iteration counts (default: 1)
+  --max-iterations-per-tool <n>
+                          Cap non-smoke cold CLI invocations per tool (default: ${DEFAULT_QUALIFIED_MAX_ITERATIONS_PER_TOOL})
   --skip-build            Assume binaries exist; do not build
   --include <tool1,tool2> Benchmark only the listed tools
   --help, -h              Show this help
@@ -576,11 +594,12 @@ async function measureTool(
 	dataDir: string,
 	smoke: boolean,
 	iterationsScale: number,
+	maxIterationsPerTool: number,
 ): Promise<ToolResult> {
-	const iterations = Math.max(
-		smoke ? 2 : 1,
-		Math.round(tool.iterations * (smoke ? 0 : iterationsScale)),
-	);
+	const scaledIterations = Math.round(tool.iterations * iterationsScale);
+	const iterations = smoke
+		? 2
+		: Math.max(1, Math.min(scaledIterations, maxIterationsPerTool));
 	const tsSamples: LatencySample[] = [];
 	const rustSamples: LatencySample[] = [];
 	let tsErrors = 0;
@@ -915,6 +934,7 @@ function buildReport(
 			rustCli,
 			dataDir,
 			iterationsScale: options.iterationsScale,
+			maxIterationsPerTool: options.maxIterationsPerTool,
 			smoke: options.smoke,
 		},
 		summary: {
@@ -964,6 +984,7 @@ async function main(): Promise<void> {
 				dataDir,
 				options.smoke,
 				options.iterationsScale,
+				options.maxIterationsPerTool,
 			);
 			await attachRssMeasurements(tsCli, rustCli, tool, dataDir, result);
 			results.push(result);
