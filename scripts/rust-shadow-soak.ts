@@ -29,6 +29,7 @@ type CliOptions = {
 	iterations: number;
 	minSeconds: number;
 	output?: string;
+	releaseTag?: string;
 	noBuild: boolean;
 	quiet: boolean;
 };
@@ -57,6 +58,7 @@ type ShadowSoakReport = {
 		iterationsCompleted: number;
 		minSecondsRequested: number;
 		rustBinary: string | null;
+		releaseTag: string | null;
 	};
 	publicSurfaceMatch: boolean;
 	outputParityPercent: number;
@@ -67,7 +69,7 @@ type ShadowSoakReport = {
 	dataLossIncidents: number;
 	rollbackValidated: false;
 	rollbackRehearsed: false;
-	observabilityLevel: "tool";
+	observabilityLevel: "tool" | "release";
 	unresolvedTelemetryAnomalies: number;
 	compatibilityExceptionsApproved: boolean;
 	iterations: IterationSummary[];
@@ -98,6 +100,8 @@ function parseArgs(argv: string[]): CliOptions {
 			options.minSeconds = nonNegativeNumber(args[++i], "--min-seconds");
 		} else if (arg === "--output" || arg === "-o") {
 			options.output = args[++i];
+		} else if (arg === "--release-tag") {
+			options.releaseTag = nonEmptyString(args[++i], "--release-tag");
 		} else if (arg === "--no-build") {
 			options.noBuild = true;
 		} else if (arg === "--quiet") {
@@ -129,6 +133,13 @@ function nonNegativeNumber(raw: string | undefined, label: string): number {
 	return value;
 }
 
+function nonEmptyString(raw: string | undefined, label: string): string {
+	if (!raw?.trim()) {
+		throw new Error(`${label} must not be empty.`);
+	}
+	return raw;
+}
+
 function usage(): string {
 	return [
 		"Usage: tsx scripts/rust-shadow-soak.ts [options]",
@@ -137,6 +148,7 @@ function usage(): string {
 		"  --iterations <n>     Minimum parity-loop iterations to complete (default: 3)",
 		"  --min-seconds <n>    Minimum wall-clock soak seconds to observe (default: 0)",
 		"  --output, -o <path>  Write JSON readiness evidence to a file",
+		"  --release-tag <tag>  Mark comparisons as release-tagged observability evidence",
 		"  --no-build           Do not build the release Rust CLI before running",
 		"  --quiet              Suppress the human summary",
 		"",
@@ -278,6 +290,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 			iterationsCompleted: iterations.length,
 			minSecondsRequested: options.minSeconds,
 			rustBinary,
+			releaseTag: options.releaseTag ?? null,
 		},
 		publicSurfaceMatch,
 		outputParityPercent,
@@ -288,7 +301,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 		dataLossIncidents,
 		rollbackValidated: false,
 		rollbackRehearsed: false,
-		observabilityLevel: "tool",
+		observabilityLevel: options.releaseTag ? "release" : "tool",
 		unresolvedTelemetryAnomalies,
 		compatibilityExceptionsApproved:
 			outputParityPercent >= 100 &&
@@ -312,6 +325,7 @@ function printSummary(report: ShadowSoakReport): void {
 			`  crashes:             ${report.crashes}`,
 			`  data loss incidents: ${report.dataLossIncidents}`,
 			`  observability:       ${report.observabilityLevel}`,
+			`  release tag:         ${report.meta.releaseTag ?? "none"}`,
 			`  rust binary:         ${report.meta.rustBinary ?? "unavailable"}`,
 			"",
 		].join("\n"),

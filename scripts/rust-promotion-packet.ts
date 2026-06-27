@@ -23,6 +23,7 @@ type CliOptions = {
 	outputDir: string;
 	iterations: number;
 	minSeconds: number;
+	releaseTag?: string;
 	keepExisting: boolean;
 	quiet: boolean;
 };
@@ -57,6 +58,7 @@ type PacketSummary = {
 		};
 		observability: {
 			level: string;
+			releaseTag: string | null;
 			canaryRequires: "tool";
 			replaceRequires: "release";
 		};
@@ -93,6 +95,8 @@ function parseArgs(argv: string[]): CliOptions {
 			options.iterations = positiveInteger(args[++i], "--iterations");
 		} else if (arg === "--min-seconds") {
 			options.minSeconds = nonNegativeNumber(args[++i], "--min-seconds");
+		} else if (arg === "--release-tag") {
+			options.releaseTag = nonEmptyString(args[++i], "--release-tag");
 		} else if (arg === "--keep-existing") {
 			options.keepExisting = true;
 		} else if (arg === "--quiet") {
@@ -128,6 +132,13 @@ function nonNegativeNumber(raw: string | undefined, label: string): number {
 	return value;
 }
 
+function nonEmptyString(raw: string | undefined, label: string): string {
+	if (!raw?.trim()) {
+		throw new Error(`${label} must not be empty.`);
+	}
+	return raw;
+}
+
 function usage(): string {
 	return [
 		"Usage: tsx scripts/rust-promotion-packet.ts [options]",
@@ -136,6 +147,7 @@ function usage(): string {
 		"  --output-dir, -o <dir>  Local packet directory (default: .epoch-promotion/latest)",
 		"  --iterations <n>        Shadow-soak parity iterations (default: 3)",
 		"  --min-seconds <n>       Minimum shadow-soak wall time (default: 0)",
+		"  --release-tag <tag>     Mark TS-oracle comparisons as release observability evidence",
 		"  --keep-existing         Do not remove the output directory before writing",
 		"  --quiet                 Suppress progress and summary output",
 		"",
@@ -173,6 +185,7 @@ function buildSummary(
 	outputDir: string,
 	readinessInput: ReadinessInput,
 	readiness: ReadinessAssessment,
+	releaseTag: string | undefined,
 ): PacketSummary {
 	return {
 		generatedAt: new Date().toISOString(),
@@ -201,6 +214,7 @@ function buildSummary(
 			},
 			observability: {
 				level: readinessInput.parity.observabilityLevel,
+				releaseTag: releaseTag ?? null,
 				canaryRequires: "tool",
 				replaceRequires: "release",
 			},
@@ -230,6 +244,7 @@ function printSummary(summary: PacketSummary): void {
 			`  soak hours:          ${summary.evidence.reliability.soakHours.toFixed(4)}`,
 			`  rollback rehearsed:  ${summary.evidence.rollback.rehearsed}`,
 			`  observability:       ${summary.evidence.observability.level}`,
+			`  release tag:         ${summary.evidence.observability.releaseTag ?? "none"}`,
 			`  summary file:        ${summary.files.summary}`,
 			"",
 		].join("\n"),
@@ -278,7 +293,7 @@ async function main(): Promise<void> {
 		perfPath,
 	], options);
 
-	run("shadow soak evidence", "pnpm", [
+	const shadowArgs = [
 		"exec",
 		"tsx",
 		"scripts/rust-shadow-soak.ts",
@@ -290,7 +305,11 @@ async function main(): Promise<void> {
 		shadowPath,
 		"--no-build",
 		"--quiet",
-	], options);
+	];
+	if (options.releaseTag) {
+		shadowArgs.push("--release-tag", options.releaseTag);
+	}
+	run("shadow soak evidence", "pnpm", shadowArgs, options);
 
 	run("rollback rehearsal", "pnpm", [
 		"exec",
@@ -309,7 +328,12 @@ async function main(): Promise<void> {
 		perf: readJson(perfPath),
 	});
 	const readiness = assessDeployReadiness(readinessInput);
-	const summary = buildSummary(outputDir, readinessInput, readiness);
+	const summary = buildSummary(
+		outputDir,
+		readinessInput,
+		readiness,
+		options.releaseTag,
+	);
 
 	writeJson(readinessInputPath, readinessInput);
 	writeJson(readinessAssessmentPath, readiness);
