@@ -193,6 +193,7 @@ describe("assessPromotionGate", () => {
 			runnerSummary({
 				target: "replace",
 				releaseTag: null,
+				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
 					failingGate: null,
@@ -206,10 +207,30 @@ describe("assessPromotionGate", () => {
 		expect(result.reason).toContain("release-tagged");
 	});
 
-	it("passes replacement when strict scorer and release evidence agree", () => {
+	it("blocks replacement runner summaries without qualified performance proof", () => {
 		const result = assessPromotionGate(
 			runnerSummary({
 				target: "replace",
+				qualifiedPerformanceEvidence: false,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("qualified non-smoke performance");
+	});
+
+	it("passes replacement when strict scorer, release evidence, and qualified performance agree", () => {
+		const result = assessPromotionGate(
+			runnerSummary({
+				target: "replace",
+				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
 					failingGate: null,

@@ -67,6 +67,7 @@ const runnerSummarySchema = z.object({
 	targetReached: z.boolean(),
 	targetSatisfiedBy: z.literal("scorer").nullable(),
 	smokeTargetReached: z.boolean().default(false),
+	qualifiedPerformanceEvidence: z.boolean().default(false),
 	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
@@ -291,6 +292,15 @@ export function assessPromotionGate(
 			decision,
 			failingGate,
 			"Replacement requires a release-tagged runner summary.",
+		);
+	}
+	if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Replacement requires qualified non-smoke performance benchmark evidence.",
 		);
 	}
 	if (
