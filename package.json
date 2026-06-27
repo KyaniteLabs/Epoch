@@ -49,6 +49,7 @@
     "promotion:rust-adversarial": "tsx scripts/rust-adversarial-contract.ts",
     "promotion:rust-shadow-soak": "tsx scripts/rust-shadow-soak.ts",
     "promotion:rust-rollback": "tsx scripts/rust-rollback-rehearsal.ts",
+    "promotion:rust-packet": "tsx scripts/rust-promotion-packet.ts",
     "promotion:rust-e2e": "cargo build --manifest-path rust/Cargo.toml -p epoch-cli -p epoch-mcp -p epoch-http && cargo run --manifest-path rust/Cargo.toml -p xtask -- e2e",
     "verify:rust-milestone0": "pnpm run contract:inventory && pnpm run typecheck && pnpm test && pnpm run rust:check"
   },
