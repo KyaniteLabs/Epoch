@@ -37,7 +37,8 @@ type CliOptions = {
 	ledgerPath: string;
 	iterations: number;
 	minSeconds: number;
-	maxRuns: number;
+	maxRuns: number | null;
+	untilTarget: boolean;
 	releaseTag?: string;
 	summaryOutput?: string;
 	requireTarget: boolean;
@@ -74,7 +75,8 @@ type RunnerSummary = {
 	smokeTargetReached: boolean;
 	stopReason: StopReason;
 	runsStarted: number;
-	maxRuns: number;
+	maxRuns: number | null;
+	untilTarget: boolean;
 	iterationsPerPacket: number;
 	minSecondsPerPacket: number;
 	releaseTag: string | null;
@@ -120,10 +122,12 @@ function parseArgs(argv: string[]): CliOptions {
 		iterations: DEFAULT_ITERATIONS,
 		minSeconds: DEFAULT_MIN_SECONDS,
 		maxRuns: DEFAULT_MAX_RUNS,
+		untilTarget: false,
 		requireTarget: false,
 		quiet: false,
 	};
 	const args = argv[0] === "--" ? argv.slice(1) : argv;
+	let maxRunsProvided = false;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -141,6 +145,9 @@ function parseArgs(argv: string[]): CliOptions {
 			options.minSeconds = nonNegativeNumber(args[++i], "--min-seconds");
 		} else if (arg === "--max-runs") {
 			options.maxRuns = positiveInteger(args[++i], "--max-runs");
+			maxRunsProvided = true;
+		} else if (arg === "--until-target") {
+			options.untilTarget = true;
 		} else if (arg === "--release-tag") {
 			options.releaseTag = nonEmptyString(args[++i], "--release-tag");
 		} else if (arg === "--summary-output") {
@@ -161,6 +168,9 @@ function parseArgs(argv: string[]): CliOptions {
 		throw new Error(
 			"--target replace requires --release-tag so replacement evidence can reach release observability.",
 		);
+	}
+	if (options.untilTarget && !maxRunsProvided) {
+		options.maxRuns = null;
 	}
 
 	return options;
@@ -214,6 +224,7 @@ function usage(): string {
 		"  --iterations <n>           Shadow-soak iterations per packet (default: 3)",
 		"  --min-seconds <n>          Minimum shadow-soak seconds per packet (default: 60)",
 		"  --max-runs <n>             Maximum packets to run this invocation (default: 1)",
+		"  --until-target             Keep starting packets until the target is reached",
 		"  --release-tag <tag>        Mark packet comparisons as release evidence",
 		"  --summary-output <path>    Runner summary JSON path",
 		"  --require-target           Exit non-zero when target is not reached",
@@ -445,6 +456,8 @@ function writeRunState(
 		packetDir: options.packetDir,
 		ledger: options.ledgerPath,
 		runsStarted,
+		maxRuns: options.maxRuns,
+		untilTarget: options.untilTarget,
 	});
 }
 
@@ -541,6 +554,7 @@ function buildRunnerSummary(
 		stopReason,
 		runsStarted,
 		maxRuns: options.maxRuns,
+		untilTarget: options.untilTarget,
 		iterationsPerPacket: options.iterations,
 		minSecondsPerPacket: options.minSeconds,
 		releaseTag: options.releaseTag ?? null,
@@ -573,6 +587,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  smoke target:        ${summary.smokeTargetReached}`,
 			`  stop reason:         ${summary.stopReason}`,
 			`  runs started:        ${summary.runsStarted}`,
+			`  until target:        ${summary.untilTarget}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
@@ -610,7 +625,7 @@ try {
 			satisfiedBy: null,
 		};
 
-		while (runsStarted < options.maxRuns) {
+		while (options.maxRuns === null || runsStarted < options.maxRuns) {
 			writeRunState(statePath, options, runsStarted);
 			runPackageManagerStep("promotion packet", packetArgs(options), options);
 			runPackageManagerStep(

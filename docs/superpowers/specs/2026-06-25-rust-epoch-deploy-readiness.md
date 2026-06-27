@@ -162,7 +162,7 @@ To keep a long soak resumable, use the runner instead of hand-looping packet plu
 pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
 ```
 
-The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation by raising `--max-runs` and/or `--min-seconds`; manual restarts separated by more than the ledger's continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
 Before canarying or replacing TypeScript, run the final promotion gate against the runner summary:
 
