@@ -181,7 +181,7 @@ pub fn token_time_bridge(params: &TokenCostParams) -> TokenTimeMapping {
         },
         human_readable: format!(
             "Approximately {time_label} for {} tokens with {} ({} reasoning, {} tool calls). Confidence: {}.",
-            format_integerish(params.tokens),
+            format_locale_number(params.tokens),
             params.model,
             params.reasoning_depth.as_str(),
             params.tool_calls,
@@ -388,6 +388,44 @@ fn format_integerish(value: f64) -> String {
     }
 }
 
+fn format_locale_number(value: f64) -> String {
+    let rounded = (value * 1000.0).round() / 1000.0;
+    let raw = if rounded.fract() == 0.0 {
+        format!("{rounded:.0}")
+    } else {
+        let mut out = format!("{rounded:.3}");
+        while out.contains('.') && out.ends_with('0') {
+            out.pop();
+        }
+        if out.ends_with('.') {
+            out.pop();
+        }
+        out
+    };
+
+    let (sign, unsigned) = raw
+        .strip_prefix('-')
+        .map_or(("", raw.as_str()), |value| ("-", value));
+    let (whole, fraction) = unsigned
+        .split_once('.')
+        .map_or((unsigned, None), |(whole, fraction)| {
+            (whole, Some(fraction))
+        });
+    let mut grouped_reversed = String::new();
+    for (index, ch) in whole.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            grouped_reversed.push(',');
+        }
+        grouped_reversed.push(ch);
+    }
+    let grouped = grouped_reversed.chars().rev().collect::<String>();
+
+    match fraction {
+        Some(fraction) if !fraction.is_empty() => format!("{sign}{grouped}.{fraction}"),
+        _ => format!("{sign}{grouped}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -490,6 +528,18 @@ mod tests {
             UrgencyCategory::Short | UrgencyCategory::Medium | UrgencyCategory::Long
         ));
         assert_eq!(result.confidence, ConfidenceLevel::Likely);
+    }
+
+    #[test]
+    fn token_time_bridge_formats_token_count_like_typescript_locale() {
+        let result = token_time_bridge(&TokenCostParams {
+            tokens: 1_200.0,
+            model: "gpt-4o-mini".to_string(),
+            tool_calls: 0,
+            reasoning_depth: ReasoningDepth::Shallow,
+        });
+
+        assert!(result.human_readable.contains("1,200 tokens"));
     }
 
     #[test]

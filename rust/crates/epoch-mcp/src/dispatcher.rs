@@ -568,7 +568,7 @@ impl RustToolDispatcher {
             })
             .collect::<Vec<_>>();
         let summary = if pending.is_empty() {
-            "No pending estimates - all recent estimates have actuals recorded.".to_string()
+            "No pending estimates — all recent estimates have actuals recorded.".to_string()
         } else {
             format!(
                 "{} estimates awaiting actuals. Use record_actual with an estimate ID and the real hours spent to close the feedback loop.",
@@ -1351,6 +1351,15 @@ mod tests {
             .expect("health dispatches");
         assert_eq!(health["totalEstimates"], 1);
         assert_eq!(health["totalActuals"], 1);
+
+        let empty_pending = dispatcher
+            .dispatch("get_pending_estimates", json!({}))
+            .expect("empty pending dispatches");
+        assert_eq!(empty_pending["count"], 0);
+        assert_eq!(
+            empty_pending["summary"],
+            "No pending estimates — all recent estimates have actuals recorded."
+        );
     }
 
     #[test]

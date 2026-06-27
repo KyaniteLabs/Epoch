@@ -95,6 +95,7 @@ pub fn cocomo_validate(
     let mut all_errors = Vec::new();
     let mut all_biases = Vec::new();
     let mut by_type: BTreeMap<String, TypeAccum> = BTreeMap::new();
+    let mut type_order = Vec::new();
     let mut projects_evaluated = 0;
 
     for dataset in filtered_datasets(datasets, dataset_filter) {
@@ -107,6 +108,7 @@ pub fn cocomo_validate(
                 .project_type
                 .clone()
                 .unwrap_or_else(|| "semidetached".to_string());
+            remember_order(&mut type_order, &project_type);
             let coeffs = coefficients
                 .get(&project_type)
                 .or_else(|| coefficients.get("semidetached"))
@@ -197,14 +199,16 @@ pub fn cocomo_validate(
         });
     }
 
-    let type_lines = by_project_type
+    let type_lines = type_order
         .iter()
-        .map(|(project_type, data)| {
-            format!(
-                "  {project_type}: MAPE={}% ({data_count} projects)",
-                percent(data.mape.round()),
-                data_count = data.count
-            )
+        .filter_map(|project_type| {
+            by_project_type.get(project_type).map(|data| {
+                format!(
+                    "  {project_type}: MAPE={}% ({data_count} projects)",
+                    percent(data.mape.round()),
+                    data_count = data.count
+                )
+            })
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -250,15 +254,19 @@ pub fn cocomo_validate_ground_truth(
     }
 
     let mut projects = Vec::new();
+    let mut dataset_order = Vec::new();
+    let mut type_order = Vec::new();
     for dataset in filtered_datasets(datasets, dataset_filter) {
         for project in &dataset.projects {
             if project.kloc <= 0.0 || project.effort_person_months <= 0.0 {
                 continue;
             }
+            remember_order(&mut dataset_order, &dataset.name);
             let project_type = project
                 .project_type
                 .clone()
                 .unwrap_or_else(|| "semidetached".to_string());
+            remember_order(&mut type_order, &project_type);
             projects.push(ProjectPrediction {
                 actual: project.effort_person_months,
                 dataset: dataset.name.clone(),
@@ -370,27 +378,31 @@ pub fn cocomo_validate_ground_truth(
         )
     };
 
-    let dataset_line = by_dataset
+    let dataset_line = dataset_order
         .iter()
-        .map(|(name, data)| {
-            format!(
-                "{name}({}): {} at {}%",
-                data.count,
-                data.best_model,
-                format_number(data.best_mape)
-            )
+        .filter_map(|name| {
+            by_dataset.get(name).map(|data| {
+                format!(
+                    "{name}({}): {} at {}%",
+                    data.count,
+                    data.best_model,
+                    format_number(data.best_mape)
+                )
+            })
         })
         .collect::<Vec<_>>()
         .join(" | ");
-    let type_line = by_type
+    let type_line = type_order
         .iter()
-        .map(|(name, data)| {
-            format!(
-                "{name}({}): {} at {}%",
-                data.count,
-                data.best_model,
-                format_number(data.best_mape)
-            )
+        .filter_map(|name| {
+            by_type.get(name).map(|data| {
+                format!(
+                    "{name}({}): {} at {}%",
+                    data.count,
+                    data.best_model,
+                    format_number(data.best_mape)
+                )
+            })
         })
         .collect::<Vec<_>>()
         .join(" | ");
@@ -604,6 +616,12 @@ fn average(values: &[f64]) -> f64 {
     values.iter().copied().sum::<f64>() / values.len() as f64
 }
 
+fn remember_order(order: &mut Vec<String>, value: &str) {
+    if !order.iter().any(|seen| seen == value) {
+        order.push(value.to_string());
+    }
+}
+
 fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
 }
@@ -689,6 +707,23 @@ mod tests {
         assert!(result.by_project_type.contains_key("embedded"));
         assert!(result.by_project_type.contains_key("semidetached"));
         assert!(!result.by_project_type.contains_key("organic"));
+    }
+
+    #[test]
+    fn validation_human_readable_preserves_typescript_type_order() {
+        let datasets = vec![dataset(
+            "order",
+            vec![
+                project(1, 8.0, 30.0, None),
+                project(2, 30.0, 80.0, Some("embedded")),
+                project(3, 10.0, 24.0, Some("organic")),
+            ],
+        )];
+
+        let result = cocomo_validate(&datasets, None, None).expect("valid");
+
+        assert_before(&result.human_readable, "  semidetached:", "  embedded:");
+        assert_before(&result.human_readable, "  embedded:", "  organic:");
     }
 
     #[test]
@@ -795,6 +830,28 @@ mod tests {
     }
 
     #[test]
+    fn ground_truth_human_readable_preserves_typescript_type_order() {
+        let datasets = vec![dataset(
+            "order",
+            vec![
+                project(1, 8.0, 30.0, None),
+                project(2, 30.0, 80.0, Some("embedded")),
+                project(3, 10.0, 24.0, Some("organic")),
+            ],
+        )];
+
+        let result = cocomo_validate_ground_truth(&datasets, None, 1.07).expect("valid");
+        let by_type = result
+            .human_readable
+            .lines()
+            .find(|line| line.starts_with("By Type:"))
+            .expect("by type line");
+
+        assert_before(by_type, "semidetached(", "embedded(");
+        assert_before(by_type, "embedded(", "organic(");
+    }
+
+    #[test]
     fn ground_truth_serializes_ts_shape_and_valid_pred_ranges() {
         let datasets = sample_ground_truth_datasets();
         let result = cocomo_validate_ground_truth(&datasets, None, 1.07).expect("valid");
@@ -857,5 +914,14 @@ mod tests {
             effort_work_hours: None,
             duration_months: None,
         }
+    }
+
+    fn assert_before(haystack: &str, first: &str, second: &str) {
+        let first_index = haystack.find(first).expect("first marker present");
+        let second_index = haystack.find(second).expect("second marker present");
+        assert!(
+            first_index < second_index,
+            "expected {first:?} before {second:?} in {haystack}"
+        );
     }
 }
