@@ -172,7 +172,13 @@ Before canarying or replacing TypeScript, run the final promotion gate against t
 pnpm run promotion:rust-gate -- --target canary
 ```
 
-The gate exits 0 only when the strict scorer reached the requested target, the summary was not produced with `--target-hours`, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, and replacement evidence is release-tagged. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
+For a long replacement-target runner that is still active, check the cumulative ledger summary without waiting for the final runner summary:
+
+```bash
+pnpm run promotion:rust-gate -- --target canary --ledger .epoch-promotion/soak-ledger.json
+```
+
+The gate exits 0 only when the strict scorer reached the requested target, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, the required total and continuous soak hours are present, and replacement evidence is release-tagged. `--ledger` reads the durable cumulative ledger directly; `--ledger-summary` is also available for a previously written cumulative summary. Runner summaries are additionally rejected if they were produced with `--target-hours`. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
 
 A replacement-target runner summary may be checked against the canary gate; this lets one long replacement soak unlock canary as soon as the strict scorer reaches `CANARY`, while still failing closed until it later reaches `REPLACE`.
 
