@@ -98,3 +98,27 @@ Readiness decisions are computed from parity and performance evidence:
 - `perf.json` for latency, startup, and memory evidence.
 
 The scorer (`pnpm run contract:rust-readiness`) accepts either a single combined `readiness.json` with top-level `parity` and `perf` keys, or the two evidence files passed separately. It emits the decision, the first failing gate, and a short rationale that can be pasted into a release note.
+
+## Promotion Packet Workflow
+
+Use the packet command to generate the evidence chain in one local, repeatable run:
+
+```bash
+pnpm run promotion:rust-packet -- --iterations 3
+```
+
+The command writes a git-ignored packet under `.epoch-promotion/latest/` by default:
+
+- `parity.json` from the strict TypeScript-vs-Rust parity gate.
+- `perf.json` from the promotion benchmark smoke run.
+- `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons.
+- `shadow-soak-rollback.json` after the rollback rehearsal enriches the parity evidence.
+- `readiness-input.json`, `readiness-assessment.json`, and `promotion-packet.json`.
+
+For replacement readiness, release-tag the comparison run:
+
+```bash
+pnpm run promotion:rust-packet -- --iterations 3 --release-tag <release-or-commit-id>
+```
+
+`--release-tag` raises the observability evidence to `release` only for that packet. It does not override the soak gate; `CANARY` still requires at least 24 measured soak hours, and `REPLACE` still requires at least 72 measured soak hours with zero crashes, zero data-loss incidents, and zero unresolved telemetry anomalies.
