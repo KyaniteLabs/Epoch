@@ -28,6 +28,7 @@ import type {
 type Target = "canary" | "replace";
 type StopReason = "target-reached" | "max-runs-exhausted";
 type TargetHoursSource = "default" | "override";
+type StopSatisfiedBy = "scorer" | "target-hours-override" | null;
 
 type CliOptions = {
 	target: Target;
@@ -68,7 +69,8 @@ type RunnerSummary = {
 	targetHours: number;
 	targetHoursSource: TargetHoursSource;
 	targetReached: boolean;
-	targetSatisfiedBy: "scorer" | "target-hours-override" | null;
+	targetSatisfiedBy: "scorer" | null;
+	smokeTargetReached: boolean;
 	stopReason: StopReason;
 	runsStarted: number;
 	maxRuns: number;
@@ -489,7 +491,7 @@ function targetStatus(
 	target: Target,
 	targetHours: number,
 	usesTargetHoursOverride: boolean,
-): { reached: boolean; satisfiedBy: RunnerSummary["targetSatisfiedBy"] } {
+): { reached: boolean; satisfiedBy: StopSatisfiedBy } {
 	if (summary.continuousSoakHours < targetHours) {
 		return { reached: false, satisfiedBy: null };
 	}
@@ -519,14 +521,17 @@ function buildRunnerSummary(
 		targetHours,
 		targetHoursSource === "override",
 	);
+	const targetReached = scorerMeetsTarget(ledgerSummary.readiness, options.target);
 
 	return {
 		generatedAt: new Date().toISOString(),
 		target: options.target,
 		targetHours,
 		targetHoursSource,
-		targetReached: status.reached,
-		targetSatisfiedBy: status.satisfiedBy,
+		targetReached,
+		targetSatisfiedBy: targetReached ? "scorer" : null,
+		smokeTargetReached:
+			!targetReached && status.satisfiedBy === "target-hours-override",
 		stopReason,
 		runsStarted,
 		maxRuns: options.maxRuns,
@@ -558,6 +563,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  target:              ${summary.target}`,
 			`  target reached:      ${summary.targetReached}`,
 			`  satisfied by:        ${summary.targetSatisfiedBy ?? "none"}`,
+			`  smoke target:        ${summary.smokeTargetReached}`,
 			`  stop reason:         ${summary.stopReason}`,
 			`  runs started:        ${summary.runsStarted}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
@@ -633,7 +639,11 @@ try {
 		writeJson(runnerSummaryPath, runnerSummary);
 		if (!options.quiet) printSummary(runnerSummary);
 
-		if (options.requireTarget && !runnerSummary.targetReached) {
+		if (
+			options.requireTarget &&
+			!runnerSummary.targetReached &&
+			!runnerSummary.smokeTargetReached
+		) {
 			exitCode = 2;
 		}
 	} finally {

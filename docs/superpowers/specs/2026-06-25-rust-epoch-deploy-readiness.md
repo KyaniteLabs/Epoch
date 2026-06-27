@@ -162,7 +162,7 @@ To keep a long soak resumable, use the runner instead of hand-looping packet plu
 pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
 ```
 
-The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. Re-run the same command until the summary reports `targetReached: true`, or raise `--max-runs` when a supervised machine is expected to keep running. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. Re-run the same command until the summary reports `targetReached: true`, or raise `--max-runs` when a supervised machine is expected to keep running. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
 The runner uses `.epoch-promotion/soak-runner.lock` to prevent double-counting from overlapping runners and `.epoch-promotion/soak-runner-state.json` as an in-progress sentinel. If a previous runner died before cleanup, the next invocation fails closed until the interrupted run is investigated.
 
@@ -172,4 +172,4 @@ For replacement evidence, the runner requires a release tag:
 pnpm run promotion:rust-soak-runner -- --target replace --release-tag <release-or-commit-id> --max-runs 1
 ```
 
-`--target-hours` is only for local smoke tests of the runner path. Production promotion still depends on the deploy-readiness scorer's fixed 24-hour canary and 72-hour replacement gates.
+`--target-hours` is only for local smoke tests of the runner path. Production promotion still depends on the deploy-readiness scorer's fixed 24-hour canary and 72-hour replacement gates, and deployment automation must ignore `smokeTargetReached`.
