@@ -24,7 +24,9 @@ function runnerSummary(overrides: Record<string, unknown> = {}) {
 
 describe("assessPromotionGate", () => {
 	it("passes when strict scorer reached the canary target", () => {
-		const result = assessPromotionGate(runnerSummary(), "canary");
+		const result = assessPromotionGate(runnerSummary(), "canary", {
+			currentRustBinarySha256: RUST_BINARY_SHA256,
+		});
 
 		expect(result.ok).toBe(true);
 		expect(result.reason).toContain("Strict scorer reached canary");
@@ -70,6 +72,25 @@ describe("assessPromotionGate", () => {
 		expect(result.reason).toContain("missing the Rust binary SHA-256");
 	});
 
+	it("blocks when the current Rust binary does not match soak evidence", () => {
+		const result = assessPromotionGate(runnerSummary(), "canary", {
+			currentRustBinarySha256:
+				"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("does not match soak evidence");
+	});
+
+	it("blocks when the current Rust binary hash is unavailable", () => {
+		const result = assessPromotionGate(runnerSummary(), "canary", {
+			currentRustBinarySha256: null,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("could not be verified");
+	});
+
 	it("blocks replacement without a release tag", () => {
 		const result = assessPromotionGate(
 			runnerSummary({
@@ -99,6 +120,7 @@ describe("assessPromotionGate", () => {
 				},
 			}),
 			"replace",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
 		);
 
 		expect(result.ok).toBe(true);

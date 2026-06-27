@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -27,10 +28,16 @@ export type PromotionGateResult = {
 type CliOptions = {
 	target: Target;
 	summaryPath: string;
+	rustBinaryPath: string;
 	json: boolean;
 };
 
+export type PromotionGateOptions = {
+	currentRustBinarySha256?: string | null;
+};
+
 const DEFAULT_SUMMARY = ".epoch-promotion/latest/soak-runner-summary.json";
+const DEFAULT_RUST_BINARY = "rust/target/release/epoch-cli";
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const DECISION_RANK: Record<
 	z.infer<typeof deployReadinessDecisionSchema>,
@@ -63,6 +70,7 @@ function usage(): string {
 		"",
 		"Options:",
 		`  --summary <path>   Soak runner summary JSON (default: ${DEFAULT_SUMMARY})`,
+		`  --rust-binary <p> Current Rust CLI binary to hash (default: ${DEFAULT_RUST_BINARY})`,
 		"  --target <target>  Required promotion target: canary or replace",
 		"  --json             Emit machine-readable result JSON",
 		"  --help, -h         Show this help",
@@ -78,6 +86,7 @@ function parseTarget(raw: string | undefined): Target {
 function parseArgs(argv: string[]): CliOptions {
 	const options: Partial<CliOptions> = {
 		summaryPath: DEFAULT_SUMMARY,
+		rustBinaryPath: DEFAULT_RUST_BINARY,
 		json: false,
 	};
 	const args = argv[0] === "--" ? argv.slice(1) : argv;
@@ -90,6 +99,12 @@ function parseArgs(argv: string[]): CliOptions {
 			const summaryPath = args[++i];
 			if (!summaryPath?.trim()) throw new Error("--summary must not be empty.");
 			options.summaryPath = summaryPath;
+		} else if (arg === "--rust-binary") {
+			const rustBinaryPath = args[++i];
+			if (!rustBinaryPath?.trim()) {
+				throw new Error("--rust-binary must not be empty.");
+			}
+			options.rustBinaryPath = rustBinaryPath;
 		} else if (arg === "--json") {
 			options.json = true;
 		} else if (arg === "--help" || arg === "-h") {
@@ -124,10 +139,12 @@ function result(
 export function assessPromotionGate(
 	rawSummary: unknown,
 	target: Target,
+	options: PromotionGateOptions = {},
 ): PromotionGateResult {
 	const summary = runnerSummarySchema.parse(rawSummary);
 	const decision = summary.readiness.decision;
 	const failingGate = summary.readiness.failingGate;
+	const checksCurrentBinary = "currentRustBinarySha256" in options;
 
 	if (summary.target !== target) {
 		return result(
@@ -154,6 +171,27 @@ export function assessPromotionGate(
 			decision,
 			failingGate,
 			"Runner summary is missing the Rust binary SHA-256.",
+		);
+	}
+	if (checksCurrentBinary && !options.currentRustBinarySha256) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Current Rust binary SHA-256 could not be verified.",
+		);
+	}
+	if (
+		checksCurrentBinary &&
+		options.currentRustBinarySha256 !== summary.rustBinarySha256
+	) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			`Current Rust binary SHA-256 ${options.currentRustBinarySha256} does not match soak evidence ${summary.rustBinarySha256}.`,
 		);
 	}
 	if (target === "replace" && !summary.releaseTag) {
@@ -197,11 +235,18 @@ function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
 
+function sha256File(path: string): string {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
 export function main(argv: string[]): number {
 	try {
 		const options = parseArgs(argv);
 		const rawSummary = readJson(resolve(options.summaryPath));
-		const gate = assessPromotionGate(rawSummary, options.target);
+		const currentRustBinarySha256 = sha256File(resolve(options.rustBinaryPath));
+		const gate = assessPromotionGate(rawSummary, options.target, {
+			currentRustBinarySha256,
+		});
 		if (options.json) {
 			process.stdout.write(`${JSON.stringify(gate, null, 2)}\n`);
 		} else {

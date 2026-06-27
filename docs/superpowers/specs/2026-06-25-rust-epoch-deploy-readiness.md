@@ -170,7 +170,7 @@ Before canarying or replacing TypeScript, run the final promotion gate against t
 pnpm run promotion:rust-gate -- --target canary
 ```
 
-The gate exits 0 only when the strict scorer reached the requested target, the summary was not produced with `--target-hours`, the Rust binary SHA-256 is present, and replacement evidence is release-tagged.
+The gate exits 0 only when the strict scorer reached the requested target, the summary was not produced with `--target-hours`, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, and replacement evidence is release-tagged. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
 
 The runner uses `.epoch-promotion/soak-runner.lock` to prevent double-counting from overlapping runners and `.epoch-promotion/soak-runner-state.json` as an in-progress sentinel. If a previous runner died before cleanup, the next invocation fails closed until the interrupted run is investigated.
 
