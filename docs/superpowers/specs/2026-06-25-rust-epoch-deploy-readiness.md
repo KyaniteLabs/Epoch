@@ -164,6 +164,14 @@ pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-ta
 
 The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. Re-run the same command until the summary reports `targetReached: true`, or raise `--max-runs` when a supervised machine is expected to keep running. `targetReached` is scorer-only deployment evidence; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
+Before canarying or replacing TypeScript, run the final promotion gate against the runner summary:
+
+```bash
+pnpm run promotion:rust-gate -- --target canary
+```
+
+The gate exits 0 only when the strict scorer reached the requested target, the summary was not produced with `--target-hours`, the Rust binary SHA-256 is present, and replacement evidence is release-tagged.
+
 The runner uses `.epoch-promotion/soak-runner.lock` to prevent double-counting from overlapping runners and `.epoch-promotion/soak-runner-state.json` as an in-progress sentinel. If a previous runner died before cleanup, the next invocation fails closed until the interrupted run is investigated.
 
 For replacement evidence, the runner requires a release tag:
