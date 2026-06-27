@@ -52,6 +52,24 @@ function withPerf(overrides: Partial<ReadinessInput["perf"]>): ReadinessInput {
 	return { ...base, perf: { ...base.perf, ...overrides } };
 }
 
+function rawReplaceReadyParity(): Record<string, unknown> {
+	return {
+		toolsCovered: Array.from({ length: 24 }, (_, index) => `tool_${index}`),
+		outputParityPercent: 100,
+		errorCompatibilityPercent: 100,
+		diffs: [],
+		meta: { rustBinarySha256: RUST_BINARY_SHA256 },
+		soakHours: 72,
+		continuousSoakHours: 72,
+		crashes: 0,
+		dataLossIncidents: 0,
+		rollbackValidated: true,
+		rollbackRehearsed: true,
+		observabilityLevel: "release",
+		unresolvedTelemetryAnomalies: 0,
+	};
+}
+
 describe("assessDeployReadiness", () => {
 	it("returns NO when public surface parity is missing", () => {
 		const result = assessDeployReadiness(
@@ -279,6 +297,59 @@ describe("assessDeployReadinessFromJson", () => {
 
 		expect(result.decision).toBe("SHADOW");
 		expect(result.failingGate).toBe("soak");
+	});
+
+	it("fails performance closed when raw benchmark reports omit required metrics", () => {
+		const input = normalizeReadinessEvidence({
+			parity: rawReplaceReadyParity(),
+			perf: {
+				summary: {
+					tsMedianTotalMs: 1000,
+					rustMedianTotalMs: 100,
+				},
+				tools: [],
+			},
+		});
+
+		expect(input.perf).toMatchObject({
+			medianLatencyImprovementPercent: 90,
+			p95LatencyImprovementPercent: -100,
+			startupImprovementPercent: -100,
+			memoryImprovementPercent: -100,
+		});
+
+		const result = assessDeployReadiness(input);
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("performance");
+	});
+
+	it("fails performance closed when raw benchmark reports omit memory evidence", () => {
+		const input = normalizeReadinessEvidence({
+			parity: rawReplaceReadyParity(),
+			perf: {
+				summary: {
+					tsMedianTotalMs: 1000,
+					rustMedianTotalMs: 100,
+				},
+				tools: [
+					{
+						ts: { p95Ms: 1000, coldStartMs: 1000 },
+						rust: { p95Ms: 100, coldStartMs: 100 },
+					},
+				],
+			},
+		});
+
+		expect(input.perf).toMatchObject({
+			medianLatencyImprovementPercent: 90,
+			p95LatencyImprovementPercent: 90,
+			startupImprovementPercent: 90,
+			memoryImprovementPercent: -100,
+		});
+
+		const result = assessDeployReadiness(input);
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("performance");
 	});
 
 	it("lets explicit ops evidence in raw reports promote beyond shadow", () => {

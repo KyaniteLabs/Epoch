@@ -49,6 +49,8 @@ export type ReadinessAssessment = {
 type Gate = { gate: string; ok: boolean };
 type JsonObject = Record<string, unknown>;
 
+const MISSING_PERFORMANCE_EVIDENCE_PERCENT = -100;
+
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -85,25 +87,57 @@ function improvementPercent(baseline: number, candidate: number): number {
 	return ((baseline - candidate) / baseline) * 100;
 }
 
-function sumMetrics(tools: unknown[], runtime: "ts" | "rust", metric: string): number {
-	return tools.reduce<number>((total, tool) => {
-		if (!isObject(tool)) return total;
-		const runtimeMetrics = objectField(tool, runtime);
-		if (!runtimeMetrics) return total;
-		return total + (numberField(runtimeMetrics, metric) ?? 0);
-	}, 0);
+function improvementOrMissingEvidence(
+	baseline: number | undefined,
+	candidate: number | undefined,
+): number {
+	if (
+		baseline === undefined ||
+		candidate === undefined ||
+		baseline <= 0 ||
+		candidate < 0
+	) {
+		return MISSING_PERFORMANCE_EVIDENCE_PERCENT;
+	}
+	return improvementPercent(baseline, candidate);
 }
 
-function maxMetrics(tools: unknown[], runtime: "ts" | "rust", metric: string): number {
-	return Math.max(
-		0,
-		...tools.map((tool) => {
-			if (!isObject(tool)) return 0;
-			const runtimeMetrics = objectField(tool, runtime);
-			if (!runtimeMetrics) return 0;
-			return numberField(runtimeMetrics, metric) ?? 0;
-		}),
-	);
+function sumMetricsIfComplete(
+	tools: unknown[],
+	runtime: "ts" | "rust",
+	metric: string,
+): number | undefined {
+	if (tools.length === 0) return undefined;
+
+	let total = 0;
+	for (const tool of tools) {
+		if (!isObject(tool)) return undefined;
+		const runtimeMetrics = objectField(tool, runtime);
+		if (!runtimeMetrics) return undefined;
+		const metricValue = numberField(runtimeMetrics, metric);
+		if (metricValue === undefined || metricValue < 0) return undefined;
+		total += metricValue;
+	}
+	return total;
+}
+
+function maxMetricsIfComplete(
+	tools: unknown[],
+	runtime: "ts" | "rust",
+	metric: string,
+): number | undefined {
+	if (tools.length === 0) return undefined;
+
+	let max = 0;
+	for (const tool of tools) {
+		if (!isObject(tool)) return undefined;
+		const runtimeMetrics = objectField(tool, runtime);
+		if (!runtimeMetrics) return undefined;
+		const metricValue = numberField(runtimeMetrics, metric);
+		if (metricValue === undefined || metricValue < 0) return undefined;
+		max = Math.max(max, metricValue);
+	}
+	return max;
 }
 
 function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
@@ -166,24 +200,30 @@ function normalizePerfEvidence(raw: unknown): ReadinessInput["perf"] {
 	const rustMedianTotal = summary
 		? numberField(summary, "rustMedianTotalMs")
 		: undefined;
-	const tsP95Total = sumMetrics(tools, "ts", "p95Ms");
-	const rustP95Total = sumMetrics(tools, "rust", "p95Ms");
-	const tsStartupTotal = sumMetrics(tools, "ts", "coldStartMs");
-	const rustStartupTotal = sumMetrics(tools, "rust", "coldStartMs");
-	const tsMemoryMax = maxMetrics(tools, "ts", "maxRssKb");
-	const rustMemoryMax = maxMetrics(tools, "rust", "maxRssKb");
+	const tsP95Total = sumMetricsIfComplete(tools, "ts", "p95Ms");
+	const rustP95Total = sumMetricsIfComplete(tools, "rust", "p95Ms");
+	const tsStartupTotal = sumMetricsIfComplete(tools, "ts", "coldStartMs");
+	const rustStartupTotal = sumMetricsIfComplete(tools, "rust", "coldStartMs");
+	const tsMemoryMax = maxMetricsIfComplete(tools, "ts", "maxRssKb");
+	const rustMemoryMax = maxMetricsIfComplete(tools, "rust", "maxRssKb");
 
 	return perfEvidenceSchema.parse({
-		medianLatencyImprovementPercent: improvementPercent(
-			tsMedianTotal ?? 0,
-			rustMedianTotal ?? 0,
+		medianLatencyImprovementPercent: improvementOrMissingEvidence(
+			tsMedianTotal,
+			rustMedianTotal,
 		),
-		p95LatencyImprovementPercent: improvementPercent(tsP95Total, rustP95Total),
-		startupImprovementPercent: improvementPercent(
+		p95LatencyImprovementPercent: improvementOrMissingEvidence(
+			tsP95Total,
+			rustP95Total,
+		),
+		startupImprovementPercent: improvementOrMissingEvidence(
 			tsStartupTotal,
 			rustStartupTotal,
 		),
-		memoryImprovementPercent: improvementPercent(tsMemoryMax, rustMemoryMax),
+		memoryImprovementPercent: improvementOrMissingEvidence(
+			tsMemoryMax,
+			rustMemoryMax,
+		),
 	});
 }
 

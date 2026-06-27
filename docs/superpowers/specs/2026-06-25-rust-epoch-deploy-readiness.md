@@ -72,6 +72,8 @@ Thresholds:
 - `CANARY` requires at least 10% median latency improvement and no regression greater than 5% on p95 or memory.
 - `REPLACE` requires at least 20% median latency improvement, at least 10% p95 improvement, and no regression in startup or memory.
 
+Raw benchmark reports fail closed when p95, startup, or memory measurements are missing. Missing evidence is not treated as zero regression.
+
 ### 5. Soak Reliability Gate
 
 Rust must survive sustained use without data loss, panics, or contract drift.
