@@ -126,6 +126,10 @@ function requiredDecision(target: Target): "CANARY" | "REPLACE" {
 	return target === "replace" ? "REPLACE" : "CANARY";
 }
 
+function targetRank(target: Target): number {
+	return DECISION_RANK[requiredDecision(target)];
+}
+
 function result(
 	ok: boolean,
 	target: Target,
@@ -145,14 +149,16 @@ export function assessPromotionGate(
 	const decision = summary.readiness.decision;
 	const failingGate = summary.readiness.failingGate;
 	const checksCurrentBinary = "currentRustBinarySha256" in options;
+	const requestedTargetRank = targetRank(target);
+	const summaryTargetRank = targetRank(summary.target);
 
-	if (summary.target !== target) {
+	if (summaryTargetRank < requestedTargetRank) {
 		return result(
 			false,
 			target,
 			decision,
 			failingGate,
-			`Runner summary target is ${summary.target}, not ${target}.`,
+			`Runner summary target is ${summary.target}, which is below requested ${target}.`,
 		);
 	}
 	if (summary.targetHoursSource !== "default" || summary.smokeTargetReached) {
@@ -203,7 +209,10 @@ export function assessPromotionGate(
 			"Replacement requires a release-tagged runner summary.",
 		);
 	}
-	if (!summary.targetReached || summary.targetSatisfiedBy !== "scorer") {
+	if (
+		summary.target === target &&
+		(!summary.targetReached || summary.targetSatisfiedBy !== "scorer")
+	) {
 		return result(
 			false,
 			target,
@@ -212,7 +221,7 @@ export function assessPromotionGate(
 			`Strict scorer has not reached ${target}; first blocker is ${failingGate ?? "unknown"}.`,
 		);
 	}
-	if (DECISION_RANK[decision] < DECISION_RANK[requiredDecision(target)]) {
+	if (DECISION_RANK[decision] < requestedTargetRank) {
 		return result(
 			false,
 			target,

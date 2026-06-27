@@ -174,6 +174,8 @@ pnpm run promotion:rust-gate -- --target canary
 
 The gate exits 0 only when the strict scorer reached the requested target, the summary was not produced with `--target-hours`, the Rust binary SHA-256 is present, the current deploy binary hash matches the soak evidence, and replacement evidence is release-tagged. By default the gate hashes `rust/target/release/epoch-cli`; pass `--rust-binary <path>` when deployment uses a packaged binary at a different path.
 
+A replacement-target runner summary may be checked against the canary gate; this lets one long replacement soak unlock canary as soon as the strict scorer reaches `CANARY`, while still failing closed until it later reaches `REPLACE`.
+
 The runner uses `.epoch-promotion/soak-runner.lock` to prevent double-counting from overlapping runners and `.epoch-promotion/soak-runner-state.json` as an in-progress sentinel. If a previous runner died before cleanup, the next invocation fails closed until the interrupted run is investigated.
 
 For replacement evidence, the runner requires a release tag:

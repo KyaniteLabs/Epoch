@@ -52,14 +52,54 @@ describe("assessPromotionGate", () => {
 		expect(result.reason).toContain("smoke target override");
 	});
 
-	it("blocks target mismatches", () => {
+	it("blocks weaker runner summaries for stronger requested targets", () => {
 		const result = assessPromotionGate(
 			runnerSummary({ target: "canary" }),
 			"replace",
 		);
 
 		expect(result.ok).toBe(false);
-		expect(result.reason).toContain("not replace");
+		expect(result.reason).toContain("below requested replace");
+	});
+
+	it("accepts replacement-target summaries for canary once the strict scorer reaches canary", () => {
+		const result = assessPromotionGate(
+			runnerSummary({
+				target: "replace",
+				targetReached: false,
+				targetSatisfiedBy: null,
+				readiness: {
+					decision: "CANARY",
+					failingGate: "soak",
+					rationale: "Ready for canary; still soaking for replacement.",
+				},
+			}),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(true);
+		expect(result.reason).toContain("Strict scorer reached canary");
+	});
+
+	it("blocks replacement-target summaries for canary until the strict scorer reaches canary", () => {
+		const result = assessPromotionGate(
+			runnerSummary({
+				target: "replace",
+				targetReached: false,
+				targetSatisfiedBy: null,
+				readiness: {
+					decision: "SHADOW",
+					failingGate: "soak",
+					rationale: "Still soaking.",
+				},
+			}),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("Readiness decision SHADOW is below CANARY");
 	});
 
 	it("blocks missing Rust binary identity", () => {
