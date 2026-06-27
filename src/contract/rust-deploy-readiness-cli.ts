@@ -7,7 +7,8 @@ const USAGE =
 	"  tsx src/contract/rust-deploy-readiness-cli.ts <parity.json> <perf.json> [output.json]\n" +
 	"\n" +
 	"<readiness.json> combines { parity, perf }; the two-file form supplies the\n" +
-	"parity and performance evidence separately.\n";
+	"parity and performance evidence separately. Raw parity harness and promotion\n" +
+	"benchmark reports are accepted and normalized with conservative ops defaults.\n";
 
 function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;

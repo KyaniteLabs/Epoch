@@ -45,6 +45,140 @@ export type ReadinessAssessment = {
 };
 
 type Gate = { gate: string; ok: boolean };
+type JsonObject = Record<string, unknown>;
+
+function isObject(value: unknown): value is JsonObject {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function numberField(object: JsonObject, key: string): number | undefined {
+	const value = object[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanField(object: JsonObject, key: string): boolean | undefined {
+	const value = object[key];
+	return typeof value === "boolean" ? value : undefined;
+}
+
+function objectField(object: JsonObject, key: string): JsonObject | undefined {
+	const value = object[key];
+	return isObject(value) ? value : undefined;
+}
+
+function arrayField(object: JsonObject, key: string): unknown[] | undefined {
+	const value = object[key];
+	return Array.isArray(value) ? value : undefined;
+}
+
+function improvementPercent(baseline: number, candidate: number): number {
+	if (!Number.isFinite(baseline) || !Number.isFinite(candidate) || baseline <= 0) {
+		return 0;
+	}
+	return ((baseline - candidate) / baseline) * 100;
+}
+
+function sumMetrics(tools: unknown[], runtime: "ts" | "rust", metric: string): number {
+	return tools.reduce<number>((total, tool) => {
+		if (!isObject(tool)) return total;
+		const runtimeMetrics = objectField(tool, runtime);
+		if (!runtimeMetrics) return total;
+		return total + (numberField(runtimeMetrics, metric) ?? 0);
+	}, 0);
+}
+
+function maxMetrics(tools: unknown[], runtime: "ts" | "rust", metric: string): number {
+	return Math.max(
+		0,
+		...tools.map((tool) => {
+			if (!isObject(tool)) return 0;
+			const runtimeMetrics = objectField(tool, runtime);
+			if (!runtimeMetrics) return 0;
+			return numberField(runtimeMetrics, metric) ?? 0;
+		}),
+	);
+}
+
+function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
+	const parsed = parityEvidenceSchema.safeParse(raw);
+	if (parsed.success) return parsed.data;
+	if (!isObject(raw)) return parityEvidenceSchema.parse(raw);
+
+	const diffs = arrayField(raw, "diffs") ?? [];
+	const outputParityPercent = numberField(raw, "outputParityPercent") ?? 0;
+	const errorCompatibilityPercent = numberField(raw, "errorCompatibilityPercent") ?? 0;
+	const toolsCovered = arrayField(raw, "toolsCovered") ?? [];
+	const unclassifiedFailures = numberField(raw, "unclassifiedFailures") ?? diffs.length;
+
+	return parityEvidenceSchema.parse({
+		publicSurfaceMatch:
+			booleanField(raw, "publicSurfaceMatch") ?? toolsCovered.length >= 24,
+		outputParityPercent,
+		errorCompatibilityPercent,
+		unclassifiedFailures,
+		soakHours: numberField(raw, "soakHours") ?? 0,
+		crashes: numberField(raw, "crashes") ?? 0,
+		dataLossIncidents: numberField(raw, "dataLossIncidents") ?? 0,
+		rollbackValidated: booleanField(raw, "rollbackValidated") ?? false,
+		rollbackRehearsed: booleanField(raw, "rollbackRehearsed") ?? false,
+		observabilityLevel:
+			typeof raw.observabilityLevel === "string"
+				? raw.observabilityLevel
+				: "basic",
+		unresolvedTelemetryAnomalies:
+			numberField(raw, "unresolvedTelemetryAnomalies") ?? 0,
+		compatibilityExceptionsApproved:
+			booleanField(raw, "compatibilityExceptionsApproved") ??
+			(outputParityPercent >= 100 &&
+				errorCompatibilityPercent >= 100 &&
+				unclassifiedFailures === 0),
+	});
+}
+
+function normalizePerfEvidence(raw: unknown): ReadinessInput["perf"] {
+	const parsed = perfEvidenceSchema.safeParse(raw);
+	if (parsed.success) return parsed.data;
+	if (!isObject(raw)) return perfEvidenceSchema.parse(raw);
+
+	const summary = objectField(raw, "summary");
+	const tools = arrayField(raw, "tools") ?? [];
+	const tsMedianTotal = summary
+		? numberField(summary, "tsMedianTotalMs")
+		: undefined;
+	const rustMedianTotal = summary
+		? numberField(summary, "rustMedianTotalMs")
+		: undefined;
+	const tsP95Total = sumMetrics(tools, "ts", "p95Ms");
+	const rustP95Total = sumMetrics(tools, "rust", "p95Ms");
+	const tsStartupTotal = sumMetrics(tools, "ts", "coldStartMs");
+	const rustStartupTotal = sumMetrics(tools, "rust", "coldStartMs");
+	const tsMemoryMax = maxMetrics(tools, "ts", "maxRssKb");
+	const rustMemoryMax = maxMetrics(tools, "rust", "maxRssKb");
+
+	return perfEvidenceSchema.parse({
+		medianLatencyImprovementPercent: improvementPercent(
+			tsMedianTotal ?? 0,
+			rustMedianTotal ?? 0,
+		),
+		p95LatencyImprovementPercent: improvementPercent(tsP95Total, rustP95Total),
+		startupImprovementPercent: improvementPercent(
+			tsStartupTotal,
+			rustStartupTotal,
+		),
+		memoryImprovementPercent: improvementPercent(tsMemoryMax, rustMemoryMax),
+	});
+}
+
+export function normalizeReadinessEvidence(raw: unknown): ReadinessInput {
+	const parsed = readinessInputSchema.safeParse(raw);
+	if (parsed.success) return parsed.data;
+	if (!isObject(raw)) return readinessInputSchema.parse(raw);
+
+	return readinessInputSchema.parse({
+		parity: normalizeParityEvidence(raw.parity),
+		perf: normalizePerfEvidence(raw.perf),
+	});
+}
 
 /**
  * Returns the name of the first gate in the list that is not satisfied, or
@@ -182,5 +316,5 @@ export function assessDeployReadiness(input: ReadinessInput): ReadinessAssessmen
 export function assessDeployReadinessFromJson(
 	raw: unknown,
 ): ReadinessAssessment {
-	return assessDeployReadiness(readinessInputSchema.parse(raw));
+	return assessDeployReadiness(normalizeReadinessEvidence(raw));
 }

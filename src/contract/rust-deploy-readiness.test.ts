@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	assessDeployReadiness,
 	assessDeployReadinessFromJson,
+	normalizeReadinessEvidence,
 	type ReadinessInput,
 } from "./rust-deploy-readiness.js";
 
@@ -181,6 +182,89 @@ describe("assessDeployReadiness", () => {
 });
 
 describe("assessDeployReadinessFromJson", () => {
+	it("normalizes raw parity and benchmark reports with conservative ops defaults", () => {
+		const input = normalizeReadinessEvidence({
+			parity: {
+				toolsCovered: Array.from({ length: 24 }, (_, index) => `tool_${index}`),
+				outputParityPercent: 100,
+				errorCompatibilityPercent: 100,
+				diffs: [],
+			},
+			perf: {
+				summary: {
+					tsMedianTotalMs: 1000,
+					rustMedianTotalMs: 100,
+				},
+				tools: [
+					{
+						ts: { p95Ms: 600, coldStartMs: 700, maxRssKb: 200_000 },
+						rust: { p95Ms: 60, coldStartMs: 70, maxRssKb: 20_000 },
+					},
+					{
+						ts: { p95Ms: 400, coldStartMs: 300, maxRssKb: 180_000 },
+						rust: { p95Ms: 40, coldStartMs: 30, maxRssKb: 18_000 },
+					},
+				],
+			},
+		});
+
+		expect(input).toMatchObject({
+			parity: {
+				publicSurfaceMatch: true,
+				outputParityPercent: 100,
+				errorCompatibilityPercent: 100,
+				unclassifiedFailures: 0,
+				soakHours: 0,
+				rollbackValidated: false,
+				observabilityLevel: "basic",
+				compatibilityExceptionsApproved: true,
+			},
+			perf: {
+				medianLatencyImprovementPercent: 90,
+				p95LatencyImprovementPercent: 90,
+				startupImprovementPercent: 90,
+				memoryImprovementPercent: 90,
+			},
+		});
+
+		const result = assessDeployReadiness(input);
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("soak");
+	});
+
+	it("lets explicit ops evidence in raw reports promote beyond shadow", () => {
+		const result = assessDeployReadinessFromJson({
+			parity: {
+				toolsCovered: Array.from({ length: 24 }, (_, index) => `tool_${index}`),
+				outputParityPercent: 100,
+				errorCompatibilityPercent: 100,
+				diffs: [],
+				soakHours: 72,
+				crashes: 0,
+				dataLossIncidents: 0,
+				rollbackValidated: true,
+				rollbackRehearsed: true,
+				observabilityLevel: "release",
+				unresolvedTelemetryAnomalies: 0,
+			},
+			perf: {
+				summary: {
+					tsMedianTotalMs: 1000,
+					rustMedianTotalMs: 100,
+				},
+				tools: [
+					{
+						ts: { p95Ms: 1000, coldStartMs: 1000, maxRssKb: 200_000 },
+						rust: { p95Ms: 100, coldStartMs: 100, maxRssKb: 20_000 },
+					},
+				],
+			},
+		});
+
+		expect(result.decision).toBe("REPLACE");
+		expect(result.failingGate).toBeNull();
+	});
+
 	it("parses raw JSON and applies schema defaults", () => {
 		// unresolvedTelemetryAnomalies and compatibilityExceptionsApproved are
 		// omitted; the schema defaults must keep the input out of REPLACE.
