@@ -122,3 +122,23 @@ pnpm run promotion:rust-packet -- --iterations 3 --release-tag <release-or-commi
 ```
 
 `--release-tag` raises the observability evidence to `release` only for that packet. It does not override the soak gate; `CANARY` still requires at least 24 measured soak hours, and `REPLACE` still requires at least 72 measured soak hours with zero crashes, zero data-loss incidents, and zero unresolved telemetry anomalies.
+
+To accumulate soak across multiple packet runs, append each packet to the local soak ledger:
+
+```bash
+pnpm run promotion:rust-soak-ledger -- --packet-dir .epoch-promotion/latest
+```
+
+The ledger writes cumulative readiness artifacts next to the packet by default:
+
+- `.epoch-promotion/soak-ledger.json` stores every measured packet run.
+- `readiness-input-cumulative.json` sums measured soak hours and failures.
+- `readiness-assessment-cumulative.json` scores the cumulative evidence with the same deploy-readiness gates.
+- `soak-ledger-summary.json` shows total soak hours, release-tagged soak hours, latest run, and current decision.
+
+The ledger is conservative:
+
+- It sums crashes, data-loss incidents, unresolved telemetry anomalies, and unclassified failures across all runs.
+- It uses the worst observed compatibility and performance percentages across all runs.
+- It counts rollback as ready only after at least one successful rehearsal.
+- It reports `observabilityLevel: release` only when all accumulated soak hours came from release-tagged comparison packets.
