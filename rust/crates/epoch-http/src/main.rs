@@ -47,7 +47,14 @@ fn handle_connection(mut stream: TcpStream, router: Arc<Mutex<RustHttpRouter>>) 
             .route(method, &path, body),
         Err(message) => RustHttpResponse {
             status: 400,
-            body: json!({ "error": { "message": message } }),
+            body: json!({
+                "ok": false,
+                "error": {
+                    "isError": true,
+                    "message": message,
+                    "retryHint": "Send a valid HTTP request with a JSON body.",
+                },
+            }),
         },
     };
 

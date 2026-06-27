@@ -59,9 +59,10 @@ impl RustHttpRouter {
     pub fn route(&mut self, method: HttpMethod, path: &str, body: Value) -> RustHttpResponse {
         match (method, path) {
             (HttpMethod::Get, "/health") => ok(json!({
-                "ok": true,
-                "service": "epoch-rust",
+                "status": "ok",
+                "version": env!("CARGO_PKG_VERSION"),
                 "tools": tool_registry().len(),
+                "uptime": 0.0,
             })),
             (HttpMethod::Get, "/v1/tools") => ok(tools_body()),
             (HttpMethod::Post, "/v1/telemetry") => self.record_telemetry(body),
@@ -96,7 +97,7 @@ impl RustHttpRouter {
 
     fn tool_response(&mut self, tool_name: &str, body: Value) -> RustHttpResponse {
         match self.dispatcher.dispatch(tool_name, body) {
-            Ok(data) => ok(data),
+            Ok(data) => tool_ok(data),
             Err(error) if error.message.contains("Unknown tool") => error_response(404, error),
             Err(error) => error_response(422, error),
         }
@@ -123,16 +124,23 @@ fn ok(body: Value) -> RustHttpResponse {
     RustHttpResponse { status: 200, body }
 }
 
+fn tool_ok(data: Value) -> RustHttpResponse {
+    RustHttpResponse {
+        status: 200,
+        body: json!({ "ok": true, "data": data }),
+    }
+}
+
 fn error_response(status: u16, error: ToolError) -> RustHttpResponse {
     RustHttpResponse {
         status,
-        body: json!({ "error": error }),
+        body: json!({ "ok": false, "error": error }),
     }
 }
 
 fn tools_body() -> Value {
     json!({
-        "count": tool_registry().len(),
+        "ok": true,
         "tools": tool_registry()
             .iter()
             .map(|tool| json!({
@@ -169,27 +177,85 @@ fn llms_txt() -> String {
 }
 
 fn openapi_body() -> Value {
+    let mut paths = serde_json::Map::new();
+    for tool in tool_registry() {
+        paths.insert(
+            format!("/v1/tools/{}", tool.name),
+            json!({
+                "post": {
+                    "operationId": tool.name,
+                    "summary": tool.description,
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": { "type": "object" }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Tool result",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "oneOf": [
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "ok": { "type": "boolean", "enum": [true] },
+                                                    "data": { "type": "object" }
+                                                }
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "ok": { "type": "boolean", "enum": [false] },
+                                                    "error": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "isError": { "type": "boolean" },
+                                                            "message": { "type": "string" },
+                                                            "retryHint": { "type": "string" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }),
+        );
+    }
+    for route in HTTP_ROUTES {
+        let mut parts = route.splitn(2, ' ');
+        let method = parts.next().unwrap_or("GET").to_lowercase();
+        let path = parts.next().unwrap_or("/");
+        if path == "/v1/tools/:toolName" {
+            continue;
+        }
+        paths.entry(path.to_string()).or_insert_with(|| {
+            json!({
+                method: {
+                    "responses": {
+                        "200": { "description": "OK" }
+                    }
+                }
+            })
+        });
+    }
+
     json!({
         "openapi": "3.1.0",
         "info": {
             "title": "Epoch Rust Adapter",
             "version": "0.1.0",
         },
-        "paths": HTTP_ROUTES
-            .iter()
-            .map(|route| {
-                let mut parts = route.splitn(2, ' ');
-                let method = parts.next().unwrap_or("GET").to_lowercase();
-                let path = parts.next().unwrap_or("/");
-                (path.to_string(), json!({
-                    method: {
-                        "responses": {
-                            "200": { "description": "OK" }
-                        }
-                    }
-                }))
-            })
-            .collect::<serde_json::Map<String, Value>>(),
+        "paths": paths,
     })
 }
 
@@ -230,15 +296,30 @@ mod tests {
 
         let health = router.route(HttpMethod::Get, "/health", json!({}));
         assert_eq!(health.status, 200);
+        assert_eq!(health.body["status"], "ok");
         assert_eq!(health.body["tools"], 24);
+        assert!(health.body["version"].as_str().is_some());
+        assert!(health.body["uptime"].as_f64().is_some());
 
         let tools = router.route(HttpMethod::Get, "/v1/tools", json!({}));
         assert_eq!(tools.status, 200);
-        assert_eq!(tools.body["count"], 24);
+        assert_eq!(tools.body["ok"], true);
+        assert_eq!(
+            tools.body["tools"].as_array().expect("tools array").len(),
+            24
+        );
 
         let openapi = router.route(HttpMethod::Get, "/openapi.json", json!({}));
         assert_eq!(openapi.status, 200);
         assert_eq!(openapi.body["openapi"], "3.1.0");
+        let paths = openapi.body["paths"].as_object().expect("paths object");
+        let tool_path_count = paths
+            .keys()
+            .filter(|path| path.starts_with("/v1/tools/"))
+            .count();
+        assert_eq!(tool_path_count, 24);
+        assert!(paths.contains_key("/v1/tools/pert_estimate"));
+        assert!(!paths.contains_key("/v1/tools/:toolName"));
     }
 
     #[test]
@@ -268,11 +349,13 @@ mod tests {
             json!({ "optimistic": 1, "most_likely": 2, "pessimistic": 4 }),
         );
         assert_eq!(estimate.status, 200);
-        assert_eq!(estimate.body["feedbackRef"], "rust-estimate-1");
+        assert_eq!(estimate.body["ok"], true);
+        assert_eq!(estimate.body["data"]["feedbackRef"], "rust-estimate-1");
 
         let pending = router.route(HttpMethod::Get, "/v1/feedback/pending", json!({}));
         assert_eq!(pending.status, 200);
-        assert_eq!(pending.body["count"], 1);
+        assert_eq!(pending.body["ok"], true);
+        assert_eq!(pending.body["data"]["count"], 1);
 
         let actual = router.route(
             HttpMethod::Post,
@@ -280,10 +363,12 @@ mod tests {
             json!({ "estimate_id": "rust-estimate-1", "actual_hours": 2.5 }),
         );
         assert_eq!(actual.status, 200);
-        assert_eq!(actual.body["recorded"], true);
+        assert_eq!(actual.body["ok"], true);
+        assert_eq!(actual.body["data"]["recorded"], true);
 
         let health = router.route(HttpMethod::Get, "/v1/feedback/health", json!({}));
-        assert_eq!(health.body["totalActuals"], 1);
+        assert_eq!(health.body["ok"], true);
+        assert_eq!(health.body["data"]["totalActuals"], 1);
     }
 
     #[test]
@@ -292,9 +377,11 @@ mod tests {
 
         let missing = router.route(HttpMethod::Get, "/missing", json!({}));
         assert_eq!(missing.status, 404);
+        assert_eq!(missing.body["ok"], false);
 
         let unknown_tool = router.route(HttpMethod::Post, "/v1/tools/nope", json!({}));
         assert_eq!(unknown_tool.status, 404);
+        assert_eq!(unknown_tool.body["ok"], false);
 
         let invalid_input = router.route(
             HttpMethod::Post,
@@ -302,5 +389,6 @@ mod tests {
             json!({ "optimistic": 10, "most_likely": 2, "pessimistic": 4 }),
         );
         assert_eq!(invalid_input.status, 422);
+        assert_eq!(invalid_input.body["ok"], false);
     }
 }

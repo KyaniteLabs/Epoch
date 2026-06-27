@@ -100,8 +100,12 @@ pub fn run(repo_root: &Path) -> Result<()> {
 
 fn load_contract(repo_root: &Path) -> Result<PublicSurfaceContract> {
     let path = repo_root.join(CONTRACT_PATH);
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("failed to read TypeScript surface contract {}", path.display()))?;
+    let raw = std::fs::read_to_string(&path).with_context(|| {
+        format!(
+            "failed to read TypeScript surface contract {}",
+            path.display()
+        )
+    })?;
     let contract = PublicSurfaceContract::parse(&raw).context("invalid public surface JSON")?;
     contract
         .validate_milestone_zero()
@@ -431,8 +435,13 @@ fn http_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surfac
         let mut out = Vec::new();
 
         for name in &contract.mcp_tool_names {
-            let (status, _) = http_tool_request(&addr, name)?;
-            out.push(http_surface("http_tools", format!("POST /v1/tools/{name}"), status));
+            let (status, body) = http_tool_request(&addr, name)?;
+            out.push(http_tool_surface(
+                "http_tools",
+                format!("POST /v1/tools/{name}"),
+                status,
+                &body,
+            ));
         }
         for route in &contract.http_routes {
             let (status, _) = http_route_request(&addr, route)?;
@@ -454,6 +463,28 @@ fn http_surface(category: &'static str, surface: String, status: u16) -> Surface
         wired: status != 404,
         ok: status == 200 || status == 202,
         detail: format!("status {status}"),
+    }
+}
+
+fn http_tool_surface(category: &'static str, surface: String, status: u16, body: &str) -> Surface {
+    let parsed = serde_json::from_str::<Value>(body).ok();
+    let has_success_envelope = parsed
+        .as_ref()
+        .and_then(|value| value.get("ok"))
+        .and_then(Value::as_bool)
+        == Some(true)
+        && parsed
+            .as_ref()
+            .and_then(|value| value.get("data"))
+            .is_some();
+
+    Surface {
+        category,
+        surface,
+        adapter: "http",
+        wired: status != 404,
+        ok: status == 200 && has_success_envelope,
+        detail: format!("status {status}, successEnvelope {has_success_envelope}"),
     }
 }
 
@@ -504,13 +535,19 @@ fn http_create_estimate(addr: &str) -> Result<String> {
     serde_json::from_str::<Value>(&body)
         .ok()
         .as_ref()
-        .and_then(|value| value.get("feedbackRef"))
+        .and_then(|value| value.get("data"))
+        .and_then(|data| data.get("feedbackRef"))
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| anyhow!("pert_estimate over HTTP returned no feedbackRef"))
 }
 
-fn http_request(addr: &str, method: &str, path: &str, body: Option<&Value>) -> Result<(u16, String)> {
+fn http_request(
+    addr: &str,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> Result<(u16, String)> {
     let body = body.map(Value::to_string).unwrap_or_default();
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\n\

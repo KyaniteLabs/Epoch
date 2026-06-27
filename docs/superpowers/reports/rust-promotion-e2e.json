@@ -369,7 +369,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/get_current_time",
       "wired": true
@@ -377,7 +377,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/convert_timezone",
       "wired": true
@@ -385,7 +385,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/parse_duration",
       "wired": true
@@ -393,7 +393,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/time_math",
       "wired": true
@@ -401,7 +401,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/add_business_days",
       "wired": true
@@ -409,7 +409,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/count_business_days",
       "wired": true
@@ -417,7 +417,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/pert_estimate",
       "wired": true
@@ -425,7 +425,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/cocomo_estimate",
       "wired": true
@@ -433,7 +433,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/sprint_forecast",
       "wired": true
@@ -441,7 +441,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/critical_path",
       "wired": true
@@ -449,7 +449,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/monte_carlo_schedule",
       "wired": true
@@ -457,7 +457,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/reference_class_estimate",
       "wired": true
@@ -465,7 +465,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/calibrate_estimates",
       "wired": true
@@ -473,7 +473,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/token_time_bridge",
       "wired": true
@@ -481,7 +481,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/token_cost_estimate",
       "wired": true
@@ -489,7 +489,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/compare_models",
       "wired": true
@@ -497,7 +497,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/accuracy_trend",
       "wired": true
@@ -505,7 +505,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/schedule_risk",
       "wired": true
@@ -513,7 +513,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/cocomo_validate",
       "wired": true
@@ -521,7 +521,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/cocomo_ground_truth",
       "wired": true
@@ -529,7 +529,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/record_actual",
       "wired": true
@@ -537,7 +537,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/get_pending_estimates",
       "wired": true
@@ -545,7 +545,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/batch_record_actuals",
       "wired": true
@@ -553,7 +553,7 @@
     {
       "adapter": "http",
       "category": "http_tools",
-      "detail": "status 200",
+      "detail": "status 200, successEnvelope true",
       "ok": true,
       "surface": "POST /v1/tools/feedback_health",
       "wired": true
