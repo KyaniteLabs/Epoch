@@ -132,18 +132,17 @@ fn reference_correction_factor_from_db(
     tool: Option<&str>,
     complexity: Option<f64>,
 ) -> f64 {
-    if let Some(complexity) = complexity {
-        if let Some(factor) = complexity_correction_factor(db, task_type, complexity) {
-            return factor;
-        }
+    if let Some(complexity) = complexity
+        && let Some(factor) = complexity_correction_factor(db, task_type, complexity)
+    {
+        return factor;
     }
 
-    if let Some(tool) = tool {
-        if let Some(factor) =
+    if let Some(tool) = tool
+        && let Some(factor) =
             nested_factor(db, "toolTaskCorrectionFactors", tool, task_type.as_str())
-        {
-            return factor;
-        }
+    {
+        return factor;
     }
 
     if let Some(factor) = top_level_factor(db, "taskTypeCorrectionFactors", task_type.as_str()) {

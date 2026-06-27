@@ -29,8 +29,10 @@ pub fn pert_estimate(
     pessimistic: f64,
     unit: TimeUnit,
 ) -> Result<PertResult, ToolError> {
-    if !all_finite(&[optimistic, most_likely, pessimistic])
-        || !(optimistic > 0.0 && optimistic <= most_likely && most_likely <= pessimistic)
+    if !(all_finite(&[optimistic, most_likely, pessimistic])
+        && optimistic > 0.0
+        && optimistic <= most_likely
+        && most_likely <= pessimistic)
     {
         return Err(ToolError::new(
             format!(
@@ -427,8 +429,9 @@ pub fn monte_carlo_sim(
     }
 
     for task in &tasks {
-        if !all_finite(&[task.optimistic, task.most_likely, task.pessimistic])
-            || !(task.optimistic <= task.most_likely && task.most_likely <= task.pessimistic)
+        if !(all_finite(&[task.optimistic, task.most_likely, task.pessimistic])
+            && task.optimistic <= task.most_likely
+            && task.most_likely <= task.pessimistic)
         {
             return MonteCarloResult {
                 p10: "0".to_string(),

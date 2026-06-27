@@ -35,17 +35,12 @@ const ESTIMATION_TOOLS: &[&str] = &[
     "reference_class_estimate",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CalibrationUsageFilter {
+    #[default]
     Correction,
     Baseline,
     All,
-}
-
-impl Default for CalibrationUsageFilter {
-    fn default() -> Self {
-        Self::Correction
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -224,10 +219,10 @@ pub fn match_estimates_to_actuals(
     let mut records = Vec::new();
 
     for estimate in estimates {
-        if let Some(cutoff) = cutoff {
-            if parse_time(&estimate.estimated_at).is_some_and(|estimated| estimated < cutoff) {
-                continue;
-            }
+        if let Some(cutoff) = cutoff
+            && parse_time(&estimate.estimated_at).is_some_and(|estimated| estimated < cutoff)
+        {
+            continue;
         }
 
         let Some(actual) = actuals_map.get(estimate.id.as_str()) else {

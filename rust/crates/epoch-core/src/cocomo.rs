@@ -356,9 +356,9 @@ pub fn cocomo_validate_ground_truth(
         .find(|metrics| metrics.name == "COCOMO II + AI 12x");
     let conclusion = if ai_speedup_12.map(|metrics| metrics.pred25).unwrap_or(0.0) < 0.05 {
         format!(
-            "Best model: {} (MAPE={}). WARNING: The 12x AI speedup divisor produces catastrophic underprediction (PRED(25)=0%, bias={}%). These are pre-LLM projects — the speedup factor needs empirical validation against modern AI-assisted project data, not historical human-only data. Best traditional model: {} at {}% MAPE.",
+            "Best model: {} (MAPE={}%). WARNING: The 12x AI speedup divisor produces catastrophic underprediction (PRED(25)=0%, bias={}%). These are pre-LLM projects — the speedup factor needs empirical validation against modern AI-assisted project data, not historical human-only data. Best traditional model: {} at {}% MAPE.",
             winner.name,
-            format!("{}%", percent(winner.mape)),
+            percent(winner.mape),
             ai_speedup_12
                 .map(|metrics| format_number(metrics.bias))
                 .unwrap_or_else(|| "unknown".to_string()),
@@ -367,9 +367,9 @@ pub fn cocomo_validate_ground_truth(
         )
     } else {
         format!(
-            "Best model: {} (MAPE={}). AI speedup models show {} PRED(25) vs traditional COCOMO.",
+            "Best model: {} (MAPE={}%). AI speedup models show {} PRED(25) vs traditional COCOMO.",
             winner.name,
-            format!("{}%", percent(winner.mape)),
+            percent(winner.mape),
             if best_ai.pred25 > traditional_best.pred25 {
                 "better"
             } else {
