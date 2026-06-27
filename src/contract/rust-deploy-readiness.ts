@@ -15,6 +15,7 @@ export const parityEvidenceSchema = z.object({
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
 	soakHours: z.number().nonnegative(),
+	continuousSoakHours: z.number().nonnegative(),
 	crashes: z.number().int().nonnegative(),
 	dataLossIncidents: z.number().int().nonnegative(),
 	rollbackValidated: z.boolean(),
@@ -109,6 +110,10 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 	const errorCompatibilityPercent = numberField(raw, "errorCompatibilityPercent") ?? 0;
 	const toolsCovered = arrayField(raw, "toolsCovered") ?? [];
 	const unclassifiedFailures = numberField(raw, "unclassifiedFailures") ?? diffs.length;
+	const soakHours = numberField(raw, "soakHours") ?? 0;
+	const continuousSoakHours =
+		numberField(raw, "continuousSoakHours") ??
+		(objectField(raw, "meta") ? soakHours : 0);
 
 	return parityEvidenceSchema.parse({
 		publicSurfaceMatch:
@@ -116,7 +121,8 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 		outputParityPercent,
 		errorCompatibilityPercent,
 		unclassifiedFailures,
-		soakHours: numberField(raw, "soakHours") ?? 0,
+		soakHours,
+		continuousSoakHours,
 		crashes: numberField(raw, "crashes") ?? 0,
 		dataLossIncidents: numberField(raw, "dataLossIncidents") ?? 0,
 		rollbackValidated: booleanField(raw, "rollbackValidated") ?? false,
@@ -222,6 +228,7 @@ function canaryGates(input: ReadinessInput): Gate[] {
 			gate: "soak",
 			ok:
 				parity.soakHours >= 24 &&
+				parity.continuousSoakHours >= 24 &&
 				parity.crashes === 0 &&
 				parity.dataLossIncidents === 0,
 		},
@@ -258,6 +265,7 @@ function replaceGates(input: ReadinessInput): Gate[] {
 			gate: "soak",
 			ok:
 				parity.soakHours >= 72 &&
+				parity.continuousSoakHours >= 72 &&
 				parity.crashes === 0 &&
 				parity.dataLossIncidents === 0 &&
 				parity.unresolvedTelemetryAnomalies === 0,

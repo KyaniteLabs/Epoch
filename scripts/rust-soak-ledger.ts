@@ -7,7 +7,13 @@
 // editing JSON or weakening the deploy-readiness scorer.
 // ---------------------------------------------------------------------------
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
 import {
@@ -29,12 +35,15 @@ type CliOptions = {
 type LedgerRun = {
 	id: string;
 	generatedAt: string;
+	startedAt: string;
+	endedAt: string;
 	releaseTag: string | null;
 	publicSurfaceMatch: boolean;
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
 	soakHours: number;
+	continuousSoakHours: number;
 	crashes: number;
 	dataLossIncidents: number;
 	unresolvedTelemetryAnomalies: number;
@@ -61,7 +70,9 @@ type LedgerSummary = {
 	readiness: ReadinessAssessment;
 	runCount: number;
 	totalSoakHours: number;
+	continuousSoakHours: number;
 	releaseTaggedSoakHours: number;
+	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
 	replaceSoakHoursRequired: number;
 	latestRun: LedgerRun;
@@ -76,6 +87,7 @@ type LedgerSummary = {
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_PACKET_DIR = ".epoch-promotion/latest";
 const DEFAULT_LEDGER = ".epoch-promotion/soak-ledger.json";
+const MAX_CONTINUOUS_GAP_MS = 30_000;
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
@@ -135,17 +147,11 @@ function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
 
-function tryReadJson(path: string): unknown | null {
-	try {
-		return readJson(path);
-	} catch {
-		return null;
-	}
-}
-
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+	const tmpPath = `${path}.${process.pid}.tmp`;
+	writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`);
+	renameSync(tmpPath, path);
 }
 
 function rel(path: string): string {
@@ -169,9 +175,12 @@ function boolSome(values: boolean[]): boolean {
 }
 
 function parseLedger(path: string): SoakLedger {
-	const raw = tryReadJson(path);
-	if (!isObject(raw) || raw.version !== 1 || !Array.isArray(raw.runs)) {
+	if (!existsSync(path)) {
 		return { version: 1, updatedAt: new Date(0).toISOString(), runs: [] };
+	}
+	const raw = readJson(path);
+	if (!isObject(raw) || raw.version !== 1 || !Array.isArray(raw.runs)) {
+		throw new Error(`Invalid soak ledger: ${rel(path)}`);
 	}
 	return {
 		version: 1,
@@ -179,17 +188,105 @@ function parseLedger(path: string): SoakLedger {
 			typeof raw.updatedAt === "string"
 				? raw.updatedAt
 				: new Date(0).toISOString(),
-		runs: raw.runs.filter(isLedgerRun),
+		runs: raw.runs
+			.map(parseLedgerRun)
+			.filter((run): run is LedgerRun => run !== null),
 	};
 }
 
-function isLedgerRun(value: unknown): value is LedgerRun {
-	return (
-		isObject(value) &&
-		typeof value.id === "string" &&
-		typeof value.generatedAt === "string" &&
-		typeof value.soakHours === "number"
-	);
+function numberField(
+	object: Record<string, unknown>,
+	key: string,
+	fallback: number,
+): number {
+	const value = object[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function booleanField(
+	object: Record<string, unknown>,
+	key: string,
+	fallback: boolean,
+): boolean {
+	const value = object[key];
+	return typeof value === "boolean" ? value : fallback;
+}
+
+function stringField(
+	object: Record<string, unknown>,
+	key: string,
+	fallback: string,
+): string {
+	const value = object[key];
+	return typeof value === "string" ? value : fallback;
+}
+
+function observabilityLevel(value: unknown): LedgerRun["observabilityLevel"] {
+	return value === "release" || value === "tool" ? value : "basic";
+}
+
+function parseLedgerRun(value: unknown): LedgerRun | null {
+	if (
+		!isObject(value) ||
+		typeof value.id !== "string" ||
+		typeof value.generatedAt !== "string" ||
+		typeof value.soakHours !== "number"
+	) {
+		return null;
+	}
+
+	return {
+		id: value.id,
+		generatedAt: value.generatedAt,
+		startedAt: stringField(value, "startedAt", value.generatedAt),
+		endedAt: stringField(value, "endedAt", value.generatedAt),
+		releaseTag: typeof value.releaseTag === "string" ? value.releaseTag : null,
+		publicSurfaceMatch: booleanField(value, "publicSurfaceMatch", false),
+		outputParityPercent: numberField(value, "outputParityPercent", 0),
+		errorCompatibilityPercent: numberField(
+			value,
+			"errorCompatibilityPercent",
+			0,
+		),
+		unclassifiedFailures: numberField(value, "unclassifiedFailures", 0),
+		soakHours: value.soakHours,
+		continuousSoakHours: numberField(value, "continuousSoakHours", 0),
+		crashes: numberField(value, "crashes", 0),
+		dataLossIncidents: numberField(value, "dataLossIncidents", 0),
+		unresolvedTelemetryAnomalies: numberField(
+			value,
+			"unresolvedTelemetryAnomalies",
+			0,
+		),
+		rollbackValidated: booleanField(value, "rollbackValidated", false),
+		rollbackRehearsed: booleanField(value, "rollbackRehearsed", false),
+		observabilityLevel: observabilityLevel(value.observabilityLevel),
+		medianLatencyImprovementPercent: numberField(
+			value,
+			"medianLatencyImprovementPercent",
+			0,
+		),
+		p95LatencyImprovementPercent: numberField(
+			value,
+			"p95LatencyImprovementPercent",
+			0,
+		),
+		startupImprovementPercent: numberField(
+			value,
+			"startupImprovementPercent",
+			0,
+		),
+		memoryImprovementPercent: numberField(
+			value,
+			"memoryImprovementPercent",
+			0,
+		),
+		readinessDecision: stringField(value, "readinessDecision", "UNKNOWN"),
+		readinessFailingGate:
+			typeof value.readinessFailingGate === "string"
+				? value.readinessFailingGate
+				: null,
+	};
 }
 
 function packetReleaseTag(summary: unknown): string | null {
@@ -227,22 +324,60 @@ function packetReadiness(summary: unknown): {
 	};
 }
 
+function packetWindow(
+	shadowSoak: unknown,
+	generatedAt: string,
+	soakHours: number,
+): { startedAt: string; endedAt: string } {
+	if (isObject(shadowSoak) && isObject(shadowSoak.meta)) {
+		const startedAt =
+			typeof shadowSoak.meta.startedAt === "string"
+				? shadowSoak.meta.startedAt
+				: null;
+		const endedAt =
+			typeof shadowSoak.meta.endedAt === "string"
+				? shadowSoak.meta.endedAt
+				: null;
+		if (startedAt && endedAt) {
+			return { startedAt, endedAt };
+		}
+	}
+
+	const endedAtMs = Date.parse(generatedAt);
+	if (Number.isFinite(endedAtMs)) {
+		return {
+			startedAt: new Date(endedAtMs - soakHours * 3_600_000).toISOString(),
+			endedAt: new Date(endedAtMs).toISOString(),
+		};
+	}
+	return { startedAt: generatedAt, endedAt: generatedAt };
+}
+
 function ledgerRunFromPacket(
 	readinessInput: ReadinessInput,
 	summary: unknown,
+	shadowSoak: unknown,
 ): LedgerRun {
 	const generatedAt = packetGeneratedAt(summary);
 	const releaseTag = packetReleaseTag(summary);
 	const readiness = packetReadiness(summary);
+	const window = packetWindow(
+		shadowSoak,
+		generatedAt,
+		readinessInput.parity.soakHours,
+	);
 	return {
 		id: `${generatedAt}:${releaseTag ?? "tool"}`,
 		generatedAt,
+		startedAt: window.startedAt,
+		endedAt: window.endedAt,
 		releaseTag,
 		publicSurfaceMatch: readinessInput.parity.publicSurfaceMatch,
 		outputParityPercent: readinessInput.parity.outputParityPercent,
 		errorCompatibilityPercent: readinessInput.parity.errorCompatibilityPercent,
 		unclassifiedFailures: readinessInput.parity.unclassifiedFailures,
 		soakHours: readinessInput.parity.soakHours,
+		continuousSoakHours: readinessInput.parity.continuousSoakHours,
 		crashes: readinessInput.parity.crashes,
 		dataLossIncidents: readinessInput.parity.dataLossIncidents,
 		unresolvedTelemetryAnomalies:
@@ -272,8 +407,65 @@ function upsertRun(ledger: SoakLedger, run: LedgerRun): SoakLedger {
 	};
 }
 
+type SoakInterval = { startMs: number; endMs: number };
+
+function isCleanRun(run: LedgerRun): boolean {
+	return (
+		run.publicSurfaceMatch &&
+		run.unclassifiedFailures === 0 &&
+		run.crashes === 0 &&
+		run.dataLossIncidents === 0 &&
+		run.unresolvedTelemetryAnomalies === 0
+	);
+}
+
+function cleanInterval(run: LedgerRun): SoakInterval | null {
+	if (!isCleanRun(run)) return null;
+	const startMs = Date.parse(run.startedAt);
+	const endMs = Date.parse(run.endedAt);
+	if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+		return null;
+	}
+	const observedMs = Math.min(
+		run.continuousSoakHours * 3_600_000,
+		endMs - startMs,
+	);
+	if (observedMs <= 0) return null;
+	return { startMs, endMs: startMs + observedMs };
+}
+
+function longestContinuousCleanSoakHours(runs: LedgerRun[]): number {
+	const intervals = runs
+		.map(cleanInterval)
+		.filter((interval): interval is SoakInterval => interval !== null)
+		.sort((a, b) => a.startMs - b.startMs);
+
+	let currentEndMs = 0;
+	let currentObservedMs = 0;
+	let longestObservedMs = 0;
+
+	for (const interval of intervals) {
+		if (
+			currentObservedMs === 0 ||
+			interval.startMs > currentEndMs + MAX_CONTINUOUS_GAP_MS
+		) {
+			currentEndMs = interval.endMs;
+			currentObservedMs = interval.endMs - interval.startMs;
+		} else {
+			const observedStartMs = Math.max(interval.startMs, currentEndMs);
+			const extensionMs = Math.max(0, interval.endMs - observedStartMs);
+			currentEndMs = Math.max(currentEndMs, interval.endMs);
+			currentObservedMs += extensionMs;
+		}
+		longestObservedMs = Math.max(longestObservedMs, currentObservedMs);
+	}
+
+	return longestObservedMs / 3_600_000;
+}
+
 function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 	const totalSoakHours = numberSum(runs.map((run) => run.soakHours));
+	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
 	const releaseSoakHours = numberSum(
 		runs
 			.filter((run) => run.observabilityLevel === "release")
@@ -298,6 +490,7 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 			errorCompatibilityPercent,
 			unclassifiedFailures,
 			soakHours: totalSoakHours,
+			continuousSoakHours,
 			crashes: numberSum(runs.map((run) => run.crashes)),
 			dataLossIncidents: numberSum(runs.map((run) => run.dataLossIncidents)),
 			rollbackValidated: boolSome(runs.map((run) => run.rollbackValidated)),
@@ -342,13 +535,16 @@ function buildSummary(
 			.filter((run) => run.observabilityLevel === "release")
 			.map((run) => run.soakHours),
 	);
+	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
 	return {
 		generatedAt: new Date().toISOString(),
 		ledger: rel(ledgerPath),
 		readiness,
 		runCount: ledger.runs.length,
 		totalSoakHours: numberSum(ledger.runs.map((run) => run.soakHours)),
+		continuousSoakHours,
 		releaseTaggedSoakHours,
+		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,
 		replaceSoakHoursRequired: 72,
 		latestRun,
@@ -367,6 +563,7 @@ function printSummary(summary: LedgerSummary): void {
 			"Rust cumulative soak ledger",
 			`  runs:                ${summary.runCount}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
+			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,
@@ -398,7 +595,12 @@ try {
 		readJson(join(packetDir, "readiness-input.json")),
 	);
 	const packetSummary = readJson(join(packetDir, "promotion-packet.json"));
-	const latestRun = ledgerRunFromPacket(packetReadinessInput, packetSummary);
+	const packetShadowSoak = readJson(join(packetDir, "shadow-soak.json"));
+	const latestRun = ledgerRunFromPacket(
+		packetReadinessInput,
+		packetSummary,
+		packetShadowSoak,
+	);
 	const ledger = upsertRun(parseLedger(ledgerPath), latestRun);
 	const cumulative = cumulativeInput(ledger.runs);
 	const assessment = assessDeployReadiness(cumulative);

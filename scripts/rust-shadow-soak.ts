@@ -65,6 +65,7 @@ type ShadowSoakReport = {
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
 	soakHours: number;
+	continuousSoakHours: number;
 	crashes: number;
 	dataLossIncidents: number;
 	rollbackValidated: false;
@@ -297,6 +298,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 		errorCompatibilityPercent,
 		unclassifiedFailures,
 		soakHours: (endedAtMs - startedAtMs) / 3_600_000,
+		continuousSoakHours: (endedAtMs - startedAtMs) / 3_600_000,
 		crashes,
 		dataLossIncidents,
 		rollbackValidated: false,

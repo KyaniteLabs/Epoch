@@ -18,6 +18,7 @@ function replaceReadyInput(): ReadinessInput {
 			errorCompatibilityPercent: 100,
 			unclassifiedFailures: 0,
 			soakHours: 72,
+			continuousSoakHours: 72,
 			crashes: 0,
 			dataLossIncidents: 0,
 			rollbackValidated: true,
@@ -65,6 +66,7 @@ describe("assessDeployReadiness", () => {
 				errorCompatibilityPercent: 97.9,
 				unclassifiedFailures: 1,
 				soakHours: 12,
+				continuousSoakHours: 12,
 				crashes: 0,
 				dataLossIncidents: 0,
 				rollbackValidated: false,
@@ -128,6 +130,7 @@ describe("assessDeployReadiness", () => {
 				errorCompatibilityPercent: 99.6,
 				unclassifiedFailures: 0,
 				soakHours: 0,
+				continuousSoakHours: 0,
 				crashes: 0,
 				dataLossIncidents: 0,
 				rollbackValidated: false,
@@ -154,6 +157,7 @@ describe("assessDeployReadiness", () => {
 				outputParityPercent: 99.7,
 				errorCompatibilityPercent: 99.6,
 				soakHours: 24,
+				continuousSoakHours: 24,
 				rollbackRehearsed: false,
 				observabilityLevel: "tool",
 				compatibilityExceptionsApproved: false,
@@ -215,6 +219,7 @@ describe("assessDeployReadinessFromJson", () => {
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
 				soakHours: 0,
+				continuousSoakHours: 0,
 				rollbackValidated: false,
 				observabilityLevel: "basic",
 				compatibilityExceptionsApproved: true,
@@ -232,6 +237,33 @@ describe("assessDeployReadinessFromJson", () => {
 		expect(result.failingGate).toBe("soak");
 	});
 
+	it("does not promote when cumulative soak lacks a continuous clean window", () => {
+		const result = assessDeployReadinessFromJson({
+			parity: {
+				publicSurfaceMatch: true,
+				outputParityPercent: 100,
+				errorCompatibilityPercent: 100,
+				unclassifiedFailures: 0,
+				soakHours: 72,
+				crashes: 0,
+				dataLossIncidents: 0,
+				rollbackValidated: true,
+				rollbackRehearsed: true,
+				observabilityLevel: "release",
+				unresolvedTelemetryAnomalies: 0,
+			},
+			perf: {
+				medianLatencyImprovementPercent: 25,
+				p95LatencyImprovementPercent: 12,
+				startupImprovementPercent: 5,
+				memoryImprovementPercent: 4,
+			},
+		});
+
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("soak");
+	});
+
 	it("lets explicit ops evidence in raw reports promote beyond shadow", () => {
 		const result = assessDeployReadinessFromJson({
 			parity: {
@@ -240,6 +272,7 @@ describe("assessDeployReadinessFromJson", () => {
 				errorCompatibilityPercent: 100,
 				diffs: [],
 				soakHours: 72,
+				continuousSoakHours: 72,
 				crashes: 0,
 				dataLossIncidents: 0,
 				rollbackValidated: true,
@@ -275,6 +308,7 @@ describe("assessDeployReadinessFromJson", () => {
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
 				soakHours: 72,
+				continuousSoakHours: 72,
 				crashes: 0,
 				dataLossIncidents: 0,
 				rollbackValidated: true,

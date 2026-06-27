@@ -69,8 +69,8 @@ Rust must survive sustained use without data loss, panics, or contract drift.
 
 Thresholds:
 
-- `CANARY` requires at least 24 hours of soak with zero crashes and zero data-loss incidents.
-- `REPLACE` requires at least 72 hours of soak with zero crashes, zero data-loss incidents, and no unresolved telemetry anomalies.
+- `CANARY` requires at least 24 total measured soak hours and a 24-hour continuous clean soak window with zero crashes and zero data-loss incidents.
+- `REPLACE` requires at least 72 total measured soak hours and a 72-hour continuous clean soak window with zero crashes, zero data-loss incidents, and no unresolved telemetry anomalies.
 
 ### 5. Rollback Gate
 
@@ -111,7 +111,7 @@ The command writes a git-ignored packet under `.epoch-promotion/latest/` by defa
 
 - `parity.json` from the strict TypeScript-vs-Rust parity gate.
 - `perf.json` from the promotion benchmark smoke run.
-- `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons.
+- `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons, including both `soakHours` and `continuousSoakHours`.
 - `shadow-soak-rollback.json` after the rollback rehearsal enriches the parity evidence.
 - `readiness-input.json`, `readiness-assessment.json`, and `promotion-packet.json`.
 
@@ -121,7 +121,7 @@ For replacement readiness, release-tag the comparison run:
 pnpm run promotion:rust-packet -- --iterations 3 --release-tag <release-or-commit-id>
 ```
 
-`--release-tag` raises the observability evidence to `release` only for that packet. It does not override the soak gate; `CANARY` still requires at least 24 measured soak hours, and `REPLACE` still requires at least 72 measured soak hours with zero crashes, zero data-loss incidents, and zero unresolved telemetry anomalies.
+`--release-tag` raises the observability evidence to `release` only for that packet. It does not override the soak gate; `CANARY` still requires at least 24 measured hours with a 24-hour continuous clean window, and `REPLACE` still requires at least 72 measured hours with a 72-hour continuous clean window, zero crashes, zero data-loss incidents, and zero unresolved telemetry anomalies.
 
 To accumulate soak across multiple packet runs, append each packet to the local soak ledger:
 
@@ -132,13 +132,32 @@ pnpm run promotion:rust-soak-ledger -- --packet-dir .epoch-promotion/latest
 The ledger writes cumulative readiness artifacts next to the packet by default:
 
 - `.epoch-promotion/soak-ledger.json` stores every measured packet run.
-- `readiness-input-cumulative.json` sums measured soak hours and failures.
+- `readiness-input-cumulative.json` sums measured soak hours and failures, then uses the longest clean continuous window as `continuousSoakHours`.
 - `readiness-assessment-cumulative.json` scores the cumulative evidence with the same deploy-readiness gates.
-- `soak-ledger-summary.json` shows total soak hours, release-tagged soak hours, latest run, and current decision.
+- `soak-ledger-summary.json` shows total soak hours, continuous clean soak hours, release-tagged soak hours, latest run, and current decision.
 
 The ledger is conservative:
 
 - It sums crashes, data-loss incidents, unresolved telemetry anomalies, and unclassified failures across all runs.
 - It uses the worst observed compatibility and performance percentages across all runs.
+- It only credits clean contiguous observation windows toward `continuousSoakHours`; short orchestration gaps can preserve continuity but do not earn soak credit.
 - It counts rollback as ready only after at least one successful rehearsal.
 - It reports `observabilityLevel: release` only when all accumulated soak hours came from release-tagged comparison packets.
+
+To keep a long soak resumable, use the runner instead of hand-looping packet plus ledger commands:
+
+```bash
+pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
+```
+
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. Re-run the same command until the summary reports `targetReached: true`, or raise `--max-runs` when a supervised machine is expected to keep running. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+
+The runner uses `.epoch-promotion/soak-runner.lock` to prevent double-counting from overlapping runners and `.epoch-promotion/soak-runner-state.json` as an in-progress sentinel. If a previous runner died before cleanup, the next invocation fails closed until the interrupted run is investigated.
+
+For replacement evidence, the runner requires a release tag:
+
+```bash
+pnpm run promotion:rust-soak-runner -- --target replace --release-tag <release-or-commit-id> --max-runs 1
+```
+
+`--target-hours` is only for local smoke tests of the runner path. Production promotion still depends on the deploy-readiness scorer's fixed 24-hour canary and 72-hour replacement gates.

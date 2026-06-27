@@ -46,6 +46,7 @@ type PacketSummary = {
 		};
 		reliability: {
 			soakHours: number;
+			continuousSoakHours: number;
 			canarySoakHoursRequired: number;
 			replaceSoakHoursRequired: number;
 			crashes: number;
@@ -169,6 +170,25 @@ function run(
 	});
 }
 
+function packageManagerCommand(args: string[]): { binary: string; args: string[] } {
+	if (process.env.npm_execpath) {
+		return {
+			binary: process.execPath,
+			args: [process.env.npm_execpath, ...args],
+		};
+	}
+	return { binary: "pnpm", args };
+}
+
+function runPackageManager(
+	label: string,
+	args: string[],
+	options: { quiet: boolean },
+): string {
+	const command = packageManagerCommand(args);
+	return run(label, command.binary, command.args, options);
+}
+
 function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
@@ -201,6 +221,7 @@ function buildSummary(
 			performance: readinessInput.perf,
 			reliability: {
 				soakHours: readinessInput.parity.soakHours,
+				continuousSoakHours: readinessInput.parity.continuousSoakHours,
 				canarySoakHoursRequired: 24,
 				replaceSoakHoursRequired: 72,
 				crashes: readinessInput.parity.crashes,
@@ -242,6 +263,7 @@ function printSummary(summary: PacketSummary): void {
 			`  median improvement:  ${summary.evidence.performance.medianLatencyImprovementPercent.toFixed(2)}%`,
 			`  p95 improvement:     ${summary.evidence.performance.p95LatencyImprovementPercent.toFixed(2)}%`,
 			`  soak hours:          ${summary.evidence.reliability.soakHours.toFixed(4)}`,
+			`  continuous soak:     ${summary.evidence.reliability.continuousSoakHours.toFixed(4)}`,
 			`  rollback rehearsed:  ${summary.evidence.rollback.rehearsed}`,
 			`  observability:       ${summary.evidence.observability.level}`,
 			`  release tag:         ${summary.evidence.observability.releaseTag ?? "none"}`,
@@ -276,7 +298,7 @@ async function main(): Promise<void> {
 		"epoch-cli",
 	], options);
 
-	const parity = run("strict parity", "pnpm", [
+	const parity = runPackageManager("strict parity", [
 		"exec",
 		"tsx",
 		"src/contract/rust-parity-cli.ts",
@@ -284,7 +306,7 @@ async function main(): Promise<void> {
 	], options);
 	writeFileSync(parityPath, parity);
 
-	run("promotion benchmark smoke", "pnpm", [
+	runPackageManager("promotion benchmark smoke", [
 		"exec",
 		"tsx",
 		"src/benchmarks/rust-promotion.ts",
@@ -309,9 +331,9 @@ async function main(): Promise<void> {
 	if (options.releaseTag) {
 		shadowArgs.push("--release-tag", options.releaseTag);
 	}
-	run("shadow soak evidence", "pnpm", shadowArgs, options);
+	runPackageManager("shadow soak evidence", shadowArgs, options);
 
-	run("rollback rehearsal", "pnpm", [
+	runPackageManager("rollback rehearsal", [
 		"exec",
 		"tsx",
 		"scripts/rust-rollback-rehearsal.ts",
