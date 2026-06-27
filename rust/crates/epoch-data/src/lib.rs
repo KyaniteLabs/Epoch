@@ -97,6 +97,20 @@ pub fn resolve_global_correction_factor() -> f64 {
         .unwrap_or(DEFAULT_GLOBAL_CORRECTION_FACTOR)
 }
 
+/// Resolve the token-time calibration used by TypeScript `tokenTimeBridge()`.
+/// Prefer `tokenTimeCalibration[model]`; use `_default` only for unknown models.
+pub fn resolve_token_time_calibration_tps(model: &str, use_default: bool) -> Option<f64> {
+    let db = resolve_reference_database()?;
+    let calibrations = db.get("tokenTimeCalibration")?;
+    if let Some(tps) = calibrations.get(model).and_then(median_tps) {
+        return Some(tps);
+    }
+    if use_default {
+        return calibrations.get("_default").and_then(median_tps);
+    }
+    None
+}
+
 /// Resolve the sparse-data correction factor for `reference_class_estimate`
 /// using the same priority order as TypeScript `getCorrectionFactorForTaskType`:
 /// complexity-aware, tool-specific, task-type, canary task-type, industry.
@@ -184,6 +198,14 @@ fn top_level_factor(db: &Value, section: &str, key: &str) -> Option<f64> {
         .filter(|value| value.is_finite())
 }
 
+fn median_tps(calibration: &Value) -> Option<f64> {
+    calibration
+        .get("medianTps")
+        .or_else(|| calibration.get("medianTokensPerSecond"))?
+        .as_f64()
+        .filter(|value| value.is_finite() && *value > 0.0)
+}
+
 fn json_number_key(value: f64) -> String {
     if value.fract() == 0.0 {
         format!("{value:.0}")
@@ -257,7 +279,7 @@ mod tests {
     use super::{
         bundled_cocomo_basic_coefficients, bundled_cocomo_calibration, bundled_reference_database,
         bundled_supplementary_database, crate_label, reference_correction_factor_from_db,
-        resolve_global_correction_factor,
+        resolve_global_correction_factor, resolve_token_time_calibration_tps,
     };
     use epoch_contract::TaskType;
     use epoch_core::cocomo::{cocomo_validate, cocomo_validate_ground_truth};
@@ -344,6 +366,23 @@ mod tests {
         let factor = resolve_global_correction_factor();
         assert!(factor.is_finite());
         assert!(factor > 0.0);
+    }
+
+    #[test]
+    fn resolves_token_time_default_calibration_for_unknown_models() {
+        let tps = resolve_token_time_calibration_tps("unknown-model", true)
+            .expect("bundled default token-time calibration resolves");
+
+        assert!(tps.is_finite());
+        assert!(tps > 75.0);
+    }
+
+    #[test]
+    fn skips_token_time_default_calibration_when_not_requested() {
+        assert_eq!(
+            resolve_token_time_calibration_tps("unknown-model", false),
+            None
+        );
     }
 
     #[test]

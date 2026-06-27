@@ -12,8 +12,8 @@ use epoch_core::{
     calendar::{add_business_days, count_business_days},
     cocomo::{cocomo_validate, cocomo_validate_ground_truth},
     cost::{
-        CompareModelsParams, ModelSort, TokenCostParams, compare_models, token_cost_estimate,
-        token_time_bridge,
+        CompareModelsParams, ModelSort, TokenCostParams, compare_models, has_model_profile,
+        token_cost_estimate_with_calibration, token_time_bridge_with_calibration,
     },
     estimation::{
         CocomoParams, SprintForecastParams, cocomo_estimate, critical_path, monte_carlo_sim,
@@ -26,7 +26,10 @@ use epoch_core::{
         add_days, convert_timezone, diff_dates, format_elapsed, get_current_time, parse_duration,
     },
 };
-use epoch_data::{resolve_global_correction_factor, resolve_reference_correction_factor};
+use epoch_data::{
+    resolve_global_correction_factor, resolve_reference_correction_factor,
+    resolve_token_time_calibration_tps,
+};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -438,12 +441,20 @@ impl RustToolDispatcher {
     fn dispatch_token_time_bridge(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
         let params = token_params(object)?;
-        to_value(token_time_bridge(&params))
+        let calibration_tps =
+            resolve_token_time_calibration_tps(&params.model, !has_model_profile(&params.model));
+        to_value(token_time_bridge_with_calibration(&params, calibration_tps))
     }
 
     fn dispatch_token_cost_estimate(&mut self, input: &Value) -> ToolValueResult {
         let object = object(input)?;
-        to_value(token_cost_estimate(token_params(object)?))
+        let params = token_params(object)?;
+        let calibration_tps =
+            resolve_token_time_calibration_tps(&params.model, !has_model_profile(&params.model));
+        to_value(token_cost_estimate_with_calibration(
+            params,
+            calibration_tps,
+        ))
     }
 
     fn dispatch_compare_models(&mut self, input: &Value) -> ToolValueResult {

@@ -111,10 +111,34 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     expect: "ok",
   },
   {
+    name: "time_math/convert-tz",
+    tool: "time_math",
+    cliCommand: "time-math",
+    input: {
+      operation: "convert_tz",
+      operands: { timestamp: "2026-03-08T09:30:00Z", target_tz: "America/New_York" },
+    },
+    expect: "ok",
+  },
+  {
+    name: "time_math/parse-nl",
+    tool: "time_math",
+    cliCommand: "time-math",
+    input: { operation: "parse_nl", operands: { duration_string: "2d4h" } },
+    expect: "ok",
+  },
+  {
     name: "add_business_days/forward",
     tool: "add_business_days",
     cliCommand: "add-business-days",
     input: { start_date: "2026-06-24", days: 5, country: "US" },
+    expect: "ok",
+  },
+  {
+    name: "add_business_days/backward",
+    tool: "add_business_days",
+    cliCommand: "add-business-days",
+    input: { start_date: "2026-07-06", days: -3, country: "US" },
     expect: "ok",
   },
   {
@@ -177,6 +201,19 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     expect: "ok",
   },
   {
+    name: "sprint_forecast/custom-capacity",
+    tool: "sprint_forecast",
+    cliCommand: "sprint-forecast",
+    input: {
+      backlog_points: 42,
+      velocity_history: [9, 12, 11],
+      sprint_length_days: 7,
+      hours_per_sprint: 160,
+      ai_native: 0.8,
+    },
+    expect: "ok",
+  },
+  {
     name: "critical_path/diamond",
     tool: "critical_path",
     cliCommand: "critical-path",
@@ -198,6 +235,13 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     expect: "error",
   },
   {
+    name: "critical_path/missing-predecessor",
+    tool: "critical_path",
+    cliCommand: "critical-path",
+    input: { tasks: [{ name: "A", duration: 1, predecessors: ["missing"] }] },
+    expect: "error",
+  },
+  {
     name: "monte_carlo_schedule/seeded",
     tool: "monte_carlo_schedule",
     cliCommand: "monte-carlo-schedule",
@@ -211,6 +255,16 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     },
     expect: "ok",
     note: "Both runtimes share an identical seeded LCG (16807 / 2147483647), so seeded runs match by value.",
+  },
+  {
+    name: "monte_carlo_schedule/zero-iterations",
+    tool: "monte_carlo_schedule",
+    cliCommand: "monte-carlo-schedule",
+    input: {
+      tasks: [{ name: "A", optimistic: 1, most_likely: 2, pessimistic: 3 }],
+      iterations: 0,
+    },
+    expect: "error",
   },
 
   // ---- Analytics ----------------------------------------------------------
@@ -261,10 +315,25 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     expect: "ok",
   },
   {
+    name: "token_cost_estimate/unknown-with-tools",
+    tool: "token_cost_estimate",
+    cliCommand: "token-cost-estimate",
+    input: { tokens: 10000, model: "unknown-model", reasoning_depth: "deep", tool_calls: 3 },
+    expect: "ok",
+    note: "Pins Rust to the same reference-DB _default token-time calibration TypeScript uses for unknown models.",
+  },
+  {
     name: "compare_models/by-cost",
     tool: "compare_models",
     cliCommand: "compare-models",
     input: { tokens: 1200, sort_by: "cost" },
+    expect: "ok",
+  },
+  {
+    name: "compare_models/by-time",
+    tool: "compare_models",
+    cliCommand: "compare-models",
+    input: { tokens: 1200, sort_by: "time" },
     expect: "ok",
   },
 

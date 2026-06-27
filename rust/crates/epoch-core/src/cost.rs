@@ -149,14 +149,21 @@ const MODEL_PROFILES: &[ModelProfile] = &[
 ];
 
 pub fn token_time_bridge(params: &TokenCostParams) -> TokenTimeMapping {
-    let profile = find_model_profile(&params.model);
+    token_time_bridge_with_calibration(params, None)
+}
+
+pub fn token_time_bridge_with_calibration(
+    params: &TokenCostParams,
+    calibration_tps: Option<f64>,
+) -> TokenTimeMapping {
+    let profile = find_model_profile_with_calibration(&params.model, calibration_tps);
     let generation_time_seconds = params.tokens / profile.tokens_per_second;
     let tool_overhead_seconds = (params.tool_calls as f64 * profile.tool_call_latency_ms) / 1000.0;
     let reasoning_seconds =
         (profile.reasoning_overhead_ms / 1000.0) * params.reasoning_depth.multiplier();
     let total_seconds = generation_time_seconds + tool_overhead_seconds + reasoning_seconds;
     let estimated_minutes = round1(total_seconds / 60.0);
-    let confidence = if is_known_model(&params.model) {
+    let confidence = if is_known_model(&params.model) || profile.tokens_per_second != 75.0 {
         ConfidenceLevel::Likely
     } else {
         ConfidenceLevel::Optimistic
@@ -192,7 +199,14 @@ pub fn token_time_bridge(params: &TokenCostParams) -> TokenTimeMapping {
 }
 
 pub fn token_cost_estimate(params: TokenCostParams) -> TokenCostEstimate {
-    let time_mapping = token_time_bridge(&params);
+    token_cost_estimate_with_calibration(params, None)
+}
+
+pub fn token_cost_estimate_with_calibration(
+    params: TokenCostParams,
+    calibration_tps: Option<f64>,
+) -> TokenCostEstimate {
+    let time_mapping = token_time_bridge_with_calibration(&params, calibration_tps);
     let profile = find_model_profile(&params.model);
     let (cost_input, cost_output) = if is_known_model(&params.model) {
         (profile.cost_input, profile.cost_output)
@@ -324,6 +338,10 @@ pub fn compare_models(params: CompareModelsParams) -> ModelComparison {
     }
 }
 
+pub fn has_model_profile(model: &str) -> bool {
+    is_known_model(model)
+}
+
 fn find_model_profile(model: &str) -> ModelProfile {
     MODEL_PROFILES
         .iter()
@@ -337,6 +355,14 @@ fn find_model_profile(model: &str) -> ModelProfile {
             cost_input: FALLBACK_COST_INPUT,
             cost_output: FALLBACK_COST_OUTPUT,
         })
+}
+
+fn find_model_profile_with_calibration(model: &str, calibration_tps: Option<f64>) -> ModelProfile {
+    let mut profile = find_model_profile(model);
+    if let Some(tps) = calibration_tps.filter(|value| value.is_finite() && *value > 0.0) {
+        profile.tokens_per_second = tps;
+    }
+    profile
 }
 
 fn is_known_model(model: &str) -> bool {
@@ -430,7 +456,8 @@ fn format_locale_number(value: f64) -> String {
 mod tests {
     use super::{
         CompareModelsParams, ModelSort, TokenCostParams, compare_models, token_cost_estimate,
-        token_time_bridge,
+        token_cost_estimate_with_calibration, token_time_bridge,
+        token_time_bridge_with_calibration,
     };
     use epoch_contract::{ConfidenceLevel, QualityTier, ReasoningDepth, UrgencyCategory};
     use serde_json::json;
@@ -488,6 +515,25 @@ mod tests {
     }
 
     #[test]
+    fn accepts_reference_tps_calibration_for_unknown_model() {
+        let result = token_cost_estimate_with_calibration(
+            TokenCostParams {
+                tokens: 10_000.0,
+                model: "unknown-model".to_string(),
+                tool_calls: 3,
+                reasoning_depth: ReasoningDepth::Deep,
+            },
+            Some(1685.9),
+        );
+
+        assert_eq!(result.estimated_minutes, 0.3);
+        assert_eq!(result.estimated_cost, 0.123);
+        assert_eq!(result.confidence, ConfidenceLevel::Likely);
+        assert_eq!(result.time_breakdown.tool_overhead_seconds, 1.5);
+        assert!(result.human_readable.contains("~0.3 min"));
+    }
+
+    #[test]
     fn tool_calls_add_overhead_cost_and_time() {
         let no_tools = token_cost_estimate(TokenCostParams {
             tokens: 5_000.0,
@@ -540,6 +586,22 @@ mod tests {
         });
 
         assert!(result.human_readable.contains("1,200 tokens"));
+    }
+
+    #[test]
+    fn token_time_bridge_keeps_core_fallback_without_external_calibration() {
+        let result = token_time_bridge_with_calibration(
+            &TokenCostParams {
+                tokens: 10_000.0,
+                model: "unknown-model".to_string(),
+                tool_calls: 0,
+                reasoning_depth: ReasoningDepth::Shallow,
+            },
+            None,
+        );
+
+        assert_eq!(result.confidence, ConfidenceLevel::Optimistic);
+        assert_eq!(result.estimated_minutes, 2.3);
     }
 
     #[test]
