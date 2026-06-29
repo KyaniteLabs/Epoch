@@ -4,13 +4,16 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+	buildReplacementScorecard,
 	buildReplacementScorecardFromJson,
 	type ReplacementScorecard,
 } from "./rust-deploy-readiness.js";
+import { buildGateLedgerReadinessInput } from "./rust-promotion-gate.js";
 
 const USAGE =
 	"Usage:\n" +
 	"  tsx src/contract/rust-replacement-scorecard.ts <readiness.json> [output.json]\n" +
+	"  tsx src/contract/rust-replacement-scorecard.ts <soak-ledger.json> [output.json]\n" +
 	"  tsx src/contract/rust-replacement-scorecard.ts <parity.json> <perf.json> [output.json]\n" +
 	"\n" +
 	"Emits a quantified Rust replacement scorecard: compatibility percent,\n" +
@@ -24,7 +27,18 @@ function isSingleFileEvidence(value: unknown): boolean {
 	return (
 		typeof value === "object" &&
 		value !== null &&
-		(("parity" in value && "perf" in value) || "evidence" in value)
+		(("parity" in value && "perf" in value) ||
+			"evidence" in value ||
+			("version" in value && "runs" in value))
+	);
+}
+
+function isSoakLedger(value: unknown): boolean {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"version" in value &&
+		"runs" in value
 	);
 }
 
@@ -82,7 +96,9 @@ function main(argv: string[]): number {
 		outputPath = thirdArg;
 	}
 
-	const scorecard = buildReplacementScorecardFromJson(raw);
+	const scorecard = isSoakLedger(raw)
+		? buildReplacementScorecard(buildGateLedgerReadinessInput(raw))
+		: buildReplacementScorecardFromJson(raw);
 	const json = `${JSON.stringify(scorecard, null, 2)}\n`;
 
 	if (outputPath) {
