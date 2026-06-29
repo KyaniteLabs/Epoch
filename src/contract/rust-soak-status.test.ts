@@ -418,6 +418,30 @@ describe("buildSoakStatus", () => {
 		);
 	});
 
+	it("does not credit package-smoke rows with wrong-platform command targets", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					packageCommands: packageCommands().map((command) =>
+						command.name === "epoch-http"
+							? {
+									...command,
+									target: "prebuilds/linux-x64/epoch-http",
+								}
+							: command,
+					),
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.packageSmokePass).toBe(false);
+		expect(status.packageCommandEvidenceComplete).toBe(false);
+		expect(status.readinessFailingGate).toBe("package-smoke");
+	});
+
 	it("warns when a state file remains but the runner process is dead", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",

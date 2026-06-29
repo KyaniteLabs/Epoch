@@ -860,6 +860,25 @@ describe("assessPromotionGateFromLedger", () => {
 		expect(summary.packageSmokePass).toBe(false);
 	});
 
+	it("blocks package command proof with wrong-platform prebuild targets", () => {
+		const rawLedger = ledger([
+			ledgerRun({
+				packageCommands: packageCommands().map((command) =>
+					command.name === "epoch-mcp"
+						? {
+								...command,
+								target: "prebuilds/linux-x64/epoch-mcp",
+							}
+						: command,
+				),
+			}),
+		]);
+		const summary = buildGateLedgerSummary(rawLedger);
+
+		expect(summary.packageCommandEvidenceComplete).toBe(false);
+		expect(summary.packageSmokePass).toBe(false);
+	});
+
 	it("blocks replacement when qualified performance evidence is not release-tagged", () => {
 		const result = assessPromotionGateFromLedger(
 			ledger([

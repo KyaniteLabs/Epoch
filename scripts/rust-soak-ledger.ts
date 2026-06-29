@@ -121,6 +121,8 @@ const REQUIRED_PACKAGE_COMMANDS = new Set([
 	"epoch-mcp",
 	"epoch-http",
 ]);
+const CURRENT_PLATFORM =
+	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
@@ -320,22 +322,24 @@ function packageCommandHasExpectedEvidence(
 	}
 	if (command.name === "epoch-mcp") {
 		return (
-			command.target.startsWith("prebuilds/") &&
-			command.target.includes("epoch-mcp") &&
+			command.target === packagePrebuildTarget("epoch-mcp") &&
 			command.stdoutHead.startsWith("Content-Length:") &&
 			command.stdoutHead.includes('"result":{}')
 		);
 	}
 	if (command.name === "epoch-http") {
 		return (
-			command.target.startsWith("prebuilds/") &&
-			command.target.includes("epoch-http") &&
+			command.target === packagePrebuildTarget("epoch-http") &&
 			command.stdoutHead.includes("health ") &&
 			command.stdoutHead.includes('"status":"ok"') &&
 			command.stdoutHead.includes('"tools":24')
 		);
 	}
 	return false;
+}
+
+function packagePrebuildTarget(binary: string): string {
+	return `prebuilds/${CURRENT_PLATFORM}/${binary}${process.platform === "win32" ? ".exe" : ""}`;
 }
 
 function packageCommandsFromSummary(summary: unknown): PackageCommandEvidence[] {
