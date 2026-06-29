@@ -24,7 +24,12 @@ function packageCommands(overrides: Record<string, unknown> = {}) {
 				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
 		exitCode: 0,
 		signal: null,
-		stdoutHead: name === "epoch-http" ? "Usage: epoch-http" : "ok",
+		stdoutHead:
+			name === "epoch-cli"
+				? '{ "ok": true, "data": {'
+				: name === "epoch-mcp"
+					? 'Content-Length: 36 {"id":1,"jsonrpc":"2.0","result":{}}'
+					: 'health {"status":"ok","tools":24,"uptime":0.0,"version":"0.1.0"}',
 		stderrHead: "",
 		error: null,
 		...overrides,
@@ -629,6 +634,22 @@ describe("assessPromotionGateFromLedger", () => {
 		expect(summary.packageSmokePass).toBe(false);
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("package smoke evidence");
+	});
+
+	it("blocks package command proof with the wrong HTTP runtime signature", () => {
+		const rawLedger = ledger([
+			ledgerRun({
+				packageCommands: packageCommands().map((command) =>
+					command.name === "epoch-http"
+						? { ...command, stdoutHead: "Usage: epoch-http [HOST:PORT]" }
+						: command,
+				),
+			}),
+		]);
+		const summary = buildGateLedgerSummary(rawLedger);
+
+		expect(summary.packageCommandEvidenceComplete).toBe(false);
+		expect(summary.packageSmokePass).toBe(false);
 	});
 
 	it("blocks replacement when qualified performance evidence is not release-tagged", () => {

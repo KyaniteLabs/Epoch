@@ -284,6 +284,42 @@ function parsePackageCommands(value: unknown): PackageCommandEvidence[] {
 		.filter((command): command is PackageCommandEvidence => command !== null);
 }
 
+function packageCommandHasExpectedEvidence(
+	command: PackageCommandEvidence,
+): boolean {
+	if (
+		command.exitCode !== 0 ||
+		command.signal !== null ||
+		command.error !== null
+	) {
+		return false;
+	}
+	if (command.name === "epoch-cli") {
+		return (
+			command.target === "node_modules/.bin/epoch" &&
+			command.stdoutHead.includes('"ok": true')
+		);
+	}
+	if (command.name === "epoch-mcp") {
+		return (
+			command.target.startsWith("prebuilds/") &&
+			command.target.includes("epoch-mcp") &&
+			command.stdoutHead.startsWith("Content-Length:") &&
+			command.stdoutHead.includes('"result":{}')
+		);
+	}
+	if (command.name === "epoch-http") {
+		return (
+			command.target.startsWith("prebuilds/") &&
+			command.target.includes("epoch-http") &&
+			command.stdoutHead.includes("health ") &&
+			command.stdoutHead.includes('"status":"ok"') &&
+			command.stdoutHead.includes('"tools":24')
+		);
+	}
+	return false;
+}
+
 function packageCommandsFromSummary(summary: unknown): PackageCommandEvidence[] {
 	if (!isObject(summary) || !isObject(summary.evidence)) return [];
 	const deploy = summary.evidence.deploy;
@@ -295,12 +331,7 @@ function hasRequiredPackageCommands(run: Pick<LedgerRun, "packageCommands">): bo
 	const commands = run.packageCommands ?? [];
 	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
 		const command = commands.find((candidate) => candidate.name === name);
-		return (
-			command !== undefined &&
-			command.exitCode === 0 &&
-			command.signal === null &&
-			command.error === null
-		);
+		return command !== undefined && packageCommandHasExpectedEvidence(command);
 	});
 }
 

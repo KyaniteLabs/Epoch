@@ -727,6 +727,42 @@ function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	);
 }
 
+function packageCommandHasExpectedEvidence(
+	command: z.infer<typeof packageCommandEvidenceSchema>,
+): boolean {
+	if (
+		command.exitCode !== 0 ||
+		command.signal !== null ||
+		command.error !== null
+	) {
+		return false;
+	}
+	if (command.name === "epoch-cli") {
+		return (
+			command.target === "node_modules/.bin/epoch" &&
+			command.stdoutHead.includes('"ok": true')
+		);
+	}
+	if (command.name === "epoch-mcp") {
+		return (
+			command.target.startsWith("prebuilds/") &&
+			command.target.includes("epoch-mcp") &&
+			command.stdoutHead.startsWith("Content-Length:") &&
+			command.stdoutHead.includes('"result":{}')
+		);
+	}
+	if (command.name === "epoch-http") {
+		return (
+			command.target.startsWith("prebuilds/") &&
+			command.target.includes("epoch-http") &&
+			command.stdoutHead.includes("health ") &&
+			command.stdoutHead.includes('"status":"ok"') &&
+			command.stdoutHead.includes('"tools":24')
+		);
+	}
+	return false;
+}
+
 function hasRequiredPackageCommands(
 	run: Pick<LedgerRun, "packageCommands">,
 ): boolean {
@@ -734,12 +770,7 @@ function hasRequiredPackageCommands(
 		const command = run.packageCommands.find(
 			(candidate) => candidate.name === name,
 		);
-		return (
-			command !== undefined &&
-			command.exitCode === 0 &&
-			command.signal === null &&
-			command.error === null
-		);
+		return command !== undefined && packageCommandHasExpectedEvidence(command);
 	});
 }
 

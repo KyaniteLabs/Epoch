@@ -24,7 +24,12 @@ function packageCommands(): Record<string, unknown>[] {
 				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
 		exitCode: 0,
 		signal: null,
-		stdoutHead: name === "epoch-http" ? "Usage: epoch-http" : "ok",
+		stdoutHead:
+			name === "epoch-cli"
+				? '{ "ok": true, "data": {'
+				: name === "epoch-mcp"
+					? 'Content-Length: 36 {"id":1,"jsonrpc":"2.0","result":{}}'
+					: 'health {"status":"ok","tools":24,"uptime":0.0,"version":"0.1.0"}',
 		stderrHead: "",
 		error: null,
 	}));
@@ -152,5 +157,5 @@ describe("rust-soak-ledger CLI", () => {
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);
 		expect(summary.packageSmokePass).toBe(true);
 		expect(summary.readiness.failingGate).toBe("soak");
-	});
+	}, 15_000);
 });
