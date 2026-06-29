@@ -593,13 +593,19 @@ function hasRequiredPerformanceEvidence(
 	return target !== "replace" || summary.qualifiedPerformanceEvidence;
 }
 
+function targetSoakHours(summary: LedgerSummary, target: Target): number {
+	return target === "replace"
+		? summary.releaseContinuousSoakHours
+		: summary.continuousSoakHours;
+}
+
 function targetStatus(
 	summary: LedgerSummary,
 	target: Target,
 	targetHours: number,
 	usesTargetHoursOverride: boolean,
 ): { reached: boolean; satisfiedBy: StopSatisfiedBy } {
-	if (summary.continuousSoakHours < targetHours) {
+	if (targetSoakHours(summary, target) < targetHours) {
 		return { reached: false, satisfiedBy: null };
 	}
 	if (
@@ -635,9 +641,8 @@ function buildRunnerSummary(
 		targetHours,
 		targetHoursSource === "override",
 	);
-	const targetReached =
-		scorerMeetsTarget(ledgerSummary.readiness, options.target) &&
-		hasRequiredPerformanceEvidence(ledgerSummary, options.target);
+	const targetReached = status.satisfiedBy === "scorer";
+	const completedTargetSoakHours = targetSoakHours(ledgerSummary, options.target);
 
 	return {
 		generatedAt: new Date().toISOString(),
@@ -673,7 +678,7 @@ function buildRunnerSummary(
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
 			0,
-			targetHours - ledgerSummary.continuousSoakHours,
+			targetHours - completedTargetSoakHours,
 		),
 		files: {
 			packetDir: options.packetDir,

@@ -61,6 +61,24 @@ describe("rust-soak-runner CLI", () => {
 		}
 	});
 
+	it("uses release-continuous soak as the replacement target basis", () => {
+		const source = readFileSync(
+			join(REPO_ROOT, "scripts", "rust-soak-runner.ts"),
+			"utf8",
+		);
+
+		expect(source).toMatch(
+			/function targetSoakHours\([^]*target === "replace"[^]*summary\.releaseContinuousSoakHours[^]*summary\.continuousSoakHours/,
+		);
+		expect(source).toContain("targetSoakHours(summary, target) < targetHours");
+		expect(source).toContain(
+			"const targetReached = status.satisfiedBy === \"scorer\";",
+		);
+		expect(source).toContain(
+			"const completedTargetSoakHours = targetSoakHours(ledgerSummary, options.target);",
+		);
+	});
+
 	it("requires an explicit target for release-tagged until-target runs", () => {
 		const root = mkdtempSync(join(tmpdir(), "epoch-soak-runner-cli-"));
 		let stderr = "";
