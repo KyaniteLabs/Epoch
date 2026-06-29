@@ -5,7 +5,7 @@
 # Installs/configures one machine as an Epoch telemetry participant using the
 # same CLI invocation pattern everywhere. The npm-generated `epoch` shim can be
 # unreliable in non-interactive contexts on some hosts, so jobs call the package
-# dist entrypoint via node directly.
+# native launcher via node directly.
 #
 # Usage:
 #   bash scripts/epoch-fleet-bootstrap.sh sender
@@ -15,12 +15,12 @@
 # Environment:
 #   EPOCH_TELEMETRY_ENDPOINT  default: https://nucbox.tail599928.ts.net:3099/v1/telemetry
 #   EPOCH_RECEIVER_PORT       default: 3099
-#   EPOCH_PACKAGE_VERSION     default: 0.2.7
+#   EPOCH_PACKAGE_VERSION     default: 0.2.9
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 ROLE="${1:-sender}"
-VERSION="${EPOCH_PACKAGE_VERSION:-0.2.7}"
+VERSION="${EPOCH_PACKAGE_VERSION:-0.2.9}"
 ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:-https://nucbox.tail599928.ts.net:3099/v1/telemetry}"
 PORT="${EPOCH_RECEIVER_PORT:-3099}"
 OS="$(uname -s)"
@@ -50,22 +50,22 @@ node_bin() {
 
 cli_path() {
   if [ "$OS" = "Darwin" ]; then
-    if [ -f /opt/homebrew/lib/node_modules/@kyanitelabs/epoch/dist/index.js ]; then
-      echo /opt/homebrew/lib/node_modules/@kyanitelabs/epoch/dist/index.js
+    if [ -f /opt/homebrew/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js ]; then
+      echo /opt/homebrew/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js
       return
     fi
-    if [ -f /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js ]; then
-      echo /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js
+    if [ -f /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js ]; then
+      echo /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js
       return
     fi
   fi
-  if [ -f /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js ]; then
-    echo /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js
+  if [ -f /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js ]; then
+    echo /usr/local/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js
     return
   fi
   local root
   root="$(npm root -g)"
-  echo "$root/@kyanitelabs/epoch/dist/index.js"
+  echo "$root/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js"
 }
 
 install_macos_sender() {
@@ -151,7 +151,7 @@ ENV EPOCH_TRANSPORT=http \\
     EPOCH_PORT=$PORT \\
     HOME=/home/node
 USER node
-CMD ["node", "/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js"]
+CMD ["node", "/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js"]
 DOCKER
   cat >/srv/containers/nucbox/epoch/docker-compose.yml <<YAML
 name: nucbox-epoch

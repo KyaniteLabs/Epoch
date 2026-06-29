@@ -277,7 +277,7 @@ X-Epoch-Version: <epoch_version from payload>
 Epoch's built-in HTTP server includes a local receiver for this contract:
 
 ```bash
-EPOCH_TRANSPORT=http EPOCH_PORT=3099 node dist/index.js
+EPOCH_TRANSPORT=http EPOCH_PORT=3099 node dist/native/epoch-rust-launcher.js
 epoch telemetry set-endpoint --endpoint http://localhost:3099/v1/telemetry
 epoch telemetry submit
 ```

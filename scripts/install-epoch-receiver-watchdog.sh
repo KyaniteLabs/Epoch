@@ -34,7 +34,7 @@ Environment=EPOCH_RECEIVER_DATA_DIR=/srv/data/epoch
 Environment=EPOCH_RECEIVER_COMPOSE_DIR=/srv/containers/nucbox/epoch
 Environment=EPOCH_RECEIVER_COMPOSE_SERVICE=epoch
 Environment=EPOCH_RECEIVER_CONTAINER=nucbox-epoch
-Environment=EPOCH_RECEIVER_CLI_PATH=/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js
+Environment=EPOCH_RECEIVER_CLI_PATH=/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/native/epoch-rust-launcher.js
 Environment=EPOCH_RECEIVER_INTEGRATE=0
 ExecStart=$WATCHDOG_TARGET
 User=root

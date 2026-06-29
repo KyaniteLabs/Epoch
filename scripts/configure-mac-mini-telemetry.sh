@@ -34,15 +34,16 @@ fi
 
 cd "$repo"
 echo "Using Epoch checkout: $repo"
+CLI_JS="dist/native/epoch-rust-launcher.js"
 
-if [[ ! -f dist/index.js ]]; then
-  echo "dist/index.js is missing; installing and building..."
+if [[ ! -f "$CLI_JS" ]]; then
+  echo "$CLI_JS is missing; installing and building..."
   pnpm install
   pnpm run build
 fi
 
-node dist/index.js telemetry enable --endpoint "$ENDPOINT"
-node dist/index.js telemetry status
-node dist/index.js telemetry submit || true
+node "$CLI_JS" telemetry enable --yes --endpoint "$ENDPOINT"
+node "$CLI_JS" telemetry status
+node "$CLI_JS" telemetry submit || true
 
 echo "Done. Endpoint configured: $ENDPOINT"

@@ -102,15 +102,21 @@ cd "$REPO_DIR"
 
 # Build first to make sure dist is current
 pnpm run build --silent 2>/dev/null || pnpm run build 2>&1 | tail -3
+CLI_JS="dist/native/epoch-rust-launcher.js"
+
+if [ ! -f "$CLI_JS" ]; then
+  echo "Missing $CLI_JS after build." >&2
+  exit 1
+fi
 
 # Check before
-BEFORE_FACTOR=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" node dist/index.js data status 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d['referenceDatabase']['sampleSize'])" 2>/dev/null || echo "unknown")
+BEFORE_FACTOR=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" node "$CLI_JS" data status 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d['referenceDatabase']['sampleSize'])" 2>/dev/null || echo "unknown")
 echo "  Before: sample size $BEFORE_FACTOR"
 
-EPOCH_DATA_DIR="$CONSOLIDATE_DIR" node dist/index.js self-improve 2>&1
+EPOCH_DATA_DIR="$CONSOLIDATE_DIR" node "$CLI_JS" self-improve 2>&1
 
 # Check after
-AFTER_FACTOR=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" node dist/index.js data status 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(f\"{d['referenceDatabase']['sampleSize']} (factor {d['referenceDatabase']['source']})\")" 2>/dev/null || echo "unknown")
+AFTER_FACTOR=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" node "$CLI_JS" data status 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(f\"{d['referenceDatabase']['sampleSize']} (factor {d['referenceDatabase']['source']})\")" 2>/dev/null || echo "unknown")
 echo "  After: $AFTER_FACTOR"
 
 # ---- 6. Copy to repo and machines -------------------------------------------

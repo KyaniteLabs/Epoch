@@ -36,7 +36,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "ops:check": "bash -n scripts/epoch-fleet-bootstrap.sh scripts/epoch-receiver-watchdog.sh scripts/install-epoch-receiver-watchdog.sh",
-    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "inspector": "npx @modelcontextprotocol/inspector node dist/native/epoch-rust-launcher.js",
     "canary": "node canary-runner.mjs",
     "dataset:build": "node scripts/export-public-benchmark.mjs",
     "dataset:verify": "node scripts/validate-public-benchmark.mjs",

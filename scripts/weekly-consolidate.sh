@@ -43,6 +43,12 @@ git pull --ff-only 2>/dev/null || log "WARN: could not pull latest (offline or c
 # Build to ensure dist is current
 log "Building..."
 pnpm run build --silent 2>/dev/null || pnpm run build 2>&1 | tail -3
+CLI_JS="dist/native/epoch-rust-launcher.js"
+
+if [ ! -f "$CLI_JS" ]; then
+  log "FAIL: $CLI_JS missing after build."
+  exit 1
+fi
 
 # ---- Create consolidation dir -----------------------------------------------
 CONSOLIDATE_DIR="$(mktemp -d)"
@@ -99,13 +105,13 @@ log "Consolidated: $TOTAL_ESTIMATES estimates, $TOTAL_ACTUALS actuals, $NUC_RECO
 # ---- 5. Self-improve --------------------------------------------------------
 log "Running self-improve on consolidated data..."
 
-BEFORE_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js data status 2>/dev/null |
+BEFORE_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" "$CLI_JS" data status 2>/dev/null |
   python3 -c "import sys,json; print(json.loads(sys.stdin.read())['referenceDatabase']['sampleSize'])" 2>/dev/null)
 BEFORE_SIZE="${BEFORE_SIZE:-unknown}"
 
-EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js self-improve 2>&1 | while read -r line; do log "  $line"; done
+EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" "$CLI_JS" self-improve 2>&1 | while read -r line; do log "  $line"; done
 
-AFTER_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" dist/index.js data status 2>/dev/null |
+AFTER_SIZE=$(EPOCH_DATA_DIR="$CONSOLIDATE_DIR" "$NODE_BIN" "$CLI_JS" data status 2>/dev/null |
   python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(f\"{d['referenceDatabase']['sampleSize']} samples\")" 2>/dev/null)
 AFTER_SIZE="${AFTER_SIZE:-unknown}"
 
