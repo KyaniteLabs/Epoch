@@ -155,6 +155,53 @@ describe("buildSoakStatus", () => {
 		expect(status.warnings).toEqual([]);
 	});
 
+	it("surfaces active shadow-soak heartbeat without crediting unfinished evidence", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 0,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			activeShadowSoakProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:10:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 600_000,
+				iterationsRequested: 3,
+				iterationsCompleted: 128,
+				minSecondsRequested: 3600,
+				minSecondsRemaining: 3000,
+				output: ".epoch-promotion/latest/shadow-soak.json",
+				releaseTag: "candidate-1",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:10:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.activeShadowSoakProgress).toMatchObject({
+			status: "running",
+			iterationsCompleted: 128,
+			minSecondsRemaining: 3000,
+			releaseTag: "candidate-1",
+		});
+		expect(status.totalCompletedSoakHours).toBe(0);
+		expect(status.releaseContinuousSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(formatSoakStatus(status)).toContain("shadow progress:     running");
+		expect(formatSoakStatus(status)).toContain("shadow iterations:   128/3");
+		expect(formatSoakStatus(status)).toContain("shadow remaining:    3000.0s");
+	});
+
 	it("keeps the replacement performance warning when qualified evidence is partial", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",

@@ -30,6 +30,7 @@ type CliOptions = {
 	iterations: number;
 	minSeconds: number;
 	output?: string;
+	progressOutput?: string;
 	releaseTag?: string;
 	noBuild: boolean;
 	quiet: boolean;
@@ -86,6 +87,20 @@ type ShadowSoakReport = {
 	}>;
 };
 
+type ShadowSoakProgress = {
+	status: "running" | "complete";
+	updatedAt: string;
+	startedAt: string;
+	elapsedMs: number;
+	iterationsRequested: number;
+	iterationsCompleted: number;
+	minSecondsRequested: number;
+	minSecondsRemaining: number;
+	output: string | null;
+	releaseTag: string | null;
+	lastIteration: IterationSummary | null;
+};
+
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
 		iterations: 3,
@@ -103,6 +118,8 @@ function parseArgs(argv: string[]): CliOptions {
 			options.minSeconds = nonNegativeNumber(args[++i], "--min-seconds");
 		} else if (arg === "--output" || arg === "-o") {
 			options.output = args[++i];
+		} else if (arg === "--progress-output") {
+			options.progressOutput = nonEmptyString(args[++i], "--progress-output");
 		} else if (arg === "--release-tag") {
 			options.releaseTag = nonEmptyString(args[++i], "--release-tag");
 		} else if (arg === "--no-build") {
@@ -151,6 +168,7 @@ function usage(): string {
 		"  --iterations <n>     Minimum parity-loop iterations to complete (default: 3)",
 		"  --min-seconds <n>    Minimum wall-clock soak seconds to observe (default: 0)",
 		"  --output, -o <path>  Write JSON readiness evidence to a file",
+		"  --progress-output <path>  Write in-progress JSON heartbeat evidence",
 		"  --release-tag <tag>  Mark comparisons as release-tagged observability evidence",
 		"  --no-build           Do not build the release Rust CLI before running",
 		"  --quiet              Suppress the human summary",
@@ -195,6 +213,33 @@ function relOrNull(path: string | null): string | null {
 	return path ? relative(REPO_ROOT, path) : null;
 }
 
+function writeProgress(
+	options: CliOptions,
+	startedAt: string,
+	startedAtMs: number,
+	iterations: readonly IterationSummary[],
+	status: ShadowSoakProgress["status"],
+): void {
+	if (!options.progressOutput) return;
+	const elapsedMs = Date.now() - startedAtMs;
+	const minSecondsRemaining = Math.max(0, options.minSeconds - elapsedMs / 1000);
+	const progress: ShadowSoakProgress = {
+		status,
+		updatedAt: new Date().toISOString(),
+		startedAt,
+		elapsedMs,
+		iterationsRequested: options.iterations,
+		iterationsCompleted: iterations.length,
+		minSecondsRequested: options.minSeconds,
+		minSecondsRemaining,
+		output: options.output ? relOrNull(resolve(options.output)) : null,
+		releaseTag: options.releaseTag ?? null,
+		lastIteration: iterations.at(-1) ?? null,
+	};
+	mkdirSync(dirname(options.progressOutput), { recursive: true });
+	writeFileSync(options.progressOutput, `${JSON.stringify(progress, null, 2)}\n`);
+}
+
 async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 	if (!options.noBuild) buildReleaseCli();
 
@@ -211,6 +256,8 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 	let crashes = 0;
 	let dataLossIncidents = 0;
 	let rustBinary: string | null = null;
+
+	writeProgress(options, startedAt, startedAtMs, iterations, "running");
 
 	while (
 		iterations.length < options.iterations ||
@@ -257,6 +304,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 				toolsCovered: report.toolsCovered.length,
 				crashed: false,
 			});
+			writeProgress(options, startedAt, startedAtMs, iterations, "running");
 		} catch (error) {
 			crashes += 1;
 			unclassifiedFailures += 1;
@@ -277,6 +325,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 				toolsCovered: 0,
 				crashed: true,
 			});
+			writeProgress(options, startedAt, startedAtMs, iterations, "running");
 		}
 
 		if (
@@ -293,6 +342,7 @@ async function runShadowSoak(options: CliOptions): Promise<ShadowSoakReport> {
 	const unresolvedTelemetryAnomalies =
 		crashes + unclassifiedFailures + dataLossIncidents;
 	const rustBinarySha256 = sha256File(rustBinary);
+	writeProgress(options, startedAt, startedAtMs, iterations, "complete");
 
 	return {
 		meta: {

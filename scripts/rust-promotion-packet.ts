@@ -104,6 +104,7 @@ type PacketSummary = {
 		e2e: string;
 		packageSmoke: string;
 		shadowSoak: string;
+		shadowSoakProgress: string;
 		rollback: string;
 		readinessInput: string;
 		readinessAssessment: string;
@@ -747,6 +748,7 @@ function buildSummary(
 			e2e: rel(resolve(outputDir, "e2e.json")),
 			packageSmoke: rel(resolve(outputDir, "package-smoke.json")),
 			shadowSoak: rel(resolve(outputDir, "shadow-soak.json")),
+			shadowSoakProgress: rel(resolve(outputDir, "shadow-soak-progress.json")),
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
 			readinessInput: rel(resolve(outputDir, "readiness-input.json")),
 			readinessAssessment: rel(resolve(outputDir, "readiness-assessment.json")),
@@ -793,6 +795,7 @@ async function main(): Promise<void> {
 	const e2ePath = resolve(outputDir, "e2e.json");
 	const packageSmokePath = resolve(outputDir, "package-smoke.json");
 	const shadowPath = resolve(outputDir, "shadow-soak.json");
+	const shadowProgressPath = resolve(outputDir, "shadow-soak-progress.json");
 	const rollbackPath = resolve(outputDir, "shadow-soak-rollback.json");
 	const readinessInputPath = resolve(outputDir, "readiness-input.json");
 	const readinessAssessmentPath = resolve(outputDir, "readiness-assessment.json");
@@ -856,6 +859,8 @@ async function main(): Promise<void> {
 		String(options.minSeconds),
 		"--output",
 		shadowPath,
+		"--progress-output",
+		shadowProgressPath,
 		"--no-build",
 		"--quiet",
 	];

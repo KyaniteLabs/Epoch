@@ -30,6 +30,18 @@ type RunnerState = {
 	untilTarget: boolean | null;
 	benchmarkMode: string | null;
 };
+type ShadowSoakProgress = {
+	status: "running" | "complete";
+	updatedAt: string;
+	startedAt: string;
+	elapsedMs: number;
+	iterationsRequested: number;
+	iterationsCompleted: number;
+	minSecondsRequested: number;
+	minSecondsRemaining: number;
+	output: string | null;
+	releaseTag: string | null;
+};
 type LedgerRun = {
 	id: string;
 	generatedAt: string;
@@ -88,6 +100,7 @@ type SoakStatus = {
 	ignoredRunCount: number;
 	activeRunner: boolean;
 	runnerState: RunnerState | null;
+	activeShadowSoakProgress: ShadowSoakProgress | null;
 	totalCompletedSoakHours: number;
 	continuousCleanSoakHours: number;
 	continuityLostHours: number;
@@ -386,6 +399,27 @@ function parseRunnerState(raw: unknown): RunnerState | null {
 	};
 }
 
+function parseShadowSoakProgress(raw: unknown): ShadowSoakProgress | null {
+	if (!isObject(raw)) return null;
+	const status = stringField(raw, "status");
+	if (status !== "running" && status !== "complete") return null;
+	const updatedAt = stringField(raw, "updatedAt");
+	const startedAt = stringField(raw, "startedAt");
+	if (!updatedAt || !startedAt) return null;
+	return {
+		status,
+		updatedAt,
+		startedAt,
+		elapsedMs: numberField(raw, "elapsedMs"),
+		iterationsRequested: numberField(raw, "iterationsRequested"),
+		iterationsCompleted: numberField(raw, "iterationsCompleted"),
+		minSecondsRequested: numberField(raw, "minSecondsRequested"),
+		minSecondsRemaining: numberField(raw, "minSecondsRemaining"),
+		output: stringField(raw, "output"),
+		releaseTag: stringField(raw, "releaseTag"),
+	};
+}
+
 function numberSum(values: number[]): number {
 	return values.reduce((total, value) => total + value, 0);
 }
@@ -581,6 +615,7 @@ export function buildSoakStatus(input: {
 	ledgerPath: string;
 	ledgerRaw: unknown | null;
 	stateRaw?: unknown | null;
+	activeShadowSoakProgressRaw?: unknown | null;
 	generatedAt?: string;
 	runnerAlive?: boolean;
 }): SoakStatus {
@@ -595,6 +630,9 @@ export function buildSoakStatus(input: {
 		runnerState?.ledger !== undefined &&
 		sameRepoPath(runnerState.ledger, input.ledgerPath);
 	const activeRunner = runnerProcessAlive && runnerLedgerMatches;
+	const activeShadowSoakProgress = activeRunner
+		? parseShadowSoakProgress(input.activeShadowSoakProgressRaw ?? null)
+		: null;
 	const identities = new Set(
 		runs
 			.map((run) => run.rustBinarySha256)
@@ -756,6 +794,7 @@ export function buildSoakStatus(input: {
 		ignoredRunCount: ledger?.ignoredRunCount ?? 0,
 		activeRunner,
 		runnerState,
+		activeShadowSoakProgress,
 		totalCompletedSoakHours,
 		continuousCleanSoakHours,
 		continuityLostHours: Math.max(
@@ -830,6 +869,14 @@ export function formatSoakStatus(status: SoakStatus): string {
 			`  runner release tag:  ${status.runnerState.releaseTag ?? "unknown"}`,
 		);
 	}
+	if (status.activeShadowSoakProgress) {
+		lines.push(
+			`  shadow progress:     ${status.activeShadowSoakProgress.status}`,
+			`  shadow iterations:   ${status.activeShadowSoakProgress.iterationsCompleted}/${status.activeShadowSoakProgress.iterationsRequested}`,
+			`  shadow remaining:    ${status.activeShadowSoakProgress.minSecondsRemaining.toFixed(1)}s`,
+			`  shadow updated:      ${status.activeShadowSoakProgress.updatedAt}`,
+		);
+	}
 	for (const warning of status.warnings) {
 		lines.push(`  warning:             ${warning}`);
 	}
@@ -843,10 +890,16 @@ export function main(argv: string[]): number {
 		const statePath = resolve(REPO_ROOT, options.statePath);
 		const stateRaw = readJsonIfExists(statePath);
 		const runnerState = parseRunnerState(stateRaw);
+		const activeShadowSoakProgressRaw = runnerState?.packetDir
+			? readJsonIfExists(
+					resolve(REPO_ROOT, runnerState.packetDir, "shadow-soak-progress.json"),
+				)
+			: null;
 		const status = buildSoakStatus({
 			ledgerPath: options.ledgerPath,
 			ledgerRaw: readJsonIfExists(ledgerPath),
 			stateRaw,
+			activeShadowSoakProgressRaw,
 			runnerAlive: runnerState ? isRunnerProcessAlive(runnerState) : false,
 		});
 		process.stdout.write(
