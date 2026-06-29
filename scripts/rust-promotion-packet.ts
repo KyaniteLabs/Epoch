@@ -3,13 +3,19 @@
 // Epoch Rust promotion packet
 //
 // Runs the current promotion evidence chain and writes a local packet:
-// parity, performance, shadow-soak, rollback, normalized readiness input, and
-// a sanitized summary suitable for release review. Raw evidence can contain
+// parity, performance, release-binary e2e, shadow-soak, rollback, normalized
+// readiness input, and a sanitized summary suitable for release review. Raw evidence can contain
 // local artifact paths, so the default output directory is git-ignored.
 // ---------------------------------------------------------------------------
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { relative, resolve } from "node:path";
 
 import {
@@ -35,6 +41,9 @@ type PacketSummary = {
 	evidence: {
 		compatibility: {
 			publicSurfaceMatch: boolean;
+			releaseE2ePass: boolean;
+			publicSurfaceCoveragePercent: number | null;
+			httpDeployEnvCoveragePercent: number | null;
 			outputParityPercent: number;
 			errorCompatibilityPercent: number;
 			unclassifiedFailures: number;
@@ -76,6 +85,7 @@ type PacketSummary = {
 	files: {
 		parity: string;
 		perf: string;
+		e2e: string;
 		shadowSoak: string;
 		rollback: string;
 		readinessInput: string;
@@ -262,6 +272,34 @@ function performanceEvidence(
 	};
 }
 
+function numberValue(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function e2eCoveragePercent(report: unknown, category: string): number | null {
+	if (!isObject(report) || !isObject(report.coverage)) return null;
+	const coverage = report.coverage[category];
+	if (!isObject(coverage)) return null;
+	return numberValue(coverage.percent);
+}
+
+function e2eEvidence(e2eReport: unknown): {
+	releaseE2ePass: boolean;
+	publicSurfaceCoveragePercent: number | null;
+	httpDeployEnvCoveragePercent: number | null;
+} {
+	return {
+		releaseE2ePass: isObject(e2eReport) && e2eReport.pass === true,
+		publicSurfaceCoveragePercent: isObject(e2eReport)
+			? numberValue(e2eReport.overall_surface_percent)
+			: null,
+		httpDeployEnvCoveragePercent: e2eCoveragePercent(
+			e2eReport,
+			"http_deploy_env",
+		),
+	};
+}
+
 function buildSummary(
 	outputDir: string,
 	readinessInput: ReadinessInput,
@@ -269,13 +307,16 @@ function buildSummary(
 	releaseTag: string | undefined,
 	shadowSoak: unknown,
 	perfReport: unknown,
+	e2eReport: unknown,
 ): PacketSummary {
+	const e2e = e2eEvidence(e2eReport);
 	return {
 		generatedAt: new Date().toISOString(),
 		readiness,
 		evidence: {
 			compatibility: {
 				publicSurfaceMatch: readinessInput.parity.publicSurfaceMatch,
+				...e2e,
 				outputParityPercent: readinessInput.parity.outputParityPercent,
 				errorCompatibilityPercent:
 					readinessInput.parity.errorCompatibilityPercent,
@@ -307,6 +348,7 @@ function buildSummary(
 		files: {
 			parity: rel(resolve(outputDir, "parity.json")),
 			perf: rel(resolve(outputDir, "perf.json")),
+			e2e: rel(resolve(outputDir, "e2e.json")),
 			shadowSoak: rel(resolve(outputDir, "shadow-soak.json")),
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
 			readinessInput: rel(resolve(outputDir, "readiness-input.json")),
@@ -322,6 +364,7 @@ function printSummary(summary: PacketSummary): void {
 			"Rust promotion packet",
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,
+			`  release e2e:         ${summary.evidence.compatibility.releaseE2ePass ? "pass" : "fail"} (${summary.evidence.compatibility.publicSurfaceCoveragePercent ?? "unknown"}%)`,
 			`  output parity:       ${summary.evidence.compatibility.outputParityPercent}%`,
 			`  error compatibility: ${summary.evidence.compatibility.errorCompatibilityPercent}%`,
 			`  median improvement:  ${summary.evidence.performance.medianLatencyImprovementPercent.toFixed(2)}%`,
@@ -349,6 +392,7 @@ async function main(): Promise<void> {
 
 	const parityPath = resolve(outputDir, "parity.json");
 	const perfPath = resolve(outputDir, "perf.json");
+	const e2ePath = resolve(outputDir, "e2e.json");
 	const shadowPath = resolve(outputDir, "shadow-soak.json");
 	const rollbackPath = resolve(outputDir, "shadow-soak-rollback.json");
 	const readinessInputPath = resolve(outputDir, "readiness-input.json");
@@ -388,6 +432,15 @@ async function main(): Promise<void> {
 		options,
 	);
 
+	runPackageManager("release e2e public surface", [
+		"run",
+		"promotion:rust-e2e",
+	], options);
+	copyFileSync(
+		resolve(REPO_ROOT, "docs/superpowers/reports/rust-promotion-e2e.json"),
+		e2ePath,
+	);
+
 	const shadowArgs = [
 		"exec",
 		"tsx",
@@ -423,6 +476,7 @@ async function main(): Promise<void> {
 		perf: readJson(perfPath),
 	});
 	const perfReport = readJson(perfPath);
+	const e2eReport = readJson(e2ePath);
 	const shadowSoak = readJson(shadowPath);
 	const readiness = assessDeployReadiness(readinessInput);
 	const summary = buildSummary(
@@ -432,6 +486,7 @@ async function main(): Promise<void> {
 		options.releaseTag,
 		shadowSoak,
 		perfReport,
+		e2eReport,
 	);
 
 	writeJson(readinessInputPath, readinessInput);
