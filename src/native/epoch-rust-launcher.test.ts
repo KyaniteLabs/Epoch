@@ -57,16 +57,25 @@ describe("epoch-rust-launcher", () => {
 		expect(plan.input).toEqual({ timezone: "UTC" });
 	});
 
-	it("keeps interactive telemetry enable on the TypeScript compatibility path", () => {
-		expect(planInvocation(["telemetry", "enable"]).mode).toBe("typescript");
-		expect(
-			planInvocation([
-				"telemetry",
-				"enable",
-				"--endpoint",
-				"https://collector.example.net/v1/telemetry",
-			]).mode,
-		).toBe("typescript");
+	it("routes telemetry enable consent prompts through the Rust launcher", () => {
+		const plain = planInvocation(["telemetry", "enable"]);
+		const withEndpoint = planInvocation([
+			"telemetry",
+			"enable",
+			"--endpoint",
+			"https://collector.example.net/v1/telemetry",
+		]);
+
+		expect(plain.mode).toBe("rust-cli");
+		expect(plain.commandPath).toBe("telemetry enable");
+		expect(plain.input).toEqual({});
+		expect(plain.requiresTelemetryConsent).toBe(true);
+		expect(withEndpoint.mode).toBe("rust-cli");
+		expect(withEndpoint.commandPath).toBe("telemetry enable");
+		expect(withEndpoint.input).toEqual({
+			endpoint: "https://collector.example.net/v1/telemetry",
+		});
+		expect(withEndpoint.requiresTelemetryConsent).toBe(true);
 	});
 
 	it("routes root meta help commands to Rust as TypeScript-shaped failures", () => {
@@ -210,7 +219,7 @@ describe("epoch-rust-launcher", () => {
 		expect((plan as { exitByPayloadOk?: boolean }).exitByPayloadOk).toBe(true);
 	});
 
-	it("keeps telemetry submit endpoint validation errors on the TypeScript path", () => {
+	it("routes telemetry endpoint validation errors through the Rust launcher", () => {
 		const plan = planInvocation([
 			"telemetry",
 			"submit",
@@ -218,7 +227,8 @@ describe("epoch-rust-launcher", () => {
 			"http://collector.example.net/v1/telemetry",
 		]);
 
-		expect(plan.mode).toBe("typescript");
+		expect(plan.mode).toBe("rust-cli");
+		expect(plan.commandPath).toBe("telemetry submit");
 	});
 
 	it("keeps telemetry submit interval values Rust would reject on the TypeScript path", () => {
@@ -322,6 +332,47 @@ describe("epoch-rust-launcher", () => {
 					"}",
 					"",
 				].join("\n"),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("prints telemetry endpoint validation failures like the TypeScript CLI", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-endpoint-error-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const releaseDir = join(root, "rust", "target", "release");
+			const binary = join(releaseDir, `epoch-cli${suffix}`);
+			mkdirSync(releaseDir, { recursive: true });
+			writeFileSync(
+				binary,
+				[
+					"#!/usr/bin/env node",
+					"console.error(JSON.stringify({ error: { isError: true, message: 'this fake binary should not run' } }));",
+					"process.exit(2);",
+				].join("\n"),
+			);
+			chmodSync(binary, 0o755);
+
+			const output = captureOutput(() =>
+				runPlannedInvocation(
+					planInvocation([
+						"telemetry",
+						"enable",
+						"--yes",
+						"--endpoint",
+						"http://collector.example.net/v1/telemetry",
+					]),
+					root,
+					{},
+				),
+			);
+
+			expect(output.status).toBe(1);
+			expect(output.stdout).toBe("");
+			expect(output.stderr).toBe(
+				"--endpoint must use https://, except for localhost or Tailscale private receivers\n",
 			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

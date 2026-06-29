@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -28,6 +28,8 @@ export type LauncherPlan = {
 	rawRustFailureStream?: "stdout" | "stderr";
 	rawRustFailureIndent?: number | null;
 	exitByPayloadOk?: boolean;
+	plainTelemetryEndpointErrors?: boolean;
+	requiresTelemetryConsent?: boolean;
 };
 
 type RootOptions = {
@@ -55,6 +57,8 @@ export type CommandSpec = {
 	rawFailureStream?: "stdout" | "stderr";
 	rawFailureIndent?: number | null;
 	exitByPayloadOk?: boolean;
+	plainTelemetryEndpointErrors?: boolean;
+	telemetryConsent?: boolean;
 	route?: (args: string[]) => boolean;
 };
 
@@ -208,21 +212,25 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	command("telemetry export", "telemetry_export", [
 		option("--output", "output", "string"),
 	], { wrapOutput: false, rawOutputIndent: null }),
-	{
-		...command("telemetry enable", "telemetry_enable", [
-			option("--yes", "yes", "boolean"),
-			option("--endpoint", "endpoint", "string"),
+		{
+			...command("telemetry enable", "telemetry_enable", [
+				option("--yes", "yes", "boolean"),
+				option("--endpoint", "endpoint", "string"),
+			], {
+				wrapOutput: false,
+				rawOutputIndent: null,
+				plainTelemetryEndpointErrors: true,
+				telemetryConsent: true,
+			}),
+			build: ({ yes: _yes, ...values }) => values,
+		},
+		command("telemetry set-endpoint", "telemetry_set_endpoint", [
+			option("--endpoint", "endpoint", "string", { required: true }),
 		], {
 			wrapOutput: false,
 			rawOutputIndent: null,
-			route: (args) =>
-				args.includes("--yes") || args.some((arg) => arg.startsWith("--yes=")),
+			plainTelemetryEndpointErrors: true,
 		}),
-		build: ({ yes: _yes, ...values }) => values,
-	},
-	command("telemetry set-endpoint", "telemetry_set_endpoint", [
-		option("--endpoint", "endpoint", "string", { required: true }),
-	], { wrapOutput: false, rawOutputIndent: null }),
 	command("telemetry disable", "telemetry_disable", [], {
 		wrapOutput: false,
 		rawOutputIndent: null,
@@ -241,11 +249,12 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		option("--force", "force", "boolean"),
 		option("--min-interval-hours", "min_interval_hours", "number"),
 	], {
-		wrapOutput: false,
-		rawOutputIndent: 2,
-		exitByPayloadOk: true,
-		route: telemetrySubmitRoute,
-	}),
+			wrapOutput: false,
+			rawOutputIndent: 2,
+			exitByPayloadOk: true,
+			plainTelemetryEndpointErrors: true,
+			route: telemetrySubmitRoute,
+		}),
 	command("share-data", "share_data", [
 		option("--output", "output", "string"),
 		option("--description", "description", "string"),
@@ -274,11 +283,13 @@ function command(
 		| "wrapOutput"
 		| "rawOutputIndent"
 		| "rawOutputFormat"
-		| "rawFailureStream"
-		| "rawFailureIndent"
-		| "exitByPayloadOk"
-		| "route"
-	> = {},
+			| "rawFailureStream"
+			| "rawFailureIndent"
+			| "exitByPayloadOk"
+			| "plainTelemetryEndpointErrors"
+			| "telemetryConsent"
+			| "route"
+		> = {},
 ): CommandSpec {
 	return { path, toolName, options, ...extra };
 }
@@ -327,6 +338,8 @@ export function planInvocation(
 	}
 
 	const input = parseToolInput(spec, commandArgs);
+	const requiresTelemetryConsent = spec.telemetryConsent === true &&
+		!hasFlag(commandArgs, "--yes");
 	return {
 		mode: "rust-cli",
 		commandPath,
@@ -339,6 +352,8 @@ export function planInvocation(
 		rawRustFailureStream: spec.rawFailureStream,
 		rawRustFailureIndent: spec.rawFailureIndent,
 		exitByPayloadOk: spec.exitByPayloadOk,
+		plainTelemetryEndpointErrors: spec.plainTelemetryEndpointErrors,
+		requiresTelemetryConsent,
 	};
 }
 
@@ -482,10 +497,6 @@ function parseBooleanFlag(def: OptionSpec, raw: string): boolean {
 }
 
 function telemetrySubmitRoute(args: string[]): boolean {
-	const endpoint = optionValue(args, "--endpoint");
-	if (endpoint !== undefined) {
-		if (endpoint === null || !isValidTelemetryEndpoint(endpoint)) return false;
-	}
 	const minIntervalHours = optionValue(args, "--min-interval-hours");
 	if (minIntervalHours !== undefined) {
 		if (
@@ -496,6 +507,10 @@ function telemetrySubmitRoute(args: string[]): boolean {
 		}
 	}
 	return true;
+}
+
+function hasFlag(args: string[], flag: string): boolean {
+	return args.includes(flag) || args.some((arg) => arg.startsWith(`${flag}=`));
 }
 
 function shareDataRoute(args: string[]): boolean {
@@ -520,23 +535,6 @@ function optionValue(args: string[], flag: string): string | undefined | null {
 		}
 	}
 	return undefined;
-}
-
-function isValidTelemetryEndpoint(endpoint: string): boolean {
-	const trimmed = endpoint.trim();
-	let parsed: URL;
-	try {
-		parsed = new URL(trimmed);
-	} catch {
-		return false;
-	}
-
-	const isLocalHttp =
-		parsed.protocol === "http:" &&
-		["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-	const isTailscaleHttp =
-		parsed.protocol === "http:" && isTailscalePrivateIpv4(parsed.hostname);
-	return parsed.protocol === "https:" || isLocalHttp || isTailscaleHttp;
 }
 
 function isSafeTelemetrySubmitInterval(raw: string): boolean {
@@ -629,6 +627,31 @@ function runRustCli(
 	const toolName = plan.toolName;
 	const input = plan.input;
 	if (!commandPath || !toolName || !input) return 1;
+
+	if (plan.plainTelemetryEndpointErrors) {
+		const endpoint = normalizeTelemetryEndpoint(input["endpoint"]);
+		if (endpoint?.error) {
+			process.stderr.write(`${endpoint.error}\n`);
+			return 1;
+		}
+		if (endpoint?.value) {
+			input["endpoint"] = endpoint.value;
+		}
+	}
+
+	if (plan.requiresTelemetryConsent) {
+		writeTelemetryConsent(
+			telemetryRecordCount(binary, env),
+			typeof input["endpoint"] === "string" ? input["endpoint"] : undefined,
+		);
+		const answer = readLineFromStdin();
+		if (answer === null) return 0;
+		if (!["yes", "y"].includes(answer.toLowerCase())) {
+			process.stdout.write("Cancelled.\n");
+			return 0;
+		}
+	}
+
 	const child = spawnSync(binary, [commandPath, JSON.stringify(input)], {
 		encoding: "utf8",
 		env: { ...process.env, ...env },
@@ -673,6 +696,13 @@ function runRustCli(
 	}
 
 	const parsed = parseJson(child.stderr);
+	if (plan.plainTelemetryEndpointErrors) {
+		const message = rustErrorMessage(parsed);
+		if (message) {
+			process.stderr.write(`${message}\n`);
+			return 1;
+		}
+	}
 	const error = isObject(parsed) && "error" in parsed ? parsed["error"] : {
 		isError: true,
 		message: child.stderr.trim() || `Rust command failed: ${commandPath}`,
@@ -680,6 +710,101 @@ function runRustCli(
 	const result = { ok: false, error };
 	process.stderr.write(`${JSON.stringify(result, null, 2)}\n`);
 	return child.status ?? 2;
+}
+
+function normalizeTelemetryEndpoint(
+	value: unknown,
+): { value?: string; error?: string } | null {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	let parsed: URL;
+	try {
+		parsed = new URL(trimmed);
+	} catch {
+		return { error: "--endpoint must be a valid URL" };
+	}
+
+	const isLocalHttp =
+		parsed.protocol === "http:" &&
+		["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+	const isTailscaleHttp =
+		parsed.protocol === "http:" && isTailscalePrivateIpv4(parsed.hostname);
+	if (parsed.protocol !== "https:" && !isLocalHttp && !isTailscaleHttp) {
+		return {
+			error:
+				"--endpoint must use https://, except for localhost or Tailscale private receivers",
+		};
+	}
+	return { value: trimmed };
+}
+
+function writeTelemetryConsent(recordCount: number, endpoint?: string): void {
+	const lines = [
+		"Epoch Anonymous Telemetry — Informed Consent",
+		"",
+		"What IS shared:",
+		"  - Task type (feature, bugfix, refactor, etc.)",
+		"  - Complexity rating (1-5)",
+		"  - Tool used (pert_estimate, cocomo_estimate, etc.)",
+		"  - Estimated hours and actual hours",
+		"  - Ratio (actual/estimated)",
+		"  - Date (YYYY-MM-DD only)",
+		"",
+		"What is NOT shared:",
+		"  - No project names, descriptions, or notes",
+		"  - No team identifiers or company information",
+		"  - No IP addresses or timestamps with time-of-day",
+		"  - No source code or task descriptions",
+		"",
+		"A random installation ID is used to deduplicate submissions.",
+		"This ID cannot be used to identify you.",
+		"",
+		`Records available: ${recordCount}`,
+	];
+	if (endpoint) lines.push(`Endpoint: ${endpoint}`);
+	lines.push(
+		"",
+		"Data stays local until an endpoint is configured and submission runs.",
+		"Type 'yes' to confirm:",
+	);
+	process.stdout.write(`${lines.join("\n")}\n> `);
+}
+
+function telemetryRecordCount(binary: string, env: NodeJS.ProcessEnv): number {
+	const child = spawnSync(binary, ["telemetry preview", "{}"], {
+		encoding: "utf8",
+		env: { ...process.env, ...env },
+	});
+	if (child.status !== 0) return 0;
+	const parsed = parseJson(child.stdout);
+	if (!isObject(parsed)) return 0;
+	const total = parsed["totalRecords"];
+	return typeof total === "number" && Number.isFinite(total) ? total : 0;
+}
+
+function readLineFromStdin(): string | null {
+	const buffer = Buffer.alloc(1);
+	let answer = "";
+	for (;;) {
+		let bytesRead: number;
+		try {
+			bytesRead = readSync(0, buffer, 0, 1, null);
+		} catch {
+			return answer.length === 0 ? null : answer;
+		}
+		if (bytesRead === 0) return answer.length === 0 ? null : answer;
+		const char = buffer.toString("utf8", 0, bytesRead);
+		if (char === "\n") return answer.endsWith("\r") ? answer.slice(0, -1) : answer;
+		answer += char;
+	}
+}
+
+function rustErrorMessage(parsed: unknown): string | null {
+	if (!isObject(parsed)) return null;
+	const error = parsed["error"];
+	if (!isObject(error)) return null;
+	const message = error["message"];
+	return typeof message === "string" && message.length > 0 ? message : null;
 }
 
 function runTypeScriptEntrypoint(
