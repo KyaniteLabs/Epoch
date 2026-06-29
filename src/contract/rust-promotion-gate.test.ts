@@ -114,6 +114,8 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		startupImprovementPercent: 90,
 		memoryImprovementPercent: 90,
 		performanceEvidenceMode: "qualified",
+		performanceToolsBenchmarked: 24,
+		performanceIterationsScale: 1,
 		...overrides,
 	};
 }
@@ -831,6 +833,52 @@ describe("assessPromotionGateFromLedger", () => {
 			{
 				currentRustBinarySha256: RUST_BINARY_SHA256,
 				currentReleaseTag: "candidate-1",
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("qualified non-smoke performance");
+	});
+
+	it("blocks replacement when qualified ledger performance proof is partial", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([
+				ledgerRun({
+					endedAt: "2026-06-30T00:00:00.000Z",
+					soakHours: 72,
+					continuousSoakHours: 72,
+					performanceEvidenceMode: "qualified",
+					performanceToolsBenchmarked: 12,
+				}),
+			]),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+				deploySurface: rustDeploySurface,
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("qualified non-smoke performance");
+	});
+
+	it("blocks replacement when qualified ledger performance proof is underscaled", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([
+				ledgerRun({
+					endedAt: "2026-06-30T00:00:00.000Z",
+					soakHours: 72,
+					continuousSoakHours: 72,
+					performanceEvidenceMode: "qualified",
+					performanceIterationsScale: 0.5,
+				}),
+			]),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+				deploySurface: rustDeploySurface,
 			},
 		);
 

@@ -59,6 +59,8 @@ function run(overrides: Record<string, unknown> = {}) {
 		p95LatencyImprovementPercent: 90,
 		startupImprovementPercent: 90,
 		memoryImprovementPercent: 90,
+		performanceToolsBenchmarked: 24,
+		performanceIterationsScale: 1,
 		readinessDecision: "SHADOW",
 		readinessFailingGate: "soak",
 		...overrides,
@@ -151,6 +153,37 @@ describe("buildSoakStatus", () => {
 
 		expect(status.qualifiedPerformanceEvidence).toBe(true);
 		expect(status.warnings).toEqual([]);
+	});
+
+	it("keeps the replacement performance warning when qualified evidence is partial", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					performanceEvidenceMode: "qualified",
+					performanceToolsBenchmarked: 12,
+				}),
+			]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.qualifiedPerformanceEvidence).toBe(false);
+		expect(status.warnings).toContain(
+			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
+		);
 	});
 
 	it("reports cumulative canary readiness instead of the latest packet readiness", () => {

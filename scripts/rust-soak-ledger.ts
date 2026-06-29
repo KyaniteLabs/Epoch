@@ -63,6 +63,8 @@ type LedgerRun = {
 	startupImprovementPercent: number;
 	memoryImprovementPercent: number;
 	performanceEvidenceMode: "smoke" | "qualified";
+	performanceToolsBenchmarked: number | null;
+	performanceIterationsScale: number | null;
 	readinessDecision: string;
 	readinessFailingGate: string | null;
 };
@@ -95,6 +97,8 @@ type LedgerSummary = {
 	releaseContinuousSoakHours: number;
 	releaseTag: string | null;
 	qualifiedPerformanceEvidence: boolean;
+	qualifiedPerformanceToolsBenchmarked: number | null;
+	qualifiedPerformanceIterationsScale: number | null;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
@@ -123,6 +127,8 @@ const REQUIRED_PACKAGE_COMMANDS = new Set([
 	"epoch-mcp",
 	"epoch-http",
 ]);
+const REQUIRED_QUALIFIED_BENCHMARK_TOOLS = 24;
+const MIN_QUALIFIED_ITERATIONS_SCALE = 1;
 const CURRENT_PLATFORM =
 	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 
@@ -214,9 +220,16 @@ function boolSome(values: boolean[]): boolean {
 function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	return (
 		run.performanceEvidenceMode === "qualified" &&
+		(run.performanceToolsBenchmarked ?? 0) >=
+			REQUIRED_QUALIFIED_BENCHMARK_TOOLS &&
+		(run.performanceIterationsScale ?? 0) >= MIN_QUALIFIED_ITERATIONS_SCALE &&
 		run.observabilityLevel === "release" &&
 		run.releaseTag !== null
 	);
+}
+
+function qualifiedPerformanceRuns(runs: LedgerRun[]): LedgerRun[] {
+	return runs.filter(hasReleaseQualifiedPerformanceEvidence);
 }
 
 function ledgerReleaseTag(runs: LedgerRun[]): string | null {
@@ -448,6 +461,14 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 		),
 		performanceEvidenceMode:
 			value.performanceEvidenceMode === "qualified" ? "qualified" : "smoke",
+		performanceToolsBenchmarked:
+			typeof value.performanceToolsBenchmarked === "number"
+				? value.performanceToolsBenchmarked
+				: null,
+		performanceIterationsScale:
+			typeof value.performanceIterationsScale === "number"
+				? value.performanceIterationsScale
+				: null,
 		readinessDecision: stringField(value, "readinessDecision", "UNKNOWN"),
 		readinessFailingGate:
 			typeof value.readinessFailingGate === "string"
@@ -519,6 +540,24 @@ function packetPerformanceEvidenceMode(
 	return performance.evidenceMode === "qualified" ? "qualified" : "smoke";
 }
 
+function packetPerformanceToolsBenchmarked(summary: unknown): number | null {
+	if (!isObject(summary) || !isObject(summary.evidence)) return null;
+	const performance = summary.evidence.performance;
+	if (!isObject(performance)) return null;
+	return typeof performance.toolsBenchmarked === "number"
+		? performance.toolsBenchmarked
+		: null;
+}
+
+function packetPerformanceIterationsScale(summary: unknown): number | null {
+	if (!isObject(summary) || !isObject(summary.evidence)) return null;
+	const performance = summary.evidence.performance;
+	if (!isObject(performance)) return null;
+	return typeof performance.iterationsScale === "number"
+		? performance.iterationsScale
+		: null;
+}
+
 function packetWindow(
 	shadowSoak: unknown,
 	generatedAt: string,
@@ -558,6 +597,10 @@ function ledgerRunFromPacket(
 	const readiness = packetReadiness(summary);
 	const binary = packetBinaryIdentity(shadowSoak);
 	const performanceEvidenceMode = packetPerformanceEvidenceMode(summary);
+	const performanceToolsBenchmarked =
+		packetPerformanceToolsBenchmarked(summary);
+	const performanceIterationsScale =
+		packetPerformanceIterationsScale(summary);
 	const packageCommands = packageCommandsFromSummary(summary);
 	const window = packetWindow(
 		shadowSoak,
@@ -600,6 +643,8 @@ function ledgerRunFromPacket(
 		startupImprovementPercent: readinessInput.perf.startupImprovementPercent,
 		memoryImprovementPercent: readinessInput.perf.memoryImprovementPercent,
 		performanceEvidenceMode,
+		performanceToolsBenchmarked,
+		performanceIterationsScale,
 		readinessDecision: readiness.decision,
 		readinessFailingGate: readiness.failingGate,
 	};
@@ -809,9 +854,20 @@ function buildSummary(
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
 	const packageCliSha256 = ledgerPackageCliSha256(ledger.runs);
 	const releaseTag = ledgerReleaseTag(ledger.runs);
-	const qualifiedPerformanceEvidence = ledger.runs.some(
-		hasReleaseQualifiedPerformanceEvidence,
-	);
+	const qualifiedRuns = qualifiedPerformanceRuns(ledger.runs);
+	const qualifiedPerformanceEvidence = qualifiedRuns.length > 0;
+	const qualifiedPerformanceToolsBenchmarked =
+		qualifiedRuns.length > 0
+			? Math.max(
+					...qualifiedRuns.map((run) => run.performanceToolsBenchmarked ?? 0),
+				)
+			: null;
+	const qualifiedPerformanceIterationsScale =
+		qualifiedRuns.length > 0
+			? Math.max(
+					...qualifiedRuns.map((run) => run.performanceIterationsScale ?? 0),
+				)
+			: null;
 	const releaseE2ePass = boolAll(
 		ledger.runs.map((run) => run.releaseE2ePass === true),
 	);
@@ -841,6 +897,8 @@ function buildSummary(
 		releaseContinuousSoakHours,
 		releaseTag,
 		qualifiedPerformanceEvidence,
+		qualifiedPerformanceToolsBenchmarked,
+		qualifiedPerformanceIterationsScale,
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,

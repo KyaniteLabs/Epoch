@@ -60,6 +60,8 @@ type LedgerRun = {
 	startupImprovementPercent: number;
 	memoryImprovementPercent: number;
 	performanceEvidenceMode: "smoke" | "qualified";
+	performanceToolsBenchmarked: number | null;
+	performanceIterationsScale: number | null;
 	readinessDecision: string | null;
 	readinessFailingGate: string | null;
 };
@@ -126,6 +128,8 @@ const REQUIRED_PACKAGE_COMMANDS = new Set([
 	"epoch-mcp",
 	"epoch-http",
 ]);
+const REQUIRED_QUALIFIED_BENCHMARK_TOOLS = 24;
+const MIN_QUALIFIED_ITERATIONS_SCALE = 1;
 const CURRENT_PLATFORM =
 	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
@@ -332,6 +336,14 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 		memoryImprovementPercent: numberField(raw, "memoryImprovementPercent"),
 		performanceEvidenceMode:
 			raw.performanceEvidenceMode === "qualified" ? "qualified" : "smoke",
+		performanceToolsBenchmarked:
+			typeof raw.performanceToolsBenchmarked === "number"
+				? raw.performanceToolsBenchmarked
+				: null,
+		performanceIterationsScale:
+			typeof raw.performanceIterationsScale === "number"
+				? raw.performanceIterationsScale
+				: null,
 		readinessDecision: stringField(raw, "readinessDecision"),
 		readinessFailingGate: stringField(raw, "readinessFailingGate"),
 	};
@@ -393,6 +405,9 @@ function boolSome(values: boolean[]): boolean {
 function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	return (
 		run.performanceEvidenceMode === "qualified" &&
+		(run.performanceToolsBenchmarked ?? 0) >=
+			REQUIRED_QUALIFIED_BENCHMARK_TOOLS &&
+		(run.performanceIterationsScale ?? 0) >= MIN_QUALIFIED_ITERATIONS_SCALE &&
 		run.observabilityLevel === "release" &&
 		run.releaseTag !== null
 	);

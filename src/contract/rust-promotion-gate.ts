@@ -148,6 +148,8 @@ const ledgerRunSchema = z.object({
 	startupImprovementPercent: z.number(),
 	memoryImprovementPercent: z.number(),
 	performanceEvidenceMode: z.enum(["smoke", "qualified"]).default("smoke"),
+	performanceToolsBenchmarked: z.number().nonnegative().nullable().default(null),
+	performanceIterationsScale: z.number().nonnegative().nullable().default(null),
 });
 
 const soakLedgerSchema = z.object({
@@ -156,6 +158,8 @@ const soakLedgerSchema = z.object({
 });
 
 type LedgerRun = z.infer<typeof ledgerRunSchema>;
+const REQUIRED_QUALIFIED_BENCHMARK_TOOLS = 24;
+const MIN_QUALIFIED_ITERATIONS_SCALE = 1;
 
 const ledgerSummarySchema = z.object({
 	totalSoakHours: z.number().nonnegative(),
@@ -832,6 +836,9 @@ function boolSome(values: boolean[]): boolean {
 function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	return (
 		run.performanceEvidenceMode === "qualified" &&
+		(run.performanceToolsBenchmarked ?? 0) >=
+			REQUIRED_QUALIFIED_BENCHMARK_TOOLS &&
+		(run.performanceIterationsScale ?? 0) >= MIN_QUALIFIED_ITERATIONS_SCALE &&
 		run.observabilityLevel === "release" &&
 		run.releaseTag !== null
 	);

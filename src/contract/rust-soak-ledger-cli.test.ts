@@ -81,7 +81,13 @@ function packet(
 		},
 		evidence: {
 			observability: { releaseTag: "candidate-1" },
-			performance: { evidenceMode: options.performanceEvidenceMode },
+			performance: {
+				evidenceMode: options.performanceEvidenceMode,
+				toolsBenchmarked:
+					options.performanceEvidenceMode === "qualified" ? 24 : 1,
+				iterationsScale:
+					options.performanceEvidenceMode === "qualified" ? 1 : 0.1,
+			},
 			deploy: {
 				packageCommands: packageCommands(),
 				packageCliSha256: RUST_BINARY_SHA256,
@@ -145,22 +151,26 @@ describe("rust-soak-ledger CLI", () => {
 		runLedger(secondPacket, ledgerPath, secondSummary);
 
 		const summary = JSON.parse(readFileSync(secondSummary, "utf8")) as {
-				continuousSoakHours: number;
-				releaseContinuousSoakHours: number;
-				packageCliSha256: string | null;
-				releaseTag: string | null;
-				qualifiedPerformanceEvidence: boolean;
+			continuousSoakHours: number;
+			releaseContinuousSoakHours: number;
+			packageCliSha256: string | null;
+			releaseTag: string | null;
+			qualifiedPerformanceEvidence: boolean;
+			qualifiedPerformanceToolsBenchmarked: number | null;
+			qualifiedPerformanceIterationsScale: number | null;
 			releaseE2ePass: boolean;
 			publicSurfaceCoveragePercent: number;
 			httpDeployEnvCoveragePercent: number;
 			packageSmokePass: boolean;
 			readiness: { failingGate: string | null };
-			};
-			expect(summary.continuousSoakHours).toBe(2);
-			expect(summary.releaseContinuousSoakHours).toBe(2);
-			expect(summary.packageCliSha256).toBe(RUST_BINARY_SHA256);
-			expect(summary.releaseTag).toBe("candidate-1");
-			expect(summary.qualifiedPerformanceEvidence).toBe(true);
+		};
+		expect(summary.continuousSoakHours).toBe(2);
+		expect(summary.releaseContinuousSoakHours).toBe(2);
+		expect(summary.packageCliSha256).toBe(RUST_BINARY_SHA256);
+		expect(summary.releaseTag).toBe("candidate-1");
+		expect(summary.qualifiedPerformanceEvidence).toBe(true);
+		expect(summary.qualifiedPerformanceToolsBenchmarked).toBe(24);
+		expect(summary.qualifiedPerformanceIterationsScale).toBe(1);
 		expect(summary.releaseE2ePass).toBe(true);
 		expect(summary.publicSurfaceCoveragePercent).toBe(100);
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);

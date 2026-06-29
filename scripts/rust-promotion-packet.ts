@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
@@ -239,6 +240,10 @@ function readJson(path: string): unknown {
 
 function writeJson(path: string, value: unknown): void {
 	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function sha256File(path: string): string {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function rel(path: string): string {
@@ -729,10 +734,10 @@ function buildSummary(
 			deploy: {
 				packageSmokePass: packageSmoke.ok,
 				packageTarball: packageSmoke.tarball,
-			packageBinTarget: packageSmoke.binTarget,
-			packagePrebuilds: packageSmoke.prebuilds,
-			packageCliSha256: packageSmoke.packageCliSha256,
-			commandExitCode: packageSmoke.commandExitCode,
+				packageBinTarget: packageSmoke.binTarget,
+				packagePrebuilds: packageSmoke.prebuilds,
+				packageCliSha256: packageSmoke.packageCliSha256,
+				commandExitCode: packageSmoke.commandExitCode,
 				packageCommands: packageSmoke.commands,
 			},
 		},

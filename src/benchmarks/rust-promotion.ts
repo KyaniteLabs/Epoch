@@ -39,6 +39,10 @@ type BenchmarkTool = {
 	input: Record<string, unknown>;
 	tsArgs: string[];
 	rustArgs: string[];
+	dynamicArgs?: (
+		invocation: number,
+		runtime: "ts" | "rust",
+	) => { tsArgs: string[]; rustArgs: string[] };
 };
 
 type LatencySample = {
@@ -128,6 +132,32 @@ function toolRegistry(): BenchmarkTool[] {
 
 	return [
 		{
+			name: "get_current_time",
+			category: "temporal",
+			iterations: 500,
+			input: { timezone: "UTC" },
+			tsArgs: ["--timezone", "UTC"],
+			rustArgs: ['{"timezone":"UTC"}'],
+		},
+		{
+			name: "convert_timezone",
+			category: "temporal",
+			iterations: 500,
+			input: {
+				timestamp: "2026-06-24T12:00:00Z",
+				target_tz: "America/Los_Angeles",
+			},
+			tsArgs: [
+				"--timestamp",
+				"2026-06-24T12:00:00Z",
+				"--target-tz",
+				"America/Los_Angeles",
+			],
+			rustArgs: [
+				'{"timestamp":"2026-06-24T12:00:00Z","target_tz":"America/Los_Angeles"}',
+			],
+		},
+		{
 			name: "parse_duration",
 			category: "temporal",
 			iterations: 800,
@@ -169,6 +199,29 @@ function toolRegistry(): BenchmarkTool[] {
 			],
 			rustArgs: [
 				'{"start_date":"2026-06-01","end_date":"2026-06-30","country":"US"}',
+			],
+		},
+		{
+			name: "time_math",
+			category: "temporal",
+			iterations: 500,
+			input: {
+				operation: "diff",
+				operands: {
+					start_date: "2026-06-01",
+					end_date: "2026-06-30",
+				},
+			},
+			tsArgs: [
+				"--operation",
+				"diff",
+				"--start-date",
+				"2026-06-01",
+				"--end-date",
+				"2026-06-30",
+			],
+			rustArgs: [
+				'{"operation":"diff","operands":{"start_date":"2026-06-01","end_date":"2026-06-30"}}',
 			],
 		},
 		{
@@ -297,8 +350,48 @@ function toolRegistry(): BenchmarkTool[] {
 			],
 		},
 		{
+			name: "calibrate_estimates",
+			category: "analytics",
+			iterations: 300,
+			input: { team_id: "bench-team", period_days: 90 },
+			tsArgs: ["--team-id", "bench-team", "--period-days", "90"],
+			rustArgs: ['{"team_id":"bench-team","period_days":90}'],
+		},
+		{
 			name: "token_time_bridge",
 			category: "analytics",
+			iterations: 500,
+			input: {
+				tokens: 50000,
+				model: "gpt-4o-mini",
+				tool_calls: 5,
+				reasoning_depth: "moderate",
+			},
+			tsArgs: [
+				"--tokens",
+				"50000",
+				"--model",
+				"gpt-4o-mini",
+				"--tool-calls",
+				"5",
+				"--reasoning-depth",
+				"moderate",
+			],
+			rustArgs: [
+				'{"tokens":50000,"model":"gpt-4o-mini","tool_calls":5,"reasoning_depth":"moderate"}',
+			],
+		},
+		{
+			name: "accuracy_trend",
+			category: "analytics",
+			iterations: 300,
+			input: { team_id: "bench-team", window_size: 5 },
+			tsArgs: ["--team-id", "bench-team", "--window-size", "5"],
+			rustArgs: ['{"team_id":"bench-team","window_size":5}'],
+		},
+		{
+			name: "token_cost_estimate",
+			category: "cost",
 			iterations: 500,
 			input: {
 				tokens: 50000,
@@ -379,6 +472,75 @@ function toolRegistry(): BenchmarkTool[] {
 			input: { dataset_filter: ["NASA93"] },
 			tsArgs: ["--dataset-filter", "NASA93"],
 			rustArgs: ['{"dataset_filter":["NASA93"]}'],
+		},
+		{
+			name: "record_actual",
+			category: "feedback",
+			iterations: 120,
+			input: {
+				estimate_id: "bench-record",
+				actual_hours: 2.5,
+				notes: "benchmark",
+			},
+			tsArgs: [],
+			rustArgs: ["{}"],
+			dynamicArgs: (invocation, runtime) => {
+				const estimateId = `bench-record-${runtime}-${invocation}`;
+				return {
+					tsArgs: [
+						"--estimate-id",
+						estimateId,
+						"--actual-hours",
+						"2.5",
+						"--notes",
+						"benchmark",
+					],
+					rustArgs: [
+						JSON.stringify({
+							estimate_id: estimateId,
+							actual_hours: 2.5,
+							notes: "benchmark",
+						}),
+					],
+				};
+			},
+		},
+		{
+			name: "get_pending_estimates",
+			category: "feedback",
+			iterations: 300,
+			input: { limit: 20 },
+			tsArgs: ["--limit", "20"],
+			rustArgs: ['{"limit":20}'],
+		},
+		{
+			name: "batch_record_actuals",
+			category: "feedback",
+			iterations: 80,
+			input: {
+				entries: [
+					{ estimate_id: "bench-batch-a", actual_hours: 1.5 },
+					{ estimate_id: "bench-batch-b", actual_hours: 2.5 },
+				],
+			},
+			tsArgs: [],
+			rustArgs: ["{}"],
+			dynamicArgs: (invocation, runtime) => {
+				const entries = [
+					{
+						estimate_id: `bench-batch-${runtime}-${invocation}-a`,
+						actual_hours: 1.5,
+					},
+					{
+						estimate_id: `bench-batch-${runtime}-${invocation}-b`,
+						actual_hours: 2.5,
+					},
+				];
+				return {
+					tsArgs: ["--entries", JSON.stringify(entries)],
+					rustArgs: [JSON.stringify({ entries })],
+				};
+			},
 		},
 		{
 			name: "feedback_health",
@@ -587,6 +749,22 @@ function benchmarkToolTimeoutMs(): number {
 		: DEFAULT_TOOL_TIMEOUT_MS;
 }
 
+function toolCommand(tool: BenchmarkTool): string {
+	return tool.name.replace(/_/g, "-");
+}
+
+function toolArgs(
+	tool: BenchmarkTool,
+	runtime: "ts" | "rust",
+	invocation: number,
+): string[] {
+	const dynamicArgs = tool.dynamicArgs?.(invocation, runtime);
+	if (runtime === "ts") {
+		return dynamicArgs?.tsArgs ?? tool.tsArgs;
+	}
+	return dynamicArgs?.rustArgs ?? tool.rustArgs;
+}
+
 async function measureTool(
 	tsCli: string,
 	rustCli: string,
@@ -608,12 +786,12 @@ async function measureTool(
 	// Warmup + verify correctness once.
 	const tsWarmup = await invokeTool(
 		"node",
-		[tsCli, tool.name.replace(/_/g, "-"), ...tool.tsArgs],
+		[tsCli, toolCommand(tool), ...toolArgs(tool, "ts", -1)],
 		{ EPOCH_DATA_DIR: dataDir },
 	);
 	const rustWarmup = await invokeTool(
 		rustCli,
-		[tool.name.replace(/_/g, "-"), ...tool.rustArgs],
+		[toolCommand(tool), ...toolArgs(tool, "rust", -1)],
 		{ EPOCH_DATA_DIR: dataDir },
 	);
 
@@ -632,12 +810,12 @@ async function measureTool(
 	for (let i = 0; i < iterations; i++) {
 		const tsResult = await invokeTool(
 			"node",
-			[tsCli, tool.name.replace(/_/g, "-"), ...tool.tsArgs],
+			[tsCli, toolCommand(tool), ...toolArgs(tool, "ts", i)],
 			{ EPOCH_DATA_DIR: dataDir },
 		);
 		const rustResult = await invokeTool(
 			rustCli,
-			[tool.name.replace(/_/g, "-"), ...tool.rustArgs],
+			[toolCommand(tool), ...toolArgs(tool, "rust", i)],
 			{ EPOCH_DATA_DIR: dataDir },
 		);
 
@@ -781,12 +959,12 @@ async function attachRssMeasurements(
 ): Promise<void> {
 	const tsRss = await measureRss(
 		"node",
-		[tsCli, tool.name.replace(/_/g, "-"), ...tool.tsArgs],
+		[tsCli, toolCommand(tool), ...toolArgs(tool, "ts", -2)],
 		{ EPOCH_DATA_DIR: dataDir },
 	);
 	const rustRss = await measureRss(
 		rustCli,
-		[tool.name.replace(/_/g, "-"), ...tool.rustArgs],
+		[toolCommand(tool), ...toolArgs(tool, "rust", -2)],
 		{ EPOCH_DATA_DIR: dataDir },
 	);
 	result.ts.maxRssKb = tsRss;
