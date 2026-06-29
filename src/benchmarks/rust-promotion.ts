@@ -24,9 +24,10 @@ import {
 	existsSync,
 	realpathSync,
 	writeFileSync,
+	mkdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,12 +101,31 @@ type BenchmarkReport = {
 
 type CliOptions = {
 	output?: string;
+	progressOutput?: string;
 	format: "json" | "table";
 	smoke: boolean;
 	iterationsScale: number;
 	maxIterationsPerTool: number;
 	skipBuild: boolean;
 	include?: string[];
+};
+
+type BenchmarkProgress = {
+	status: "running" | "complete" | "failed";
+	updatedAt: string;
+	startedAt: string;
+	elapsedMs: number;
+	output: string | null;
+	smoke: boolean;
+	iterationsScale: number;
+	maxIterationsPerTool: number;
+	toolsTotal: number;
+	toolsCompleted: number;
+	currentTool: string | null;
+	currentToolIndex: number | null;
+	currentToolIterations: number | null;
+	completedTools: string[];
+	error: string | null;
 };
 
 const DEFAULT_TOOL_TIMEOUT_MS = 10_000;
@@ -571,6 +591,8 @@ function parseCliOptions(): CliOptions {
 		const arg = args[i];
 		if (arg === "--output" || arg === "-o") {
 			options.output = args[++i];
+		} else if (arg === "--progress-output") {
+			options.progressOutput = args[++i];
 		} else if (arg === "--format") {
 			const value = args[++i];
 			if (value !== "json" && value !== "table") {
@@ -611,6 +633,8 @@ function printHelp(): void {
 
 Options:
   --output <path>         Write JSON report to file (stdout still gets output)
+  --progress-output <path>
+                          Write in-progress JSON benchmark heartbeat evidence
   --format <json|table>   Output format (default: json)
   --smoke                 Run with minimal iterations for a quick smoke test
   --iterations-scale <n>  Multiply default iteration counts (default: 1)
@@ -620,6 +644,12 @@ Options:
   --include <tool1,tool2> Benchmark only the listed tools
   --help, -h              Show this help
 `);
+}
+
+function writeProgress(path: string | undefined, progress: BenchmarkProgress): void {
+	if (!path) return;
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(progress, null, 2)}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,6 +1166,8 @@ function buildReport(
 async function main(): Promise<void> {
 	const options = parseCliOptions();
 	const dataDir = mkdtempSync(join(tmpdir(), "epoch-bench-"));
+	const startedAtMs = Date.now();
+	const startedAt = new Date(startedAtMs).toISOString();
 
 	try {
 		const { tsCli, rustCli } = options.skipBuild
@@ -1147,14 +1179,49 @@ async function main(): Promise<void> {
 		if (includeFilter && includeFilter.length > 0) {
 			tools = tools.filter((t) => includeFilter.includes(t.name));
 		}
+		const completedTools: string[] = [];
+		const progress = (
+			status: BenchmarkProgress["status"],
+			currentTool: BenchmarkTool | null,
+			currentToolIndex: number | null,
+			currentToolIterations: number | null,
+			error: string | null,
+		): void => {
+			writeProgress(options.progressOutput, {
+				status,
+				updatedAt: new Date().toISOString(),
+				startedAt,
+				elapsedMs: Date.now() - startedAtMs,
+				output: options.output ?? null,
+				smoke: options.smoke,
+				iterationsScale: options.iterationsScale,
+				maxIterationsPerTool: options.maxIterationsPerTool,
+				toolsTotal: tools.length,
+				toolsCompleted: completedTools.length,
+				currentTool: currentTool?.name ?? null,
+				currentToolIndex,
+				currentToolIterations,
+				completedTools,
+				error,
+			});
+		};
 
 		console.error(
 			`[bench] benchmarking ${tools.length} tools (smoke=${options.smoke})...`,
 		);
+		progress("running", null, null, null, null);
 
 		const results: ToolResult[] = [];
-		for (const tool of tools) {
+		for (const [index, tool] of tools.entries()) {
 			process.stderr.write(`[bench] ${tool.name} ... `);
+			const scaledIterations = Math.round(tool.iterations * options.iterationsScale);
+			const currentToolIterations = options.smoke
+				? 2
+				: Math.max(
+						1,
+						Math.min(scaledIterations, options.maxIterationsPerTool),
+					);
+			progress("running", tool, index + 1, currentToolIterations, null);
 			const result = await measureTool(
 				tsCli,
 				rustCli,
@@ -1166,6 +1233,8 @@ async function main(): Promise<void> {
 			);
 			await attachRssMeasurements(tsCli, rustCli, tool, dataDir, result);
 			results.push(result);
+			completedTools.push(tool.name);
+			progress("running", null, null, null, null);
 			process.stderr.write(
 				`TS ${result.ts.medianMs.toFixed(3)}ms / Rust ${result.rust.medianMs.toFixed(3)}ms (${
 					result.speedup === null ? "N/A" : `${result.speedup.toFixed(2)}x`
@@ -1178,12 +1247,32 @@ async function main(): Promise<void> {
 		if (options.output) {
 			writeFileSync(options.output, JSON.stringify(report, null, 2));
 		}
+		progress("complete", null, null, null, null);
 
 		if (options.format === "table") {
 			console.log(formatTable(report));
 		} else {
 			console.log(JSON.stringify(report, null, 2));
 		}
+	} catch (error) {
+		writeProgress(options.progressOutput, {
+			status: "failed",
+			updatedAt: new Date().toISOString(),
+			startedAt,
+			elapsedMs: Date.now() - startedAtMs,
+			output: options.output ?? null,
+			smoke: options.smoke,
+			iterationsScale: options.iterationsScale,
+			maxIterationsPerTool: options.maxIterationsPerTool,
+			toolsTotal: 0,
+			toolsCompleted: 0,
+			currentTool: null,
+			currentToolIndex: null,
+			currentToolIterations: null,
+			completedTools: [],
+			error: error instanceof Error ? error.message : String(error),
+		});
+		throw error;
 	} finally {
 		// Temporary directory is left in place for post-mortem inspection;
 		// it contains no sensitive data and is in the system temp path.

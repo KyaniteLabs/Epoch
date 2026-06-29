@@ -104,6 +104,7 @@ type PacketSummary = {
 		e2e: string;
 		packageSmoke: string;
 		packetProgress: string;
+		perfProgress: string;
 		shadowSoak: string;
 		shadowSoakProgress: string;
 		rollback: string;
@@ -784,6 +785,7 @@ function buildSummary(
 			e2e: rel(resolve(outputDir, "e2e.json")),
 			packageSmoke: rel(resolve(outputDir, "package-smoke.json")),
 			packetProgress: rel(resolve(outputDir, "promotion-packet-progress.json")),
+			perfProgress: rel(resolve(outputDir, "perf-progress.json")),
 			shadowSoak: rel(resolve(outputDir, "shadow-soak.json")),
 			shadowSoakProgress: rel(resolve(outputDir, "shadow-soak-progress.json")),
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
@@ -829,6 +831,7 @@ async function main(): Promise<void> {
 
 	const parityPath = resolve(outputDir, "parity.json");
 	const perfPath = resolve(outputDir, "perf.json");
+	const perfProgressPath = resolve(outputDir, "perf-progress.json");
 	const e2ePath = resolve(outputDir, "e2e.json");
 	const packageSmokePath = resolve(outputDir, "package-smoke.json");
 	const packetProgressPath = resolve(outputDir, "promotion-packet-progress.json");
@@ -913,6 +916,8 @@ async function main(): Promise<void> {
 		"src/benchmarks/rust-promotion.ts",
 		"--output",
 		perfPath,
+		"--progress-output",
+		perfProgressPath,
 	];
 	if (options.benchmarkMode === "smoke") {
 		benchmarkArgs.push("--smoke");

@@ -54,6 +54,23 @@ type PromotionPacketProgress = {
 	completedSteps: string[];
 	error: string | null;
 };
+type BenchmarkProgress = {
+	status: "running" | "complete" | "failed";
+	updatedAt: string;
+	startedAt: string;
+	elapsedMs: number;
+	output: string | null;
+	smoke: boolean | null;
+	iterationsScale: number;
+	maxIterationsPerTool: number;
+	toolsTotal: number;
+	toolsCompleted: number;
+	currentTool: string | null;
+	currentToolIndex: number | null;
+	currentToolIterations: number | null;
+	completedTools: string[];
+	error: string | null;
+};
 type LedgerRun = {
 	id: string;
 	generatedAt: string;
@@ -113,6 +130,7 @@ type SoakStatus = {
 	activeRunner: boolean;
 	runnerState: RunnerState | null;
 	activePromotionPacketProgress: PromotionPacketProgress | null;
+	activeBenchmarkProgress: BenchmarkProgress | null;
 	activeShadowSoakProgress: ShadowSoakProgress | null;
 	totalCompletedSoakHours: number;
 	continuousCleanSoakHours: number;
@@ -463,6 +481,40 @@ function parsePromotionPacketProgress(raw: unknown): PromotionPacketProgress | n
 	};
 }
 
+function parseBenchmarkProgress(raw: unknown): BenchmarkProgress | null {
+	if (!isObject(raw)) return null;
+	const status = stringField(raw, "status");
+	if (status !== "running" && status !== "complete" && status !== "failed") {
+		return null;
+	}
+	const updatedAt = stringField(raw, "updatedAt");
+	const startedAt = stringField(raw, "startedAt");
+	if (!updatedAt || !startedAt) return null;
+	return {
+		status,
+		updatedAt,
+		startedAt,
+		elapsedMs: numberField(raw, "elapsedMs"),
+		output: stringField(raw, "output"),
+		smoke: booleanField(raw, "smoke"),
+		iterationsScale: numberField(raw, "iterationsScale"),
+		maxIterationsPerTool: numberField(raw, "maxIterationsPerTool"),
+		toolsTotal: numberField(raw, "toolsTotal"),
+		toolsCompleted: numberField(raw, "toolsCompleted"),
+		currentTool: stringField(raw, "currentTool"),
+		currentToolIndex:
+			typeof raw.currentToolIndex === "number" ? raw.currentToolIndex : null,
+		currentToolIterations:
+			typeof raw.currentToolIterations === "number"
+				? raw.currentToolIterations
+				: null,
+		completedTools: Array.isArray(raw.completedTools)
+			? raw.completedTools.filter((tool): tool is string => typeof tool === "string")
+			: [],
+		error: stringField(raw, "error"),
+	};
+}
+
 function numberSum(values: number[]): number {
 	return values.reduce((total, value) => total + value, 0);
 }
@@ -659,6 +711,7 @@ export function buildSoakStatus(input: {
 	ledgerRaw: unknown | null;
 	stateRaw?: unknown | null;
 	activePromotionPacketProgressRaw?: unknown | null;
+	activeBenchmarkProgressRaw?: unknown | null;
 	activeShadowSoakProgressRaw?: unknown | null;
 	generatedAt?: string;
 	runnerAlive?: boolean;
@@ -676,6 +729,9 @@ export function buildSoakStatus(input: {
 	const activeRunner = runnerProcessAlive && runnerLedgerMatches;
 	const activePromotionPacketProgress = activeRunner
 		? parsePromotionPacketProgress(input.activePromotionPacketProgressRaw ?? null)
+		: null;
+	const activeBenchmarkProgress = activeRunner
+		? parseBenchmarkProgress(input.activeBenchmarkProgressRaw ?? null)
 		: null;
 	const activeShadowSoakProgress = activeRunner
 		? parseShadowSoakProgress(input.activeShadowSoakProgressRaw ?? null)
@@ -842,6 +898,7 @@ export function buildSoakStatus(input: {
 		activeRunner,
 		runnerState,
 		activePromotionPacketProgress,
+		activeBenchmarkProgress,
 		activeShadowSoakProgress,
 		totalCompletedSoakHours,
 		continuousCleanSoakHours,
@@ -925,6 +982,14 @@ export function formatSoakStatus(status: SoakStatus): string {
 			`  packet updated:      ${status.activePromotionPacketProgress.updatedAt}`,
 		);
 	}
+	if (status.activeBenchmarkProgress) {
+		lines.push(
+			`  bench progress:      ${status.activeBenchmarkProgress.status}`,
+			`  bench tool:          ${status.activeBenchmarkProgress.currentTool ?? "none"}`,
+			`  bench completed:     ${status.activeBenchmarkProgress.toolsCompleted}/${status.activeBenchmarkProgress.toolsTotal}`,
+			`  bench updated:       ${status.activeBenchmarkProgress.updatedAt}`,
+		);
+	}
 	if (status.activeShadowSoakProgress) {
 		lines.push(
 			`  shadow progress:     ${status.activeShadowSoakProgress.status}`,
@@ -967,11 +1032,15 @@ export function main(argv: string[]): number {
 					),
 				)
 			: null;
+		const activeBenchmarkProgressRaw = runnerState?.packetDir
+			? readJsonIfExists(resolve(REPO_ROOT, runnerState.packetDir, "perf-progress.json"))
+			: null;
 		const status = buildSoakStatus({
 			ledgerPath: options.ledgerPath,
 			ledgerRaw: readJsonIfExists(ledgerPath),
 			stateRaw,
 			activePromotionPacketProgressRaw,
+			activeBenchmarkProgressRaw,
 			activeShadowSoakProgressRaw,
 			runnerAlive: runnerState ? isRunnerProcessAlive(runnerState) : false,
 		});

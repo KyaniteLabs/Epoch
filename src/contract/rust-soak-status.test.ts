@@ -281,6 +281,60 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("packet completed:    2");
 	});
 
+	it("surfaces active benchmark progress without crediting unfinished evidence", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 0,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			activeBenchmarkProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:04:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 240_000,
+				output: ".epoch-promotion/latest/perf.json",
+				smoke: false,
+				iterationsScale: 1,
+				maxIterationsPerTool: 10,
+				toolsTotal: 24,
+				toolsCompleted: 7,
+				currentTool: "critical_path",
+				currentToolIndex: 8,
+				currentToolIterations: 10,
+				completedTools: ["get_current_time"],
+				error: null,
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:04:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.activeBenchmarkProgress).toMatchObject({
+			status: "running",
+			currentTool: "critical_path",
+			toolsTotal: 24,
+			toolsCompleted: 7,
+			currentToolIterations: 10,
+		});
+		expect(status.totalCompletedSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(formatSoakStatus(status)).toContain("bench progress:      running");
+		expect(formatSoakStatus(status)).toContain(
+			"bench tool:          critical_path",
+		);
+		expect(formatSoakStatus(status)).toContain("bench completed:     7/24");
+	});
+
 	it("keeps the replacement performance warning when qualified evidence is partial", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
