@@ -232,6 +232,55 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("shadow remaining:    3000.0s");
 	});
 
+	it("surfaces active promotion-packet progress without crediting unfinished evidence", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 0,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			activePromotionPacketProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:03:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 180_000,
+				outputDir: ".epoch-promotion/latest",
+				releaseTag: "candidate-1",
+				benchmarkMode: "qualified",
+				currentStep: "promotion-benchmark",
+				completedSteps: ["build-rust-release-cli", "strict-parity"],
+				error: null,
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:03:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.activePromotionPacketProgress).toMatchObject({
+			status: "running",
+			currentStep: "promotion-benchmark",
+			completedSteps: ["build-rust-release-cli", "strict-parity"],
+			releaseTag: "candidate-1",
+		});
+		expect(status.totalCompletedSoakHours).toBe(0);
+		expect(status.releaseContinuousSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(formatSoakStatus(status)).toContain("packet progress:     running");
+		expect(formatSoakStatus(status)).toContain(
+			"packet step:         promotion-benchmark",
+		);
+		expect(formatSoakStatus(status)).toContain("packet completed:    2");
+	});
+
 	it("keeps the replacement performance warning when qualified evidence is partial", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",

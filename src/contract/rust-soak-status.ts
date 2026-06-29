@@ -42,6 +42,18 @@ type ShadowSoakProgress = {
 	output: string | null;
 	releaseTag: string | null;
 };
+type PromotionPacketProgress = {
+	status: "running" | "complete" | "failed";
+	updatedAt: string;
+	startedAt: string;
+	elapsedMs: number;
+	outputDir: string | null;
+	releaseTag: string | null;
+	benchmarkMode: string | null;
+	currentStep: string | null;
+	completedSteps: string[];
+	error: string | null;
+};
 type LedgerRun = {
 	id: string;
 	generatedAt: string;
@@ -100,6 +112,7 @@ type SoakStatus = {
 	ignoredRunCount: number;
 	activeRunner: boolean;
 	runnerState: RunnerState | null;
+	activePromotionPacketProgress: PromotionPacketProgress | null;
 	activeShadowSoakProgress: ShadowSoakProgress | null;
 	totalCompletedSoakHours: number;
 	continuousCleanSoakHours: number;
@@ -425,6 +438,31 @@ function parseShadowSoakProgress(raw: unknown): ShadowSoakProgress | null {
 	};
 }
 
+function parsePromotionPacketProgress(raw: unknown): PromotionPacketProgress | null {
+	if (!isObject(raw)) return null;
+	const status = stringField(raw, "status");
+	if (status !== "running" && status !== "complete" && status !== "failed") {
+		return null;
+	}
+	const updatedAt = stringField(raw, "updatedAt");
+	const startedAt = stringField(raw, "startedAt");
+	if (!updatedAt || !startedAt) return null;
+	return {
+		status,
+		updatedAt,
+		startedAt,
+		elapsedMs: numberField(raw, "elapsedMs"),
+		outputDir: stringField(raw, "outputDir"),
+		releaseTag: stringField(raw, "releaseTag"),
+		benchmarkMode: stringField(raw, "benchmarkMode"),
+		currentStep: stringField(raw, "currentStep"),
+		completedSteps: Array.isArray(raw.completedSteps)
+			? raw.completedSteps.filter((step): step is string => typeof step === "string")
+			: [],
+		error: stringField(raw, "error"),
+	};
+}
+
 function numberSum(values: number[]): number {
 	return values.reduce((total, value) => total + value, 0);
 }
@@ -620,6 +658,7 @@ export function buildSoakStatus(input: {
 	ledgerPath: string;
 	ledgerRaw: unknown | null;
 	stateRaw?: unknown | null;
+	activePromotionPacketProgressRaw?: unknown | null;
 	activeShadowSoakProgressRaw?: unknown | null;
 	generatedAt?: string;
 	runnerAlive?: boolean;
@@ -635,6 +674,9 @@ export function buildSoakStatus(input: {
 		runnerState?.ledger !== undefined &&
 		sameRepoPath(runnerState.ledger, input.ledgerPath);
 	const activeRunner = runnerProcessAlive && runnerLedgerMatches;
+	const activePromotionPacketProgress = activeRunner
+		? parsePromotionPacketProgress(input.activePromotionPacketProgressRaw ?? null)
+		: null;
 	const activeShadowSoakProgress = activeRunner
 		? parseShadowSoakProgress(input.activeShadowSoakProgressRaw ?? null)
 		: null;
@@ -799,6 +841,7 @@ export function buildSoakStatus(input: {
 		ignoredRunCount: ledger?.ignoredRunCount ?? 0,
 		activeRunner,
 		runnerState,
+		activePromotionPacketProgress,
 		activeShadowSoakProgress,
 		totalCompletedSoakHours,
 		continuousCleanSoakHours,
@@ -874,6 +917,14 @@ export function formatSoakStatus(status: SoakStatus): string {
 			`  runner release tag:  ${status.runnerState.releaseTag ?? "unknown"}`,
 		);
 	}
+	if (status.activePromotionPacketProgress) {
+		lines.push(
+			`  packet progress:     ${status.activePromotionPacketProgress.status}`,
+			`  packet step:         ${status.activePromotionPacketProgress.currentStep ?? "none"}`,
+			`  packet completed:    ${status.activePromotionPacketProgress.completedSteps.length}`,
+			`  packet updated:      ${status.activePromotionPacketProgress.updatedAt}`,
+		);
+	}
 	if (status.activeShadowSoakProgress) {
 		lines.push(
 			`  shadow progress:     ${status.activeShadowSoakProgress.status}`,
@@ -907,10 +958,20 @@ export function main(argv: string[]): number {
 					resolve(REPO_ROOT, runnerState.packetDir, "shadow-soak-progress.json"),
 				)
 			: null;
+		const activePromotionPacketProgressRaw = runnerState?.packetDir
+			? readJsonIfExists(
+					resolve(
+						REPO_ROOT,
+						runnerState.packetDir,
+						"promotion-packet-progress.json",
+					),
+				)
+			: null;
 		const status = buildSoakStatus({
 			ledgerPath: options.ledgerPath,
 			ledgerRaw: readJsonIfExists(ledgerPath),
 			stateRaw,
+			activePromotionPacketProgressRaw,
 			activeShadowSoakProgressRaw,
 			runnerAlive: runnerState ? isRunnerProcessAlive(runnerState) : false,
 		});

@@ -103,6 +103,7 @@ type PacketSummary = {
 		perf: string;
 		e2e: string;
 		packageSmoke: string;
+		packetProgress: string;
 		shadowSoak: string;
 		shadowSoakProgress: string;
 		rollback: string;
@@ -110,6 +111,29 @@ type PacketSummary = {
 		readinessAssessment: string;
 		summary: string;
 	};
+};
+
+type PacketStep =
+	| "build-rust-release-cli"
+	| "strict-parity"
+	| "promotion-benchmark"
+	| "release-e2e-public-surface"
+	| "package-smoke"
+	| "shadow-soak-evidence"
+	| "rollback-rehearsal"
+	| "readiness-summary";
+
+type PacketProgress = {
+	status: "running" | "complete" | "failed";
+	updatedAt: string;
+	startedAt: string;
+	elapsedMs: number;
+	outputDir: string;
+	releaseTag: string | null;
+	benchmarkMode: CliOptions["benchmarkMode"];
+	currentStep: PacketStep | null;
+	completedSteps: PacketStep[];
+	error: string | null;
 };
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
@@ -241,6 +265,18 @@ function readJson(path: string): unknown {
 
 function writeJson(path: string, value: unknown): void {
 	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writePacketProgress(
+	path: string,
+	progress: Omit<PacketProgress, "updatedAt" | "elapsedMs">,
+	startedAtMs: number,
+): void {
+	writeJson(path, {
+		...progress,
+		updatedAt: new Date().toISOString(),
+		elapsedMs: Date.now() - startedAtMs,
+	});
 }
 
 function sha256File(path: string): string {
@@ -747,6 +783,7 @@ function buildSummary(
 			perf: rel(resolve(outputDir, "perf.json")),
 			e2e: rel(resolve(outputDir, "e2e.json")),
 			packageSmoke: rel(resolve(outputDir, "package-smoke.json")),
+			packetProgress: rel(resolve(outputDir, "promotion-packet-progress.json")),
 			shadowSoak: rel(resolve(outputDir, "shadow-soak.json")),
 			shadowSoakProgress: rel(resolve(outputDir, "shadow-soak-progress.json")),
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
@@ -794,28 +831,80 @@ async function main(): Promise<void> {
 	const perfPath = resolve(outputDir, "perf.json");
 	const e2ePath = resolve(outputDir, "e2e.json");
 	const packageSmokePath = resolve(outputDir, "package-smoke.json");
+	const packetProgressPath = resolve(outputDir, "promotion-packet-progress.json");
 	const shadowPath = resolve(outputDir, "shadow-soak.json");
 	const shadowProgressPath = resolve(outputDir, "shadow-soak-progress.json");
 	const rollbackPath = resolve(outputDir, "shadow-soak-rollback.json");
 	const readinessInputPath = resolve(outputDir, "readiness-input.json");
 	const readinessAssessmentPath = resolve(outputDir, "readiness-assessment.json");
 	const summaryPath = resolve(outputDir, "promotion-packet.json");
+	const startedAtMs = Date.now();
+	const startedAt = new Date(startedAtMs).toISOString();
+	const completedSteps: PacketStep[] = [];
+	const progressBase = {
+		startedAt,
+		outputDir: rel(outputDir),
+		releaseTag: options.releaseTag ?? null,
+		benchmarkMode: options.benchmarkMode,
+		completedSteps,
+		error: null,
+	};
 
-	run("build Rust release CLI", "cargo", [
-		"build",
-		"--manifest-path",
-		"rust/Cargo.toml",
-		"--release",
-		"-p",
-		"epoch-cli",
-	], options);
+	const startStep = (currentStep: PacketStep): void => {
+		writePacketProgress(
+			packetProgressPath,
+			{ ...progressBase, status: "running", currentStep },
+			startedAtMs,
+		);
+	};
+	const finishStep = (step: PacketStep): void => {
+		completedSteps.push(step);
+		writePacketProgress(
+			packetProgressPath,
+			{ ...progressBase, status: "running", currentStep: null },
+			startedAtMs,
+		);
+	};
+	const runStep = <T>(step: PacketStep, action: () => T): T => {
+		startStep(step);
+		try {
+			const result = action();
+			finishStep(step);
+			return result;
+		} catch (error) {
+			writePacketProgress(
+				packetProgressPath,
+				{
+					...progressBase,
+					status: "failed",
+					currentStep: step,
+					error: error instanceof Error ? error.message : String(error),
+				},
+				startedAtMs,
+			);
+			throw error;
+		}
+	};
 
-	const parity = runPackageManager("strict parity", [
-		"exec",
-		"tsx",
-		"src/contract/rust-parity-cli.ts",
-		"--quiet",
-	], options);
+	runStep("build-rust-release-cli", () =>
+		run("build Rust release CLI", "cargo", [
+			"build",
+			"--manifest-path",
+			"rust/Cargo.toml",
+			"--release",
+			"-p",
+			"epoch-cli",
+		], options),
+	);
+
+	const parity = runStep("strict-parity", () =>
+		runPackageManager("strict parity", [
+			"exec",
+			"tsx",
+			"src/contract/rust-parity-cli.ts",
+			"--quiet",
+		], options),
+	);
 	writeFileSync(parityPath, parity);
 
 	const benchmarkArgs = [
@@ -828,24 +917,55 @@ async function main(): Promise<void> {
 	if (options.benchmarkMode === "smoke") {
 		benchmarkArgs.push("--smoke");
 	}
-	runPackageManager(
-		`promotion benchmark ${options.benchmarkMode}`,
-		benchmarkArgs,
-		options,
+	runStep("promotion-benchmark", () =>
+		runPackageManager(
+			`promotion benchmark ${options.benchmarkMode}`,
+			benchmarkArgs,
+			options,
+		),
 	);
 
-	runPackageManager("release e2e public surface", [
-		"run",
-		"promotion:rust-e2e",
-	], options);
+	runStep("release-e2e-public-surface", () =>
+		runPackageManager("release e2e public surface", [
+			"run",
+			"promotion:rust-e2e",
+		], options),
+	);
 	copyFileSync(
 		resolve(REPO_ROOT, "docs/superpowers/reports/rust-promotion-e2e.json"),
 		e2ePath,
 	);
 
-	const packageSmoke = await runPackageSmoke(options);
+	startStep("package-smoke");
+	let packageSmoke: PackageSmokeEvidence;
+	try {
+		packageSmoke = await runPackageSmoke(options);
+		finishStep("package-smoke");
+	} catch (error) {
+		writePacketProgress(
+			packetProgressPath,
+			{
+				...progressBase,
+				status: "failed",
+				currentStep: "package-smoke",
+				error: error instanceof Error ? error.message : String(error),
+			},
+			startedAtMs,
+		);
+		throw error;
+	}
 	writeJson(packageSmokePath, packageSmoke);
 	if (!packageSmoke.ok) {
+		writePacketProgress(
+			packetProgressPath,
+			{
+				...progressBase,
+				status: "failed",
+				currentStep: "package-smoke",
+				error: packageSmoke.reason,
+			},
+			startedAtMs,
+		);
 		throw new Error(packageSmoke.reason);
 	}
 
@@ -867,20 +987,25 @@ async function main(): Promise<void> {
 	if (options.releaseTag) {
 		shadowArgs.push("--release-tag", options.releaseTag);
 	}
-	runPackageManager("shadow soak evidence", shadowArgs, options);
+	runStep("shadow-soak-evidence", () =>
+		runPackageManager("shadow soak evidence", shadowArgs, options),
+	);
 
-	runPackageManager("rollback rehearsal", [
-		"exec",
-		"tsx",
-		"scripts/rust-rollback-rehearsal.ts",
-		"--parity",
-		shadowPath,
-		"--output",
-		rollbackPath,
-		"--no-build",
-		"--quiet",
-	], options);
+	runStep("rollback-rehearsal", () =>
+		runPackageManager("rollback rehearsal", [
+			"exec",
+			"tsx",
+			"scripts/rust-rollback-rehearsal.ts",
+			"--parity",
+			shadowPath,
+			"--output",
+			rollbackPath,
+			"--no-build",
+			"--quiet",
+		], options),
+	);
 
+	startStep("readiness-summary");
 	const perfReport = readJson(perfPath);
 	const e2eReport = readJson(e2ePath);
 	const e2e = e2eEvidence(e2eReport);
@@ -910,6 +1035,12 @@ async function main(): Promise<void> {
 	writeJson(readinessInputPath, readinessInput);
 	writeJson(readinessAssessmentPath, readiness);
 	writeJson(summaryPath, summary);
+	completedSteps.push("readiness-summary");
+	writePacketProgress(
+		packetProgressPath,
+		{ ...progressBase, status: "complete", currentStep: null },
+		startedAtMs,
+	);
 
 	if (!options.quiet) printSummary(summary);
 }
