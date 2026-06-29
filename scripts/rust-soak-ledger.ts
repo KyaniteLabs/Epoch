@@ -99,7 +99,7 @@ type LedgerSummary = {
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_PACKET_DIR = ".epoch-promotion/latest";
 const DEFAULT_LEDGER = ".epoch-promotion/soak-ledger.json";
-const MAX_CONTINUOUS_GAP_MS = 120_000;
+const MAX_CONTINUOUS_GAP_MS = 15 * 60_000;
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {

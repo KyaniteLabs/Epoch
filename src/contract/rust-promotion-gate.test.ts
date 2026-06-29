@@ -584,6 +584,32 @@ describe("assessPromotionGateFromLedger", () => {
 		expect(result.reason).toContain("canary requires 24");
 	});
 
+	it("preserves direct ledger continuity across bounded promotion-verification gaps", () => {
+		const summary = buildGateLedgerSummary(
+			ledger([
+				ledgerRun({
+					id: "run-1",
+					generatedAt: "2026-06-27T01:00:00.000Z",
+					startedAt: "2026-06-27T00:00:00.000Z",
+					endedAt: "2026-06-27T01:00:00.000Z",
+					soakHours: 1,
+					continuousSoakHours: 1,
+				}),
+				ledgerRun({
+					id: "run-2",
+					generatedAt: "2026-06-27T02:03:00.000Z",
+					startedAt: "2026-06-27T01:03:00.000Z",
+					endedAt: "2026-06-27T02:03:00.000Z",
+					soakHours: 1,
+					continuousSoakHours: 1,
+				}),
+			]),
+		);
+
+		expect(summary.totalSoakHours).toBe(2);
+		expect(summary.continuousSoakHours).toBe(2);
+	});
+
 	it("blocks replacement when release observability lacks a durable release tag", () => {
 		const result = assessPromotionGateFromLedger(
 			ledger([

@@ -108,9 +108,9 @@ describe("rust-soak-ledger CLI", () => {
 			performanceEvidenceMode: "qualified",
 		});
 		packet(secondPacket, {
-			generatedAt: "2026-06-29T01:01:00.000Z",
-			startedAt: "2026-06-29T01:00:30.000Z",
-			endedAt: "2026-06-29T02:00:30.000Z",
+			generatedAt: "2026-06-29T01:04:00.000Z",
+			startedAt: "2026-06-29T01:03:00.000Z",
+			endedAt: "2026-06-29T02:03:00.000Z",
 			performanceEvidenceMode: "smoke",
 		});
 

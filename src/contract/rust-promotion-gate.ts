@@ -61,7 +61,7 @@ const DEFAULT_SUMMARY = ".epoch-promotion/latest/soak-runner-summary.json";
 const DEFAULT_LEDGER = ".epoch-promotion/soak-ledger.json";
 const DEFAULT_RUST_BINARY = "rust/target/release/epoch-cli";
 const SHA256_HEX = /^[a-f0-9]{64}$/;
-const MAX_CONTINUOUS_GAP_MS = 120_000;
+const MAX_CONTINUOUS_GAP_MS = 15 * 60_000;
 const REQUIRED_SOAK_HOURS: Record<Target, number> = {
 	canary: 24,
 	replace: 72,

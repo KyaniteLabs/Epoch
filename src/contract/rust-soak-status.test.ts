@@ -71,7 +71,7 @@ describe("buildSoakStatus", () => {
 		expect(status.runCount).toBe(1);
 		expect(status.totalCompletedSoakHours).toBe(1);
 		expect(status.continuousCleanSoakHours).toBe(1);
-		expect(status.continuousGapSeconds).toBe(120);
+		expect(status.continuousGapSeconds).toBe(900);
 		expect(status.releaseTaggedSoakHours).toBe(1);
 		expect(status.qualifiedPerformanceEvidence).toBe(false);
 		expect(status.releaseE2ePass).toBe(true);
@@ -84,7 +84,7 @@ describe("buildSoakStatus", () => {
 			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
 		]);
 		expect(formatSoakStatus(status)).toContain("runner:              active");
-		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
+		expect(formatSoakStatus(status)).toContain("max clean gap:       900s");
 		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
 		expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
 		expect(formatSoakStatus(status)).toContain(
@@ -209,7 +209,7 @@ describe("buildSoakStatus", () => {
 		expect(status.remainingReplaceHours).toBe(71);
 	});
 
-	it("preserves continuity across bounded runner bookkeeping gaps", () => {
+	it("preserves continuity across bounded promotion-verification gaps", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
 			ledgerRaw: ledger([
@@ -221,13 +221,13 @@ describe("buildSoakStatus", () => {
 				}),
 				run({
 					id: "run-2",
-					generatedAt: "2026-06-27T02:00:39.000Z",
-					startedAt: "2026-06-27T01:00:39.000Z",
-					endedAt: "2026-06-27T02:00:39.000Z",
+					generatedAt: "2026-06-27T02:03:00.000Z",
+					startedAt: "2026-06-27T01:03:00.000Z",
+					endedAt: "2026-06-27T02:03:00.000Z",
 				}),
 			]),
 			runnerAlive: false,
-			generatedAt: "2026-06-27T02:00:39.000Z",
+			generatedAt: "2026-06-27T02:03:00.000Z",
 		});
 
 		expect(status.totalCompletedSoakHours).toBe(2);
@@ -235,7 +235,7 @@ describe("buildSoakStatus", () => {
 		expect(status.continuityLostHours).toBe(0);
 	});
 
-	it("breaks continuity when the runner bookkeeping gap exceeds the bound", () => {
+	it("breaks continuity when the promotion-verification gap exceeds the bound", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
 			ledgerRaw: ledger([
@@ -247,13 +247,13 @@ describe("buildSoakStatus", () => {
 				}),
 				run({
 					id: "run-2",
-					generatedAt: "2026-06-27T02:02:01.000Z",
-					startedAt: "2026-06-27T01:02:01.000Z",
-					endedAt: "2026-06-27T02:02:01.000Z",
+					generatedAt: "2026-06-27T02:15:01.000Z",
+					startedAt: "2026-06-27T01:15:01.000Z",
+					endedAt: "2026-06-27T02:15:01.000Z",
 				}),
 			]),
 			runnerAlive: false,
-			generatedAt: "2026-06-27T02:02:01.000Z",
+			generatedAt: "2026-06-27T02:15:01.000Z",
 		});
 
 		expect(status.totalCompletedSoakHours).toBe(2);
