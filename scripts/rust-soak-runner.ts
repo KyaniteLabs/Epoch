@@ -586,11 +586,14 @@ function installTerminationCleanup(cleanup: () => void): () => void {
 function writeRunState(
 	statePath: string,
 	options: CliOptions,
+	runnerStartedAt: string,
 	runsStarted: number,
+	currentRunStartedAt: string | null,
 ): void {
 	writeJson(statePath, {
 		pid: process.pid,
-		startedAt: new Date().toISOString(),
+		startedAt: runnerStartedAt,
+		currentRunStartedAt,
 		target: options.target,
 		packetDir: options.packetDir,
 		ledger: options.ledgerPath,
@@ -804,6 +807,7 @@ try {
 	let exitCode = 0;
 
 	try {
+		const runnerStartedAt = new Date().toISOString();
 		let runsStarted = 0;
 		let latestLedgerSummary: LedgerSummary | null = null;
 		let latestStatus: ReturnType<typeof targetStatus> = {
@@ -815,7 +819,13 @@ try {
 		while (options.maxRuns === null || runsStarted < options.maxRuns) {
 			assertReleaseTagResolvesToHead(options.releaseTag);
 			assertCleanGitWorktree();
-			writeRunState(statePath, options, runsStarted);
+			writeRunState(
+				statePath,
+				options,
+				runnerStartedAt,
+				runsStarted,
+				new Date().toISOString(),
+			);
 			runPackageManagerStep("promotion packet", packetArgs(options), options);
 			runPackageManagerStep(
 				"append packet to soak ledger",
@@ -823,6 +833,7 @@ try {
 				options,
 			);
 			runsStarted += 1;
+			writeRunState(statePath, options, runnerStartedAt, runsStarted, null);
 			latestLedgerSummary = parseLedgerSummary(ledgerSummaryPath);
 			latestStatus = targetStatus(
 				latestLedgerSummary,

@@ -142,6 +142,7 @@ describe("buildSoakStatus", () => {
 			stateRaw: {
 				pid: 123,
 				startedAt: "2026-06-27T00:00:00.000Z",
+				currentRunStartedAt: "2026-06-27T00:01:00.000Z",
 				target: "replace",
 				packetDir: ".epoch-promotion/latest",
 				ledger: ".epoch-promotion/soak-ledger.json",
@@ -192,6 +193,7 @@ describe("buildSoakStatus", () => {
 			stateRaw: {
 				pid: 123,
 				startedAt: "2026-06-27T00:00:00.000Z",
+				currentRunStartedAt: "2026-06-27T00:01:00.000Z",
 				target: "replace",
 				packetDir: ".epoch-promotion/latest",
 				ledger: ".epoch-promotion/soak-ledger.json",
@@ -218,6 +220,10 @@ describe("buildSoakStatus", () => {
 		});
 
 		expect(status.activeRunner).toBe(true);
+		expect(status.runnerState?.startedAt).toBe("2026-06-27T00:00:00.000Z");
+		expect(status.runnerState?.currentRunStartedAt).toBe(
+			"2026-06-27T00:01:00.000Z",
+		);
 		expect(status.activeShadowSoakProgress).toMatchObject({
 			status: "running",
 			iterationsCompleted: 128,
@@ -230,6 +236,9 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("shadow progress:     running");
 		expect(formatSoakStatus(status)).toContain("shadow iterations:   128/3");
 		expect(formatSoakStatus(status)).toContain("shadow remaining:    3000.0s");
+		expect(formatSoakStatus(status)).toContain(
+			"current run started: 2026-06-27T00:01:00.000Z",
+		);
 	});
 
 	it("surfaces active promotion-packet progress without crediting unfinished evidence", () => {

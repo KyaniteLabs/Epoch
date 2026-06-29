@@ -21,6 +21,7 @@ type Target = "canary" | "replace";
 type RunnerState = {
 	pid: number | null;
 	startedAt: string | null;
+	currentRunStartedAt: string | null;
 	target: Target | null;
 	packetDir: string | null;
 	ledger: string | null;
@@ -419,6 +420,7 @@ function parseRunnerState(raw: unknown): RunnerState | null {
 	return {
 		pid: Number.isInteger(raw.pid) ? Number(raw.pid) : null,
 		startedAt: stringField(raw, "startedAt"),
+		currentRunStartedAt: stringField(raw, "currentRunStartedAt"),
 		target: target === "canary" || target === "replace" ? target : null,
 		packetDir: stringField(raw, "packetDir"),
 		ledger: stringField(raw, "ledger"),
@@ -971,6 +973,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		lines.push(
 			`  runner target:       ${status.runnerState.target ?? "unknown"}`,
 			`  runner started:      ${status.runnerState.startedAt ?? "unknown"}`,
+			`  current run started: ${status.runnerState.currentRunStartedAt ?? "none"}`,
 			`  runner release tag:  ${status.runnerState.releaseTag ?? "unknown"}`,
 		);
 	}
