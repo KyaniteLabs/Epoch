@@ -289,17 +289,29 @@ describe("epoch-rust-launcher", () => {
 			.toBeNull();
 	});
 
-	it("keeps share-data default-complexity parse errors on the TypeScript path", () => {
+	it("routes share-data default-complexity values through the Rust launcher", () => {
 		expect(
 			planInvocation([
 				"share-data",
 				"--default-complexity",
-				"not-a-number",
+				"0x10",
 			]).mode,
-		).toBe("typescript");
-		expect(planInvocation(["share-data", "--default-complexity"]).mode).toBe(
-			"typescript",
-		);
+		).toBe("rust-cli");
+		expect(
+			planInvocation([
+				"share-data",
+				"--default-complexity",
+				"-1",
+			]).input,
+		).toEqual({ default_complexity: -1 });
+	});
+
+	it("prints share-data default-complexity parse errors like Commander", () => {
+		expect(() =>
+			planInvocation(["share-data", "--default-complexity", "not-a-number"]),
+		).toThrow('Error: --default-complexity must be a number, got "not-a-number"');
+		expect(() => planInvocation(["share-data", "--default-complexity"]))
+			.toThrow("error: option '--default-complexity <n>' argument missing");
 	});
 
 	it("prints telemetry submit payloads in TypeScript order and exits by ok", () => {

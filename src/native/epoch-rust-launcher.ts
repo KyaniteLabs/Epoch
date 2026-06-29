@@ -44,6 +44,7 @@ type OptionSpec = {
 	type: OptionType;
 	required?: boolean;
 	defaultValue?: unknown;
+	valueLabel?: string;
 };
 
 export type CommandSpec = {
@@ -255,19 +256,20 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 			plainTelemetryEndpointErrors: true,
 			route: telemetrySubmitRoute,
 		}),
-	command("share-data", "share_data", [
-		option("--output", "output", "string"),
-		option("--description", "description", "string"),
-		option("--validate", "validate", "boolean"),
-		option("--default-complexity", "default_complexity", "number"),
-	], {
-		wrapOutput: false,
-		rawOutputIndent: 2,
-		rawFailureStream: "stderr",
-		rawFailureIndent: null,
-		exitByPayloadOk: true,
-		route: shareDataRoute,
-	}),
+		command("share-data", "share_data", [
+			option("--output", "output", "string"),
+			option("--description", "description", "string"),
+			option("--validate", "validate", "boolean"),
+			option("--default-complexity", "default_complexity", "number", {
+				valueLabel: "<n>",
+			}),
+		], {
+			wrapOutput: false,
+			rawOutputIndent: 2,
+			rawFailureStream: "stderr",
+			rawFailureIndent: null,
+			exitByPayloadOk: true,
+		}),
 ];
 
 const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
@@ -436,10 +438,10 @@ export function parseToolInput(spec: CommandSpec, args: string[]): JsonObject {
 				inlineValue === undefined ? true : parseBooleanFlag(def, inlineValue);
 			continue;
 		}
-		const rawValue = inlineValue ?? args[index + 1];
-		if (rawValue === undefined || rawValue.startsWith("--")) {
-			throw new Error(`${flag} requires a value`);
-		}
+			const rawValue = inlineValue ?? args[index + 1];
+			if (rawValue === undefined || rawValue.startsWith("--")) {
+				throw new Error(missingOptionArgumentMessage(def));
+			}
 		if (inlineValue === undefined) index += 1;
 		values[def.key] = parseOptionValue(def, rawValue);
 	}
@@ -458,13 +460,13 @@ function parseOptionValue(def: OptionSpec, raw: string): unknown {
 	switch (def.type) {
 		case "string":
 			return raw;
-		case "number": {
-			const value = Number.parseFloat(raw);
-			if (!Number.isFinite(value)) {
-				throw new Error(`${def.flag} must be a number, got "${raw}"`);
+			case "number": {
+				const value = Number.parseFloat(raw);
+				if (!Number.isFinite(value)) {
+					throw new Error(`Error: ${def.flag} must be a number, got "${raw}"`);
+				}
+				return value;
 			}
-			return value;
-		}
 		case "json":
 			try {
 				return JSON.parse(raw) as unknown;
@@ -505,16 +507,6 @@ function hasFlag(args: string[], flag: string): boolean {
 	return args.includes(flag) || args.some((arg) => arg.startsWith(`${flag}=`));
 }
 
-function shareDataRoute(args: string[]): boolean {
-	const defaultComplexity = optionValue(args, "--default-complexity");
-	if (defaultComplexity !== undefined) {
-		if (defaultComplexity === null) return false;
-		const value = Number.parseFloat(defaultComplexity);
-		if (!Number.isFinite(value)) return false;
-	}
-	return true;
-}
-
 function optionValue(args: string[], flag: string): string | undefined | null {
 	for (let index = 0; index < args.length; index += 1) {
 		const token = args[index];
@@ -527,6 +519,13 @@ function optionValue(args: string[], flag: string): string | undefined | null {
 		}
 	}
 	return undefined;
+}
+
+function missingOptionArgumentMessage(def: OptionSpec): string {
+	if (def.valueLabel) {
+		return `error: option '${def.flag} ${def.valueLabel}' argument missing`;
+	}
+	return `${def.flag} requires a value`;
 }
 
 function isTailscalePrivateIpv4(hostname: string): boolean {
