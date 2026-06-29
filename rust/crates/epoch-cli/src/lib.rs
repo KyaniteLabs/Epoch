@@ -315,7 +315,7 @@ fn telemetry_submit_value(input: Value) -> ToolValueResult {
     }
     submit_telemetry(
         input.get("force").and_then(Value::as_bool).unwrap_or(false),
-        optional_nonnegative_f64(&input, &["min_interval_hours", "minIntervalHours"])?,
+        first_field_value(&input, &["min_interval_hours", "minIntervalHours"]),
     )
 }
 
@@ -1135,7 +1135,7 @@ fn serialize_telemetry_export_records(records: &[Value]) -> Result<String, ToolE
     Ok(raw)
 }
 
-fn submit_telemetry(force: bool, min_interval_hours: Option<f64>) -> ToolValueResult {
+fn submit_telemetry(force: bool, min_interval_hours: Option<&Value>) -> ToolValueResult {
     let mut config = load_config();
     if !is_telemetry_enabled(&config) {
         return Ok(json!({ "ok": false, "recordCount": 0, "error": "telemetry not enabled" }));
@@ -1249,23 +1249,13 @@ fn submit_telemetry(force: bool, min_interval_hours: Option<f64>) -> ToolValueRe
     }))
 }
 
-fn optional_nonnegative_f64(input: &Value, fields: &[&str]) -> Result<Option<f64>, ToolError> {
+fn first_field_value<'a>(input: &'a Value, fields: &[&str]) -> Option<&'a Value> {
     for field in fields {
         if let Some(value) = input.get(*field) {
-            let Some(number) = value.as_f64() else {
-                return Err(telemetry_cli_error(format!(
-                    "{field} must be a number >= 0"
-                )));
-            };
-            if !number.is_finite() || number < 0.0 {
-                return Err(telemetry_cli_error(format!(
-                    "{field} must be a number >= 0"
-                )));
-            }
-            return Ok(Some(number));
+            return Some(value);
         }
     }
-    Ok(None)
+    None
 }
 
 fn receiver_count(value: Option<&Value>) -> Option<usize> {
@@ -1274,15 +1264,43 @@ fn receiver_count(value: Option<&Value>) -> Option<usize> {
         .and_then(|value| usize::try_from(value).ok())
 }
 
-fn telemetry_submit_interval_hours(override_hours: Option<f64>) -> f64 {
-    if let Some(hours) = override_hours {
+fn telemetry_submit_interval_hours(override_hours: Option<&Value>) -> f64 {
+    if let Some(hours) = override_hours.and_then(interval_hours_from_value) {
         return hours;
     }
     env::var("EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS")
         .ok()
-        .and_then(|value| value.trim().parse::<f64>().ok())
-        .filter(|value| value.is_finite() && *value >= 0.0)
+        .and_then(|value| parse_typescript_number(value.trim()))
         .unwrap_or(1.0)
+}
+
+fn interval_hours_from_value(value: &Value) -> Option<f64> {
+    if let Some(number) = value.as_f64() {
+        return (number.is_finite() && number >= 0.0).then_some(number);
+    }
+    value
+        .as_str()
+        .and_then(|raw| parse_typescript_number(raw.trim()))
+}
+
+fn parse_typescript_number(raw: &str) -> Option<f64> {
+    if raw.is_empty() {
+        return None;
+    }
+    let trimmed = raw.trim();
+    let unsigned_hex = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"));
+    if let Some(hex) = unsigned_hex {
+        return u64::from_str_radix(hex, 16)
+            .ok()
+            .map(|value| value as f64)
+            .filter(|value| value.is_finite());
+    }
+    trimmed
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 fn should_bypass_telemetry_submit_interval(force: bool) -> bool {
@@ -1296,7 +1314,7 @@ fn should_bypass_telemetry_submit_interval(force: bool) -> bool {
 fn telemetry_submit_rate_limited(
     last_submission_at: Option<&str>,
     force: bool,
-    min_interval_hours: Option<f64>,
+    min_interval_hours: Option<&Value>,
 ) -> bool {
     let Some(last_submission_at) = last_submission_at else {
         return false;
@@ -2542,6 +2560,42 @@ mod tests {
             tailscale["endpoint"],
             "http://100.66.225.85:3099/v1/telemetry"
         );
+
+        clear_epoch_env();
+        let _ = remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn telemetry_submit_interval_values_are_typescript_lazy() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let data_dir = temp_data_dir("telemetry-submit-interval-lazy");
+        set_epoch_data_dir(&data_dir);
+        let mut dispatcher = RustToolDispatcher::new();
+
+        let disabled = run_cli_command(
+            &mut dispatcher,
+            "telemetry submit",
+            json!({ "min_interval_hours": "not-a-number" }),
+        )
+        .expect("invalid interval preserves disabled guard");
+        assert_eq!(disabled["ok"], false);
+        assert_eq!(disabled["error"], "telemetry not enabled");
+
+        run_cli_command(
+            &mut dispatcher,
+            "telemetry enable",
+            json!({ "endpoint": "https://collector.example.net/v1/telemetry" }),
+        )
+        .expect("enable telemetry");
+
+        let no_records = run_cli_command(
+            &mut dispatcher,
+            "telemetry submit",
+            json!({ "min_interval_hours": "-1" }),
+        )
+        .expect("negative interval preserves no-records guard");
+        assert_eq!(no_records["ok"], false);
+        assert_eq!(no_records["error"], "no new records to submit");
 
         clear_epoch_env();
         let _ = remove_dir_all(data_dir);

@@ -244,11 +244,11 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		}),
 		build: ({ confirm: _confirm }) => ({}),
 	},
-	command("telemetry submit", "telemetry_submit", [
-		option("--endpoint", "endpoint", "string"),
-		option("--force", "force", "boolean"),
-		option("--min-interval-hours", "min_interval_hours", "number"),
-	], {
+		command("telemetry submit", "telemetry_submit", [
+			option("--endpoint", "endpoint", "string"),
+			option("--force", "force", "boolean"),
+			option("--min-interval-hours", "min_interval_hours", "string"),
+		], {
 			wrapOutput: false,
 			rawOutputIndent: 2,
 			exitByPayloadOk: true,
@@ -498,15 +498,7 @@ function parseBooleanFlag(def: OptionSpec, raw: string): boolean {
 
 function telemetrySubmitRoute(args: string[]): boolean {
 	const minIntervalHours = optionValue(args, "--min-interval-hours");
-	if (minIntervalHours !== undefined) {
-		if (
-			minIntervalHours === null ||
-			!isSafeTelemetrySubmitInterval(minIntervalHours)
-		) {
-			return false;
-		}
-	}
-	return true;
+	return minIntervalHours !== null;
 }
 
 function hasFlag(args: string[], flag: string): boolean {
@@ -535,19 +527,6 @@ function optionValue(args: string[], flag: string): string | undefined | null {
 		}
 	}
 	return undefined;
-}
-
-function isSafeTelemetrySubmitInterval(raw: string): boolean {
-	const trimmed = raw.trim();
-	if (trimmed === "") return false;
-	const tsValue = Number(trimmed);
-	const launcherValue = Number.parseFloat(trimmed);
-	return (
-		Number.isFinite(tsValue) &&
-		tsValue >= 0 &&
-		Number.isFinite(launcherValue) &&
-		launcherValue === tsValue
-	);
 }
 
 function isTailscalePrivateIpv4(hostname: string): boolean {

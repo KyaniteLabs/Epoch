@@ -212,7 +212,7 @@ describe("epoch-rust-launcher", () => {
 		expect(plan.input).toEqual({
 			endpoint: "https://collector.example.net/v1/telemetry",
 			force: true,
-			min_interval_hours: 0,
+			min_interval_hours: "0",
 		});
 		expect(plan.wrapRustOutput).toBe(false);
 		expect(plan.rawRustOutputIndent).toBe(2);
@@ -231,7 +231,7 @@ describe("epoch-rust-launcher", () => {
 		expect(plan.commandPath).toBe("telemetry submit");
 	});
 
-	it("keeps telemetry submit interval values Rust would reject on the TypeScript path", () => {
+	it("routes telemetry submit interval strings through Rust for TypeScript-lazy parsing", () => {
 		expect(
 			planInvocation([
 				"telemetry",
@@ -239,7 +239,7 @@ describe("epoch-rust-launcher", () => {
 				"--min-interval-hours",
 				"-1",
 			]).mode,
-		).toBe("typescript");
+		).toBe("rust-cli");
 		expect(
 			planInvocation([
 				"telemetry",
@@ -247,7 +247,7 @@ describe("epoch-rust-launcher", () => {
 				"--min-interval-hours",
 				"not-a-number",
 			]).mode,
-		).toBe("typescript");
+		).toBe("rust-cli");
 		expect(
 			planInvocation([
 				"telemetry",
@@ -255,7 +255,7 @@ describe("epoch-rust-launcher", () => {
 				"--min-interval-hours",
 				"0x10",
 			]).mode,
-		).toBe("typescript");
+		).toBe("rust-cli");
 	});
 
 	it("routes share-data to Rust with TypeScript export options", () => {
