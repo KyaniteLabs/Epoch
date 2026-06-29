@@ -16,6 +16,11 @@ import {
 	type ReadinessAssessment,
 	type ReadinessInput,
 } from "./rust-deploy-readiness.js";
+import {
+	hasRequiredPackageCommands,
+	packageCommandsFromUnknown,
+	type PackageCommandEvidence,
+} from "./rust-package-evidence.js";
 
 type Target = "canary" | "replace";
 type RunnerState = {
@@ -120,15 +125,6 @@ type LedgerRun = {
 	readinessDecision: string | null;
 	readinessFailingGate: string | null;
 };
-type PackageCommandEvidence = {
-	name: string;
-	target: string;
-	exitCode: number | null;
-	signal: string | null;
-	stdoutHead: string;
-	stderrHead: string;
-	error: string | null;
-};
 type SoakLedger = {
 	version: 1;
 	updatedAt: string;
@@ -183,15 +179,8 @@ const DEFAULT_STATE = ".epoch-promotion/soak-runner-state.json";
 const MAX_CONTINUOUS_GAP_MS = 15 * 60_000;
 const CANARY_SOAK_HOURS = 24;
 const REPLACE_SOAK_HOURS = 72;
-const REQUIRED_PACKAGE_COMMANDS = new Set([
-	"epoch-cli",
-	"epoch-mcp",
-	"epoch-http",
-]);
 const REQUIRED_QUALIFIED_BENCHMARK_TOOLS = 24;
 const MIN_QUALIFIED_ITERATIONS_SCALE = 1;
-const CURRENT_PLATFORM =
-	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
 	"Replacement runner has not recorded release-tagged qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a release-tagged qualified benchmark run is in the ledger.";
 
@@ -275,73 +264,6 @@ function booleanField(
 	return typeof value === "boolean" ? value : null;
 }
 
-function parsePackageCommand(value: unknown): PackageCommandEvidence | null {
-	if (!isObject(value) || typeof value.name !== "string") return null;
-	return {
-		name: value.name,
-		target: typeof value.target === "string" ? value.target : "",
-		exitCode: typeof value.exitCode === "number" ? value.exitCode : null,
-		signal: typeof value.signal === "string" ? value.signal : null,
-		stdoutHead: typeof value.stdoutHead === "string" ? value.stdoutHead : "",
-		stderrHead: typeof value.stderrHead === "string" ? value.stderrHead : "",
-		error: typeof value.error === "string" ? value.error : null,
-	};
-}
-
-function parsePackageCommands(value: unknown): PackageCommandEvidence[] {
-	if (!Array.isArray(value)) return [];
-	return value
-		.map(parsePackageCommand)
-		.filter((command): command is PackageCommandEvidence => command !== null);
-}
-
-function packageCommandHasExpectedEvidence(
-	command: PackageCommandEvidence,
-): boolean {
-	if (
-		command.exitCode !== 0 ||
-		command.signal !== null ||
-		command.error !== null
-	) {
-		return false;
-	}
-	if (command.name === "epoch-cli") {
-		return (
-			command.target === "node_modules/.bin/epoch" &&
-			command.stdoutHead.includes('"ok": true')
-		);
-	}
-	if (command.name === "epoch-mcp") {
-		return (
-			command.target === packagePrebuildTarget("epoch-mcp") &&
-			command.stdoutHead.startsWith("Content-Length:") &&
-			command.stdoutHead.includes('"result":{}')
-		);
-	}
-	if (command.name === "epoch-http") {
-		return (
-			command.target === packagePrebuildTarget("epoch-http") &&
-			command.stdoutHead.includes("health ") &&
-			command.stdoutHead.includes('"status":"ok"') &&
-			command.stdoutHead.includes('"tools":24')
-		);
-	}
-	return false;
-}
-
-function packagePrebuildTarget(binary: string): string {
-	return `prebuilds/${CURRENT_PLATFORM}/${binary}${process.platform === "win32" ? ".exe" : ""}`;
-}
-
-function hasRequiredPackageCommands(run: LedgerRun): boolean {
-	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
-		const command = run.packageCommands.find(
-			(candidate) => candidate.name === name,
-		);
-		return command !== undefined && packageCommandHasExpectedEvidence(command);
-	});
-}
-
 function parseLedgerRun(raw: unknown): LedgerRun | null {
 	if (!isObject(raw)) return null;
 	if (
@@ -369,7 +291,7 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 			"httpDeployEnvCoveragePercent",
 		),
 		packageSmokePass: raw.packageSmokePass === true,
-		packageCommands: parsePackageCommands(raw.packageCommands),
+		packageCommands: packageCommandsFromUnknown(raw.packageCommands),
 		packageCliSha256: stringField(raw, "packageCliSha256"),
 		soakHours: numberField(raw, "soakHours"),
 		continuousSoakHours: numberField(raw, "continuousSoakHours"),
@@ -626,7 +548,7 @@ function cleanIntervalForRun(
 		!run.publicSurfaceMatch ||
 		!run.releaseE2ePass ||
 		!run.packageSmokePass ||
-		!hasRequiredPackageCommands(run) ||
+		!hasRequiredPackageCommands(run.packageCommands) ||
 		run.publicSurfaceCoveragePercent < 100 ||
 		run.httpDeployEnvCoveragePercent < 100 ||
 		run.unclassifiedFailures > 0 ||
@@ -836,10 +758,12 @@ export function buildSoakStatus(input: {
 	const packageSmokePass =
 		runs.length > 0 &&
 		runs.every(
-			(run) => run.packageSmokePass && hasRequiredPackageCommands(run),
+			(run) =>
+				run.packageSmokePass && hasRequiredPackageCommands(run.packageCommands),
 		);
 	const packageCommandEvidenceComplete =
-		runs.length > 0 && runs.every(hasRequiredPackageCommands);
+		runs.length > 0 &&
+		runs.every((run) => hasRequiredPackageCommands(run.packageCommands));
 	const packageCliIdentities = new Set(
 		runs
 			.map((run) => run.packageCliSha256)
@@ -946,7 +870,7 @@ export function buildSoakStatus(input: {
 				!run.publicSurfaceMatch ||
 				!run.releaseE2ePass ||
 				!run.packageSmokePass ||
-				!hasRequiredPackageCommands(run) ||
+				!hasRequiredPackageCommands(run.packageCommands) ||
 				run.publicSurfaceCoveragePercent < 100 ||
 				run.httpDeployEnvCoveragePercent < 100 ||
 				run.outputParityPercent < 100 ||

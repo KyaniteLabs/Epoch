@@ -19,6 +19,7 @@ import {
 	deployReadinessDecisionSchema,
 	type ReadinessInput,
 } from "./rust-deploy-readiness.js";
+import { hasRequiredPackageCommands } from "./rust-package-evidence.js";
 
 type Target = "canary" | "replace";
 
@@ -69,13 +70,6 @@ const REQUIRED_SOAK_HOURS: Record<Target, number> = {
 	canary: 24,
 	replace: 72,
 };
-const REQUIRED_PACKAGE_COMMANDS = new Set([
-	"epoch-cli",
-	"epoch-mcp",
-	"epoch-http",
-]);
-const CURRENT_PLATFORM =
-	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 const DECISION_RANK: Record<
 	z.infer<typeof deployReadinessDecisionSchema>,
 	number
@@ -844,55 +838,6 @@ function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	);
 }
 
-function packageCommandHasExpectedEvidence(
-	command: z.infer<typeof packageCommandEvidenceSchema>,
-): boolean {
-	if (
-		command.exitCode !== 0 ||
-		command.signal !== null ||
-		command.error !== null
-	) {
-		return false;
-	}
-	if (command.name === "epoch-cli") {
-		return (
-			command.target === "node_modules/.bin/epoch" &&
-			command.stdoutHead.includes('"ok": true')
-		);
-	}
-	if (command.name === "epoch-mcp") {
-		return (
-			command.target === packagePrebuildTarget("epoch-mcp") &&
-			command.stdoutHead.startsWith("Content-Length:") &&
-			command.stdoutHead.includes('"result":{}')
-		);
-	}
-	if (command.name === "epoch-http") {
-		return (
-			command.target === packagePrebuildTarget("epoch-http") &&
-			command.stdoutHead.includes("health ") &&
-			command.stdoutHead.includes('"status":"ok"') &&
-			command.stdoutHead.includes('"tools":24')
-		);
-	}
-	return false;
-}
-
-function packagePrebuildTarget(binary: string): string {
-	return `prebuilds/${CURRENT_PLATFORM}/${binary}${process.platform === "win32" ? ".exe" : ""}`;
-}
-
-function hasRequiredPackageCommands(
-	run: Pick<LedgerRun, "packageCommands">,
-): boolean {
-	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
-		const command = run.packageCommands.find(
-			(candidate) => candidate.name === name,
-		);
-		return command !== undefined && packageCommandHasExpectedEvidence(command);
-	});
-}
-
 function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 	if (runs.length === 0) return null;
 	const missingIdentity = runs.find((run) => !run.rustBinarySha256);
@@ -948,7 +893,7 @@ function cleanInterval(run: LedgerRun): { startMs: number; endMs: number } | nul
 		!run.publicSurfaceMatch ||
 		!run.releaseE2ePass ||
 		!run.packageSmokePass ||
-		!hasRequiredPackageCommands(run) ||
+		!hasRequiredPackageCommands(run.packageCommands) ||
 		run.unclassifiedFailures > 0 ||
 		run.crashes > 0 ||
 		run.dataLossIncidents > 0 ||
@@ -1038,7 +983,8 @@ function ledgerReadinessInput(runs: LedgerRun[]): ReadinessInput {
 			packageSmokePass: boolAll(
 				runs.map(
 					(run) =>
-						run.packageSmokePass === true && hasRequiredPackageCommands(run),
+						run.packageSmokePass === true &&
+						hasRequiredPackageCommands(run.packageCommands),
 				),
 			),
 			outputParityPercent,
@@ -1109,18 +1055,18 @@ export function buildGateLedgerSummary(
 			releaseTaggedSoakHours,
 			releaseContinuousSoakHours,
 			releaseTag: ledgerReleaseTag(runs),
-			qualifiedPerformanceEvidence: runs.some(
+		qualifiedPerformanceEvidence: runs.some(
 			hasReleaseQualifiedPerformanceEvidence,
 		),
 		releaseE2ePass: readinessInput.parity.releaseE2ePass,
 		publicSurfaceCoveragePercent:
 			readinessInput.parity.publicSurfaceCoveragePercent,
-			httpDeployEnvCoveragePercent:
-				readinessInput.parity.httpDeployEnvCoveragePercent,
+		httpDeployEnvCoveragePercent:
+			readinessInput.parity.httpDeployEnvCoveragePercent,
 		packageSmokePass: readinessInput.parity.packageSmokePass,
 		packageCliSha256: ledgerPackageCliSha256(runs),
 		packageCommandEvidenceComplete: boolAll(
-			runs.map(hasRequiredPackageCommands),
+			runs.map((run) => hasRequiredPackageCommands(run.packageCommands)),
 		),
 		rustBinarySha256: readinessInput.parity.rustBinarySha256,
 		readiness: assessDeployReadiness(readinessInput),

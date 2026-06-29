@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+	hasRequiredPackageCommands,
+	packageCommandsFromUnknown,
+} from "./rust-package-evidence.js";
+
 export const deployReadinessDecisionSchema = z.enum([
 	"NO",
 	"SHADOW",
@@ -114,54 +119,6 @@ function stringField(object: JsonObject, key: string): string | undefined {
 function arrayField(object: JsonObject, key: string): unknown[] | undefined {
 	const value = object[key];
 	return Array.isArray(value) ? value : undefined;
-}
-
-function packagePrebuildTarget(binary: string): string {
-	const platform = `${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
-	return `prebuilds/${platform}/${binary}${process.platform === "win32" ? ".exe" : ""}`;
-}
-
-function packageCommandHasExpectedEvidence(command: JsonObject): boolean {
-	if (
-		numberField(command, "exitCode") !== 0 ||
-		command.signal !== null ||
-		command.error !== null
-	) {
-		return false;
-	}
-	const name = stringField(command, "name");
-	const target = stringField(command, "target");
-	const stdoutHead = stringField(command, "stdoutHead") ?? "";
-	if (name === "epoch-cli") {
-		return target === "node_modules/.bin/epoch" && stdoutHead.includes('"ok": true');
-	}
-	if (name === "epoch-mcp") {
-		return (
-			target === packagePrebuildTarget("epoch-mcp") &&
-			stdoutHead.startsWith("Content-Length:") &&
-			stdoutHead.includes('"result":{}')
-		);
-	}
-	if (name === "epoch-http") {
-		return (
-			target === packagePrebuildTarget("epoch-http") &&
-			stdoutHead.includes("health ") &&
-			stdoutHead.includes('"status":"ok"') &&
-			stdoutHead.includes('"tools":24')
-		);
-	}
-	return false;
-}
-
-function hasRequiredPackageCommands(deploy: JsonObject): boolean {
-	const commands = arrayField(deploy, "packageCommands") ?? [];
-	return ["epoch-cli", "epoch-mcp", "epoch-http"].every((name) => {
-		const command = commands.find(
-			(candidate): candidate is JsonObject =>
-				isObject(candidate) && stringField(candidate, "name") === name,
-		);
-		return command !== undefined && packageCommandHasExpectedEvidence(command);
-	});
 }
 
 function improvementPercent(baseline: number, candidate: number): number {
@@ -328,6 +285,9 @@ function normalizePacketSummaryEvidence(raw: JsonObject): ReadinessInput | null 
 	const binary = objectField(evidence, "binary");
 	const deploy = objectField(evidence, "deploy");
 	if (!compatibility || !performance || !reliability) return null;
+	const packageCommands = deploy
+		? packageCommandsFromUnknown(deploy.packageCommands)
+		: [];
 
 	const outputParityPercent =
 		numberField(compatibility, "outputParityPercent") ?? 0;
@@ -338,7 +298,7 @@ function normalizePacketSummaryEvidence(raw: JsonObject): ReadinessInput | null 
 	const packageSmokePass =
 		deploy !== undefined &&
 		booleanField(deploy, "packageSmokePass") === true &&
-		hasRequiredPackageCommands(deploy);
+		hasRequiredPackageCommands(packageCommands);
 
 	return readinessInputSchema.parse({
 		parity: {

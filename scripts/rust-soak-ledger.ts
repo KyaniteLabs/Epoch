@@ -22,6 +22,11 @@ import {
 	type ReadinessAssessment,
 	type ReadinessInput,
 } from "../src/contract/rust-deploy-readiness.js";
+import {
+	hasRequiredPackageCommands,
+	packageCommandsFromUnknown,
+	type PackageCommandEvidence,
+} from "../src/contract/rust-package-evidence.js";
 
 type CliOptions = {
 	packetDir: string;
@@ -66,16 +71,6 @@ type LedgerRun = {
 	readinessFailingGate: string | null;
 };
 
-type PackageCommandEvidence = {
-	name: string;
-	target: string;
-	exitCode: number | null;
-	signal: string | null;
-	stdoutHead: string;
-	stderrHead: string;
-	error: string | null;
-};
-
 type SoakLedger = {
 	version: 1;
 	updatedAt: string;
@@ -114,13 +109,6 @@ const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_PACKET_DIR = ".epoch-promotion/latest";
 const DEFAULT_LEDGER = ".epoch-promotion/soak-ledger.json";
 const MAX_CONTINUOUS_GAP_MS = 120_000;
-const REQUIRED_PACKAGE_COMMANDS = new Set([
-	"epoch-cli",
-	"epoch-mcp",
-	"epoch-http",
-]);
-const CURRENT_PLATFORM = `${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
-
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
 		packetDir: DEFAULT_PACKET_DIR,
@@ -265,79 +253,11 @@ function observabilityLevel(value: unknown): LedgerRun["observabilityLevel"] {
 	return value === "release" || value === "tool" ? value : "basic";
 }
 
-function parsePackageCommand(value: unknown): PackageCommandEvidence | null {
-	if (!isObject(value) || typeof value.name !== "string") return null;
-	return {
-		name: value.name,
-		target: typeof value.target === "string" ? value.target : "",
-		exitCode: typeof value.exitCode === "number" ? value.exitCode : null,
-		signal: typeof value.signal === "string" ? value.signal : null,
-		stdoutHead: typeof value.stdoutHead === "string" ? value.stdoutHead : "",
-		stderrHead: typeof value.stderrHead === "string" ? value.stderrHead : "",
-		error: typeof value.error === "string" ? value.error : null,
-	};
-}
-
-function parsePackageCommands(value: unknown): PackageCommandEvidence[] {
-	if (!Array.isArray(value)) return [];
-	return value
-		.map(parsePackageCommand)
-		.filter((command): command is PackageCommandEvidence => command !== null);
-}
-
-function packageCommandHasExpectedEvidence(
-	command: PackageCommandEvidence,
-): boolean {
-	if (
-		command.exitCode !== 0 ||
-		command.signal !== null ||
-		command.error !== null
-	) {
-		return false;
-	}
-	if (command.name === "epoch-cli") {
-		return (
-			command.target === "node_modules/.bin/epoch" &&
-			command.stdoutHead.includes('"ok": true')
-		);
-	}
-	if (command.name === "epoch-mcp") {
-		return (
-			command.target === packagePrebuildTarget("epoch-mcp") &&
-			command.stdoutHead.startsWith("Content-Length:") &&
-			command.stdoutHead.includes('"result":{}')
-		);
-	}
-	if (command.name === "epoch-http") {
-		return (
-			command.target === packagePrebuildTarget("epoch-http") &&
-			command.stdoutHead.includes("health ") &&
-			command.stdoutHead.includes('"status":"ok"') &&
-			command.stdoutHead.includes('"tools":24')
-		);
-	}
-	return false;
-}
-
-function packagePrebuildTarget(binary: string): string {
-	return `prebuilds/${CURRENT_PLATFORM}/${binary}${process.platform === "win32" ? ".exe" : ""}`;
-}
-
 function packageCommandsFromSummary(summary: unknown): PackageCommandEvidence[] {
 	if (!isObject(summary) || !isObject(summary.evidence)) return [];
 	const deploy = summary.evidence.deploy;
 	if (!isObject(deploy)) return [];
-	return parsePackageCommands(deploy.packageCommands);
-}
-
-function hasRequiredPackageCommands(
-	run: Pick<LedgerRun, "packageCommands">,
-): boolean {
-	const commands = run.packageCommands ?? [];
-	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
-		const command = commands.find((candidate) => candidate.name === name);
-		return command !== undefined && packageCommandHasExpectedEvidence(command);
-	});
+	return packageCommandsFromUnknown(deploy.packageCommands);
 }
 
 function parseLedgerRun(value: unknown): LedgerRun | null {
@@ -374,7 +294,7 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 			0,
 		),
 		packageSmokePass: booleanField(value, "packageSmokePass", false),
-		packageCommands: parsePackageCommands(value.packageCommands),
+		packageCommands: packageCommandsFromUnknown(value.packageCommands),
 		outputParityPercent: numberField(value, "outputParityPercent", 0),
 		errorCompatibilityPercent: numberField(
 			value,
@@ -607,7 +527,7 @@ function isCleanRun(run: LedgerRun): boolean {
 		run.publicSurfaceMatch &&
 		run.releaseE2ePass === true &&
 		run.packageSmokePass === true &&
-		hasRequiredPackageCommands(run) &&
+		hasRequiredPackageCommands(run.packageCommands ?? []) &&
 		run.unclassifiedFailures === 0 &&
 		run.crashes === 0 &&
 		run.dataLossIncidents === 0 &&
@@ -698,7 +618,8 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 			packageSmokePass: boolAll(
 				runs.map(
 					(run) =>
-						run.packageSmokePass === true && hasRequiredPackageCommands(run),
+						run.packageSmokePass === true &&
+						hasRequiredPackageCommands(run.packageCommands ?? []),
 				),
 			),
 			outputParityPercent,
@@ -765,11 +686,13 @@ function buildSummary(
 	);
 	const packageSmokePass = boolAll(
 		ledger.runs.map(
-			(run) => run.packageSmokePass === true && hasRequiredPackageCommands(run),
+			(run) =>
+				run.packageSmokePass === true &&
+				hasRequiredPackageCommands(run.packageCommands ?? []),
 		),
 	);
 	const packageCommandEvidenceComplete = boolAll(
-		ledger.runs.map(hasRequiredPackageCommands),
+		ledger.runs.map((run) => hasRequiredPackageCommands(run.packageCommands ?? [])),
 	);
 	const publicSurfaceCoveragePercent = numberMin(
 		ledger.runs.map((run) => run.publicSurfaceCoveragePercent ?? 0),
