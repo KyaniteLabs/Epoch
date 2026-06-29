@@ -128,6 +128,7 @@ type CliOptions = {
 	ledgerPath: string;
 	statePath: string;
 	json: boolean;
+	strict: boolean;
 };
 
 const REPO_ROOT = resolve(new URL("../..", import.meta.url).pathname);
@@ -156,6 +157,7 @@ function usage(): string {
 		`  --ledger <path>  Cumulative soak ledger (default: ${DEFAULT_LEDGER})`,
 		`  --state <path>   Soak runner state file (default: ${DEFAULT_STATE})`,
 		"  --json           Emit machine-readable status JSON",
+		"  --strict         Exit 2 when the report includes warnings",
 		"  --help, -h       Show this help",
 		"",
 	].join("\n");
@@ -166,6 +168,7 @@ function parseArgs(argv: string[]): CliOptions {
 		ledgerPath: DEFAULT_LEDGER,
 		statePath: DEFAULT_STATE,
 		json: false,
+		strict: false,
 	};
 	const args = argv[0] === "--" ? argv.slice(1) : argv;
 
@@ -177,6 +180,8 @@ function parseArgs(argv: string[]): CliOptions {
 			options.statePath = args[++i] ?? "";
 		} else if (arg === "--json") {
 			options.json = true;
+		} else if (arg === "--strict") {
+			options.strict = true;
 		} else if (arg === "--help" || arg === "-h") {
 			process.stdout.write(usage());
 			process.exit(0);
@@ -883,6 +888,13 @@ export function formatSoakStatus(status: SoakStatus): string {
 	return `${lines.join("\n")}\n`;
 }
 
+export function soakStatusExitCode(
+	status: Pick<SoakStatus, "warnings">,
+	options: { strict: boolean },
+): number {
+	return options.strict && status.warnings.length > 0 ? 2 : 0;
+}
+
 export function main(argv: string[]): number {
 	try {
 		const options = parseArgs(argv);
@@ -907,7 +919,7 @@ export function main(argv: string[]): number {
 				? `${JSON.stringify(status, null, 2)}\n`
 				: formatSoakStatus(status),
 		);
-		return status.warnings.length === 0 ? 0 : 2;
+		return soakStatusExitCode(status, { strict: options.strict });
 	} catch (error) {
 		process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
 		return 1;

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildSoakStatus, formatSoakStatus } from "./rust-soak-status.js";
+import {
+	buildSoakStatus,
+	formatSoakStatus,
+	soakStatusExitCode,
+} from "./rust-soak-status.js";
 
 const RUST_BINARY_SHA256 =
 	"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
@@ -153,6 +157,32 @@ describe("buildSoakStatus", () => {
 
 		expect(status.qualifiedPerformanceEvidence).toBe(true);
 		expect(status.warnings).toEqual([]);
+	});
+
+	it("treats warnings as report data unless strict mode is requested", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run()]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.warnings).toContain(
+			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
+		);
+		expect(soakStatusExitCode(status, { strict: false })).toBe(0);
+		expect(soakStatusExitCode(status, { strict: true })).toBe(2);
 	});
 
 	it("surfaces active shadow-soak heartbeat without crediting unfinished evidence", () => {
