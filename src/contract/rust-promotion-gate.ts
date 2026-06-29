@@ -7,9 +7,9 @@
 // not a smoke override, has reached the requested target.
 // ---------------------------------------------------------------------------
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
@@ -27,6 +27,7 @@ export type PromotionGateResult = {
 	decision: z.infer<typeof deployReadinessDecisionSchema>;
 	failingGate: string | null;
 	reason: string;
+	deploySurface?: DeploySurfaceEvidence;
 };
 
 type CliOptions = {
@@ -40,6 +41,20 @@ type CliOptions = {
 
 export type PromotionGateOptions = {
 	currentRustBinarySha256?: string | null;
+	deploySurface?: DeploySurfaceEvidence;
+};
+
+export type DeploySurfaceEvidence = {
+	ok: boolean;
+	reasons: string[];
+	packageBinEntrypoint: string | null;
+	packageFiles: string[];
+	dockerEntrypoint: string | null;
+	checks: {
+		packageBinRoutesToRust: boolean;
+		packageFilesIncludeRustArtifacts: boolean;
+		dockerEntrypointRoutesToRust: boolean;
+	};
 };
 
 const DEFAULT_SUMMARY = ".epoch-promotion/latest/soak-runner-summary.json";
@@ -230,8 +245,122 @@ function result(
 	decision: z.infer<typeof deployReadinessDecisionSchema>,
 	failingGate: string | null,
 	reason: string,
+	deploySurface?: DeploySurfaceEvidence,
 ): PromotionGateResult {
-	return { ok, target, decision, failingGate, reason };
+	return { ok, target, decision, failingGate, reason, deploySurface };
+}
+
+function valueAsString(value: unknown): string | null {
+	return typeof value === "string" && value.trim() ? value : null;
+}
+
+function stringArray(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === "string")
+		: [];
+}
+
+function routesToRust(value: string | null): boolean {
+	if (!value) return false;
+	if (/dist\/index\.js|src\/index\.ts/.test(value)) return false;
+	return /\b(epoch-(cli|mcp|http)|rust\/target|rust\b|native|prebuilds?)\b/i.test(
+		value,
+	);
+}
+
+function filesIncludeRustArtifacts(files: string[]): boolean {
+	return files.some((entry) =>
+		/^(rust|bin|native|prebuilds?|platforms?)(\/|$)/i.test(entry),
+	);
+}
+
+function dockerEntrypoint(text: string | null): string | null {
+	if (!text) return null;
+	return (
+		text
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.find((line) => /^(ENTRYPOINT|CMD)\b/.test(line) && !line.startsWith("#")) ??
+		null
+	);
+}
+
+export function auditDeploySurface(raw: {
+	packageJson: unknown;
+	dockerfile?: string | null;
+}): DeploySurfaceEvidence {
+	const packageJson =
+		typeof raw.packageJson === "object" &&
+		raw.packageJson !== null &&
+		!Array.isArray(raw.packageJson)
+			? (raw.packageJson as Record<string, unknown>)
+			: {};
+	const bin =
+		typeof packageJson["bin"] === "object" &&
+		packageJson["bin"] !== null &&
+		!Array.isArray(packageJson["bin"])
+			? (packageJson["bin"] as Record<string, unknown>)
+			: {};
+	const packageBinEntrypoint = valueAsString(bin["epoch"]);
+	const packageFiles = stringArray(packageJson["files"]);
+	const dockerEntry = dockerEntrypoint(raw.dockerfile ?? null);
+	const checks = {
+		packageBinRoutesToRust: routesToRust(packageBinEntrypoint),
+		packageFilesIncludeRustArtifacts: filesIncludeRustArtifacts(packageFiles),
+		dockerEntrypointRoutesToRust: raw.dockerfile
+			? routesToRust(dockerEntry)
+			: true,
+	};
+	const reasons = [];
+	if (!checks.packageBinRoutesToRust) {
+		reasons.push(
+			`package bin epoch points to ${packageBinEntrypoint ?? "(missing)"}, not a Rust wrapper or binary`,
+		);
+	}
+	if (!checks.packageFilesIncludeRustArtifacts) {
+		reasons.push("package files do not include Rust/native binary artifacts");
+	}
+	if (!checks.dockerEntrypointRoutesToRust) {
+		reasons.push(
+			`Docker entrypoint points to ${dockerEntry ?? "(missing)"}, not a Rust server binary`,
+		);
+	}
+
+	return {
+		ok: Object.values(checks).every(Boolean),
+		reasons,
+		packageBinEntrypoint,
+		packageFiles,
+		dockerEntrypoint: dockerEntry,
+		checks,
+	};
+}
+
+function auditDeploySurfaceFromRepo(repoRoot = process.cwd()): DeploySurfaceEvidence {
+	const packageJson = readJson(join(repoRoot, "package.json"));
+	const dockerfilePath = join(repoRoot, "Dockerfile");
+	const dockerfile = existsSync(dockerfilePath)
+		? readFileSync(dockerfilePath, "utf8")
+		: null;
+	return auditDeploySurface({ packageJson, dockerfile });
+}
+
+function deploySurfaceGate(
+	target: Target,
+	decision: z.infer<typeof deployReadinessDecisionSchema>,
+	failingGate: string | null,
+	options: PromotionGateOptions,
+): PromotionGateResult | null {
+	if (target !== "replace" || !options.deploySurface) return null;
+	if (options.deploySurface.ok) return null;
+	return result(
+		false,
+		target,
+		decision,
+		"deploy-surface",
+		`Replacement deploy surface is still TypeScript-routed: ${options.deploySurface.reasons.join("; ")}.`,
+		options.deploySurface,
+	);
 }
 
 export function assessPromotionGate(
@@ -294,6 +423,13 @@ export function assessPromotionGate(
 			`Current Rust binary SHA-256 ${options.currentRustBinarySha256} does not match soak evidence ${summary.rustBinarySha256}.`,
 		);
 	}
+	const deploySurfaceBlocker = deploySurfaceGate(
+		target,
+		decision,
+		failingGate,
+		options,
+	);
+	if (deploySurfaceBlocker) return deploySurfaceBlocker;
 	if (target === "replace" && !summary.releaseTag) {
 		return result(
 			false,
@@ -397,6 +533,13 @@ export function assessPromotionGateFromLedgerSummary(
 			`Current Rust binary SHA-256 ${options.currentRustBinarySha256} does not match soak evidence ${summary.rustBinarySha256}.`,
 		);
 	}
+	const deploySurfaceBlocker = deploySurfaceGate(
+		target,
+		decision,
+		failingGate,
+		options,
+	);
+	if (deploySurfaceBlocker) return deploySurfaceBlocker;
 	if (
 		!summary.releaseE2ePass ||
 		summary.publicSurfaceCoveragePercent < 100 ||
@@ -677,16 +820,20 @@ export function main(argv: string[]): number {
 			),
 		);
 		const currentRustBinarySha256 = sha256File(resolve(options.rustBinaryPath));
+		const deploySurface = auditDeploySurfaceFromRepo();
 		const gate = options.ledgerPath
 			? assessPromotionGateFromLedger(rawEvidence, options.target, {
 					currentRustBinarySha256,
+					deploySurface,
 				})
 			: options.ledgerSummaryPath
 			? assessPromotionGateFromLedgerSummary(rawEvidence, options.target, {
 					currentRustBinarySha256,
+					deploySurface,
 				})
 			: assessPromotionGate(rawEvidence, options.target, {
 					currentRustBinarySha256,
+					deploySurface,
 				});
 		if (options.json) {
 			process.stdout.write(`${JSON.stringify(gate, null, 2)}\n`);

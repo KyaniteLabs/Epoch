@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	auditDeploySurface,
 	assessPromotionGate,
 	assessPromotionGateFromLedger,
 	assessPromotionGateFromLedgerSummary,
@@ -87,6 +88,51 @@ function ledger(runs: unknown[]) {
 		runs,
 	};
 }
+
+const rustDeploySurface = {
+	ok: true,
+	reasons: [],
+	packageBinEntrypoint: "bin/epoch-rust-launcher.js",
+	packageFiles: ["dist", "data", "bin", "prebuilds"],
+	dockerEntrypoint: 'ENTRYPOINT ["epoch-http"]',
+	checks: {
+		packageBinRoutesToRust: true,
+		packageFilesIncludeRustArtifacts: true,
+		dockerEntrypointRoutesToRust: true,
+	},
+};
+
+describe("auditDeploySurface", () => {
+	it("reports the current TypeScript-routed package and Docker shape as not replacement-ready", () => {
+		const surface = auditDeploySurface({
+			packageJson: {
+				bin: { epoch: "dist/index.js" },
+				files: ["dist", "data"],
+			},
+			dockerfile:
+				'FROM node:22-slim\nENTRYPOINT ["node", "/app/dist/index.js"]\n',
+		});
+
+		expect(surface.ok).toBe(false);
+		expect(surface.checks.packageBinRoutesToRust).toBe(false);
+		expect(surface.checks.packageFilesIncludeRustArtifacts).toBe(false);
+		expect(surface.checks.dockerEntrypointRoutesToRust).toBe(false);
+		expect(surface.reasons.join(" ")).toContain("dist/index.js");
+	});
+
+	it("accepts an explicitly Rust-routed package and Docker shape", () => {
+		const surface = auditDeploySurface({
+			packageJson: {
+				bin: { epoch: "bin/epoch-rust-launcher.js" },
+				files: ["dist", "data", "prebuilds"],
+			},
+			dockerfile: 'FROM scratch\nENTRYPOINT ["epoch-http"]\n',
+		});
+
+		expect(surface.ok).toBe(true);
+		expect(surface.reasons).toEqual([]);
+	});
+});
 
 describe("assessPromotionGate", () => {
 	it("passes when strict scorer reached the canary target", () => {
@@ -262,7 +308,10 @@ describe("assessPromotionGate", () => {
 				},
 			}),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
 		);
 
 		expect(result.ok).toBe(true);
@@ -371,11 +420,46 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				},
 			}),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
 		);
 
 		expect(result.ok).toBe(true);
 		expect(result.reason).toContain("Strict ledger scorer reached replace");
+	});
+
+	it("blocks replacement from cumulative summary when deploy entrypoints still route to TypeScript", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				totalSoakHours: 72,
+				continuousSoakHours: 72,
+				releaseTaggedSoakHours: 72,
+				qualifiedPerformanceEvidence: true,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: auditDeploySurface({
+					packageJson: {
+						bin: { epoch: "dist/index.js" },
+						files: ["dist", "data"],
+					},
+					dockerfile:
+						'FROM node:22-slim\nENTRYPOINT ["node", "/app/dist/index.js"]\n',
+				}),
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.failingGate).toBe("deploy-surface");
+		expect(result.reason).toContain("TypeScript-routed");
 	});
 
 	it("blocks cumulative evidence when the current binary hash differs", () => {
@@ -415,7 +499,10 @@ describe("assessPromotionGateFromLedger", () => {
 				}),
 			]),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
 		);
 
 		expect(result.ok).toBe(true);
