@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planInvocation, resolveRustBinary } from "./epoch-rust-launcher.js";
+import {
+	planInvocation,
+	resolveRustBinary,
+	runPlannedInvocation,
+} from "./epoch-rust-launcher.js";
 
 describe("epoch-rust-launcher", () => {
 	it("routes no-arg invocation to the Rust MCP stdio server", () => {
@@ -64,7 +68,6 @@ describe("epoch-rust-launcher", () => {
 				"https://collector.example.net/v1/telemetry",
 			]).mode,
 		).toBe("typescript");
-		expect(planInvocation(["telemetry", "submit"]).mode).toBe("typescript");
 		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
 		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
 		expect(planInvocation(["data"]).mode).toBe("typescript");
@@ -152,6 +155,103 @@ describe("epoch-rust-launcher", () => {
 		expect(deleteData.rawRustOutputFormat).toBe("text");
 	});
 
+	it("routes telemetry submit to Rust with TypeScript submit options", () => {
+		const plan = planInvocation([
+			"telemetry",
+			"submit",
+			"--endpoint",
+			"https://collector.example.net/v1/telemetry",
+			"--force",
+			"--min-interval-hours",
+			"0",
+		]);
+
+		expect(plan.mode).toBe("rust-cli");
+		expect(plan.commandPath).toBe("telemetry submit");
+		expect(plan.input).toEqual({
+			endpoint: "https://collector.example.net/v1/telemetry",
+			force: true,
+			min_interval_hours: 0,
+		});
+		expect(plan.wrapRustOutput).toBe(false);
+		expect(plan.rawRustOutputIndent).toBe(2);
+		expect((plan as { exitByPayloadOk?: boolean }).exitByPayloadOk).toBe(true);
+	});
+
+	it("keeps telemetry submit endpoint validation errors on the TypeScript path", () => {
+		const plan = planInvocation([
+			"telemetry",
+			"submit",
+			"--endpoint",
+			"http://collector.example.net/v1/telemetry",
+		]);
+
+		expect(plan.mode).toBe("typescript");
+	});
+
+	it("keeps telemetry submit interval values Rust would reject on the TypeScript path", () => {
+		expect(
+			planInvocation([
+				"telemetry",
+				"submit",
+				"--min-interval-hours",
+				"-1",
+			]).mode,
+		).toBe("typescript");
+		expect(
+			planInvocation([
+				"telemetry",
+				"submit",
+				"--min-interval-hours",
+				"not-a-number",
+			]).mode,
+		).toBe("typescript");
+		expect(
+			planInvocation([
+				"telemetry",
+				"submit",
+				"--min-interval-hours",
+				"0x10",
+			]).mode,
+		).toBe("typescript");
+	});
+
+	it("prints telemetry submit payloads in TypeScript order and exits by ok", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-run-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const releaseDir = join(root, "rust", "target", "release");
+			const binary = join(releaseDir, `epoch-cli${suffix}`);
+			mkdirSync(releaseDir, { recursive: true });
+			writeFileSync(
+				binary,
+				[
+					"#!/usr/bin/env node",
+					"console.log(JSON.stringify({ error: 'no endpoint configured', ok: false, recordCount: 0 }, null, 2));",
+				].join("\n"),
+			);
+			chmodSync(binary, 0o755);
+
+			const output = captureStdout(() =>
+				runPlannedInvocation(planInvocation(["telemetry", "submit"]), root, {}),
+			);
+
+			expect(output.status).toBe(1);
+			expect(output.stdout).toBe(
+				[
+					"{",
+					'  "ok": false,',
+					'  "recordCount": 0,',
+					'  "error": "no endpoint configured"',
+					"}",
+					"",
+				].join("\n"),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("builds nested time-math operands for Rust CLI", () => {
 		const plan = planInvocation([
 			"time-math",
@@ -225,3 +325,17 @@ describe("epoch-rust-launcher", () => {
 		}
 	});
 });
+
+function captureStdout(fn: () => number): { status: number; stdout: string } {
+	const originalWrite = process.stdout.write;
+	let stdout = "";
+	process.stdout.write = ((chunk: string | Uint8Array) => {
+		stdout += String(chunk);
+		return true;
+	}) as typeof process.stdout.write;
+	try {
+		return { status: fn(), stdout };
+	} finally {
+		process.stdout.write = originalWrite;
+	}
+}
