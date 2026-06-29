@@ -15,6 +15,7 @@ export type LauncherPlan = {
 	input?: JsonObject;
 	root: RootOptions;
 	httpEnv?: Record<string, string>;
+	wrapRustOutput?: boolean;
 };
 
 type RootOptions = {
@@ -36,9 +37,10 @@ export type CommandSpec = {
 	toolName: string;
 	options: OptionSpec[];
 	build?: (values: JsonObject) => JsonObject;
+	wrapOutput?: boolean;
 };
 
-const TOOL_COMMANDS: CommandSpec[] = [
+const RUST_CLI_COMMANDS: CommandSpec[] = [
 	command("get-current-time", "get_current_time", [
 		option("--timezone", "timezone", "string", { defaultValue: "UTC" }),
 	]),
@@ -164,16 +166,18 @@ const TOOL_COMMANDS: CommandSpec[] = [
 		option("--entries", "entries", "json", { required: true }),
 	]),
 	command("feedback-health", "feedback_health", []),
+	command("list-tools", "list_tools", [], { wrapOutput: false }),
 ];
 
-const TOOL_BY_PATH = new Map(TOOL_COMMANDS.map((spec) => [spec.path, spec]));
+const CLI_BY_PATH = new Map(RUST_CLI_COMMANDS.map((spec) => [spec.path, spec]));
 
 function command(
 	path: string,
 	toolName: string,
 	options: OptionSpec[],
+	extra: Pick<CommandSpec, "wrapOutput"> = {},
 ): CommandSpec {
-	return { path, toolName, options };
+	return { path, toolName, options, ...extra };
 }
 
 function option(
@@ -208,7 +212,7 @@ export function planInvocation(
 	}
 
 	const commandPath = args[0] ?? "";
-	const spec = TOOL_BY_PATH.get(commandPath);
+	const spec = CLI_BY_PATH.get(commandPath);
 	if (!spec || args.includes("--help") || args.includes("-h")) {
 		return { mode: "typescript", root };
 	}
@@ -220,6 +224,7 @@ export function planInvocation(
 		toolName: spec.toolName,
 		input,
 		root,
+		wrapRustOutput: spec.wrapOutput ?? true,
 	};
 }
 
@@ -352,8 +357,8 @@ export function resolveRustBinary(
 	const candidates = [];
 	const explicitDir = env["EPOCH_RUST_BIN_DIR"];
 	if (explicitDir) candidates.push(join(explicitDir, `${name}${suffix}`));
-	candidates.push(join(packageRoot, "prebuilds", platformTag(), `${name}${suffix}`));
 	candidates.push(join(packageRoot, "rust", "target", "release", `${name}${suffix}`));
+	candidates.push(join(packageRoot, "prebuilds", platformTag(), `${name}${suffix}`));
 	return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
@@ -409,6 +414,11 @@ function runRustCli(
 
 	if (child.status === 0) {
 		const data = parseJson(child.stdout);
+		if (plan.wrapRustOutput === false) {
+			const rawOutput = normalizeRawRustOutput(commandPath, data);
+			process.stdout.write(`${JSON.stringify(rawOutput, null, 2)}\n`);
+			return 0;
+		}
 		const result = { ok: true as const, data };
 		if (plan.root.format === "table") {
 			if (!plan.root.quiet) process.stdout.write(formatTable(result, toolName));
@@ -447,6 +457,19 @@ function parseJson(raw: string): unknown {
 	} catch {
 		return raw.trim();
 	}
+}
+
+function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
+	if (commandPath === "list-tools" && Array.isArray(data)) {
+		return data.map((tool) => {
+			if (!isObject(tool)) return tool;
+			return {
+				name: tool["name"],
+				description: tool["description"],
+			};
+		});
+	}
+	return data;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

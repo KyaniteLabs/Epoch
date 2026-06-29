@@ -120,7 +120,7 @@ pub struct ToolMetadata {
 pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     ToolMetadata {
         name: "get_current_time",
-        description: "Returns the current date and time in an IANA timezone.",
+        description: "Returns the current date and time in the specified IANA timezone. Useful for grounding the LLM in the user's local time. Example timezones: 'UTC', 'America/New_York', 'Europe/London', 'Asia/Tokyo'.",
         category: ToolCategory::Temporal,
         input_schema: "getCurrentTimeSchema",
         output_schema: "temporalOutput",
@@ -131,7 +131,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "convert_timezone",
-        description: "Converts an ISO-8601 timestamp to a target IANA timezone.",
+        description: "Converts an ISO-8601 timestamp to a target IANA timezone. The input timestamp must include timezone information or be in UTC. Returns the localised time, UTC offset, and human-readable format.",
         category: ToolCategory::Temporal,
         input_schema: "convertTimezoneSchema",
         output_schema: "temporalOutput",
@@ -142,7 +142,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "parse_duration",
-        description: "Parses a human-readable duration string into structured seconds.",
+        description: "Parses a human-readable duration string into structured seconds. Supports combinations of y (years), mo (months), w (weeks), d (days), h (hours), m (minutes), s (seconds). Examples: '2h30m', '1d6h', '1w3d', '45m'.",
         category: ToolCategory::Temporal,
         input_schema: "parseDurationSchema",
         output_schema: "durationOutput",
@@ -153,7 +153,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "time_math",
-        description: "Performs compound time-math operations by dispatching to sub-operations.",
+        description: "Performs compound time-math operations. Dispatches to the appropriate sub-operation based on the 'operation' parameter. Operations: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration. Use this for multi-step or dynamic time operations; for single-purpose calls use get_current_time, convert_timezone, parse_duration, add_business_days, or count_business_days.",
         category: ToolCategory::Temporal,
         input_schema: "timeMathSchema",
         output_schema: "timeMathOutput",
@@ -164,7 +164,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "add_business_days",
-        description: "Adds business days to a date, skipping weekends and known holidays.",
+        description: "Adds N business (working) days to a start date, skipping weekends and country-specific public holidays. Supports US, UK, FR, DE, and JP holidays.",
         category: ToolCategory::Temporal,
         input_schema: "addBusinessDaysSchema",
         output_schema: "businessDayOutput",
@@ -175,7 +175,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "count_business_days",
-        description: "Counts business days between two dates using supported holiday calendars.",
+        description: "Counts the number of business (working) days between two dates, excluding weekends and country-specific public holidays. The count is exclusive of the start date and inclusive of the end date.",
         category: ToolCategory::Temporal,
         input_schema: "countBusinessDaysSchema",
         output_schema: "businessDayOutput",
@@ -186,7 +186,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "pert_estimate",
-        description: "Calculates PERT expected duration from optimistic, likely, and pessimistic inputs.",
+        description: "Calculate PERT expected duration from three-point estimates using Beta distribution.\n\nFormula: E = (O + 4M + P) / 6. Returns expected value, variance, standard deviation,\nand 95%/99% confidence bounds with urgency categorization.\nUse when estimating task duration with uncertain outcomes.",
         category: ToolCategory::Estimation,
         input_schema: "pertEstimateSchema",
         output_schema: "pertOutput",
@@ -197,7 +197,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "cocomo_estimate",
-        description: "Runs LLM-adapted COCOMO effort estimation.",
+        description: "LLM-adapted COCOMO II parametric effort estimation.\n\nReplaces traditional 17 human-labor cost drivers with 5 LLM-specific factors:\nreasoning complexity, context completeness, transformation impact, iterative cycles,\nand human oversight. Returns both nominal and LLM-adjusted person-months.",
         category: ToolCategory::Estimation,
         input_schema: "cocomoEstimateSchema",
         output_schema: "cocomoOutput",
@@ -208,7 +208,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "sprint_forecast",
-        description: "Forecasts sprint completion from backlog size and velocity history.",
+        description: "Forecast sprint completion date from backlog size and historical velocity.\n\nComputes average velocity from sprint history, converts story points to hours,\nand returns required sprints with pessimistic estimate based on velocity variance.",
         category: ToolCategory::Estimation,
         input_schema: "sprintForecastSchema",
         output_schema: "sprintOutput",
@@ -219,7 +219,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "critical_path",
-        description: "Computes critical path and slack with merge-bias adjustment.",
+        description: "Compute critical path with merge-bias adjustment for project schedules.\n\nPerforms forward/backward pass to identify critical tasks and slack.\nApplies merge bias: tasks with >2 predecessors get 5% duration increase per extra predecessor.",
         category: ToolCategory::Estimation,
         input_schema: "criticalPathSchema",
         output_schema: "criticalPathOutput",
@@ -230,7 +230,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "monte_carlo_schedule",
-        description: "Runs Monte Carlo schedule simulation with seeded reproducibility.",
+        description: "Run Monte Carlo simulation for probabilistic schedule risk analysis.\n\nSamples task durations from triangular distributions and returns P10/P50/P80/P95\ncompletion estimates with identified risk events. Use seed for reproducible results.",
         category: ToolCategory::Estimation,
         input_schema: "monteCarloSchema",
         output_schema: "monteCarloOutput",
@@ -241,7 +241,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "reference_class_estimate",
-        description: "Applies historical/reference-class correction factors to an estimate.",
+        description: "Data-driven estimate using reference class forecasting.\n\nApplies historical correction factors based on actual-vs-estimated ratios.\nWhen no historical data exists, uses industry averages (1.3-2.2x for software tasks).\nPrioritize this over algorithmic models when historical data is available.",
         category: ToolCategory::Analytics,
         input_schema: "referenceClassEstimateSchema",
         output_schema: "referenceClassOutput",
@@ -252,7 +252,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "calibrate_estimates",
-        description: "Recalculates team-specific correction factors from actuals.",
+        description: "Recalculate team-specific correction factors from historical estimation data.\n\nCompares estimated vs actual hours to compute a correction multiplier.\nRequires PM system integration for best results. Returns recommendations\nfor improving estimation accuracy.",
         category: ToolCategory::Analytics,
         input_schema: "calibrateEstimatesSchema",
         output_schema: "calibrateOutput",
@@ -263,7 +263,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "token_time_bridge",
-        description: "Maps LLM token budgets to estimated wall-clock time.",
+        description: "Map LLM token budgets to estimated wall-clock time.\n\nUses model-specific calibration data (tokens/second, reasoning overhead,\ntool-call latency) to estimate how long a task will actually take.\nBridges the gap between token-space (how agents reason) and time-space (what humans need).\nUse token_cost_estimate instead when dollar cost matters too.",
         category: ToolCategory::Analytics,
         input_schema: "tokenTimeBridgeSchema",
         output_schema: "tokenTimeOutput",
@@ -274,7 +274,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "token_cost_estimate",
-        description: "Estimates wall-clock time and dollar cost for LLM token usage.",
+        description: "Estimate wall-clock time AND dollar cost for LLM token usage.\n\nCombines token-to-time mapping with model-specific pricing data.\nReturns cost breakdown (input/output/overhead) alongside the time estimate.\nUse token_time_bridge when you only need wall-clock time and not dollar cost.",
         category: ToolCategory::Cost,
         input_schema: "tokenCostEstimateSchema",
         output_schema: "tokenTimeOutput",
@@ -285,7 +285,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "compare_models",
-        description: "Compares supported LLM models for a token budget by time or cost.",
+        description: "Compare all LLM models side-by-side for a given token budget.\n\nRanks models by estimated cost or time. Shows quality tier for each model.\nUse when choosing which model to use for a task.",
         category: ToolCategory::Cost,
         input_schema: "compareModelsSchema",
         output_schema: "modelComparisonOutput",
@@ -296,7 +296,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "accuracy_trend",
-        description: "Tracks estimation accuracy across sliding windows.",
+        description: "Track estimation accuracy improvement over time.\n\nComputes sliding-window MAPE and compares against industry baseline (25%).\nShows whether your estimates are improving, degrading, or stable.\nIndustry research shows estimation accuracy does NOT improve with experience (Cao 2022) \u{2014} self-correcting systems like Epoch can buck this trend.",
         category: ToolCategory::Analytics,
         input_schema: "accuracyTrendSchema",
         output_schema: "accuracyTrendOutput",
@@ -307,7 +307,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "schedule_risk",
-        description: "Assesses schedule risk using historical accuracy and confidence intervals.",
+        description: "Assess schedule risk for an estimate using historical accuracy data.\n\nComputes confidence intervals (p50/p80/p95) based on your team's MAPE.\nReturns risk level and actionable recommendations.\nUses industry baseline (25% MAPE) when no historical data is available.",
         category: ToolCategory::Risk,
         input_schema: "scheduleRiskSchema",
         output_schema: "scheduleRiskOutput",
@@ -318,7 +318,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "cocomo_validate",
-        description: "Validates COCOMO Basic against historical calibration datasets.",
+        description: "Validate COCOMO estimation model against 195 real historical projects.\n\nRuns the COCOMO Basic formula against projects from NASA93, COCOMO81, Albrecht, and Kemerer datasets.\nReports overall MAPE, bias, per-type accuracy, and recommended coefficient adjustments.\nUse cocomo_ground_truth for the full multi-model benchmark across all COCOMO and AI-adjusted models.",
         category: ToolCategory::Validation,
         input_schema: "cocomoValidateSchema",
         output_schema: "cocomoValidateOutput",
@@ -329,7 +329,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "cocomo_ground_truth",
-        description: "Benchmarks all COCOMO and AI-adjusted models against ground-truth datasets.",
+        description: "Validate all COCOMO estimation models against 240 real historical projects with known effort.\n\nRuns 6 models in parallel: COCOMO Basic, COCOMO II Nominal, COCOMO II + AI 12x speedup, and AI + developer profile at human/hybrid/ai_native gradients.\nReports MAPE, MMRE, PRED(25), PRED(50), bias per model, with breakdowns by dataset and project type.\nUse cocomo_validate for a quicker Basic COCOMO-only validation pass.",
         category: ToolCategory::Validation,
         input_schema: "cocomoGroundTruthSchema",
         output_schema: "cocomoGroundTruthOutput",
@@ -340,7 +340,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "record_actual",
-        description: "Submits actual hours for a previous estimate.",
+        description: "Submit actual hours for a previous estimate to improve future accuracy.\n\nPairs with any estimation tool. The estimate_id comes from the estimate response.\nActuals feed into the self-improvement loop \u{2014} after enough samples, correction factors\nupdate automatically to reduce estimation bias.",
         category: ToolCategory::Feedback,
         input_schema: "recordActualSchema",
         output_schema: "recordActualOutput",
@@ -351,7 +351,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "get_pending_estimates",
-        description: "Lists recent estimates that have not yet received actual-hour feedback.",
+        description: "List recent estimates that have not yet received actual-hour feedback.\n\nReturns estimates awaiting actuals so you can submit feedback via record_actual.\nUse this to close the estimation feedback loop and improve accuracy over time.",
         category: ToolCategory::Feedback,
         input_schema: "getPendingEstimatesSchema",
         output_schema: "pendingEstimatesOutput",
@@ -362,7 +362,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "batch_record_actuals",
-        description: "Records actual hours for multiple estimates in one call.",
+        description: "Record actual hours for multiple estimates in a single call.\n\nEfficient for bulk feedback submission \u{2014} accepts 1 to 500 entries at once.\nEach entry pairs an estimate ID with the actual hours spent.",
         category: ToolCategory::Feedback,
         input_schema: "batchRecordActualsSchema",
         output_schema: "batchRecordActualsOutput",
@@ -373,7 +373,7 @@ pub const TOOL_REGISTRY: &[ToolMetadata] = &[
     },
     ToolMetadata {
         name: "feedback_health",
-        description: "Reports health and readiness of the estimation feedback loop.",
+        description: "Get a health report on the estimation feedback loop.\n\nShows total estimates, actuals, match rate, MAPE by tool and task type,\nand self-improvement readiness (which types have enough data for auto-calibration).",
         category: ToolCategory::Feedback,
         input_schema: "feedbackHealthSchema",
         output_schema: "feedbackHealthOutput",

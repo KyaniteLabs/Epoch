@@ -87,19 +87,15 @@ pub fn run_cli_json(
 }
 
 pub fn list_tools_value() -> Value {
-    json!({
-        "count": tool_registry().len(),
-        "tools": tool_registry()
+    json!(
+        tool_registry()
             .iter()
             .map(|tool| json!({
                 "name": tool.name,
                 "description": tool.description,
-                "cliCommand": tool.cli_command,
-                "category": tool.category,
-                "readOnly": tool.annotations.read_only_hint,
             }))
-            .collect::<Vec<_>>(),
-    })
+            .collect::<Vec<_>>()
+    )
 }
 
 pub fn crate_label() -> &'static str {
@@ -907,7 +903,9 @@ mod tests {
 
         let tools = run_cli_command(&mut dispatcher, "list-tools", json!({}))
             .expect("list-tools dispatches");
-        assert_eq!(tools["count"], 24);
+        assert_eq!(tools.as_array().expect("tools array").len(), 24);
+        assert_eq!(tools[0]["name"], "get_current_time");
+        assert!(tools[0]["description"].as_str().expect("description").len() > 0);
     }
 
     #[test]

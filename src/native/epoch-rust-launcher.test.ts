@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { planInvocation } from "./epoch-rust-launcher.js";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { planInvocation, resolveRustBinary } from "./epoch-rust-launcher.js";
 
 describe("epoch-rust-launcher", () => {
 	it("routes no-arg invocation to the Rust MCP stdio server", () => {
@@ -55,7 +58,15 @@ describe("epoch-rust-launcher", () => {
 		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
 		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
 		expect(planInvocation(["data", "status"]).mode).toBe("typescript");
-		expect(planInvocation(["list-tools"]).mode).toBe("typescript");
+	});
+
+	it("routes shape-compatible list-tools to Rust without wrapping output", () => {
+		const plan = planInvocation(["list-tools"]);
+
+		expect(plan.mode).toBe("rust-cli");
+		expect(plan.commandPath).toBe("list-tools");
+		expect(plan.wrapRustOutput).toBe(false);
+		expect(plan.input).toEqual({});
 	});
 
 	it("builds nested time-math operands for Rust CLI", () => {
@@ -100,5 +111,34 @@ describe("epoch-rust-launcher", () => {
 			backlog_points: 20,
 			velocity_history: [8, 10, 9],
 		});
+	});
+
+	it("prefers explicit bins then fresh source-tree release bins before prebuilds", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const arch = process.arch === "x64" ? "x64" : process.arch;
+			const platform = `${process.platform}-${arch}`;
+			const explicitDir = join(root, "explicit");
+			const releaseDir = join(root, "rust", "target", "release");
+			const prebuildDir = join(root, "prebuilds", platform);
+			const explicit = join(explicitDir, `epoch-cli${suffix}`);
+			const release = join(releaseDir, `epoch-cli${suffix}`);
+			const prebuild = join(prebuildDir, `epoch-cli${suffix}`);
+
+			mkdirSync(explicitDir, { recursive: true });
+			mkdirSync(releaseDir, { recursive: true });
+			mkdirSync(prebuildDir, { recursive: true });
+			writeFileSync(explicit, "");
+			writeFileSync(release, "");
+			writeFileSync(prebuild, "");
+
+			expect(resolveRustBinary(root, "epoch-cli", {})).toBe(release);
+			expect(
+				resolveRustBinary(root, "epoch-cli", { EPOCH_RUST_BIN_DIR: explicitDir }),
+			).toBe(explicit);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
