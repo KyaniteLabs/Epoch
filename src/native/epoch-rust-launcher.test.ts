@@ -68,8 +68,18 @@ describe("epoch-rust-launcher", () => {
 				"https://collector.example.net/v1/telemetry",
 			]).mode,
 		).toBe("typescript");
-		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
 		expect(planInvocation(["data"]).mode).toBe("typescript");
+	});
+
+	it("routes self-improve to Rust with TypeScript compact output shape", () => {
+		const plan = planInvocation(["self-improve"]);
+
+		expect(plan.mode).toBe("rust-cli");
+		expect(plan.commandPath).toBe("self-improve");
+		expect(plan.toolName).toBe("self_improve");
+		expect(plan.input).toEqual({});
+		expect(plan.wrapRustOutput).toBe(false);
+		expect(plan.rawRustOutputIndent).toBeNull();
 	});
 
 	it("routes shape-compatible list-tools to Rust without wrapping output", () => {
@@ -289,6 +299,36 @@ describe("epoch-rust-launcher", () => {
 					"}",
 					"",
 				].join("\n"),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("prints self-improve success payloads like the TypeScript CLI", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-self-improve-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const releaseDir = join(root, "rust", "target", "release");
+			const binary = join(releaseDir, `epoch-cli${suffix}`);
+			mkdirSync(releaseDir, { recursive: true });
+			writeFileSync(
+				binary,
+				[
+					"#!/usr/bin/env node",
+					"console.log(JSON.stringify({ ok: true, message: 'Self-improvement complete.' }, null, 2));",
+				].join("\n"),
+			);
+			chmodSync(binary, 0o755);
+
+			const output = captureOutput(() =>
+				runPlannedInvocation(planInvocation(["self-improve"]), root, {}),
+			);
+
+			expect(output.status).toBe(0);
+			expect(output.stderr).toBe("");
+			expect(output.stdout).toBe(
+				'{"ok":true,"message":"Self-improvement complete."}\n',
 			);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

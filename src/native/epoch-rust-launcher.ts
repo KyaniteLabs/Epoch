@@ -185,6 +185,10 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	]),
 	command("feedback-health", "feedback_health", []),
 	command("list-tools", "list_tools", [], { wrapOutput: false }),
+	command("self-improve", "self_improve", [], {
+		wrapOutput: false,
+		rawOutputIndent: null,
+	}),
 	command("data where", "data_where", [], { wrapOutput: false }),
 	command("data status", "data_status", [], { wrapOutput: false }),
 	command("telemetry status", "telemetry_status", [], { wrapOutput: false }),
@@ -690,6 +694,12 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 				description: tool["description"],
 			};
 		});
+	}
+	if (commandPath === "self-improve" && isObject(data)) {
+		return {
+			ok: data["ok"],
+			message: data["message"],
+		};
 	}
 	if (commandPath === "data where" && isObject(data)) {
 		return {

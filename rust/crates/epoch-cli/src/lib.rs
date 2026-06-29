@@ -90,7 +90,7 @@ pub fn run_cli_command(
     let command = command_path.trim();
     match command {
         "list-tools" => Ok(list_tools_value()),
-        "self-improve" => self_improve_value(dispatcher),
+        "self-improve" => self_improve_value(),
         command => {
             if let Some(tool_name) = command_to_tool(command) {
                 dispatcher.dispatch(tool_name, input)
@@ -352,10 +352,10 @@ fn share_data_value(input: Value) -> ToolValueResult {
     let output_path = output
         .map(PathBuf::from)
         .unwrap_or_else(default_community_export_path);
-    if let Some(parent) = output_path.parent() {
-        if let Err(error) = create_dir_all(parent) {
-            return Ok(json!({ "ok": false, "message": error.to_string() }));
-        }
+    if let Some(parent) = output_path.parent()
+        && let Err(error) = create_dir_all(parent)
+    {
+        return Ok(json!({ "ok": false, "message": error.to_string() }));
     }
 
     let dataset = CommunityExportDataset {
@@ -1406,13 +1406,500 @@ fn telemetry_cli_error(message: impl Into<String>) -> ToolError {
     )
 }
 
-fn self_improve_value(dispatcher: &mut RustToolDispatcher) -> ToolValueResult {
-    let feedback_health = dispatcher.dispatch("feedback_health", json!({}))?;
+fn self_improve_value() -> ToolValueResult {
+    update_reference_database()?;
     Ok(json!({
-        "ready": true,
-        "mode": "local-rust-runtime",
-        "feedbackHealth": feedback_health,
+        "ok": true,
+        "message": "Self-improvement complete.",
     }))
+}
+
+fn update_reference_database() -> Result<(), ToolError> {
+    let Some((mut db, _loaded_from)) = load_self_improve_reference_database() else {
+        return Ok(());
+    };
+    let Some(root) = db.as_object_mut() else {
+        return Ok(());
+    };
+
+    let tool_stats = load_tool_telemetry_stats(&data_paths().tool_telemetry, 90);
+    {
+        let benchmarks = object_field_mut(root, "toolExecutionBenchmarks");
+        for stat in &tool_stats {
+            let next = match benchmarks.get(&stat.tool) {
+                Some(existing) => merge_tool_benchmark(existing, stat),
+                None => json!({
+                    "p50_ms": rounded_json_number(stat.p50_ms, 2),
+                    "p95_ms": rounded_json_number(stat.p95_ms, 2),
+                    "mean_ms": rounded_json_number(stat.mean_ms, 2),
+                    "stddev_ms": 0,
+                    "min_ms": rounded_json_number(stat.p50_ms, 2),
+                    "max_ms": rounded_json_number(stat.p95_ms, 2),
+                    "sampleCount": stat.call_count,
+                }),
+            };
+            benchmarks.insert(stat.tool.clone(), next);
+        }
+    }
+
+    let feedback_records = extract_self_improve_feedback_records(180);
+    let received_records = load_received_self_improve_records(&data_paths().receiver_records);
+    let mut calibration_records = feedback_records.clone();
+    calibration_records.extend(received_records.clone());
+    if calibration_records.len() >= 5 {
+        root.insert(
+            "taskTypeCorrectionFactors".to_string(),
+            compute_self_improve_correction_factors(&calibration_records),
+        );
+        root.insert(
+            "toolTaskCorrectionFactors".to_string(),
+            compute_self_improve_tool_correction_factors(&calibration_records),
+        );
+        root.insert(
+            "complexityCorrectionFactors".to_string(),
+            compute_self_improve_complexity_correction_factors(&calibration_records),
+        );
+        root.insert(
+            "globalCorrectionFactor".to_string(),
+            rounded_json_number(
+                compute_self_improve_global_correction(&calibration_records),
+                2,
+            ),
+        );
+    }
+
+    let telemetry_size: usize = tool_stats.iter().map(|stat| stat.call_count).sum();
+    let existing_sample_size = root
+        .get("sampleSize")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    root.insert(
+        "sampleSize".to_string(),
+        rounded_json_number(
+            existing_sample_size
+                + telemetry_size as f64
+                + feedback_records.len() as f64
+                + received_records.len() as f64,
+            2,
+        ),
+    );
+    root.insert(
+        "generatedAt".to_string(),
+        Value::String(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+    );
+    root.insert(
+        "source".to_string(),
+        Value::String("self-improvement".to_string()),
+    );
+
+    let data_dir = epoch_data_dir();
+    create_dir_all(&data_dir)
+        .map_err(|error| self_improve_io_error("create data directory", error))?;
+    let target = data_dir.join(REFERENCE_DATABASE_FILE);
+    let tmp = data_dir.join(format!("{REFERENCE_DATABASE_FILE}.tmp"));
+    let raw = serde_json::to_string_pretty(&db).map_err(|error| {
+        ToolError::new(
+            format!("Failed to serialize Epoch reference database: {error}."),
+            "Check local reference database contents and retry.",
+        )
+    })?;
+    write(&tmp, raw).map_err(|error| self_improve_io_error("write reference database", error))?;
+    rename(&tmp, &target)
+        .map_err(|error| self_improve_io_error("replace reference database", error))?;
+    Ok(())
+}
+
+fn self_improve_io_error(action: &str, error: std::io::Error) -> ToolError {
+    ToolError::new(
+        format!("Failed to {action}: {error}."),
+        "Check EPOCH_DATA_DIR permissions and retry.",
+    )
+}
+
+fn load_self_improve_reference_database() -> Option<(Value, PathBuf)> {
+    let configured = env::var_os("EPOCH_DATA_DIR")
+        .and_then(non_empty_os_path)
+        .map(|dir| dir.join(REFERENCE_DATABASE_FILE));
+    if let Some(path) = configured.filter(|path| path.exists())
+        && let Some(db) = read_reference_database(&path)
+    {
+        return Some((db, path));
+    }
+
+    if let Some(path) = user_reference_database_path().filter(|path| path.exists())
+        && let Some(db) = read_reference_database(&path)
+    {
+        return Some((db, path));
+    }
+
+    for path in [
+        PathBuf::from("src")
+            .join("data")
+            .join(REFERENCE_DATABASE_FILE),
+        PathBuf::from("dist").join(REFERENCE_DATABASE_FILE),
+        PathBuf::from(REFERENCE_DATABASE_FILE),
+    ] {
+        if path.exists()
+            && let Some(db) = read_reference_database(&path)
+        {
+            return Some((db, path));
+        }
+    }
+
+    epoch_data::bundled_reference_database()
+        .ok()
+        .map(|db| (db, PathBuf::from("(bundled)")))
+}
+
+#[derive(Debug, Clone)]
+struct SelfImproveRecord {
+    task_type: String,
+    complexity: Option<f64>,
+    tool: Option<String>,
+    estimated_hours: f64,
+    actual_hours: f64,
+}
+
+#[derive(Debug, Clone)]
+struct SelfImproveToolStat {
+    tool: String,
+    call_count: usize,
+    p50_ms: f64,
+    p95_ms: f64,
+    mean_ms: f64,
+}
+
+fn object_field_mut<'a>(root: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
+    let needs_object = !matches!(root.get(key), Some(Value::Object(_)));
+    if needs_object {
+        root.insert(key.to_string(), Value::Object(Map::new()));
+    }
+    root.get_mut(key)
+        .and_then(Value::as_object_mut)
+        .expect("object field just initialized")
+}
+
+fn merge_tool_benchmark(existing: &Value, stat: &SelfImproveToolStat) -> Value {
+    let sample_count = existing
+        .get("sampleCount")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    let total_new = stat.call_count as f64;
+    let total = sample_count + total_new;
+    if total <= 0.0 {
+        return json!({
+            "p50_ms": rounded_json_number(stat.p50_ms, 2),
+            "p95_ms": rounded_json_number(stat.p95_ms, 2),
+            "mean_ms": rounded_json_number(stat.mean_ms, 2),
+            "stddev_ms": 0,
+            "min_ms": rounded_json_number(stat.p50_ms, 2),
+            "max_ms": rounded_json_number(stat.p95_ms, 2),
+            "sampleCount": stat.call_count,
+        });
+    }
+
+    let w = sample_count / total;
+    let w2 = total_new / total;
+    let existing_number = |key: &str| existing.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+    json!({
+        "p50_ms": rounded_json_number(existing_number("p50_ms") * w + stat.p50_ms * w2, 2),
+        "p95_ms": rounded_json_number(existing_number("p95_ms") * w + stat.p95_ms * w2, 2),
+        "mean_ms": rounded_json_number(existing_number("mean_ms") * w + stat.mean_ms * w2, 2),
+        "stddev_ms": rounded_json_number(
+            (existing_number("stddev_ms").powi(2) * w + (stat.p95_ms - stat.p50_ms).powi(2) * w2).sqrt(),
+            2
+        ),
+        "min_ms": rounded_json_number(existing_number("min_ms").min(stat.p50_ms * 0.5), 2),
+        "max_ms": rounded_json_number(existing_number("max_ms").max(stat.p95_ms * 1.5), 2),
+        "sampleCount": rounded_json_number(total, 2),
+    })
+}
+
+fn extract_self_improve_feedback_records(window_days: i64) -> Vec<SelfImproveRecord> {
+    let estimates = read_epoch_jsonl_values(&epoch_data_dir().join(ESTIMATES_FILE));
+    let actuals = read_epoch_jsonl_values(&epoch_data_dir().join(ACTUALS_FILE));
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(window_days))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let mut actuals_by_id: BTreeMap<String, Value> = BTreeMap::new();
+    for actual in actuals {
+        if let Some(id) = community_string(actual.get("estimateId")) {
+            actuals_by_id.insert(id.to_string(), actual);
+        }
+    }
+
+    let mut records = Vec::new();
+    for estimate in estimates {
+        if community_string(estimate.get("estimatedAt"))
+            .is_some_and(|value| value < cutoff.as_str())
+        {
+            continue;
+        }
+        let Some(id) = community_string(estimate.get("id")) else {
+            continue;
+        };
+        let Some(actual) = actuals_by_id.get(id) else {
+            continue;
+        };
+        let Some(actual_hours) = community_number(actual.get("actualHours")) else {
+            continue;
+        };
+        if actual_hours < MINIMUM_COMMUNITY_ACTUAL_HOURS || is_community_seed_record(actual) {
+            continue;
+        }
+        if community_calibration_usage(estimate.get("inputs"), actual, &estimate) != "correction" {
+            continue;
+        }
+        let Some(estimated_hours) = extract_community_estimated_hours(estimate.get("outputs"))
+        else {
+            continue;
+        };
+        if estimated_hours <= 0.0
+            || actual_hours / estimated_hours < MIN_COMMUNITY_ACTUAL_ESTIMATE_RATIO
+        {
+            continue;
+        }
+
+        let inputs = estimate.get("inputs");
+        let tool = community_string(estimate.get("tool")).map(str::to_string);
+        let task_type = inputs
+            .and_then(|inputs| community_string(inputs.get("task_type")))
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                infer_community_task_type(tool.as_deref().unwrap_or("")).to_string()
+            });
+        records.push(SelfImproveRecord {
+            task_type,
+            complexity: inputs.and_then(|inputs| community_number(inputs.get("complexity"))),
+            tool,
+            estimated_hours,
+            actual_hours,
+        });
+    }
+    records
+}
+
+fn load_received_self_improve_records(path: &Path) -> Vec<SelfImproveRecord> {
+    read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|record| received_self_improve_record(&record))
+        .collect()
+}
+
+fn received_self_improve_record(record: &Value) -> Option<SelfImproveRecord> {
+    let task_type = record.get("task_type").and_then(Value::as_str)?.to_string();
+    let complexity = match record.get("complexity") {
+        Some(Value::Null) | None => None,
+        Some(value) => Some(value.as_f64().filter(|value| value.is_finite())?),
+    };
+    let tool = record.get("tool").and_then(Value::as_str)?.to_string();
+    let estimated_hours = record.get("estimated_hours").and_then(Value::as_f64)?;
+    let actual_hours = record.get("actual_hours").and_then(Value::as_f64)?;
+    let ratio = record.get("ratio").and_then(Value::as_f64)?;
+    let date = record.get("date").and_then(Value::as_str)?;
+    if !estimated_hours.is_finite()
+        || estimated_hours <= 0.0
+        || !actual_hours.is_finite()
+        || actual_hours <= 0.0
+        || !ratio.is_finite()
+        || !is_yyyy_mm_dd(date)
+    {
+        return None;
+    }
+    Some(SelfImproveRecord {
+        task_type,
+        complexity,
+        tool: Some(tool),
+        estimated_hours,
+        actual_hours,
+    })
+}
+
+fn is_yyyy_mm_dd(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+}
+
+fn load_tool_telemetry_stats(path: &Path, window_days: i64) -> Vec<SelfImproveToolStat> {
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(window_days))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let mut grouped: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    for record in read_epoch_jsonl_values(path) {
+        let Some(timestamp) = record.get("timestamp").and_then(Value::as_str) else {
+            continue;
+        };
+        if timestamp < cutoff.as_str() {
+            continue;
+        }
+        let Some(tool) = record.get("tool").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(elapsed_ms) = record.get("elapsedMs").and_then(Value::as_f64) else {
+            continue;
+        };
+        if !elapsed_ms.is_finite() {
+            continue;
+        }
+        grouped
+            .entry(tool.to_string())
+            .or_default()
+            .push(elapsed_ms);
+    }
+
+    let mut stats = grouped
+        .into_iter()
+        .map(|(tool, mut elapsed)| {
+            elapsed.sort_by(|left, right| left.total_cmp(right));
+            let call_count = elapsed.len();
+            let mean_ms = elapsed.iter().sum::<f64>() / call_count as f64;
+            SelfImproveToolStat {
+                tool,
+                call_count,
+                p50_ms: percentile_ts(&elapsed, 0.5),
+                p95_ms: percentile_ts(&elapsed, 0.95),
+                mean_ms: round_to(mean_ms, 2),
+            }
+        })
+        .collect::<Vec<_>>();
+    stats.sort_by(|left, right| right.call_count.cmp(&left.call_count));
+    stats
+}
+
+fn percentile_ts(sorted: &[f64], percentile: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let index = ((sorted.len() as f64) * percentile).floor() as usize;
+    round_to(sorted[index.min(sorted.len() - 1)], 2)
+}
+
+fn compute_self_improve_correction_factors(records: &[SelfImproveRecord]) -> Value {
+    let mut grouped: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    for record in valid_self_improve_records(records) {
+        grouped
+            .entry(record.task_type.clone())
+            .or_default()
+            .push(record.actual_hours / record.estimated_hours);
+    }
+    let mut out = Map::new();
+    for (task_type, ratios) in grouped {
+        if ratios.len() < 3 {
+            continue;
+        }
+        out.insert(task_type, rounded_json_number(clamped_median(ratios), 2));
+    }
+    Value::Object(out)
+}
+
+fn compute_self_improve_global_correction(records: &[SelfImproveRecord]) -> f64 {
+    let ratios = valid_self_improve_records(records)
+        .into_iter()
+        .map(|record| record.actual_hours / record.estimated_hours)
+        .collect::<Vec<_>>();
+    if ratios.is_empty() {
+        return 1.07;
+    }
+    clamped_median(ratios)
+}
+
+fn compute_self_improve_tool_correction_factors(records: &[SelfImproveRecord]) -> Value {
+    let mut grouped: BTreeMap<String, BTreeMap<String, Vec<f64>>> = BTreeMap::new();
+    for record in valid_self_improve_records(records) {
+        let tool = record.tool.clone().unwrap_or_else(|| "unknown".to_string());
+        grouped
+            .entry(tool)
+            .or_default()
+            .entry(record.task_type.clone())
+            .or_default()
+            .push(record.actual_hours / record.estimated_hours);
+    }
+    let mut out = Map::new();
+    for (tool, task_map) in grouped {
+        let mut task_out = Map::new();
+        for (task_type, ratios) in task_map {
+            if ratios.len() < 3 {
+                continue;
+            }
+            task_out.insert(task_type, rounded_json_number(clamped_median(ratios), 2));
+        }
+        out.insert(tool, Value::Object(task_out));
+    }
+    Value::Object(out)
+}
+
+fn compute_self_improve_complexity_correction_factors(records: &[SelfImproveRecord]) -> Value {
+    let mut grouped: BTreeMap<String, BTreeMap<String, Vec<f64>>> = BTreeMap::new();
+    for record in valid_self_improve_records(records) {
+        let Some(complexity) = record.complexity else {
+            continue;
+        };
+        grouped
+            .entry(record.task_type.clone())
+            .or_default()
+            .entry(number_key(complexity))
+            .or_default()
+            .push(record.actual_hours / record.estimated_hours);
+    }
+    let mut out = Map::new();
+    for (task_type, complexity_map) in grouped {
+        let mut complexity_out = Map::new();
+        for (complexity, ratios) in complexity_map {
+            if ratios.len() < 3 {
+                continue;
+            }
+            complexity_out.insert(complexity, rounded_json_number(clamped_median(ratios), 2));
+        }
+        out.insert(task_type, Value::Object(complexity_out));
+    }
+    Value::Object(out)
+}
+
+fn valid_self_improve_records(records: &[SelfImproveRecord]) -> Vec<&SelfImproveRecord> {
+    records
+        .iter()
+        .filter(|record| {
+            record.estimated_hours.is_finite()
+                && record.estimated_hours > 0.0
+                && record.actual_hours.is_finite()
+                && record.actual_hours > 0.0
+        })
+        .collect()
+}
+
+fn clamped_median(mut ratios: Vec<f64>) -> f64 {
+    ratios.sort_by(|left, right| left.total_cmp(right));
+    let mid = ratios.len() / 2;
+    let median = if ratios.len().is_multiple_of(2) {
+        (ratios[mid - 1] + ratios[mid]) / 2.0
+    } else {
+        ratios[mid]
+    };
+    round_to(median.clamp(0.1, 3.0), 2)
+}
+
+fn number_key(value: f64) -> String {
+    if value.fract() == 0.0 && value >= i64::MIN as f64 && value <= i64::MAX as f64 {
+        (value as i64).to_string()
+    } else {
+        let mut text = value.to_string();
+        if text.contains('.') {
+            while text.ends_with('0') {
+                text.pop();
+            }
+            if text.ends_with('.') {
+                text.pop();
+            }
+        }
+        text
+    }
 }
 
 fn data_paths() -> DataPaths {
@@ -1868,6 +2355,81 @@ mod tests {
     }
 
     #[test]
+    fn self_improve_writes_typescript_compatible_reference_database() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let data_dir = temp_data_dir("self-improve-reference-db");
+        set_epoch_data_dir(&data_dir);
+        write_reference_database_fixture(&data_dir);
+        write_self_improve_feedback_fixture(&data_dir);
+        let mut dispatcher = RustToolDispatcher::new();
+
+        let result =
+            run_cli_command(&mut dispatcher, "self-improve", json!({})).expect("self-improve runs");
+
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["message"], "Self-improvement complete.");
+
+        let raw = read_to_string(data_dir.join("reference-database.json"))
+            .expect("reference database written");
+        let db: Value = serde_json::from_str(&raw).expect("reference database json parses");
+        assert_eq!(db["source"], "self-improvement");
+        assert_eq!(db["sampleSize"], 105);
+        assert_eq!(db["globalCorrectionFactor"], 1.5);
+        assert_eq!(db["taskTypeCorrectionFactors"]["feature"], 1.5);
+        assert_eq!(
+            db["toolTaskCorrectionFactors"]["pert_estimate"]["feature"],
+            1.5
+        );
+        assert_eq!(db["complexityCorrectionFactors"]["feature"]["3"], 1.5);
+        assert!(
+            db["generatedAt"].as_str().is_some_and(|value| {
+                value != "2026-01-01T00:00:00.000Z" && value.ends_with('Z')
+            })
+        );
+
+        clear_epoch_env();
+        let _ = remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn self_improve_merges_received_telemetry_and_tool_stats_like_typescript() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let data_dir = temp_data_dir("self-improve-telemetry");
+        set_epoch_data_dir(&data_dir);
+        write_reference_database_with_tool_benchmark_fixture(&data_dir);
+        write_self_improve_receiver_and_tool_telemetry_fixture(&data_dir);
+        let mut dispatcher = RustToolDispatcher::new();
+
+        let result =
+            run_cli_command(&mut dispatcher, "self-improve", json!({})).expect("self-improve runs");
+
+        assert_eq!(result["ok"], true);
+        let raw = read_to_string(data_dir.join("reference-database.json"))
+            .expect("reference database written");
+        let db: Value = serde_json::from_str(&raw).expect("reference database json parses");
+        assert_eq!(db["sampleSize"], 108);
+        assert_eq!(db["globalCorrectionFactor"], 1.6);
+        assert_eq!(db["taskTypeCorrectionFactors"]["feature"], 1.6);
+        assert_eq!(
+            db["toolTaskCorrectionFactors"]["reference_class_estimate"]["feature"],
+            1.6
+        );
+        assert_eq!(db["complexityCorrectionFactors"]["feature"]["3"], 1.6);
+
+        let benchmark = &db["toolExecutionBenchmarks"]["test-tool"];
+        assert_eq!(benchmark["p50_ms"], 132.31);
+        assert_eq!(benchmark["p95_ms"], 523.08);
+        assert_eq!(benchmark["mean_ms"], 227.69);
+        assert_eq!(benchmark["stddev_ms"], 178.41);
+        assert_eq!(benchmark["min_ms"], 50);
+        assert_eq!(benchmark["max_ms"], 900);
+        assert_eq!(benchmark["sampleCount"], 13);
+
+        clear_epoch_env();
+        let _ = remove_dir_all(data_dir);
+    }
+
+    #[test]
     fn every_public_meta_command_has_runtime_behavior() {
         let _guard = ENV_LOCK.lock().expect("env lock");
         let data_dir = temp_data_dir("meta-smoke");
@@ -2149,6 +2711,144 @@ mod tests {
             ),
         )
         .expect("community actual fixture");
+    }
+
+    fn write_reference_database_fixture(data_dir: &PathBuf) {
+        let db = json!({
+            "version": "1.0.0",
+            "generatedAt": "2026-01-01T00:00:00.000Z",
+            "source": "test",
+            "sampleSize": 100,
+            "description": "test db",
+            "toolExecutionBenchmarks": {},
+            "modelLatencyProfiles": {},
+            "estimationAccuracy": {
+                "taskTypes": {},
+                "correctionFactors": {
+                    "byTaskType": {},
+                    "global": 1.07
+                }
+            },
+            "taskTypeCorrectionFactors": {},
+            "toolTaskCorrectionFactors": {},
+            "complexityCorrectionFactors": {},
+            "tokenTimeCalibration": {},
+            "globalCorrectionFactor": 1.07
+        });
+        write(
+            data_dir.join("reference-database.json"),
+            serde_json::to_string_pretty(&db).expect("reference db fixture json"),
+        )
+        .expect("reference db fixture");
+    }
+
+    fn write_reference_database_with_tool_benchmark_fixture(data_dir: &PathBuf) {
+        let db = json!({
+            "version": "1.0.0",
+            "generatedAt": "2026-01-01T00:00:00.000Z",
+            "source": "test",
+            "sampleSize": 100,
+            "description": "test db",
+            "toolExecutionBenchmarks": {
+                "test-tool": {
+                    "p50_ms": 100,
+                    "p95_ms": 500,
+                    "mean_ms": 200,
+                    "stddev_ms": 50,
+                    "min_ms": 50,
+                    "max_ms": 800,
+                    "sampleCount": 10
+                }
+            },
+            "modelLatencyProfiles": {},
+            "estimationAccuracy": {
+                "taskTypes": {},
+                "correctionFactors": {
+                    "byTaskType": {},
+                    "global": 1.07
+                }
+            },
+            "taskTypeCorrectionFactors": {},
+            "toolTaskCorrectionFactors": {},
+            "complexityCorrectionFactors": {},
+            "tokenTimeCalibration": {},
+            "globalCorrectionFactor": 1.07
+        });
+        write(
+            data_dir.join("reference-database.json"),
+            serde_json::to_string_pretty(&db).expect("reference db fixture json"),
+        )
+        .expect("reference db fixture");
+    }
+
+    fn write_self_improve_feedback_fixture(data_dir: &PathBuf) {
+        write(
+            data_dir.join("estimates.jsonl"),
+            concat!(
+                r#"{"id":"real-si-1","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":10,"unit":"hours"},"estimatedAt":"2026-04-01T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-si-2","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":10,"unit":"hours"},"estimatedAt":"2026-04-02T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-si-3","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":10,"unit":"hours"},"estimatedAt":"2026-04-03T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-si-4","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":10,"unit":"hours"},"estimatedAt":"2026-04-04T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-si-5","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":10,"unit":"hours"},"estimatedAt":"2026-04-05T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-si-baseline","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":10,"unit":"hours"},"estimatedAt":"2026-04-06T00:00:00.000Z"}"#,
+                "\n"
+            ),
+        )
+        .expect("self-improve estimates fixture");
+        write(
+            data_dir.join("feedback.jsonl"),
+            concat!(
+                r#"{"estimateId":"real-si-1","actualHours":12,"reportedAt":"2026-04-02T00:00:00.000Z","completedAt":"2026-04-02T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-si-2","actualHours":14,"reportedAt":"2026-04-03T00:00:00.000Z","completedAt":"2026-04-03T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-si-3","actualHours":15,"reportedAt":"2026-04-04T00:00:00.000Z","completedAt":"2026-04-04T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-si-4","actualHours":16,"reportedAt":"2026-04-05T00:00:00.000Z","completedAt":"2026-04-05T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-si-5","actualHours":18,"reportedAt":"2026-04-06T00:00:00.000Z","completedAt":"2026-04-06T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-si-baseline","actualHours":30,"notes":"real data calibration backfill","reportedAt":"2026-04-07T00:00:00.000Z","completedAt":"2026-04-07T00:00:00.000Z"}"#,
+                "\n"
+            ),
+        )
+        .expect("self-improve actuals fixture");
+    }
+
+    fn write_self_improve_receiver_and_tool_telemetry_fixture(data_dir: &PathBuf) {
+        write(
+            data_dir.join("telemetry-records.jsonl"),
+            concat!(
+                r#"{"task_type":"feature","complexity":3,"tool":"reference_class_estimate","estimated_hours":10,"actual_hours":12,"ratio":1.2,"date":"2026-04-01","received_at":"2026-04-01T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"task_type":"feature","complexity":3,"tool":"reference_class_estimate","estimated_hours":10,"actual_hours":14,"ratio":1.4,"date":"2026-04-02","received_at":"2026-04-02T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"task_type":"feature","complexity":3,"tool":"reference_class_estimate","estimated_hours":10,"actual_hours":16,"ratio":1.6,"date":"2026-04-03","received_at":"2026-04-03T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"task_type":"feature","complexity":3,"tool":"reference_class_estimate","estimated_hours":10,"actual_hours":18,"ratio":1.8,"date":"2026-04-04","received_at":"2026-04-04T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"task_type":"feature","complexity":3,"tool":"reference_class_estimate","estimated_hours":10,"actual_hours":20,"ratio":2,"date":"2026-04-05","received_at":"2026-04-05T00:00:00.000Z"}"#,
+                "\n"
+            ),
+        )
+        .expect("receiver telemetry fixture");
+        write(
+            data_dir.join("telemetry.jsonl"),
+            concat!(
+                r#"{"timestamp":"2026-06-20T00:00:00.000Z","tool":"test-tool","inputHash":"h0","outputOk":true,"elapsedMs":120}"#,
+                "\n",
+                r#"{"timestamp":"2026-06-21T00:00:00.000Z","tool":"test-tool","inputHash":"h1","outputOk":true,"elapsedMs":240}"#,
+                "\n",
+                r#"{"timestamp":"2026-06-22T00:00:00.000Z","tool":"test-tool","inputHash":"h2","outputOk":true,"elapsedMs":600}"#,
+                "\n"
+            ),
+        )
+        .expect("tool telemetry fixture");
     }
 
     fn start_telemetry_receiver() -> (String, mpsc::Receiver<String>) {
