@@ -12,8 +12,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-prebuilds:
+    name: Build Rust prebuilds (${{ matrix.platform }})
+    if: startsWith(github.ref_name, 'v')
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: macos-13
+            platform: darwin-x64
+          - os: macos-14
+            platform: darwin-arm64
+          - os: windows-latest
+            platform: win32-x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal
+          rustup default 1.93.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Rust release binaries
+        run: pnpm run rust:build:release
+
+      - name: Stage Rust npm prebuilds
+        run: pnpm run rust:stage-prebuilds
+
+      - name: Verify staged platform
+        shell: bash
+        run: |
+          test -d "prebuilds/${{ matrix.platform }}"
+          pnpm run rust:verify-prebuilds -- --platforms="${{ matrix.platform }}"
+
+      - name: Archive prebuilds
+        shell: bash
+        run: tar -czf "prebuilds-${{ matrix.platform }}.tgz" -C prebuilds "${{ matrix.platform }}"
+
+      - name: Upload prebuilds
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prebuilds-${{ matrix.platform }}
+          path: prebuilds-${{ matrix.platform }}.tgz
+          if-no-files-found: error
+
   publish:
     name: Build and publish
+    needs: build-prebuilds
     if: startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     permissions:
@@ -55,8 +119,20 @@ jobs:
       - name: Rust release E2E
         run: pnpm run promotion:rust-e2e
 
-      - name: Stage Rust npm prebuilds
-        run: pnpm run rust:stage-prebuilds
+      - name: Download Rust npm prebuilds
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: prebuilds-*
+          path: .prebuild-artifacts
+
+      - name: Extract and verify Rust npm prebuilds
+        shell: bash
+        env:
+          EPOCH_REQUIRED_PREBUILD_PLATFORMS: linux-x64,darwin-x64,darwin-arm64,win32-x64
+        run: |
+          mkdir -p prebuilds
+          find .prebuild-artifacts -name '*.tgz' -print -exec tar -xzf {} -C prebuilds \;
+          pnpm run rust:verify-prebuilds
 
       - name: Verify npm package surface
         run: npm pack --dry-run
