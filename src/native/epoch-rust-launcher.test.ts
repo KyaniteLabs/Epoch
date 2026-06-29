@@ -57,8 +57,7 @@ describe("epoch-rust-launcher", () => {
 		expect(plan.input).toEqual({ timezone: "UTC" });
 	});
 
-	it("keeps unported meta commands on the TypeScript compatibility path", () => {
-		expect(planInvocation(["telemetry"]).mode).toBe("typescript");
+	it("keeps interactive telemetry enable on the TypeScript compatibility path", () => {
 		expect(planInvocation(["telemetry", "enable"]).mode).toBe("typescript");
 		expect(
 			planInvocation([
@@ -68,7 +67,31 @@ describe("epoch-rust-launcher", () => {
 				"https://collector.example.net/v1/telemetry",
 			]).mode,
 		).toBe("typescript");
-		expect(planInvocation(["data"]).mode).toBe("typescript");
+	});
+
+	it("routes root meta help commands to Rust as TypeScript-shaped failures", () => {
+		const telemetry = planInvocation(["telemetry"]);
+		const data = planInvocation(["data"]);
+
+		expect(telemetry.mode).toBe("rust-cli");
+		expect(telemetry.commandPath).toBe("telemetry");
+		expect(telemetry.wrapRustOutput).toBe(false);
+		expect((telemetry as { rawRustOutputFormat?: string }).rawRustOutputFormat)
+			.toBe("text");
+		expect((telemetry as { rawRustFailureStream?: string }).rawRustFailureStream)
+			.toBe("stderr");
+		expect((telemetry as { exitByPayloadOk?: boolean }).exitByPayloadOk).toBe(
+			true,
+		);
+
+		expect(data.mode).toBe("rust-cli");
+		expect(data.commandPath).toBe("data");
+		expect(data.wrapRustOutput).toBe(false);
+		expect((data as { rawRustOutputFormat?: string }).rawRustOutputFormat)
+			.toBe("text");
+		expect((data as { rawRustFailureStream?: string }).rawRustFailureStream)
+			.toBe("stderr");
+		expect((data as { exitByPayloadOk?: boolean }).exitByPayloadOk).toBe(true);
 	});
 
 	it("routes self-improve to Rust with TypeScript compact output shape", () => {
@@ -330,6 +353,47 @@ describe("epoch-rust-launcher", () => {
 			expect(output.stdout).toBe(
 				'{"ok":true,"message":"Self-improvement complete."}\n',
 			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("prints root meta help failures like the TypeScript CLI", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-root-help-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const releaseDir = join(root, "rust", "target", "release");
+			const binary = join(releaseDir, `epoch-cli${suffix}`);
+			mkdirSync(releaseDir, { recursive: true });
+			writeFileSync(
+				binary,
+				[
+					"#!/usr/bin/env node",
+					"const command = process.argv[2];",
+					"if (command === 'telemetry') {",
+					"  console.log(JSON.stringify({ ok: false, message: 'Usage: epoch telemetry [options] [command]\\n\\nManage anonymous telemetry settings\\n' }, null, 2));",
+					"} else {",
+					"  console.log(JSON.stringify({ ok: false, message: 'Usage: epoch data [options] [command]\\n\\nInspect local Epoch data files\\n' }, null, 2));",
+					"}",
+				].join("\n"),
+			);
+			chmodSync(binary, 0o755);
+
+			const telemetry = captureOutput(() =>
+				runPlannedInvocation(planInvocation(["telemetry"]), root, {}),
+			);
+			const data = captureOutput(() =>
+				runPlannedInvocation(planInvocation(["data"]), root, {}),
+			);
+
+			expect(telemetry.status).toBe(1);
+			expect(telemetry.stdout).toBe("");
+			expect(telemetry.stderr).toContain("Usage: epoch telemetry");
+			expect(telemetry.stderr).toContain("Manage anonymous telemetry settings");
+			expect(data.status).toBe(1);
+			expect(data.stdout).toBe("");
+			expect(data.stderr).toContain("Usage: epoch data");
+			expect(data.stderr).toContain("Inspect local Epoch data files");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

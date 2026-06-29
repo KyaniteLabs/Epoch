@@ -189,8 +189,20 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		wrapOutput: false,
 		rawOutputIndent: null,
 	}),
+	command("data", "data_help", [], {
+		wrapOutput: false,
+		rawOutputFormat: "text",
+		rawFailureStream: "stderr",
+		exitByPayloadOk: true,
+	}),
 	command("data where", "data_where", [], { wrapOutput: false }),
 	command("data status", "data_status", [], { wrapOutput: false }),
+	command("telemetry", "telemetry_help", [], {
+		wrapOutput: false,
+		rawOutputFormat: "text",
+		rawFailureStream: "stderr",
+		exitByPayloadOk: true,
+	}),
 	command("telemetry status", "telemetry_status", [], { wrapOutput: false }),
 	command("telemetry preview", "telemetry_preview", [], { wrapOutput: false }),
 	command("telemetry export", "telemetry_export", [
@@ -626,13 +638,19 @@ function runRustCli(
 		const data = parseJson(child.stdout);
 		if (plan.wrapRustOutput === false) {
 			const rawOutput = normalizeRawRustOutput(commandPath, data);
-			if (plan.rawRustOutputFormat === "text") {
-				process.stdout.write(String(rawOutput));
-				return 0;
-			}
 			const status = plan.exitByPayloadOk && isObject(rawOutput) && rawOutput["ok"] === false
 				? 1
 				: 0;
+			if (plan.rawRustOutputFormat === "text") {
+				const text = isObject(rawOutput) && typeof rawOutput["message"] === "string"
+					? rawOutput["message"]
+					: String(rawOutput);
+				const stream = status !== 0 && plan.rawRustFailureStream === "stderr"
+					? process.stderr
+					: process.stdout;
+				stream.write(text.endsWith("\n") ? text : `${text}\n`);
+				return status;
+			}
 			const rawIndent = status !== 0 && plan.rawRustFailureIndent !== undefined
 				? plan.rawRustFailureIndent
 				: plan.rawRustOutputIndent;

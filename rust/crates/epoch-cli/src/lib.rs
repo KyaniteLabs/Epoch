@@ -25,6 +25,33 @@ const RECEIVER_RECORDS_FILE: &str = "telemetry-records.jsonl";
 const RECEIVER_RECEIPTS_FILE: &str = "telemetry-receipts.jsonl";
 const RECEIVER_DEDUPE_KEYS_FILE: &str = "telemetry-record-keys.jsonl";
 const EXPORTS_DIR: &str = "exports";
+const TELEMETRY_HELP_TEXT: &str = concat!(
+    "Usage: epoch telemetry [options] [command]\n\n",
+    "Manage anonymous telemetry settings\n\n",
+    "Options:\n",
+    "  -h, --help              display help for command\n\n",
+    "Commands:\n",
+    "  status                  Show current telemetry configuration and history\n",
+    "  preview                 Preview anonymized data that would be shared\n",
+    "  export [options]        Export all anonymized data to a JSON file\n",
+    "  enable [options]        Opt in to anonymous telemetry sharing\n",
+    "  set-endpoint [options]  Configure the telemetry receiver endpoint\n",
+    "  submit [options]        Submit queued anonymized telemetry to the configured\n",
+    "                          endpoint\n",
+    "  disable                 Opt out of anonymous telemetry sharing\n",
+    "  delete-data [options]   Instructions for deleting your telemetry data\n",
+    "  help [command]          display help for command\n"
+);
+const DATA_HELP_TEXT: &str = concat!(
+    "Usage: epoch data [options] [command]\n\n",
+    "Inspect local Epoch data files\n\n",
+    "Options:\n",
+    "  -h, --help      display help for command\n\n",
+    "Commands:\n",
+    "  where           Show local Epoch data file locations\n",
+    "  status          Show local Epoch data status and file counts\n",
+    "  help [command]  display help for command\n"
+);
 const PLACEHOLDER_TELEMETRY_ENDPOINTS: &[&str] =
     &["https://example.com", "https://example.com/v1/telemetry"];
 const COMMUNITY_EXPORT_EMPTY_MESSAGE: &str = "No exportable records found. Use Epoch for a few tasks with actual-hour feedback, then run this again.";
@@ -138,18 +165,8 @@ pub fn crate_label() -> &'static str {
 fn meta_command_value(command_path: &str, input: Value) -> ToolValueResult {
     match command_path {
         "telemetry" => Ok(json!({
-            "localRuntime": true,
-            "mode": "local-rust-runtime",
-            "commands": [
-                "telemetry status",
-                "telemetry preview",
-                "telemetry export",
-                "telemetry enable",
-                "telemetry set-endpoint",
-                "telemetry submit",
-                "telemetry disable",
-                "telemetry delete-data",
-            ],
+            "ok": false,
+            "message": TELEMETRY_HELP_TEXT,
         })),
         "telemetry status" => telemetry_status_value(input),
         "telemetry preview" => telemetry_preview_value(input),
@@ -160,7 +177,11 @@ fn meta_command_value(command_path: &str, input: Value) -> ToolValueResult {
         "telemetry disable" => telemetry_disable_value(),
         "telemetry delete-data" => telemetry_delete_data_value(),
         "share-data" => share_data_value(input),
-        "data" | "data status" => Ok(data_status_value()),
+        "data" => Ok(json!({
+            "ok": false,
+            "message": DATA_HELP_TEXT,
+        })),
+        "data status" => Ok(data_status_value()),
         "data where" => Ok(data_paths_value()),
         _ => Err(cli_unknown_error(command_path)),
     }
