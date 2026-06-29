@@ -319,6 +319,52 @@ describe("buildSoakStatus", () => {
 		);
 	});
 
+	it("matches active runner state paths relative to an external worktree root", () => {
+		const status = buildSoakStatus({
+			ledgerPath:
+				".worktrees/rust-benchmark-progress/.epoch-promotion/soak-ledger-36909d7-replace.json",
+			ledgerRaw: ledger([run({ performanceEvidenceMode: "qualified" })]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/36909d7-replace-soak",
+				ledger: ".epoch-promotion/soak-ledger-36909d7-replace.json",
+				releaseTag: "candidate-1",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			runnerPathBase: ".worktrees/rust-benchmark-progress",
+			activeShadowSoakProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:30:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 1_800_000,
+				iterationsRequested: 3,
+				iterationsCompleted: 123,
+				minSecondsRequested: 3_600,
+				minSecondsRemaining: 1_800,
+				output: `${process.cwd()}/.worktrees/rust-benchmark-progress/.epoch-promotion/36909d7-replace-soak/shadow-soak.json`,
+				releaseTag: "candidate-1",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:30:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.activeShadowSoakProgress).toMatchObject({
+			status: "running",
+			iterationsCompleted: 123,
+			minSecondsRemaining: 1_800,
+			output: ".epoch-promotion/36909d7-replace-soak/shadow-soak.json",
+		});
+		expect(status.warnings).not.toContain(
+			"Runner is active for .epoch-promotion/soak-ledger-36909d7-replace.json, not .worktrees/rust-benchmark-progress/.epoch-promotion/soak-ledger-36909d7-replace.json.",
+		);
+	});
+
 	it("surfaces active benchmark progress without crediting unfinished evidence", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",

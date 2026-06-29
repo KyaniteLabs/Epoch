@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { existsSync, readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -622,8 +622,22 @@ function rel(path: string): string {
 	return relative(REPO_ROOT, path);
 }
 
-function sameRepoPath(left: string, right: string): boolean {
-	return resolve(REPO_ROOT, left) === resolve(REPO_ROOT, right);
+function runnerPathBaseFromStatePath(statePath: string): string {
+	const stateDir = dirname(statePath);
+	return basename(stateDir) === ".epoch-promotion" ? dirname(stateDir) : stateDir;
+}
+
+function resolveStatusPath(base: string, path: string): string {
+	return resolve(base, path);
+}
+
+function statusPathForOutput(path: string | null, base: string): string | null {
+	if (path === null || !isAbsolute(path)) return path;
+	const relativePath = relative(base, path);
+	if (relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))) {
+		return relativePath;
+	}
+	return rel(path);
 }
 
 function cumulativeReadiness(
@@ -698,6 +712,7 @@ export function buildSoakStatus(input: {
 	ledgerPath: string;
 	ledgerRaw: unknown | null;
 	stateRaw?: unknown | null;
+	runnerPathBase?: string;
 	activePromotionPacketProgressRaw?: unknown | null;
 	activeBenchmarkProgressRaw?: unknown | null;
 	activeShadowSoakProgressRaw?: unknown | null;
@@ -711,10 +726,13 @@ export function buildSoakStatus(input: {
 	const runnerState = parseRunnerState(input.stateRaw ?? null);
 	const runnerProcessAlive =
 		input.runnerAlive ?? (runnerState ? isRunnerProcessAlive(runnerState) : false);
+	const ledgerPath = resolve(REPO_ROOT, input.ledgerPath);
+	const runnerPathBase = input.runnerPathBase ?? REPO_ROOT;
+	const runnerLedgerPath = runnerState?.ledger
+		? resolveStatusPath(runnerPathBase, runnerState.ledger)
+		: null;
 	const runnerLedgerMatches =
-		runnerState?.ledger !== null &&
-		runnerState?.ledger !== undefined &&
-		sameRepoPath(runnerState.ledger, input.ledgerPath);
+		runnerLedgerPath !== null && runnerLedgerPath === ledgerPath;
 	const activeRunner = runnerProcessAlive && runnerLedgerMatches;
 	const activePromotionPacketProgress = activeRunner
 		? parsePromotionPacketProgress(input.activePromotionPacketProgressRaw ?? null)
@@ -725,6 +743,24 @@ export function buildSoakStatus(input: {
 	const activeShadowSoakProgress = activeRunner
 		? parseShadowSoakProgress(input.activeShadowSoakProgressRaw ?? null)
 		: null;
+	if (activePromotionPacketProgress) {
+		activePromotionPacketProgress.outputDir = statusPathForOutput(
+			activePromotionPacketProgress.outputDir,
+			runnerPathBase,
+		);
+	}
+	if (activeBenchmarkProgress) {
+		activeBenchmarkProgress.output = statusPathForOutput(
+			activeBenchmarkProgress.output,
+			runnerPathBase,
+		);
+	}
+	if (activeShadowSoakProgress) {
+		activeShadowSoakProgress.output = statusPathForOutput(
+			activeShadowSoakProgress.output,
+			runnerPathBase,
+		);
+	}
 	const activeReplacementScorecard = activeRunner
 		? parseReplacementScorecard(input.activeReplacementScorecardRaw ?? null)
 		: null;
@@ -829,7 +865,7 @@ export function buildSoakStatus(input: {
 	}
 	if (runnerProcessAlive && runnerState?.ledger && !runnerLedgerMatches) {
 		warnings.push(
-			`Runner is active for ${runnerState.ledger}, not ${rel(resolve(REPO_ROOT, input.ledgerPath))}.`,
+			`Runner is active for ${rel(runnerLedgerPath ?? resolveStatusPath(runnerPathBase, runnerState.ledger))}, not ${rel(ledgerPath)}.`,
 		);
 	}
 	if (activeRunner && runnerState?.target === "replace" && !runnerState.releaseTag) {
@@ -885,7 +921,7 @@ export function buildSoakStatus(input: {
 
 	return {
 		generatedAt: input.generatedAt ?? new Date().toISOString(),
-		ledger: rel(resolve(REPO_ROOT, input.ledgerPath)),
+		ledger: rel(ledgerPath),
 		ledgerExists: input.ledgerRaw !== null,
 		runCount: runs.length,
 		ignoredRunCount: ledger?.ignoredRunCount ?? 0,
@@ -1023,34 +1059,36 @@ export function main(argv: string[]): number {
 		const options = parseArgs(argv);
 		const ledgerPath = resolve(REPO_ROOT, options.ledgerPath);
 		const statePath = resolve(REPO_ROOT, options.statePath);
+		const runnerPathBase = runnerPathBaseFromStatePath(statePath);
 		const stateRaw = readJsonIfExists(statePath);
 		const runnerState = parseRunnerState(stateRaw);
 		const activeShadowSoakProgressRaw = runnerState?.packetDir
 			? readJsonIfExists(
-					resolve(REPO_ROOT, runnerState.packetDir, "shadow-soak-progress.json"),
+					resolve(runnerPathBase, runnerState.packetDir, "shadow-soak-progress.json"),
 				)
 			: null;
 		const activePromotionPacketProgressRaw = runnerState?.packetDir
 			? readJsonIfExists(
 					resolve(
-						REPO_ROOT,
+						runnerPathBase,
 						runnerState.packetDir,
 						"promotion-packet-progress.json",
 					),
 				)
 			: null;
 		const activeBenchmarkProgressRaw = runnerState?.packetDir
-			? readJsonIfExists(resolve(REPO_ROOT, runnerState.packetDir, "perf-progress.json"))
+			? readJsonIfExists(resolve(runnerPathBase, runnerState.packetDir, "perf-progress.json"))
 			: null;
 		const activeReplacementScorecardRaw = runnerState?.packetDir
 			? readJsonIfExists(
-					resolve(REPO_ROOT, runnerState.packetDir, "replacement-scorecard.json"),
+					resolve(runnerPathBase, runnerState.packetDir, "replacement-scorecard.json"),
 				)
 			: null;
 		const status = buildSoakStatus({
-			ledgerPath: options.ledgerPath,
+			ledgerPath,
 			ledgerRaw: readJsonIfExists(ledgerPath),
 			stateRaw,
+			runnerPathBase,
 			activePromotionPacketProgressRaw,
 			activeBenchmarkProgressRaw,
 			activeShadowSoakProgressRaw,
