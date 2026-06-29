@@ -7,11 +7,12 @@
   "main": "dist/index.js",
   "packageManager": "pnpm@10.30.1",
   "bin": {
-    "epoch": "dist/index.js"
+    "epoch": "dist/native/epoch-rust-launcher.js"
   },
   "files": [
     "dist",
-    "data"
+    "data",
+    "prebuilds"
   ],
   "exports": {
     ".": {
@@ -43,7 +44,9 @@
     "contract:rust-readiness": "tsx src/contract/rust-deploy-readiness-cli.ts",
     "benchmark:rust-promotion": "tsx src/benchmarks/rust-promotion.ts",
     "benchmark:rust-promotion:smoke": "tsx src/benchmarks/rust-promotion.ts --smoke",
+    "rust:build:release": "cargo build --release --manifest-path rust/Cargo.toml -p epoch-cli -p epoch-mcp -p epoch-http -p xtask",
     "rust:check": "cargo test --manifest-path rust/Cargo.toml --workspace && cargo run --manifest-path rust/Cargo.toml -p xtask -- check",
+    "rust:stage-prebuilds": "node scripts/stage-rust-prebuilds.mjs",
     "promotion:rust-parity": "tsx src/contract/rust-parity-cli.ts --report-only",
     "promotion:rust-parity:gate": "tsx src/contract/rust-parity-cli.ts",
     "promotion:rust-adversarial": "tsx scripts/rust-adversarial-contract.ts",

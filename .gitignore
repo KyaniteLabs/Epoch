@@ -1,6 +1,7 @@
 node_modules/
 dist/
 rust/target/
+prebuilds/
 .worktrees/
 *.tsbuildinfo
 .DS_Store

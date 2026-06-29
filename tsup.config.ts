@@ -1,7 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: {
+    index: "src/index.ts",
+    "native/epoch-rust-launcher": "src/native/epoch-rust-launcher.ts",
+  },
   format: ["esm"],
   target: "node20",
   clean: true,
