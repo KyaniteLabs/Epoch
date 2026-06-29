@@ -2,6 +2,7 @@ use epoch_http::{HttpMethod, RustHttpResponse, RustHttpRouter};
 use epoch_mcp::RustToolDispatcher;
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{Arc, Mutex},
@@ -106,10 +107,16 @@ fn handle_connection(mut stream: TcpStream, router: Arc<Mutex<RustHttpRouter>>) 
     };
     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
     let response = match parse_request(&request) {
-        Ok((method, path, body)) => router
+        Ok(request) => router
             .lock()
             .expect("router mutex not poisoned")
-            .route(method, &path, body),
+            .route_with_headers(
+                request.method,
+                &request.path,
+                request.body,
+                Some(&request.raw_body),
+                &request.headers,
+            ),
         Err(message) => RustHttpResponse {
             status: 400,
             body: json!({
@@ -128,7 +135,16 @@ fn handle_connection(mut stream: TcpStream, router: Arc<Mutex<RustHttpRouter>>) 
     }
 }
 
-fn parse_request(raw: &str) -> Result<(HttpMethod, String, Value), String> {
+#[derive(Debug, Clone)]
+struct ParsedRequest {
+    method: HttpMethod,
+    path: String,
+    body: Value,
+    raw_body: String,
+    headers: BTreeMap<String, String>,
+}
+
+fn parse_request(raw: &str) -> Result<ParsedRequest, String> {
     let (head, body) = raw
         .split_once("\r\n\r\n")
         .or_else(|| raw.split_once("\n\n"))
@@ -143,13 +159,25 @@ fn parse_request(raw: &str) -> Result<(HttpMethod, String, Value), String> {
     };
     let raw_path = parts.next().ok_or("missing path")?;
     let (path, query) = raw_path.split_once('?').unwrap_or((raw_path, ""));
-    let json_body = if body.trim().is_empty() {
+    let headers = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
+        .collect::<BTreeMap<_, _>>();
+    let raw_body = body.to_string();
+    let json_body = if raw_body.trim().is_empty() {
         query_to_body(query)
     } else {
-        serde_json::from_str(body.trim()).map_err(|error| format!("invalid JSON body: {error}"))?
+        serde_json::from_str(raw_body.trim())
+            .map_err(|error| format!("invalid JSON body: {error}"))?
     };
 
-    Ok((method, path.to_string(), json_body))
+    Ok(ParsedRequest {
+        method,
+        path: path.to_string(),
+        body: json_body,
+        raw_body,
+        headers,
+    })
 }
 
 fn query_to_body(query: &str) -> Value {
@@ -182,6 +210,7 @@ fn format_response(response: RustHttpResponse) -> String {
     let reason = match response.status {
         200 => "OK",
         202 => "Accepted",
+        401 => "Unauthorized",
         400 => "Bad Request",
         404 => "Not Found",
         422 => "Unprocessable Entity",
@@ -215,18 +244,23 @@ mod tests {
 
     #[test]
     fn parses_get_query_and_post_json() {
-        let (method, path, body) =
+        let request =
             parse_request("GET /v1/feedback/pending?limit=3 HTTP/1.1\r\n\r\n").expect("GET parses");
-        assert_eq!(method, HttpMethod::Get);
-        assert_eq!(path, "/v1/feedback/pending");
-        assert_eq!(body["limit"], 3);
+        assert_eq!(request.method, HttpMethod::Get);
+        assert_eq!(request.path, "/v1/feedback/pending");
+        assert_eq!(request.body["limit"], 3);
 
-        let (_, path, body) = parse_request(
-            "POST /v1/tools/parse_duration HTTP/1.1\r\nContent-Length: 27\r\n\r\n{\"duration_string\":\"1h\"}",
+        let request = parse_request(
+            "POST /v1/tools/parse_duration HTTP/1.1\r\nContent-Length: 27\r\nX-Epoch-Signature: abc\r\n\r\n{\"duration_string\":\"1h\"}",
         )
         .expect("POST parses");
-        assert_eq!(path, "/v1/tools/parse_duration");
-        assert_eq!(body["duration_string"], "1h");
+        assert_eq!(request.path, "/v1/tools/parse_duration");
+        assert_eq!(request.body["duration_string"], "1h");
+        assert_eq!(request.raw_body, "{\"duration_string\":\"1h\"}");
+        assert_eq!(
+            request.headers.get("x-epoch-signature").map(String::as_str),
+            Some("abc")
+        );
     }
 
     #[test]

@@ -20,13 +20,17 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use epoch_contract::{PublicSurfaceContract, find_tool, tool_registry};
+use hmac::{Hmac, Mac};
 use serde_json::{Map, Value, json};
+use sha2::Sha256;
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+type HmacSha256 = Hmac<Sha256>;
 
 const REPORT_PATH: &str = "docs/superpowers/reports/rust-promotion-e2e.json";
 const CONTRACT_PATH: &str = "docs/superpowers/contracts/epoch-public-surface.json";
@@ -684,10 +688,7 @@ fn http_route_request(addr: &str, route: &str) -> Result<(u16, String)> {
         ("POST", "/v1/tools/:toolName") => {
             ("/v1/tools/pert_estimate".to_string(), Some(pert_body()))
         }
-        ("POST", "/v1/telemetry") => (
-            template.to_string(),
-            Some(json!({ "event": "e2e-smoke", "tool": "pert_estimate" })),
-        ),
+        ("POST", "/v1/telemetry") => return http_signed_telemetry_request(addr, template),
         ("POST", "/v1/feedback/record-actual") => (
             template.to_string(),
             Some(json!({ "estimate_id": http_create_estimate(addr)?, "actual_hours": 2 })),
@@ -701,6 +702,38 @@ fn http_route_request(addr: &str, route: &str) -> Result<(u16, String)> {
         (_, path) => (path.to_string(), None),
     };
     http_request(addr, method, &path, body.as_ref())
+}
+
+fn http_signed_telemetry_request(addr: &str, path: &str) -> Result<(u16, String)> {
+    let installation_id = "epoch-rust-e2e-installation";
+    let payload = json!({
+        "schema_version": 1,
+        "installation_id": installation_id,
+        "epoch_version": "0.2.9-rust-e2e",
+        "records": [{
+            "task_type": "feature",
+            "complexity": 3,
+            "tool": "promotion-e2e",
+            "estimated_hours": 4,
+            "actual_hours": 5,
+            "ratio": 1.25,
+            "date": "2026-05-07",
+            "completed_at": "2026-05-07T00:00:00.000Z"
+        }],
+        "generated_at": "2026-05-07T00:00:00.000Z",
+    });
+    let raw_body = payload.to_string();
+    let signature = sign_payload(&raw_body, installation_id);
+    http_request_with_headers(
+        addr,
+        "POST",
+        path,
+        &raw_body,
+        &[
+            ("X-Epoch-Signature", signature.as_str()),
+            ("X-Epoch-Version", "0.2.9-rust-e2e"),
+        ],
+    )
 }
 
 /// Creates a fresh estimate over HTTP and returns its feedback reference, so
@@ -724,9 +757,23 @@ fn http_request(
     body: Option<&Value>,
 ) -> Result<(u16, String)> {
     let body = body.map(Value::to_string).unwrap_or_default();
+    http_request_with_headers(addr, method, path, &body, &[])
+}
+
+fn http_request_with_headers(
+    addr: &str,
+    method: &str,
+    path: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> Result<(u16, String)> {
+    let extra_headers = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect::<String>();
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+         {extra_headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     let mut stream =
@@ -750,6 +797,22 @@ fn http_request(
         .map(|(_, body)| body.to_string())
         .unwrap_or_default();
     Ok((status, response_body))
+}
+
+fn sign_payload(raw_body: &str, installation_id: &str) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(installation_id.as_bytes()).expect("HMAC key is valid");
+    mac.update(raw_body.as_bytes());
+    hex_lower(&mac.finalize().into_bytes())
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    out
 }
 
 fn free_port() -> Result<u16> {

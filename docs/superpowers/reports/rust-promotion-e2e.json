@@ -592,7 +592,7 @@
     {
       "adapter": "http",
       "category": "http_routes",
-      "detail": "status 202",
+      "detail": "status 200",
       "ok": true,
       "surface": "POST /v1/telemetry",
       "wired": true
