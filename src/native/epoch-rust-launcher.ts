@@ -25,6 +25,8 @@ export type LauncherPlan = {
 	wrapRustOutput?: boolean;
 	rawRustOutputIndent?: number | null;
 	rawRustOutputFormat?: RawOutputFormat;
+	rawRustFailureStream?: "stdout" | "stderr";
+	rawRustFailureIndent?: number | null;
 	exitByPayloadOk?: boolean;
 };
 
@@ -50,6 +52,8 @@ export type CommandSpec = {
 	wrapOutput?: boolean;
 	rawOutputIndent?: number | null;
 	rawOutputFormat?: RawOutputFormat;
+	rawFailureStream?: "stdout" | "stderr";
+	rawFailureIndent?: number | null;
 	exitByPayloadOk?: boolean;
 	route?: (args: string[]) => boolean;
 };
@@ -226,6 +230,19 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		exitByPayloadOk: true,
 		route: telemetrySubmitRoute,
 	}),
+	command("share-data", "share_data", [
+		option("--output", "output", "string"),
+		option("--description", "description", "string"),
+		option("--validate", "validate", "boolean"),
+		option("--default-complexity", "default_complexity", "number"),
+	], {
+		wrapOutput: false,
+		rawOutputIndent: 2,
+		rawFailureStream: "stderr",
+		rawFailureIndent: null,
+		exitByPayloadOk: true,
+		route: shareDataRoute,
+	}),
 ];
 
 const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
@@ -241,6 +258,8 @@ function command(
 		| "wrapOutput"
 		| "rawOutputIndent"
 		| "rawOutputFormat"
+		| "rawFailureStream"
+		| "rawFailureIndent"
 		| "exitByPayloadOk"
 		| "route"
 	> = {},
@@ -301,6 +320,8 @@ export function planInvocation(
 		wrapRustOutput: spec.wrapOutput ?? true,
 		rawRustOutputIndent: spec.rawOutputIndent,
 		rawRustOutputFormat: spec.rawOutputFormat,
+		rawRustFailureStream: spec.rawFailureStream,
+		rawRustFailureIndent: spec.rawFailureIndent,
 		exitByPayloadOk: spec.exitByPayloadOk,
 	};
 }
@@ -461,6 +482,16 @@ function telemetrySubmitRoute(args: string[]): boolean {
 	return true;
 }
 
+function shareDataRoute(args: string[]): boolean {
+	const defaultComplexity = optionValue(args, "--default-complexity");
+	if (defaultComplexity !== undefined) {
+		if (defaultComplexity === null) return false;
+		const value = Number.parseFloat(defaultComplexity);
+		if (!Number.isFinite(value)) return false;
+	}
+	return true;
+}
+
 function optionValue(args: string[], flag: string): string | undefined | null {
 	for (let index = 0; index < args.length; index += 1) {
 		const token = args[index];
@@ -595,13 +626,20 @@ function runRustCli(
 				process.stdout.write(String(rawOutput));
 				return 0;
 			}
-			const indent = plan.rawRustOutputIndent === null
-				? undefined
-				: (plan.rawRustOutputIndent ?? 2);
-			process.stdout.write(`${JSON.stringify(rawOutput, null, indent)}\n`);
-			return plan.exitByPayloadOk && isObject(rawOutput) && rawOutput["ok"] === false
+			const status = plan.exitByPayloadOk && isObject(rawOutput) && rawOutput["ok"] === false
 				? 1
 				: 0;
+			const rawIndent = status !== 0 && plan.rawRustFailureIndent !== undefined
+				? plan.rawRustFailureIndent
+				: plan.rawRustOutputIndent;
+			const indent = rawIndent === null
+				? undefined
+				: (rawIndent ?? 2);
+			const stream = status !== 0 && plan.rawRustFailureStream === "stderr"
+				? process.stderr
+				: process.stdout;
+			stream.write(`${JSON.stringify(rawOutput, null, indent)}\n`);
+			return status;
 		}
 		const result = { ok: true as const, data };
 		if (plan.root.format === "table") {
@@ -723,7 +761,37 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 			error: data["error"],
 		};
 	}
+	if (commandPath === "share-data" && isObject(data)) {
+		if (data["ok"] === false) {
+			return {
+				ok: data["ok"],
+				message: data["message"],
+			};
+		}
+		const output: JsonObject = {
+			ok: data["ok"],
+			path: data["path"],
+			recordCount: data["recordCount"],
+			skipped: normalizeShareDataSkipped(data["skipped"]),
+			schema: data["schema"],
+			validated: data["validated"],
+		};
+		if (data["validationErrors"] !== undefined) {
+			output["validationErrors"] = data["validationErrors"];
+		}
+		output["nextSteps"] = data["nextSteps"];
+		return output;
+	}
 	return data;
+}
+
+function normalizeShareDataSkipped(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		missingComplexity: value["missingComplexity"],
+		invalidTaskType: value["invalidTaskType"],
+		invalidHours: value["invalidHours"],
+	};
 }
 
 function formatTelemetryDeleteData(installationId: unknown): string {

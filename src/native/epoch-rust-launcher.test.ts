@@ -68,7 +68,6 @@ describe("epoch-rust-launcher", () => {
 				"https://collector.example.net/v1/telemetry",
 			]).mode,
 		).toBe("typescript");
-		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
 		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
 		expect(planInvocation(["data"]).mode).toBe("typescript");
 	});
@@ -216,6 +215,50 @@ describe("epoch-rust-launcher", () => {
 		).toBe("typescript");
 	});
 
+	it("routes share-data to Rust with TypeScript export options", () => {
+		const plan = planInvocation([
+			"share-data",
+			"--output",
+			"/tmp/epoch-community.json",
+			"--description",
+			"Community dataset",
+			"--validate",
+			"--default-complexity",
+			"2",
+		]);
+
+		expect(plan.mode).toBe("rust-cli");
+		expect(plan.commandPath).toBe("share-data");
+		expect(plan.toolName).toBe("share_data");
+		expect(plan.input).toEqual({
+			output: "/tmp/epoch-community.json",
+			description: "Community dataset",
+			validate: true,
+			default_complexity: 2,
+		});
+		expect(plan.wrapRustOutput).toBe(false);
+		expect(plan.rawRustOutputIndent).toBe(2);
+		expect((plan as { exitByPayloadOk?: boolean }).exitByPayloadOk).toBe(true);
+		expect((plan as { rawRustFailureStream?: string }).rawRustFailureStream).toBe(
+			"stderr",
+		);
+		expect((plan as { rawRustFailureIndent?: number | null }).rawRustFailureIndent)
+			.toBeNull();
+	});
+
+	it("keeps share-data default-complexity parse errors on the TypeScript path", () => {
+		expect(
+			planInvocation([
+				"share-data",
+				"--default-complexity",
+				"not-a-number",
+			]).mode,
+		).toBe("typescript");
+		expect(planInvocation(["share-data", "--default-complexity"]).mode).toBe(
+			"typescript",
+		);
+	});
+
 	it("prints telemetry submit payloads in TypeScript order and exits by ok", () => {
 		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-run-"));
 		try {
@@ -243,6 +286,83 @@ describe("epoch-rust-launcher", () => {
 					'  "ok": false,',
 					'  "recordCount": 0,',
 					'  "error": "no endpoint configured"',
+					"}",
+					"",
+				].join("\n"),
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("prints share-data failures as compact TypeScript stderr and exits by ok", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-share-data-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const releaseDir = join(root, "rust", "target", "release");
+			const binary = join(releaseDir, `epoch-cli${suffix}`);
+			mkdirSync(releaseDir, { recursive: true });
+			writeFileSync(
+				binary,
+				[
+					"#!/usr/bin/env node",
+					"console.log(JSON.stringify({ ok: false, message: 'No exportable records found.' }, null, 2));",
+				].join("\n"),
+			);
+			chmodSync(binary, 0o755);
+
+			const output = captureOutput(() =>
+				runPlannedInvocation(planInvocation(["share-data", "--validate"]), root, {}),
+			);
+
+			expect(output.status).toBe(1);
+			expect(output.stdout).toBe("");
+			expect(output.stderr).toBe(
+				'{"ok":false,"message":"No exportable records found."}\n',
+			);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("prints share-data success payloads in TypeScript order", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-share-data-ok-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const releaseDir = join(root, "rust", "target", "release");
+			const binary = join(releaseDir, `epoch-cli${suffix}`);
+			mkdirSync(releaseDir, { recursive: true });
+			writeFileSync(
+				binary,
+				[
+					"#!/usr/bin/env node",
+					"console.log(JSON.stringify({ ok: true, path: '/tmp/community.json', recordCount: 1, skipped: { invalidHours: 0, invalidTaskType: 1, missingComplexity: 2 }, schema: 'estimation-record', validated: false, nextSteps: ['review'] }, null, 2));",
+				].join("\n"),
+			);
+			chmodSync(binary, 0o755);
+
+			const output = captureOutput(() =>
+				runPlannedInvocation(planInvocation(["share-data", "--validate"]), root, {}),
+			);
+
+			expect(output.status).toBe(0);
+			expect(output.stderr).toBe("");
+			expect(output.stdout).toBe(
+				[
+					"{",
+					'  "ok": true,',
+					'  "path": "/tmp/community.json",',
+					'  "recordCount": 1,',
+					'  "skipped": {',
+					'    "missingComplexity": 2,',
+					'    "invalidTaskType": 1,',
+					'    "invalidHours": 0',
+					"  },",
+					'  "schema": "estimation-record",',
+					'  "validated": false,',
+					'  "nextSteps": [',
+					'    "review"',
+					"  ]",
 					"}",
 					"",
 				].join("\n"),
@@ -337,5 +457,30 @@ function captureStdout(fn: () => number): { status: number; stdout: string } {
 		return { status: fn(), stdout };
 	} finally {
 		process.stdout.write = originalWrite;
+	}
+}
+
+function captureOutput(fn: () => number): {
+	status: number;
+	stdout: string;
+	stderr: string;
+} {
+	const originalStdoutWrite = process.stdout.write;
+	const originalStderrWrite = process.stderr.write;
+	let stdout = "";
+	let stderr = "";
+	process.stdout.write = ((chunk: string | Uint8Array) => {
+		stdout += String(chunk);
+		return true;
+	}) as typeof process.stdout.write;
+	process.stderr.write = ((chunk: string | Uint8Array) => {
+		stderr += String(chunk);
+		return true;
+	}) as typeof process.stderr.write;
+	try {
+		return { status: fn(), stdout, stderr };
+	} finally {
+		process.stdout.write = originalStdoutWrite;
+		process.stderr.write = originalStderrWrite;
 	}
 }

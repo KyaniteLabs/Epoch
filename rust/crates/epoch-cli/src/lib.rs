@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serde_json::{Value, json};
 use sha2::Sha256;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs::{create_dir_all, read_to_string, rename, write};
 use std::path::{Path, PathBuf};
@@ -26,6 +27,9 @@ const RECEIVER_DEDUPE_KEYS_FILE: &str = "telemetry-record-keys.jsonl";
 const EXPORTS_DIR: &str = "exports";
 const PLACEHOLDER_TELEMETRY_ENDPOINTS: &[&str] =
     &["https://example.com", "https://example.com/v1/telemetry"];
+const COMMUNITY_EXPORT_EMPTY_MESSAGE: &str = "No exportable records found. Use Epoch for a few tasks with actual-hour feedback, then run this again.";
+const MINIMUM_COMMUNITY_ACTUAL_HOURS: f64 = 0.01;
+const MIN_COMMUNITY_ACTUAL_ESTIMATE_RATIO: f64 = 0.03;
 const ANONYMIZED_RECORD_FIELDS: &[&str] = &[
     "task_type",
     "complexity",
@@ -35,6 +39,28 @@ const ANONYMIZED_RECORD_FIELDS: &[&str] = &[
     "ratio",
     "date",
     "completed_at",
+];
+const COMMUNITY_TASK_TYPES: &[&str] = &[
+    "feature",
+    "bugfix",
+    "refactor",
+    "migration",
+    "infrastructure",
+    "documentation",
+    "testing",
+    "design",
+];
+const SYNTHETIC_RECORD_PREFIXES: &[&str] = &[
+    "seed-",
+    "test-",
+    "batch-test-",
+    "batch-max-",
+    "batch-single-",
+    "synth-",
+    "demo-",
+    "example-",
+    "sample-",
+    "fake-",
 ];
 
 pub fn cli_command_paths() -> &'static [&'static str] {
@@ -133,12 +159,7 @@ fn meta_command_value(command_path: &str, input: Value) -> ToolValueResult {
         "telemetry submit" => telemetry_submit_value(input),
         "telemetry disable" => telemetry_disable_value(),
         "telemetry delete-data" => telemetry_delete_data_value(),
-        "share-data" => Ok(json!({
-            "ready": true,
-            "publicSafe": true,
-            "payload": input,
-            "message": "Share-data payload prepared locally; publication remains an explicit caller action.",
-        })),
+        "share-data" => share_data_value(input),
         "data" | "data status" => Ok(data_status_value()),
         "data where" => Ok(data_paths_value()),
         _ => Err(cli_unknown_error(command_path)),
@@ -301,6 +322,573 @@ fn telemetry_delete_data_value() -> ToolValueResult {
         },
         "mode": "local-rust-runtime",
     }))
+}
+
+fn share_data_value(input: Value) -> ToolValueResult {
+    let output = input
+        .get("output")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let description = input
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("Anonymized Epoch usage export")
+        .to_string();
+    let default_complexity = optional_f64(&input, &["default_complexity", "defaultComplexity"]);
+    let validate = input
+        .get("validate")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    let records = match build_community_records(default_complexity) {
+        Ok(records) => records,
+        Err(message) => return Ok(json!({ "ok": false, "message": message })),
+    };
+
+    if records.records.is_empty() {
+        return Ok(json!({ "ok": false, "message": COMMUNITY_EXPORT_EMPTY_MESSAGE }));
+    }
+
+    let output_path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(default_community_export_path);
+    if let Some(parent) = output_path.parent() {
+        if let Err(error) = create_dir_all(parent) {
+            return Ok(json!({ "ok": false, "message": error.to_string() }));
+        }
+    }
+
+    let dataset = CommunityExportDataset {
+        _schema: "estimation-record",
+        description: &description,
+        records: &records.records,
+    };
+    let raw = match serde_json::to_string_pretty(&dataset) {
+        Ok(raw) => raw,
+        Err(error) => return Ok(json!({ "ok": false, "message": error.to_string() })),
+    };
+    if let Err(error) = write(&output_path, raw) {
+        return Ok(json!({ "ok": false, "message": error.to_string() }));
+    }
+
+    let mut output = Map::new();
+    output.insert("ok".to_string(), Value::Bool(true));
+    output.insert(
+        "path".to_string(),
+        Value::String(output_path.to_string_lossy().to_string()),
+    );
+    output.insert(
+        "recordCount".to_string(),
+        Value::Number(serde_json::Number::from(records.record_count)),
+    );
+    output.insert(
+        "skipped".to_string(),
+        json!({
+            "missingComplexity": records.skipped_missing_complexity,
+            "invalidTaskType": records.skipped_invalid_task_type,
+            "invalidHours": records.skipped_invalid_hours,
+        }),
+    );
+    output.insert(
+        "schema".to_string(),
+        Value::String("estimation-record".to_string()),
+    );
+    output.insert("validated".to_string(), Value::Bool(false));
+    if validate {
+        let dataset_value = match serde_json::to_value(&dataset) {
+            Ok(value) => value,
+            Err(error) => return Ok(json!({ "ok": false, "message": error.to_string() })),
+        };
+        let errors = validate_community_dataset(&dataset_value);
+        output.insert("validated".to_string(), Value::Bool(errors.is_empty()));
+        if !errors.is_empty() {
+            output.insert(
+                "validationErrors".to_string(),
+                Value::Array(errors.into_iter().map(Value::String).collect()),
+            );
+        }
+    }
+    output.insert(
+        "nextSteps".to_string(),
+        json!([
+            "Review the exported file to verify anonymization",
+            "Copy it to data/community/<contributor-id>-estimation.json",
+            "Run node scripts/validate-community-data.mjs",
+            "Open a pull request",
+        ]),
+    );
+
+    Ok(Value::Object(output))
+}
+
+struct CommunityRecords {
+    records: Vec<CommunityExportRecord>,
+    record_count: usize,
+    skipped_missing_complexity: usize,
+    skipped_invalid_task_type: usize,
+    skipped_invalid_hours: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CommunityExportRecord {
+    estimated_hours: Value,
+    actual_hours: Value,
+    task_type: String,
+    complexity: i64,
+    timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contributor_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CommunityExportDataset<'a> {
+    _schema: &'static str,
+    description: &'a str,
+    records: &'a [CommunityExportRecord],
+}
+
+fn build_community_records(default_complexity: Option<f64>) -> Result<CommunityRecords, String> {
+    let raw_records = extract_community_anonymized_records();
+    let mut config = load_config();
+    let contributor_id = get_installation_id(&mut config)
+        .ok()
+        .map(|id| pseudonymize_contributor_id(&id));
+
+    let mut out = CommunityRecords {
+        records: Vec::new(),
+        record_count: 0,
+        skipped_missing_complexity: 0,
+        skipped_invalid_task_type: 0,
+        skipped_invalid_hours: 0,
+    };
+
+    for raw in raw_records {
+        let Some(task_type) = raw.get("task_type").and_then(Value::as_str) else {
+            out.skipped_invalid_task_type += 1;
+            continue;
+        };
+        if !COMMUNITY_TASK_TYPES.contains(&task_type) {
+            out.skipped_invalid_task_type += 1;
+            continue;
+        }
+
+        let complexity = match raw.get("complexity").and_then(Value::as_f64) {
+            Some(value) => value,
+            None => match default_complexity {
+                Some(value) => value,
+                None => {
+                    out.skipped_missing_complexity += 1;
+                    continue;
+                }
+            },
+        };
+        if !is_integer_in_range(complexity, 1.0, 5.0) {
+            out.skipped_missing_complexity += 1;
+            continue;
+        }
+
+        let Some(estimated_hours) = raw.get("estimated_hours").and_then(Value::as_f64) else {
+            out.skipped_invalid_hours += 1;
+            continue;
+        };
+        let Some(actual_hours) = raw.get("actual_hours").and_then(Value::as_f64) else {
+            out.skipped_invalid_hours += 1;
+            continue;
+        };
+        if !estimated_hours.is_finite()
+            || estimated_hours <= 0.0
+            || !actual_hours.is_finite()
+            || actual_hours < 0.0
+        {
+            out.skipped_invalid_hours += 1;
+            continue;
+        }
+
+        let date = raw.get("date").and_then(Value::as_str).unwrap_or_default();
+        out.records.push(CommunityExportRecord {
+            estimated_hours: rounded_json_number(estimated_hours, 2),
+            actual_hours: rounded_json_number(actual_hours, 2),
+            task_type: task_type.to_string(),
+            complexity: complexity as i64,
+            timestamp: format!("{date}T00:00:00Z"),
+            contributor_id: contributor_id.clone(),
+        });
+    }
+    out.record_count = out.records.len();
+    Ok(out)
+}
+
+fn extract_community_anonymized_records() -> Vec<Value> {
+    let estimates = read_epoch_jsonl_values(&epoch_data_dir().join(ESTIMATES_FILE));
+    let actuals = read_epoch_jsonl_values(&epoch_data_dir().join(ACTUALS_FILE));
+    let mut actuals_by_id: BTreeMap<String, Value> = BTreeMap::new();
+    for actual in actuals {
+        if let Some(id) = community_string(actual.get("estimateId")) {
+            actuals_by_id.insert(id.to_string(), actual);
+        }
+    }
+
+    let mut records = Vec::new();
+    for estimate in estimates {
+        let Some(id) = community_string(estimate.get("id")) else {
+            continue;
+        };
+        let Some(actual) = actuals_by_id.get(id) else {
+            continue;
+        };
+        let Some(actual_hours) = community_number(actual.get("actualHours")) else {
+            continue;
+        };
+        if actual_hours < MINIMUM_COMMUNITY_ACTUAL_HOURS || is_community_seed_record(actual) {
+            continue;
+        }
+        if community_calibration_usage(estimate.get("inputs"), actual, &estimate) != "correction" {
+            continue;
+        }
+        let Some(estimated_hours) = extract_community_estimated_hours(estimate.get("outputs"))
+        else {
+            continue;
+        };
+        if estimated_hours <= 0.0
+            || actual_hours / estimated_hours < MIN_COMMUNITY_ACTUAL_ESTIMATE_RATIO
+        {
+            continue;
+        }
+
+        let inputs = estimate.get("inputs");
+        let task_type = inputs
+            .and_then(|inputs| community_string(inputs.get("task_type")))
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                infer_community_task_type(community_string(estimate.get("tool")).unwrap_or(""))
+                    .to_string()
+            });
+        let completed_at = community_string(actual.get("completedAt"))
+            .or_else(|| community_string(actual.get("reportedAt")))
+            .unwrap_or("");
+        let mut record = Map::new();
+        record.insert("task_type".to_string(), Value::String(task_type));
+        record.insert(
+            "complexity".to_string(),
+            inputs
+                .and_then(|inputs| community_number(inputs.get("complexity")))
+                .map(js_json_number)
+                .unwrap_or(Value::Null),
+        );
+        record.insert(
+            "tool".to_string(),
+            Value::String(
+                community_string(estimate.get("tool"))
+                    .unwrap_or("unknown")
+                    .to_string(),
+            ),
+        );
+        record.insert(
+            "estimated_hours".to_string(),
+            rounded_json_number(estimated_hours, 2),
+        );
+        record.insert(
+            "actual_hours".to_string(),
+            rounded_json_number(actual_hours, 2),
+        );
+        record.insert(
+            "ratio".to_string(),
+            rounded_json_number(actual_hours / estimated_hours, 4),
+        );
+        record.insert(
+            "date".to_string(),
+            Value::String(completed_at.chars().take(10).collect()),
+        );
+        record.insert(
+            "completed_at".to_string(),
+            Value::String(normalize_timestamp(completed_at)),
+        );
+        records.push((completed_at.to_string(), Value::Object(record)));
+    }
+    records.sort_by(|left, right| left.0.cmp(&right.0));
+    records.into_iter().map(|(_, record)| record).collect()
+}
+
+fn read_epoch_jsonl_values(path: &Path) -> Vec<Value> {
+    read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect()
+}
+
+fn community_string(value: Option<&Value>) -> Option<&str> {
+    value
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+fn community_number(value: Option<&Value>) -> Option<f64> {
+    value
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+}
+
+fn is_community_seed_record(actual: &Value) -> bool {
+    if community_string(actual.get("estimateId")).is_some_and(|id| {
+        SYNTHETIC_RECORD_PREFIXES
+            .iter()
+            .any(|prefix| id.starts_with(prefix))
+    }) {
+        return true;
+    }
+    let notes = community_string(actual.get("notes"))
+        .unwrap_or("")
+        .to_lowercase();
+    notes.contains("seed")
+        || notes.contains("synthetic")
+        || notes.contains("dogfood-seed")
+        || notes.contains("test data")
+}
+
+fn community_calibration_usage(
+    inputs: Option<&Value>,
+    actual: &Value,
+    estimate: &Value,
+) -> &'static str {
+    let explicit_provenance = normalized_community_provenance(coalesced_json_value(&[
+        inputs.and_then(|inputs| inputs.get("calibration_provenance")),
+        actual.get("calibrationProvenance"),
+        actual.get("calibration_provenance"),
+    ]));
+    let explicit_usage = normalized_community_usage(coalesced_json_value(&[
+        inputs.and_then(|inputs| inputs.get("calibration_usage")),
+        actual.get("calibrationUsage"),
+        actual.get("calibration_usage"),
+    ]));
+    let notes = community_string(actual.get("notes"))
+        .unwrap_or("")
+        .to_lowercase();
+    let tool = community_string(estimate.get("tool"))
+        .unwrap_or("")
+        .to_lowercase();
+
+    if explicit_usage == Some("exclude")
+        || matches!(explicit_provenance, Some("synthetic" | "smoke"))
+    {
+        return "exclude";
+    }
+    if tool == "receiver_smoke"
+        || notes.contains("receiver smoke")
+        || notes.contains("smoke test")
+        || notes.contains("industry calibration")
+    {
+        return "exclude";
+    }
+    if notes.contains("ingested from") || notes.contains("real data calibration") {
+        return "baseline";
+    }
+    if happened_before_community(
+        community_string(actual.get("completedAt")),
+        community_string(estimate.get("estimatedAt")),
+    ) {
+        return "baseline";
+    }
+    if let Some(provenance) = explicit_provenance {
+        return explicit_usage.unwrap_or(if provenance == "prospective" {
+            "correction"
+        } else {
+            "baseline"
+        });
+    }
+    explicit_usage.unwrap_or("correction")
+}
+
+fn coalesced_json_value<'a>(values: &[Option<&'a Value>]) -> Option<&'a Value> {
+    for value in values {
+        if let Some(value) = *value
+            && !value.is_null()
+        {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn normalized_community_provenance(value: Option<&Value>) -> Option<&'static str> {
+    match value.and_then(Value::as_str)? {
+        "prospective" => Some("prospective"),
+        "backfilled_real_session" => Some("backfilled_real_session"),
+        "backfilled_calibration" => Some("backfilled_calibration"),
+        "synthetic" => Some("synthetic"),
+        "smoke" => Some("smoke"),
+        "unknown" => Some("unknown"),
+        _ => None,
+    }
+}
+
+fn normalized_community_usage(value: Option<&Value>) -> Option<&'static str> {
+    match value.and_then(Value::as_str)? {
+        "correction" => Some("correction"),
+        "baseline" => Some("baseline"),
+        "exclude" => Some("exclude"),
+        _ => None,
+    }
+}
+
+fn happened_before_community(a: Option<&str>, b: Option<&str>) -> bool {
+    let Some(a) = a.and_then(parse_timestamp_ms) else {
+        return false;
+    };
+    let Some(b) = b.and_then(parse_timestamp_ms) else {
+        return false;
+    };
+    a < b - 60_000
+}
+
+fn extract_community_estimated_hours(outputs: Option<&Value>) -> Option<f64> {
+    let outputs = outputs?.as_object()?;
+    if let Some(value) = community_number(outputs.get("totalHours")) {
+        return Some(value);
+    }
+    if let Some(value) = community_number(outputs.get("estimatedHours")) {
+        return Some(value);
+    }
+    if let Some(value) = community_number(outputs.get("estimatedMinutes")) {
+        return Some(value / 60.0);
+    }
+    if let Some(value) = community_number(outputs.get("estimatedSeconds")) {
+        return Some(value / 3600.0);
+    }
+    if let Some(value) = community_number(outputs.get("expected")) {
+        return match community_string(outputs.get("unit")) {
+            Some("hours") | None => Some(value),
+            Some("days") => Some(value * 8.0),
+            Some("weeks") => Some(value * 40.0),
+            Some("months") => Some(value * 160.0),
+            Some(_) => None,
+        };
+    }
+    if let Some(value) = community_number(outputs.get("personMonthsLlmAdjusted")) {
+        return Some(value * 160.0);
+    }
+    if let Some(value) = community_number(outputs.get("correctedEstimate")) {
+        return Some(value);
+    }
+    if let Some(value) = community_number(outputs.get("total_duration")) {
+        return Some(value * 8.0);
+    }
+    None
+}
+
+fn infer_community_task_type(tool: &str) -> &'static str {
+    match tool {
+        "token_time_bridge" | "token_cost_estimate" => "infrastructure",
+        "pert_estimate"
+        | "cocomo_estimate"
+        | "sprint_forecast"
+        | "reference_class_estimate"
+        | "monte_carlo_schedule"
+        | "critical_path"
+        | "calibrate_estimates"
+        | "schedule_risk"
+        | "feedback_health"
+        | "accuracy_trend"
+        | "compare_models" => "feature",
+        _ => "feature",
+    }
+}
+
+fn optional_f64(input: &Value, fields: &[&str]) -> Option<f64> {
+    fields
+        .iter()
+        .find_map(|field| input.get(*field).and_then(Value::as_f64))
+}
+
+fn is_integer_in_range(value: f64, min: f64, max: f64) -> bool {
+    value.is_finite() && value.fract() == 0.0 && value >= min && value <= max
+}
+
+fn pseudonymize_contributor_id(installation_id: &str) -> String {
+    let mut mac = HmacSha256::new_from_slice(b"epoch-community").expect("HMAC key is valid");
+    mac.update(installation_id.as_bytes());
+    hex_lower(&mac.finalize().into_bytes())
+        .chars()
+        .take(16)
+        .collect()
+}
+
+fn default_community_export_path() -> PathBuf {
+    epoch_data_dir().join(EXPORTS_DIR).join(format!(
+        "epoch-community-estimation-{}.json",
+        chrono::Utc::now().format("%Y-%m-%d")
+    ))
+}
+
+fn validate_community_dataset(dataset: &Value) -> Vec<String> {
+    let mut errors = Vec::new();
+    if dataset.get("_schema") != Some(&Value::String("estimation-record".to_string())) {
+        errors.push(r#"Missing or invalid _schema: expected "estimation-record""#.to_string());
+    }
+    let Some(records) = dataset.get("records").and_then(Value::as_array) else {
+        errors.push(r#"Missing or invalid "records": expected an array"#.to_string());
+        return errors;
+    };
+
+    for (index, record) in records.iter().enumerate() {
+        let Some(record) = record.as_object() else {
+            errors.push(format!("Record {index}: null or undefined"));
+            continue;
+        };
+        for field in [
+            "estimated_hours",
+            "actual_hours",
+            "task_type",
+            "complexity",
+            "timestamp",
+        ] {
+            if record.get(field).is_none_or(Value::is_null) {
+                errors.push(format!(
+                    r#"Record {index}: missing required field "{field}""#
+                ));
+            }
+        }
+        if record
+            .get("estimated_hours")
+            .and_then(Value::as_f64)
+            .is_none_or(|value| !value.is_finite() || value < 0.1)
+        {
+            errors.push(format!("Record {index}: estimated_hours must be >= 0.1"));
+        }
+        if record
+            .get("actual_hours")
+            .and_then(Value::as_f64)
+            .is_none_or(|value| !value.is_finite() || value < 0.0)
+        {
+            errors.push(format!("Record {index}: actual_hours must be >= 0"));
+        }
+        if record
+            .get("complexity")
+            .and_then(Value::as_f64)
+            .is_none_or(|value| !is_integer_in_range(value, 1.0, 5.0))
+        {
+            errors.push(format!("Record {index}: complexity must be an integer 1-5"));
+        }
+        match record.get("task_type").and_then(Value::as_str) {
+            Some(task_type) if COMMUNITY_TASK_TYPES.contains(&task_type) => {}
+            Some(task_type) => errors.push(format!(
+                "Record {index}: task_type \"{task_type}\" is not one of: {}",
+                COMMUNITY_TASK_TYPES.join(", ")
+            )),
+            None => errors.push(format!("Record {index}: task_type must be a string")),
+        }
+        if record
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .is_none_or(|value| chrono::DateTime::parse_from_rfc3339(value).is_err())
+        {
+            errors.push(format!(
+                "Record {index}: timestamp must be a valid ISO date-time"
+            ));
+        }
+    }
+    errors
 }
 
 fn load_config() -> EpochConfig {
@@ -1077,11 +1665,11 @@ fn cli_unknown_error(command_path: &str) -> ToolError {
 #[cfg(test)]
 mod tests {
     use super::{
-        cli_command_paths, cli_tool_commands, command_to_tool, crate_label, run_cli_command,
-        run_cli_json,
+        COMMUNITY_EXPORT_EMPTY_MESSAGE, cli_command_paths, cli_tool_commands, command_to_tool,
+        crate_label, run_cli_command, run_cli_json,
     };
     use epoch_mcp::RustToolDispatcher;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::collections::BTreeSet;
     use std::fs::{create_dir_all, read_to_string, remove_dir_all, write};
     use std::io::{Read, Write};
@@ -1190,10 +1778,91 @@ mod tests {
                 .as_ref()
         );
 
-        let share = run_cli_command(&mut dispatcher, "share-data", json!({ "ok": true }))
-            .expect("share-data runs");
-        assert_eq!(share["publicSafe"], true);
-        assert_eq!(share["payload"]["ok"], true);
+        let share =
+            run_cli_command(&mut dispatcher, "share-data", json!({})).expect("share-data runs");
+        assert_eq!(share["ok"], false);
+        assert_eq!(share["message"], COMMUNITY_EXPORT_EMPTY_MESSAGE);
+        clear_epoch_env();
+        let _ = remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn share_data_writes_typescript_compatible_community_export() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let data_dir = temp_data_dir("share-data-export");
+        set_epoch_data_dir(&data_dir);
+        write_community_feedback_fixture(&data_dir);
+        let output = data_dir.join("community-export.json");
+        let mut dispatcher = RustToolDispatcher::new();
+
+        let result = run_cli_command(
+            &mut dispatcher,
+            "share-data",
+            json!({
+                "output": output.to_string_lossy(),
+                "description": "Test community export",
+                "validate": true,
+            }),
+        )
+        .expect("share-data export runs");
+
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["path"], output.to_string_lossy().as_ref());
+        assert_eq!(result["recordCount"], 1);
+        assert_eq!(result["skipped"]["missingComplexity"], 1);
+        assert_eq!(result["skipped"]["invalidTaskType"], 1);
+        assert_eq!(result["skipped"]["invalidHours"], 0);
+        assert_eq!(result["schema"], "estimation-record");
+        assert_eq!(result["validated"], true);
+        assert_eq!(result["nextSteps"].as_array().expect("next steps").len(), 4);
+
+        let raw = read_to_string(&output).expect("export file written");
+        let dataset: Value = serde_json::from_str(&raw).expect("export json parses");
+        assert_eq!(dataset["_schema"], "estimation-record");
+        assert_eq!(dataset["description"], "Test community export");
+        let record = &dataset["records"][0];
+        assert_eq!(record["estimated_hours"], 4.0);
+        assert_eq!(record["actual_hours"], 5.0);
+        assert_eq!(record["task_type"], "feature");
+        assert_eq!(record["complexity"], 3);
+        assert_eq!(record["timestamp"], "2026-05-07T00:00:00Z");
+        assert_eq!(
+            record["contributor_id"]
+                .as_str()
+                .expect("pseudonymous contributor id")
+                .len(),
+            16
+        );
+        assert!(record.get("tool").is_none());
+        assert!(record.get("ratio").is_none());
+        assert!(record.get("completed_at").is_none());
+
+        clear_epoch_env();
+        let _ = remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn share_data_returns_typescript_compatible_error_when_empty() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let data_dir = temp_data_dir("share-data-empty");
+        set_epoch_data_dir(&data_dir);
+        let output = data_dir.join("community-export.json");
+        let mut dispatcher = RustToolDispatcher::new();
+
+        let result = run_cli_command(
+            &mut dispatcher,
+            "share-data",
+            json!({ "output": output.to_string_lossy() }),
+        )
+        .expect("share-data empty result is a compatibility payload");
+
+        assert_eq!(result["ok"], false);
+        assert_eq!(
+            result["message"],
+            "No exportable records found. Use Epoch for a few tasks with actual-hour feedback, then run this again."
+        );
+        assert!(!output.exists());
+
         clear_epoch_env();
         let _ = remove_dir_all(data_dir);
     }
@@ -1453,6 +2122,33 @@ mod tests {
             ),
         )
         .expect("actual fixture");
+    }
+
+    fn write_community_feedback_fixture(data_dir: &PathBuf) {
+        write(
+            data_dir.join("estimates.jsonl"),
+            concat!(
+                r#"{"id":"real-1","tool":"pert_estimate","inputs":{"task_type":"feature","complexity":3},"outputs":{"expected":4,"unit":"hours"},"estimatedAt":"2026-05-06T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-2","tool":"pert_estimate","inputs":{"task_type":"invalid_type","complexity":2},"outputs":{"expected":2,"unit":"hours"},"estimatedAt":"2026-05-06T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"id":"real-3","tool":"pert_estimate","inputs":{"task_type":"bugfix"},"outputs":{"expected":3,"unit":"hours"},"estimatedAt":"2026-05-06T00:00:00.000Z"}"#,
+                "\n"
+            ),
+        )
+        .expect("community estimate fixture");
+        write(
+            data_dir.join("feedback.jsonl"),
+            concat!(
+                r#"{"estimateId":"real-1","actualHours":5,"reportedAt":"2026-05-07T00:00:00.000Z","completedAt":"2026-05-07T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-2","actualHours":3,"reportedAt":"2026-05-08T00:00:00.000Z","completedAt":"2026-05-08T00:00:00.000Z"}"#,
+                "\n",
+                r#"{"estimateId":"real-3","actualHours":4,"reportedAt":"2026-05-09T00:00:00.000Z","completedAt":"2026-05-09T00:00:00.000Z"}"#,
+                "\n"
+            ),
+        )
+        .expect("community actual fixture");
     }
 
     fn start_telemetry_receiver() -> (String, mpsc::Receiver<String>) {
