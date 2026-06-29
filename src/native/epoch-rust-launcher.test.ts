@@ -56,6 +56,14 @@ describe("epoch-rust-launcher", () => {
 	it("keeps unported meta commands on the TypeScript compatibility path", () => {
 		expect(planInvocation(["telemetry"]).mode).toBe("typescript");
 		expect(planInvocation(["telemetry", "enable"]).mode).toBe("typescript");
+		expect(
+			planInvocation([
+				"telemetry",
+				"enable",
+				"--endpoint",
+				"https://collector.example.net/v1/telemetry",
+			]).mode,
+		).toBe("typescript");
 		expect(planInvocation(["telemetry", "submit"]).mode).toBe("typescript");
 		expect(planInvocation(["telemetry", "delete-data"]).mode).toBe("typescript");
 		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
@@ -93,6 +101,13 @@ describe("epoch-rust-launcher", () => {
 			"--output",
 			"/tmp/epoch-export.json",
 		]);
+		const enable = planInvocation([
+			"telemetry",
+			"enable",
+			"--yes",
+			"--endpoint",
+			"https://collector.example.net/v1/telemetry",
+		]);
 		const setEndpoint = planInvocation([
 			"telemetry",
 			"set-endpoint",
@@ -112,6 +127,13 @@ describe("epoch-rust-launcher", () => {
 		expect(exportTelemetry.input).toEqual({ output: "/tmp/epoch-export.json" });
 		expect(exportTelemetry.wrapRustOutput).toBe(false);
 		expect(exportTelemetry.rawRustOutputIndent).toBeNull();
+		expect(enable.mode).toBe("rust-cli");
+		expect(enable.commandPath).toBe("telemetry enable");
+		expect(enable.input).toEqual({
+			endpoint: "https://collector.example.net/v1/telemetry",
+		});
+		expect(enable.wrapRustOutput).toBe(false);
+		expect(enable.rawRustOutputIndent).toBeNull();
 		expect(setEndpoint.mode).toBe("rust-cli");
 		expect(setEndpoint.commandPath).toBe("telemetry set-endpoint");
 		expect(setEndpoint.input).toEqual({

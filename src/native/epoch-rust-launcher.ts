@@ -6,7 +6,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 type OutputFormat = "json" | "table";
 type Mode = "mcp" | "http" | "rust-cli" | "typescript";
 type JsonObject = Record<string, unknown>;
-type OptionType = "string" | "number" | "json" | "csvNumbers" | "csvStrings";
+type OptionType =
+	| "string"
+	| "number"
+	| "json"
+	| "csvNumbers"
+	| "csvStrings"
+	| "boolean";
 
 export type LauncherPlan = {
 	mode: Mode;
@@ -40,6 +46,7 @@ export type CommandSpec = {
 	build?: (values: JsonObject) => JsonObject;
 	wrapOutput?: boolean;
 	rawOutputIndent?: number | null;
+	route?: (args: string[]) => boolean;
 };
 
 const RUST_CLI_COMMANDS: CommandSpec[] = [
@@ -176,6 +183,18 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	command("telemetry export", "telemetry_export", [
 		option("--output", "output", "string"),
 	], { wrapOutput: false, rawOutputIndent: null }),
+	{
+		...command("telemetry enable", "telemetry_enable", [
+			option("--yes", "yes", "boolean"),
+			option("--endpoint", "endpoint", "string"),
+		], {
+			wrapOutput: false,
+			rawOutputIndent: null,
+			route: (args) =>
+				args.includes("--yes") || args.some((arg) => arg.startsWith("--yes=")),
+		}),
+		build: ({ yes: _yes, ...values }) => values,
+	},
 	command("telemetry set-endpoint", "telemetry_set_endpoint", [
 		option("--endpoint", "endpoint", "string", { required: true }),
 	], { wrapOutput: false, rawOutputIndent: null }),
@@ -193,7 +212,7 @@ function command(
 	path: string,
 	toolName: string,
 	options: OptionSpec[],
-	extra: Pick<CommandSpec, "wrapOutput" | "rawOutputIndent"> = {},
+	extra: Pick<CommandSpec, "wrapOutput" | "rawOutputIndent" | "route"> = {},
 ): CommandSpec {
 	return { path, toolName, options, ...extra };
 }
@@ -236,7 +255,12 @@ export function planInvocation(
 		return { mode: "typescript", root };
 	}
 
-	const input = parseToolInput(spec, args.slice(commandMatch.consumed));
+	const commandArgs = args.slice(commandMatch.consumed);
+	if (spec.route && !spec.route(commandArgs)) {
+		return { mode: "typescript", root };
+	}
+
+	const input = parseToolInput(spec, commandArgs);
 	return {
 		mode: "rust-cli",
 		commandPath,
@@ -322,6 +346,11 @@ export function parseToolInput(spec: CommandSpec, args: string[]): JsonObject {
 		const [flag, inlineValue] = token.split("=", 2) as [string, string?];
 		const def = defs.get(flag);
 		if (!def) throw new Error(`Unknown option ${flag} for ${spec.path}`);
+		if (def.type === "boolean") {
+			values[def.key] =
+				inlineValue === undefined ? true : parseBooleanFlag(def, inlineValue);
+			continue;
+		}
 		const rawValue = inlineValue ?? args[index + 1];
 		if (rawValue === undefined || rawValue.startsWith("--")) {
 			throw new Error(`${flag} requires a value`);
@@ -371,7 +400,15 @@ function parseOptionValue(def: OptionSpec, raw: string): unknown {
 			});
 		case "csvStrings":
 			return raw.split(",").map((part) => part.trim());
+		case "boolean":
+			return parseBooleanFlag(def, raw);
 	}
+}
+
+function parseBooleanFlag(def: OptionSpec, raw: string): boolean {
+	if (raw === "true") return true;
+	if (raw === "false") return false;
+	throw new Error(`${def.flag} must be true or false, got "${raw}"`);
 }
 
 function compactObject(input: JsonObject): JsonObject {
@@ -540,6 +577,13 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 		return {
 			ok: data["ok"],
 			path: data["path"],
+			message: data["message"],
+		};
+	}
+	if (commandPath === "telemetry enable" && isObject(data)) {
+		return {
+			ok: data["ok"],
+			endpoint: data["endpoint"],
 			message: data["message"],
 		};
 	}
