@@ -1124,6 +1124,19 @@ function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
 
+function missingEvidenceGate(
+	target: Target,
+	path: string,
+): PromotionGateResult {
+	return result(
+		false,
+		target,
+		"NO",
+		"soak",
+		`Promotion evidence file is missing: ${path}. Wait for the first promotion packet to append a ledger row before evaluating this gate.`,
+	);
+}
+
 function sha256File(path: string): string {
 	return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
@@ -1140,11 +1153,21 @@ function currentGitReleaseTag(): string | null {
 export function main(argv: string[]): number {
 	try {
 		const options = parseArgs(argv);
-		const rawEvidence = readJson(
-			resolve(
-				options.ledgerPath ?? options.ledgerSummaryPath ?? options.summaryPath,
-			),
+		const evidencePath = resolve(
+			options.ledgerPath ?? options.ledgerSummaryPath ?? options.summaryPath,
 		);
+		if (!existsSync(evidencePath)) {
+			const gate = missingEvidenceGate(options.target, evidencePath);
+			if (options.json) {
+				process.stdout.write(`${JSON.stringify(gate, null, 2)}\n`);
+			} else {
+				process.stdout.write(
+					`Rust promotion gate BLOCKED: ${gate.reason}\n`,
+				);
+			}
+			return 2;
+		}
+		const rawEvidence = readJson(evidencePath);
 		const currentRustBinarySha256 = sha256File(resolve(options.rustBinaryPath));
 		const currentReleaseTag =
 			options.target === "replace" ? currentGitReleaseTag() : undefined;

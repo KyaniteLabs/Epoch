@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	auditDeploySurface,
@@ -188,6 +192,55 @@ describe("auditDeploySurface", () => {
 		expect(surface.checks.packageBinRoutesToRust).toBe(true);
 		expect(surface.checks.packageFilesIncludeRustArtifacts).toBe(false);
 		expect(surface.reasons.join(" ")).toContain("prebuild binaries are missing");
+	});
+});
+
+describe("rust promotion gate CLI", () => {
+	it("reports a missing ledger as a structured blocked gate", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-gate-missing-ledger-"));
+		try {
+			const missingLedger = join(root, "missing-ledger.json");
+			let stdout = "";
+			let status: number | null = null;
+			try {
+				execFileSync(
+					"pnpm",
+					[
+						"exec",
+						"tsx",
+						"src/contract/rust-promotion-gate.ts",
+						"--target",
+						"replace",
+						"--ledger",
+						missingLedger,
+						"--json",
+					],
+					{ encoding: "utf8", stdio: "pipe" },
+				);
+			} catch (error) {
+				if (error instanceof Error && "stdout" in error && "status" in error) {
+					stdout = String(error.stdout);
+					status = Number(error.status);
+				} else {
+					throw error;
+				}
+			}
+
+			const gate = JSON.parse(stdout) as {
+				ok: boolean;
+				decision: string;
+				failingGate: string;
+				reason: string;
+			};
+			expect(status).toBe(2);
+			expect(gate.ok).toBe(false);
+			expect(gate.decision).toBe("NO");
+			expect(gate.failingGate).toBe("soak");
+			expect(gate.reason).toContain("Promotion evidence file is missing");
+			expect(gate.reason).toContain("first promotion packet");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 
