@@ -9,6 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -41,6 +42,7 @@ type CliOptions = {
 
 export type PromotionGateOptions = {
 	currentRustBinarySha256?: string | null;
+	currentReleaseTag?: string | null;
 	deploySurface?: DeploySurfaceEvidence;
 };
 
@@ -426,6 +428,45 @@ function deploySurfaceGate(
 	);
 }
 
+function releaseIdentityGate(
+	target: Target,
+	decision: z.infer<typeof deployReadinessDecisionSchema>,
+	failingGate: string | null,
+	evidenceReleaseTag: string | null,
+	options: PromotionGateOptions,
+): PromotionGateResult | null {
+	if (target !== "replace") return null;
+	if (!evidenceReleaseTag) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Replacement requires release-tagged soak evidence with a single durable release identity.",
+		);
+	}
+	if (!("currentReleaseTag" in options)) return null;
+	if (!options.currentReleaseTag) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Current release identity could not be verified.",
+		);
+	}
+	if (options.currentReleaseTag !== evidenceReleaseTag) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			`Current release identity ${options.currentReleaseTag} does not match soak evidence ${evidenceReleaseTag}.`,
+		);
+	}
+	return null;
+}
+
 export function assessPromotionGate(
 	rawSummary: unknown,
 	target: Target,
@@ -493,15 +534,14 @@ export function assessPromotionGate(
 		options,
 	);
 	if (deploySurfaceBlocker) return deploySurfaceBlocker;
-	if (target === "replace" && !summary.releaseTag) {
-		return result(
-			false,
-			target,
-			decision,
-			failingGate,
-			"Replacement requires a release-tagged runner summary.",
-		);
-	}
+	const releaseIdentityBlocker = releaseIdentityGate(
+		target,
+		decision,
+		failingGate,
+		summary.releaseTag,
+		options,
+	);
+	if (releaseIdentityBlocker) return releaseIdentityBlocker;
 	if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
 		return result(
 			false,
@@ -664,28 +704,27 @@ export function assessPromotionGateFromLedgerSummary(
 			`Ledger summary has ${summary.continuousSoakHours.toFixed(4)} continuous soak hours; ${target} requires ${requiredHours}.`,
 		);
 	}
-		if (
-			target === "replace" &&
-			summary.releaseTaggedSoakHours < REQUIRED_SOAK_HOURS.replace
-		) {
+	if (
+		target === "replace" &&
+		summary.releaseTaggedSoakHours < REQUIRED_SOAK_HOURS.replace
+	) {
 		return result(
 			false,
 			target,
 			decision,
 			failingGate,
 			"Replacement requires release-tagged cumulative soak evidence.",
-			);
-		}
-		if (target === "replace" && !summary.releaseTag) {
-			return result(
-				false,
-				target,
-				decision,
-				failingGate,
-				"Replacement requires a single durable release identity for cumulative soak evidence.",
-			);
-		}
-		if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
+		);
+	}
+	const releaseIdentityBlocker = releaseIdentityGate(
+		target,
+		decision,
+		failingGate,
+		summary.releaseTag,
+		options,
+	);
+	if (releaseIdentityBlocker) return releaseIdentityBlocker;
+	if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
 		return result(
 			false,
 			target,
@@ -995,6 +1034,15 @@ function sha256File(path: string): string {
 	return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function currentGitReleaseTag(): string | null {
+	const git = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
+		encoding: "utf8",
+	});
+	if (git.status !== 0) return null;
+	const head = git.stdout.trim();
+	return head.length > 0 ? head : null;
+}
+
 export function main(argv: string[]): number {
 	try {
 		const options = parseArgs(argv);
@@ -1004,19 +1052,24 @@ export function main(argv: string[]): number {
 			),
 		);
 		const currentRustBinarySha256 = sha256File(resolve(options.rustBinaryPath));
+		const currentReleaseTag =
+			options.target === "replace" ? currentGitReleaseTag() : undefined;
 		const deploySurface = auditDeploySurfaceFromRepo();
 		const gate = options.ledgerPath
 			? assessPromotionGateFromLedger(rawEvidence, options.target, {
 					currentRustBinarySha256,
+					currentReleaseTag,
 					deploySurface,
 				})
 			: options.ledgerSummaryPath
 			? assessPromotionGateFromLedgerSummary(rawEvidence, options.target, {
 					currentRustBinarySha256,
+					currentReleaseTag,
 					deploySurface,
 				})
 			: assessPromotionGate(rawEvidence, options.target, {
 					currentRustBinarySha256,
+					currentReleaseTag,
 					deploySurface,
 				});
 		if (options.json) {
