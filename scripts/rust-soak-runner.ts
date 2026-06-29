@@ -447,6 +447,39 @@ function assertCleanGitWorktree(): void {
 	}
 }
 
+function gitRevParse(args: string[]): string {
+	const result = spawnSync("git", ["rev-parse", ...args], {
+		cwd: REPO_ROOT,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	if (result.error) throw result.error;
+	if (result.status !== 0) {
+		const detail = result.stderr?.trim() || result.stdout?.trim();
+		throw new Error(detail || "git rev-parse failed.");
+	}
+	return result.stdout.trim();
+}
+
+function assertReleaseTagResolvesToHead(releaseTag: string | undefined): void {
+	if (!releaseTag) return;
+	let releaseCommit: string;
+	try {
+		releaseCommit = gitRevParse(["--verify", `${releaseTag}^{commit}`]);
+	} catch (error) {
+		throw new Error(
+			`Rust soak release tag ${releaseTag} does not resolve to a Git commit at the current Git HEAD.`,
+			{ cause: error },
+		);
+	}
+	const headCommit = gitRevParse(["HEAD"]);
+	if (releaseCommit !== headCommit) {
+		throw new Error(
+			`Rust soak release tag ${releaseTag} resolves to ${releaseCommit.slice(0, 12)}, but current Git HEAD is ${headCommit.slice(0, 12)}.`,
+		);
+	}
+}
+
 function removeIfExists(path: string): void {
 	try {
 		unlinkSync(path);
@@ -745,6 +778,7 @@ try {
 	const lockPath = resolve(REPO_ROOT, RUNNER_LOCK);
 	const statePath = resolve(REPO_ROOT, RUNNER_STATE);
 	assertNoUncleanState(statePath);
+	assertReleaseTagResolvesToHead(options.releaseTag);
 	assertCleanGitWorktree();
 	const releaseLock = acquireLock(lockPath);
 	let cleanedUp = false;
@@ -767,6 +801,7 @@ try {
 		let stopReason: StopReason = "max-runs-exhausted";
 
 		while (options.maxRuns === null || runsStarted < options.maxRuns) {
+			assertReleaseTagResolvesToHead(options.releaseTag);
 			assertCleanGitWorktree();
 			writeRunState(statePath, options, runsStarted);
 			runPackageManagerStep("promotion packet", packetArgs(options), options);
