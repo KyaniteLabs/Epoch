@@ -425,6 +425,28 @@ function runPackageManagerStep(
 	runStep(label, command.binary, command.args, options);
 }
 
+function assertCleanGitWorktree(): void {
+	const result = spawnSync("git", ["status", "--porcelain"], {
+		cwd: REPO_ROOT,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	if (result.error) throw result.error;
+	if (result.status !== 0) {
+		const detail = result.stderr?.trim() || result.stdout?.trim();
+		throw new Error(
+			`Cannot verify Rust soak worktree cleanliness${
+				detail ? `: ${detail}` : "."
+			}`,
+		);
+	}
+	if (result.stdout.trim()) {
+		throw new Error(
+			"Refusing to start Rust soak credit from a dirty worktree. Commit or stash changes before collecting release evidence.",
+		);
+	}
+}
+
 function removeIfExists(path: string): void {
 	try {
 		unlinkSync(path);
@@ -723,6 +745,7 @@ try {
 	const lockPath = resolve(REPO_ROOT, RUNNER_LOCK);
 	const statePath = resolve(REPO_ROOT, RUNNER_STATE);
 	assertNoUncleanState(statePath);
+	assertCleanGitWorktree();
 	const releaseLock = acquireLock(lockPath);
 	let cleanedUp = false;
 	const cleanup = () => {
@@ -744,6 +767,7 @@ try {
 		let stopReason: StopReason = "max-runs-exhausted";
 
 		while (options.maxRuns === null || runsStarted < options.maxRuns) {
+			assertCleanGitWorktree();
 			writeRunState(statePath, options, runsStarted);
 			runPackageManagerStep("promotion packet", packetArgs(options), options);
 			runPackageManagerStep(
