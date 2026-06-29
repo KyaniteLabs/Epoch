@@ -58,10 +58,14 @@ type LedgerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	releaseContinuousSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
+	packageCommandEvidenceComplete: boolean;
+	packageCliSha256: string | null;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -95,10 +99,14 @@ type RunnerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	releaseContinuousSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
+	packageCommandEvidenceComplete: boolean;
+	packageCliSha256: string | null;
 	rustBinarySha256: string | null;
 	remainingSoakHours: number;
 	files: {
@@ -314,6 +322,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 		typeof raw.totalSoakHours !== "number" ||
 		typeof raw.continuousSoakHours !== "number" ||
 		typeof raw.releaseTaggedSoakHours !== "number" ||
+		typeof raw.releaseContinuousSoakHours !== "number" ||
 		typeof raw.qualifiedPerformanceEvidence !== "boolean" ||
 		typeof raw.continuousGapSeconds !== "number" ||
 		typeof raw.canarySoakHoursRequired !== "number" ||
@@ -334,6 +343,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 				? raw.continuityLostHours
 				: Math.max(0, raw.totalSoakHours - raw.continuousSoakHours),
 		releaseTaggedSoakHours: raw.releaseTaggedSoakHours,
+		releaseContinuousSoakHours: raw.releaseContinuousSoakHours,
 		qualifiedPerformanceEvidence: raw.qualifiedPerformanceEvidence,
 		releaseE2ePass: raw.releaseE2ePass === true,
 		publicSurfaceCoveragePercent:
@@ -344,6 +354,11 @@ function parseLedgerSummary(path: string): LedgerSummary {
 			typeof raw.httpDeployEnvCoveragePercent === "number"
 				? raw.httpDeployEnvCoveragePercent
 				: 0,
+		packageSmokePass: raw.packageSmokePass === true,
+		packageCommandEvidenceComplete:
+			raw.packageCommandEvidenceComplete === true,
+		packageCliSha256:
+			typeof raw.packageCliSha256 === "string" ? raw.packageCliSha256 : null,
 		rustBinarySha256:
 			typeof raw.rustBinarySha256 === "string" ? raw.rustBinarySha256 : null,
 		continuousGapSeconds: raw.continuousGapSeconds,
@@ -646,10 +661,15 @@ function buildRunnerSummary(
 		continuousSoakHours: ledgerSummary.continuousSoakHours,
 		continuityLostHours: ledgerSummary.continuityLostHours,
 		releaseTaggedSoakHours: ledgerSummary.releaseTaggedSoakHours,
+		releaseContinuousSoakHours: ledgerSummary.releaseContinuousSoakHours,
 		qualifiedPerformanceEvidence: ledgerSummary.qualifiedPerformanceEvidence,
 		releaseE2ePass: ledgerSummary.releaseE2ePass,
 		publicSurfaceCoveragePercent: ledgerSummary.publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent: ledgerSummary.httpDeployEnvCoveragePercent,
+		packageSmokePass: ledgerSummary.packageSmokePass,
+		packageCommandEvidenceComplete:
+			ledgerSummary.packageCommandEvidenceComplete,
+		packageCliSha256: ledgerSummary.packageCliSha256,
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
 			0,
@@ -678,9 +698,13 @@ function printSummary(summary: RunnerSummary): void {
 			`  benchmark mode:      ${summary.benchmarkMode}`,
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
+			`  release continuous:  ${summary.releaseContinuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
+			`  package smoke:       ${summary.packageSmokePass}`,
+			`  package commands:    ${summary.packageCommandEvidenceComplete}`,
+			`  package cli sha256:  ${summary.packageCliSha256?.slice(0, 16) ?? "unavailable"}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  remaining hours:     ${summary.remainingSoakHours.toFixed(4)}`,
 			`  readiness:           ${summary.readiness.decision}`,

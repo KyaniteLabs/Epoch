@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
+	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -42,6 +43,24 @@ function temporarilyHideRunnerArtifacts(root: string): () => void {
 }
 
 describe("rust-soak-runner CLI", () => {
+	it("carries deploy evidence fields from ledger summary into runner summary", () => {
+		const source = readFileSync(
+			join(REPO_ROOT, "scripts", "rust-soak-runner.ts"),
+			"utf8",
+		);
+
+		for (const field of [
+			"releaseContinuousSoakHours",
+			"packageSmokePass",
+			"packageCommandEvidenceComplete",
+			"packageCliSha256",
+		]) {
+			expect(source).toMatch(
+				new RegExp(`${field}:\\s*ledgerSummary\\.${field}`),
+			);
+		}
+	});
+
 	it("requires an explicit target for release-tagged until-target runs", () => {
 		const root = mkdtempSync(join(tmpdir(), "epoch-soak-runner-cli-"));
 		let stderr = "";
