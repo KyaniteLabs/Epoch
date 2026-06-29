@@ -207,6 +207,13 @@ fn tool_for_cli_command(command: &str) -> Option<&'static str> {
         .map(|tool| tool.name)
 }
 
+fn sample_cli_command_input(command: &str) -> Value {
+    match command {
+        "telemetry set-endpoint" => json!({ "endpoint": "http://127.0.0.1:3099/v1/telemetry" }),
+        _ => json!({}),
+    }
+}
+
 // --- CLI sweep --------------------------------------------------------------
 
 fn cli_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surface>> {
@@ -217,7 +224,7 @@ fn cli_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surface
             Some(tool) => {
                 sample_input(tool).ok_or_else(|| anyhow!("missing sample input for tool {tool}"))?
             }
-            None => json!({}),
+            None => sample_cli_command_input(command),
         };
         let mut args: Vec<String> = command.split(' ').map(str::to_string).collect();
         args.push(serde_json::to_string(&input)?);
