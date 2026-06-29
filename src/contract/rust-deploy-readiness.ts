@@ -14,6 +14,7 @@ export const parityEvidenceSchema = z.object({
 	releaseE2ePass: z.boolean().default(false),
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
+	packageSmokePass: z.boolean().default(false),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -203,6 +204,7 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 			numberField(raw, "publicSurfaceCoveragePercent") ?? 0,
 		httpDeployEnvCoveragePercent:
 			numberField(raw, "httpDeployEnvCoveragePercent") ?? 0,
+		packageSmokePass: booleanField(raw, "packageSmokePass") ?? false,
 		outputParityPercent,
 		errorCompatibilityPercent,
 		unclassifiedFailures,
@@ -599,6 +601,10 @@ function canaryGates(input: ReadinessInput): Gate[] {
 				parity.httpDeployEnvCoveragePercent >= 100,
 		},
 		{
+			gate: "package-smoke",
+			ok: parity.packageSmokePass,
+		},
+		{
 			gate: "performance",
 			ok:
 				perf.medianLatencyImprovementPercent >= 10 &&
@@ -644,6 +650,10 @@ function replaceGates(input: ReadinessInput): Gate[] {
 				parity.releaseE2ePass &&
 				parity.publicSurfaceCoveragePercent >= 100 &&
 				parity.httpDeployEnvCoveragePercent >= 100,
+		},
+		{
+			gate: "package-smoke",
+			ok: parity.packageSmokePass,
 		},
 		{
 			gate: "performance",

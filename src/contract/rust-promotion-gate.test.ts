@@ -9,6 +9,37 @@ import {
 
 const RUST_BINARY_SHA256 =
 	"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const CURRENT_PLATFORM =
+	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
+const REQUIRED_PACKAGE_ARTIFACT_FILES = [
+	"epoch-cli",
+	"epoch-mcp",
+	"epoch-http",
+].map(
+	(name) =>
+		`prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
+);
+
+function packageCommands(overrides: Record<string, unknown> = {}) {
+	return ["epoch-cli", "epoch-mcp", "epoch-http"].map((name) => ({
+		name,
+		target:
+			name === "epoch-cli"
+				? "node_modules/.bin/epoch"
+				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
+		exitCode: 0,
+		signal: null,
+		stdoutHead:
+			name === "epoch-cli"
+				? '{"ok": true}'
+				: name === "epoch-mcp"
+					? 'Content-Length: 36 {"result":{}}'
+					: 'health {"status":"ok","tools":24}',
+		stderrHead: "",
+		error: null,
+		...overrides,
+	}));
+}
 
 function runnerSummary(overrides: Record<string, unknown> = {}) {
 	return {
@@ -20,6 +51,9 @@ function runnerSummary(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
+		packageCommandEvidenceComplete: true,
+		packageCliSha256: RUST_BINARY_SHA256,
 		releaseTag: "candidate-1",
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
@@ -36,9 +70,14 @@ function ledgerSummary(overrides: Record<string, unknown> = {}) {
 		totalSoakHours: 24,
 		continuousSoakHours: 24,
 		releaseTaggedSoakHours: 24,
+		releaseContinuousSoakHours: 24,
+		releaseTag: "candidate-1",
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
+		packageCommandEvidenceComplete: true,
+		packageCliSha256: RUST_BINARY_SHA256,
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
 			decision: "CANARY",
@@ -61,6 +100,9 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
+		packageCommands: packageCommands(),
+		packageCliSha256: RUST_BINARY_SHA256,
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		unclassifiedFailures: 0,
@@ -77,6 +119,8 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		startupImprovementPercent: 90,
 		memoryImprovementPercent: 90,
 		performanceEvidenceMode: "qualified",
+		performanceToolsBenchmarked: 24,
+		performanceIterationsScale: 1,
 		...overrides,
 	};
 }
@@ -94,6 +138,7 @@ const rustDeploySurface = {
 	reasons: [],
 	packageBinEntrypoint: "bin/epoch-rust-launcher.js",
 	packageFiles: ["dist", "data", "bin", "prebuilds"],
+	packageArtifactFiles: REQUIRED_PACKAGE_ARTIFACT_FILES,
 	dockerEntrypoint: 'ENTRYPOINT ["epoch-http"]',
 	checks: {
 		packageBinRoutesToRust: true,
@@ -127,6 +172,7 @@ describe("auditDeploySurface", () => {
 				files: ["dist", "data", "prebuilds"],
 			},
 			dockerfile: 'FROM scratch\nENTRYPOINT ["epoch-http"]\n',
+			packageArtifactFiles: REQUIRED_PACKAGE_ARTIFACT_FILES,
 		});
 
 		expect(surface.ok).toBe(true);
@@ -274,7 +320,10 @@ describe("assessPromotionGate", () => {
 				},
 			}),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -310,6 +359,7 @@ describe("assessPromotionGate", () => {
 			"replace",
 			{
 				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
 				deploySurface: rustDeploySurface,
 			},
 		);
@@ -376,6 +426,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: false,
 				readiness: {
 					decision: "REPLACE",
@@ -384,7 +435,10 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				},
 			}),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -412,6 +466,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
@@ -422,6 +477,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 			"replace",
 			{
 				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
 				deploySurface: rustDeploySurface,
 			},
 		);
@@ -501,6 +557,7 @@ describe("assessPromotionGateFromLedger", () => {
 			"replace",
 			{
 				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
 				deploySurface: rustDeploySurface,
 			},
 		);
@@ -520,7 +577,10 @@ describe("assessPromotionGateFromLedger", () => {
 				}),
 			]),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -560,7 +620,10 @@ describe("assessPromotionGateFromLedger", () => {
 				}),
 			]),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
