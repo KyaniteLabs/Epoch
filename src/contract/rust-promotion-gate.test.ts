@@ -336,6 +336,28 @@ describe("assessPromotionGate", () => {
 		expect(result.reason).toContain("does not match soak evidence");
 	});
 
+	it("blocks replacement when runner summary is not checked against a current release identity", () => {
+		const result = assessPromotionGate(
+			runnerSummary({
+				target: "replace",
+				qualifiedPerformanceEvidence: true,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("Current release identity could not be verified");
+	});
+
 	it("blocks replacement runner summaries without qualified performance proof", () => {
 		const result = assessPromotionGate(
 			runnerSummary({
@@ -348,7 +370,10 @@ describe("assessPromotionGate", () => {
 				},
 			}),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -506,6 +531,30 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 		expect(result.reason).toContain("does not match soak evidence");
 	});
 
+	it("blocks replacement from cumulative summary without checking the current release identity", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				totalSoakHours: 72,
+				continuousSoakHours: 72,
+				releaseTaggedSoakHours: 72,
+				qualifiedPerformanceEvidence: true,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("Current release identity could not be verified");
+	});
+
 	it("blocks replacement from cumulative evidence without qualified performance proof", () => {
 		const result = assessPromotionGateFromLedgerSummary(
 			ledgerSummary({
@@ -520,7 +569,10 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				},
 			}),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -594,6 +646,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 			"replace",
 			{
 				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
 				deploySurface: auditDeploySurface({
 					packageJson: {
 						bin: { epoch: "dist/index.js" },
@@ -679,6 +732,26 @@ describe("assessPromotionGateFromLedger", () => {
 		expect(result.reason).toContain("does not match soak evidence");
 	});
 
+	it("blocks replacement from direct ledger evidence without checking the current release identity", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([
+				ledgerRun({
+					endedAt: "2026-06-30T00:00:00.000Z",
+					soakHours: 72,
+					continuousSoakHours: 72,
+				}),
+			]),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("Current release identity could not be verified");
+	});
+
 	it("blocks replacement when 72-hour ledger evidence only has smoke performance proof", () => {
 		const result = assessPromotionGateFromLedger(
 			ledger([
@@ -690,7 +763,10 @@ describe("assessPromotionGateFromLedger", () => {
 				}),
 			]),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -772,7 +848,10 @@ describe("assessPromotionGateFromLedger", () => {
 				}),
 			]),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);
@@ -833,7 +912,10 @@ describe("assessPromotionGateFromLedger", () => {
 				}),
 			]),
 			"replace",
-			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+			},
 		);
 
 		expect(result.ok).toBe(false);

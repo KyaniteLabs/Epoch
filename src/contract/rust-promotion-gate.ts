@@ -445,8 +445,7 @@ function releaseIdentityGate(
 			"Replacement requires release-tagged soak evidence with a single durable release identity.",
 		);
 	}
-	if (!("currentReleaseTag" in options)) return null;
-	if (!options.currentReleaseTag) {
+	if (!("currentReleaseTag" in options) || !options.currentReleaseTag) {
 		return result(
 			false,
 			target,
