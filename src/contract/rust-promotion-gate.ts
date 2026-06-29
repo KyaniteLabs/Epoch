@@ -1006,21 +1006,13 @@ function releaseTaggedRuns(runs: LedgerRun[]): LedgerRun[] {
 	);
 }
 
-export function buildGateLedgerSummary(
-	rawLedger: unknown,
-): z.infer<typeof ledgerSummarySchema> {
-	const ledger = soakLedgerSchema.parse(rawLedger);
-	const runs = [...ledger.runs].sort((left, right) =>
-		left.generatedAt.localeCompare(right.generatedAt),
-	);
+function ledgerReadinessInput(runs: LedgerRun[]): ReadinessInput {
 	const totalSoakHours = numberSum(runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
 	const releaseRuns = releaseTaggedRuns(runs);
 	const releaseTaggedSoakHours = numberSum(
 		releaseRuns.map((run) => run.soakHours),
 	);
-	const releaseContinuousSoakHours =
-		longestContinuousCleanSoakHours(releaseRuns);
 	const allSoakIsRelease =
 		totalSoakHours > 0 &&
 		Math.abs(releaseTaggedSoakHours - totalSoakHours) < 1e-9;
@@ -1083,9 +1075,36 @@ export function buildGateLedgerSummary(
 			),
 		},
 	};
+	return readinessInput;
+}
 
-		return {
-			totalSoakHours,
+export function buildGateLedgerReadinessInput(rawLedger: unknown): ReadinessInput {
+	const ledger = soakLedgerSchema.parse(rawLedger);
+	const runs = [...ledger.runs].sort((left, right) =>
+		left.generatedAt.localeCompare(right.generatedAt),
+	);
+	return ledgerReadinessInput(runs);
+}
+
+export function buildGateLedgerSummary(
+	rawLedger: unknown,
+): z.infer<typeof ledgerSummarySchema> {
+	const ledger = soakLedgerSchema.parse(rawLedger);
+	const runs = [...ledger.runs].sort((left, right) =>
+		left.generatedAt.localeCompare(right.generatedAt),
+	);
+	const totalSoakHours = numberSum(runs.map((run) => run.soakHours));
+	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
+	const releaseRuns = releaseTaggedRuns(runs);
+	const releaseTaggedSoakHours = numberSum(
+		releaseRuns.map((run) => run.soakHours),
+	);
+	const releaseContinuousSoakHours =
+		longestContinuousCleanSoakHours(releaseRuns);
+	const readinessInput = ledgerReadinessInput(runs);
+
+	return {
+		totalSoakHours,
 			continuousSoakHours,
 			releaseTaggedSoakHours,
 			releaseContinuousSoakHours,
