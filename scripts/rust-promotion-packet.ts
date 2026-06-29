@@ -27,7 +27,9 @@ import { tmpdir } from "node:os";
 
 import {
 	assessDeployReadiness,
+	buildReplacementScorecard,
 	normalizeReadinessEvidence,
+	type ReplacementScorecard,
 	type ReadinessAssessment,
 	type ReadinessInput,
 } from "../src/contract/rust-deploy-readiness.js";
@@ -110,6 +112,7 @@ type PacketSummary = {
 		rollback: string;
 		readinessInput: string;
 		readinessAssessment: string;
+		replacementScorecard: string;
 		summary: string;
 	};
 };
@@ -735,8 +738,9 @@ function buildSummary(
 	packageSmoke: PackageSmokeEvidence,
 ): PacketSummary {
 	const e2e = e2eEvidence(e2eReport);
+	const generatedAt = new Date().toISOString();
 	return {
-		generatedAt: new Date().toISOString(),
+		generatedAt,
 		readiness,
 		evidence: {
 			compatibility: {
@@ -791,12 +795,16 @@ function buildSummary(
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
 			readinessInput: rel(resolve(outputDir, "readiness-input.json")),
 			readinessAssessment: rel(resolve(outputDir, "readiness-assessment.json")),
+			replacementScorecard: rel(resolve(outputDir, "replacement-scorecard.json")),
 			summary: rel(resolve(outputDir, "promotion-packet.json")),
 		},
 	};
 }
 
-function printSummary(summary: PacketSummary): void {
+function printSummary(
+	summary: PacketSummary,
+	scorecard: ReplacementScorecard,
+): void {
 	process.stderr.write(
 		[
 			"Rust promotion packet",
@@ -807,6 +815,7 @@ function printSummary(summary: PacketSummary): void {
 			`  error compatibility: ${summary.evidence.compatibility.errorCompatibilityPercent}%`,
 			`  median improvement:  ${summary.evidence.performance.medianLatencyImprovementPercent.toFixed(2)}%`,
 			`  p95 improvement:     ${summary.evidence.performance.p95LatencyImprovementPercent.toFixed(2)}%`,
+			`  replacement gates:   ${scorecard.gatesPassed}/${scorecard.gatesTotal} (${scorecard.replacementGatePassPercent.toFixed(2)}%)`,
 			`  perf evidence:       ${summary.evidence.performance.evidenceMode}`,
 			`  package smoke:       ${summary.evidence.deploy.packageSmokePass ? "pass" : "fail"}`,
 			`  soak hours:          ${summary.evidence.reliability.soakHours.toFixed(4)}`,
@@ -840,6 +849,7 @@ async function main(): Promise<void> {
 	const rollbackPath = resolve(outputDir, "shadow-soak-rollback.json");
 	const readinessInputPath = resolve(outputDir, "readiness-input.json");
 	const readinessAssessmentPath = resolve(outputDir, "readiness-assessment.json");
+	const replacementScorecardPath = resolve(outputDir, "replacement-scorecard.json");
 	const summaryPath = resolve(outputDir, "promotion-packet.json");
 	const startedAtMs = Date.now();
 	const startedAt = new Date(startedAtMs).toISOString();
@@ -1036,9 +1046,14 @@ async function main(): Promise<void> {
 		e2eReport,
 		packageSmoke,
 	);
+	const replacementScorecard = buildReplacementScorecard(
+		readinessInput,
+		summary.generatedAt,
+	);
 
 	writeJson(readinessInputPath, readinessInput);
 	writeJson(readinessAssessmentPath, readiness);
+	writeJson(replacementScorecardPath, replacementScorecard);
 	writeJson(summaryPath, summary);
 	completedSteps.push("readiness-summary");
 	writePacketProgress(
@@ -1047,7 +1062,7 @@ async function main(): Promise<void> {
 		startedAtMs,
 	);
 
-	if (!options.quiet) printSummary(summary);
+	if (!options.quiet) printSummary(summary, replacementScorecard);
 }
 
 main().catch((error: unknown) => {
