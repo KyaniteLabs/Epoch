@@ -43,6 +43,7 @@ function packet(
 		endedAt: string;
 		performanceEvidenceMode: "qualified" | "smoke";
 		packageCliSha256?: string | null;
+		releaseTag?: string | null;
 	},
 ): void {
 	writeJson(join(dir, "readiness-input.json"), {
@@ -81,7 +82,10 @@ function packet(
 			rationale: "Still accumulating soak.",
 		},
 		evidence: {
-			observability: { releaseTag: "candidate-1" },
+			observability:
+				options.releaseTag === null
+					? {}
+					: { releaseTag: options.releaseTag ?? "candidate-1" },
 			performance: { evidenceMode: options.performanceEvidenceMode },
 			deploy: {
 				...(options.packageCliSha256 === null
@@ -156,6 +160,7 @@ describe("rust-soak-ledger CLI", () => {
 			httpDeployEnvCoveragePercent: number;
 			packageCommandEvidenceComplete: boolean;
 			packageCliSha256: string | null;
+			releaseTag: string | null;
 			readiness: { failingGate: string | null };
 		};
 		expect(summary.continuousSoakHours).toBe(2);
@@ -166,6 +171,7 @@ describe("rust-soak-ledger CLI", () => {
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);
 		expect(summary.packageCommandEvidenceComplete).toBe(true);
 		expect(summary.packageCliSha256).toBe(RUST_BINARY_SHA256);
+		expect(summary.releaseTag).toBe("candidate-1");
 		expect(summary.readiness.failingGate).toBe("soak");
 	}, 15_000);
 
@@ -216,6 +222,37 @@ describe("rust-soak-ledger CLI", () => {
 
 		expect(() => runLedger(secondPacket, ledgerPath, secondSummary)).toThrow(
 			"Mixed packaged CLI identities",
+		);
+	}, 15_000);
+
+	it("rejects mixed release identities", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-ledger-cli-"));
+		const firstPacket = join(root, "packet-1");
+		const secondPacket = join(root, "packet-2");
+		const ledgerPath = join(root, "soak-ledger.json");
+		const firstSummary = join(root, "summary-1.json");
+		const secondSummary = join(root, "summary-2.json");
+		mkdirSync(firstPacket, { recursive: true });
+		mkdirSync(secondPacket, { recursive: true });
+		packet(firstPacket, {
+			generatedAt: "2026-06-29T00:01:00.000Z",
+			startedAt: "2026-06-29T00:00:00.000Z",
+			endedAt: "2026-06-29T01:00:00.000Z",
+			performanceEvidenceMode: "qualified",
+			releaseTag: "candidate-1",
+		});
+		packet(secondPacket, {
+			generatedAt: "2026-06-29T01:01:00.000Z",
+			startedAt: "2026-06-29T01:00:30.000Z",
+			endedAt: "2026-06-29T02:00:30.000Z",
+			performanceEvidenceMode: "qualified",
+			releaseTag: "candidate-2",
+		});
+
+		runLedger(firstPacket, ledgerPath, firstSummary);
+
+		expect(() => runLedger(secondPacket, ledgerPath, secondSummary)).toThrow(
+			"Mixed release identities",
 		);
 	}, 15_000);
 });

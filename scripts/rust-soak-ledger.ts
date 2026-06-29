@@ -88,6 +88,7 @@ type LedgerSummary = {
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	releaseContinuousSoakHours: number;
+	releaseTag: string | null;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
@@ -561,6 +562,16 @@ function releaseTaggedRuns(runs: LedgerRun[]): LedgerRun[] {
 	);
 }
 
+function ledgerReleaseTag(runs: LedgerRun[]): string | null {
+	const releaseTags = new Set(releaseTaggedRuns(runs).map((run) => run.releaseTag));
+	if (releaseTags.size > 1) {
+		throw new Error(
+			`Mixed release identities in soak ledger: ${Array.from(releaseTags).join(", ")}. Use a separate ledger per release candidate.`,
+		);
+	}
+	return Array.from(releaseTags)[0] ?? null;
+}
+
 type SoakInterval = { startMs: number; endMs: number };
 
 function isCleanRun(run: LedgerRun): boolean {
@@ -711,6 +722,7 @@ function buildSummary(
 	const releaseContinuousSoakHours = longestContinuousCleanSoakHours(
 		releaseTaggedRuns(ledger.runs),
 	);
+	const releaseTag = ledgerReleaseTag(ledger.runs);
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
 	const packageCliSha256 = ledgerPackageCliSha256(ledger.runs);
 	const qualifiedPerformanceEvidence = ledger.runs.some(
@@ -745,6 +757,7 @@ function buildSummary(
 		continuityLostHours: Math.max(0, totalSoakHours - continuousSoakHours),
 		releaseTaggedSoakHours,
 		releaseContinuousSoakHours,
+		releaseTag,
 		qualifiedPerformanceEvidence,
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
@@ -776,6 +789,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
 			`  release continuous:  ${summary.releaseContinuousSoakHours.toFixed(4)}`,
+			`  release identity:    ${summary.releaseTag ?? "none"}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  package smoke:       ${summary.packageSmokePass}`,
