@@ -91,6 +91,7 @@ type PacketSummary = {
 			packageBinTarget: string | null;
 			packagePrebuilds: string[];
 			commandExitCode: number | null;
+			packageCommands: PackageSmokeCommandEvidence[];
 		};
 	};
 	files: {
@@ -246,12 +247,19 @@ function platformTag(): string {
 	return `${process.platform}-${arch}`;
 }
 
-function requiredPackagePrebuilds(packageRoot: string): string[] {
+function packagePrebuildPath(packageRoot: string, binary: string): string {
 	const suffix = process.platform === "win32" ? ".exe" : "";
 	const platform = platformTag();
-	return RUST_BINARIES.map((binary) =>
-		join(packageRoot, "prebuilds", platform, `${binary}${suffix}`),
-	);
+	return join(packageRoot, "prebuilds", platform, `${binary}${suffix}`);
+}
+
+function packagePrebuildTarget(binary: string): string {
+	const suffix = process.platform === "win32" ? ".exe" : "";
+	return ["prebuilds", platformTag(), `${binary}${suffix}`].join("/");
+}
+
+function requiredPackagePrebuilds(packageRoot: string): string[] {
+	return RUST_BINARIES.map((binary) => packagePrebuildPath(packageRoot, binary));
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -336,10 +344,71 @@ type PackageSmokeEvidence = {
 	commandExitCode: number | null;
 	stdoutHead: string;
 	stderrHead: string;
+	commands: PackageSmokeCommandEvidence[];
+};
+
+type PackageSmokeCommandEvidence = {
+	name: string;
+	target: string;
+	exitCode: number | null;
+	signal: NodeJS.Signals | null;
+	stdoutHead: string;
+	stderrHead: string;
+	error: string | null;
+};
+
+type PackageSmokeCommandResult = PackageSmokeCommandEvidence & {
+	stdout: string;
+	stderr: string;
 };
 
 function head(value: string): string {
 	return value.split(/\r?\n/).slice(0, 3).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function runSmokeCommand(
+	name: string,
+	target: string,
+	binary: string,
+	args: string[],
+	options: {
+		cwd: string;
+		input?: string;
+	},
+): PackageSmokeCommandResult {
+	const command = spawnSync(binary, args, {
+		cwd: options.cwd,
+		encoding: "utf8",
+		input: options.input,
+		env: { ...process.env, EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "0" },
+	});
+	const stdout = typeof command.stdout === "string" ? command.stdout : "";
+	const stderr = typeof command.stderr === "string" ? command.stderr : "";
+	return {
+		name,
+		target,
+		exitCode: command.status,
+		signal: command.signal,
+		stdout,
+		stderr,
+		stdoutHead: head(stdout),
+		stderrHead: head(stderr),
+		error: command.error instanceof Error ? command.error.message : null,
+	};
+}
+
+function commandEvidence(
+	command: PackageSmokeCommandResult,
+): PackageSmokeCommandEvidence {
+	return {
+		name: command.name,
+		target: command.target,
+		exitCode: command.exitCode,
+		signal: command.signal,
+		stdoutHead: command.stdoutHead,
+		stderrHead: command.stderrHead,
+		error: command.error,
+	};
 }
 
 function runPackageSmoke(options: { quiet: boolean }): PackageSmokeEvidence {
@@ -382,7 +451,9 @@ function runPackageSmoke(options: { quiet: boolean }): PackageSmokeEvidence {
 		} catch {
 			binTarget = existsSync(binPath) ? binPath : null;
 		}
-		const command = spawnSync(
+		const cliCommand = runSmokeCommand(
+			"epoch-cli",
+			"node_modules/.bin/epoch",
 			binPath,
 			[
 				"pert-estimate",
@@ -393,20 +464,61 @@ function runPackageSmoke(options: { quiet: boolean }): PackageSmokeEvidence {
 				"--pessimistic",
 				"4",
 			],
+			{ cwd: appDir },
+		);
+		const mcpCommand = runSmokeCommand(
+			"epoch-mcp",
+			packagePrebuildTarget("epoch-mcp"),
+			packagePrebuildPath(packageRoot, "epoch-mcp"),
+			[],
 			{
 				cwd: appDir,
-				encoding: "utf8",
-				env: { ...process.env, EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "0" },
+				input: '{"jsonrpc":"2.0","id":1,"method":"ping"}\n',
 			},
 		);
+		const httpCommand = runSmokeCommand(
+			"epoch-http",
+			packagePrebuildTarget("epoch-http"),
+			packagePrebuildPath(packageRoot, "epoch-http"),
+			["--help"],
+			{ cwd: appDir },
+		);
+		const commandChecks = [
+			{
+				name: cliCommand.name,
+				ok:
+					cliCommand.exitCode === 0 &&
+					cliCommand.stdout.includes('"ok": true'),
+			},
+			{
+				name: mcpCommand.name,
+				ok:
+					mcpCommand.exitCode === 0 &&
+					mcpCommand.stdout.startsWith("Content-Length:") &&
+					mcpCommand.stdout.includes('"result":{}'),
+			},
+			{
+				name: httpCommand.name,
+				ok:
+					httpCommand.exitCode === 0 &&
+					`${httpCommand.stdout}\n${httpCommand.stderr}`.includes(
+						"Usage: epoch-http",
+					),
+			},
+		];
+		const failedCommands = commandChecks
+			.filter((check) => !check.ok)
+			.map((check) => check.name);
+		const commands = [cliCommand, mcpCommand, httpCommand].map(commandEvidence);
 		const requiredCount = RUST_BINARIES.length;
-		const ok =
-			prebuilds.length === requiredCount &&
-			command.status === 0 &&
-			command.stdout.includes('"ok": true');
+		const ok = prebuilds.length === requiredCount && failedCommands.length === 0;
 		const reason = ok
-			? "Packed package installed and executed through Rust prebuilds."
-			: `Package smoke failed: ${prebuilds.length}/${requiredCount} Rust prebuilds present, command exit ${command.status ?? "null"}.`;
+			? "Packed package installed and executed CLI, MCP, and HTTP Rust prebuilds."
+			: `Package smoke failed: ${prebuilds.length}/${requiredCount} Rust prebuilds present${
+					failedCommands.length > 0
+						? `, failed commands: ${failedCommands.join(", ")}`
+						: ""
+				}.`;
 		return {
 			ok,
 			reason,
@@ -414,9 +526,10 @@ function runPackageSmoke(options: { quiet: boolean }): PackageSmokeEvidence {
 			platform: platformTag(),
 			binTarget,
 			prebuilds,
-			commandExitCode: command.status,
-			stdoutHead: head(command.stdout),
-			stderrHead: head(command.stderr),
+			commandExitCode: cliCommand.exitCode,
+			stdoutHead: cliCommand.stdoutHead,
+			stderrHead: cliCommand.stderrHead,
+			commands,
 		};
 	} finally {
 		rmSync(root, { recursive: true, force: true });
@@ -474,6 +587,7 @@ function buildSummary(
 				packageBinTarget: packageSmoke.binTarget,
 				packagePrebuilds: packageSmoke.prebuilds,
 				commandExitCode: packageSmoke.commandExitCode,
+				packageCommands: packageSmoke.commands,
 			},
 		},
 		files: {
