@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
 	chmodSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -103,5 +104,19 @@ describe("Rust prebuild packaging scripts", () => {
 		const extraFile = runScriptResult(verifyScript, root);
 		expect(extraFile.status).toBe(1);
 		expect(extraFile.stderr).toContain("is not an expected prebuild file");
+	});
+
+	it("rejects unexpected platform directories", async () => {
+		const root = await fixtureRoot();
+		roots.push(root);
+		runScript(stageScript, root);
+
+		const unexpectedDir = join(root, "prebuilds", "unexpected-platform");
+		mkdirSync(unexpectedDir, { recursive: true });
+		writeFileSync(join(unexpectedDir, "unexpected.txt"), "nope");
+
+		const extraPlatform = runScriptResult(verifyScript, root);
+		expect(extraPlatform.status).toBe(1);
+		expect(extraPlatform.stderr).toContain("is not an expected prebuild platform");
 	});
 });

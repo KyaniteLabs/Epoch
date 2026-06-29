@@ -48,7 +48,7 @@
     "rust:check": "cargo test --manifest-path rust/Cargo.toml --workspace && cargo run --manifest-path rust/Cargo.toml -p xtask -- check",
     "rust:stage-prebuilds": "node scripts/stage-rust-prebuilds.mjs",
     "rust:verify-prebuilds": "node scripts/verify-rust-prebuilds.mjs",
-    "prepack": "pnpm run build && pnpm run rust:build:release && pnpm run rust:stage-prebuilds",
+    "prepack": "pnpm run build && pnpm run rust:build:release && pnpm run rust:stage-prebuilds && pnpm run rust:verify-prebuilds",
     "promotion:rust-parity": "tsx src/contract/rust-parity-cli.ts --report-only",
     "promotion:rust-parity:gate": "tsx src/contract/rust-parity-cli.ts",
     "promotion:rust-adversarial": "tsx scripts/rust-adversarial-contract.ts",

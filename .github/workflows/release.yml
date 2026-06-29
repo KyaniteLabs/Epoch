@@ -84,6 +84,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      EPOCH_REQUIRED_PREBUILD_PLATFORMS: linux-x64,darwin-x64,darwin-arm64,win32-x64
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -128,8 +130,6 @@ jobs:
 
       - name: Extract and verify Rust npm prebuilds
         shell: bash
-        env:
-          EPOCH_REQUIRED_PREBUILD_PLATFORMS: linux-x64,darwin-x64,darwin-arm64,win32-x64
         run: |
           mkdir -p prebuilds
           find .prebuild-artifacts -name '*.tgz' -print -exec tar -xzf {} -C prebuilds \;

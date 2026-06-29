@@ -97,6 +97,23 @@ function verifyPayloadFiles(platform, dir) {
 	}
 }
 
+function verifyPlatformDirectories(root, platforms) {
+	const prebuildRoot = join(root, "prebuilds");
+	if (!existsSync(prebuildRoot)) {
+		throw new Error(`Missing ${prebuildRoot}`);
+	}
+	const expected = new Set(platforms);
+	for (const entry of readdirSync(prebuildRoot, { withFileTypes: true })) {
+		const path = join(prebuildRoot, entry.name);
+		if (!entry.isDirectory()) {
+			throw new Error(`${path} is not an expected prebuild platform directory`);
+		}
+		if (!expected.has(entry.name)) {
+			throw new Error(`${path} is not an expected prebuild platform`);
+		}
+	}
+}
+
 function verifyBinary(platform, dir, manifest, binary) {
 	const fileName = `${binary}${suffixFor(platform)}`;
 	const path = join(dir, fileName);
@@ -138,6 +155,7 @@ function main() {
 	if (platforms.length === 0) {
 		throw new Error("No prebuild platforms requested");
 	}
+	verifyPlatformDirectories(root, platforms);
 	for (const platform of platforms) {
 		const dir = join(root, "prebuilds", platform);
 		const manifest = verifyManifest(platform, dir);
