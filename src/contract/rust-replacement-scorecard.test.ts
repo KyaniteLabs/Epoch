@@ -85,10 +85,10 @@ describe("formatReplacementScorecard", () => {
 							signal: null,
 							stdoutHead:
 								name === "epoch-cli"
-									? '{"ok": true}'
+									? '{ "ok": true, "data": {'
 									: name === "epoch-mcp"
-										? 'Content-Length: 36 {"result":{}}'
-										: 'health {"status":"ok","tools":24}',
+										? 'Content-Length: 36 {"id":1,"jsonrpc":"2.0","result":{}}'
+										: 'health {"status":"ok","tools":24,"uptime":0.0,"version":"0.1.0"}',
 							stderrHead: "",
 							error: null,
 						}),
