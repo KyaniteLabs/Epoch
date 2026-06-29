@@ -96,9 +96,10 @@ describe("buildSoakStatus", () => {
 		expect(status.runCount).toBe(1);
 		expect(status.totalCompletedSoakHours).toBe(1);
 		expect(status.continuousCleanSoakHours).toBe(1);
-		expect(status.continuousGapSeconds).toBe(900);
-		expect(status.releaseTaggedSoakHours).toBe(1);
-		expect(status.qualifiedPerformanceEvidence).toBe(false);
+			expect(status.continuousGapSeconds).toBe(900);
+			expect(status.releaseTaggedSoakHours).toBe(1);
+			expect(status.releaseTag).toBe("candidate-1");
+			expect(status.qualifiedPerformanceEvidence).toBe(false);
 		expect(status.releaseE2ePass).toBe(true);
 		expect(status.publicSurfaceCoveragePercent).toBe(100);
 		expect(status.httpDeployEnvCoveragePercent).toBe(100);
@@ -111,8 +112,11 @@ describe("buildSoakStatus", () => {
 		]);
 		expect(formatSoakStatus(status)).toContain("runner:              active");
 		expect(formatSoakStatus(status)).toContain("max clean gap:       900s");
-		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
-		expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
+			expect(formatSoakStatus(status)).toContain("qualified perf:      false");
+			expect(formatSoakStatus(status)).toContain(
+				"release identity:    candidate-1",
+			);
+			expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
 		expect(formatSoakStatus(status)).toContain("package smoke:       true");
 		expect(formatSoakStatus(status)).toContain(
 			"runner release tag:  candidate-1",

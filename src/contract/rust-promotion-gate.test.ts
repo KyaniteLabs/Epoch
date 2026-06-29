@@ -64,6 +64,7 @@ function ledgerSummary(overrides: Record<string, unknown> = {}) {
 		totalSoakHours: 24,
 		continuousSoakHours: 24,
 		releaseTaggedSoakHours: 24,
+		releaseTag: "candidate-1",
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
@@ -431,6 +432,31 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 		expect(result.reason).toContain("release-tagged cumulative soak evidence");
 	});
 
+	it("blocks replacement from cumulative summary without a durable release identity", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				totalSoakHours: 72,
+				continuousSoakHours: 72,
+				releaseTaggedSoakHours: 72,
+				releaseTag: null,
+				qualifiedPerformanceEvidence: true,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				deploySurface: rustDeploySurface,
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("release identity");
+	});
+
 	it("blocks replacement from cumulative evidence without qualified performance proof", () => {
 		const result = assessPromotionGateFromLedgerSummary(
 			ledgerSummary({
@@ -740,6 +766,27 @@ describe("assessPromotionGateFromLedger", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("release-tagged cumulative soak evidence");
+	});
+
+	it("fails closed when a durable ledger mixes release identities", () => {
+		expect(() =>
+			buildGateLedgerSummary(
+				ledger([
+					ledgerRun({
+						id: "run-1",
+						releaseTag: "candidate-1",
+						endedAt: "2026-06-28T00:00:00.000Z",
+					}),
+					ledgerRun({
+						id: "run-2",
+						releaseTag: "candidate-2",
+						generatedAt: "2026-06-28T00:01:00.000Z",
+						startedAt: "2026-06-28T00:00:00.000Z",
+						endedAt: "2026-06-29T00:00:00.000Z",
+					}),
+				]),
+			),
+		).toThrow("Mixed release identities");
 	});
 
 	it("fails closed when a durable ledger mixes Rust binary identities", () => {

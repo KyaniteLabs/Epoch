@@ -155,6 +155,7 @@ const ledgerSummarySchema = z.object({
 	totalSoakHours: z.number().nonnegative(),
 	continuousSoakHours: z.number().nonnegative(),
 	releaseTaggedSoakHours: z.number().nonnegative(),
+	releaseTag: z.string().nullable().default(null),
 	qualifiedPerformanceEvidence: z.boolean().default(false),
 	releaseE2ePass: z.boolean().default(false),
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
@@ -663,19 +664,28 @@ export function assessPromotionGateFromLedgerSummary(
 			`Ledger summary has ${summary.continuousSoakHours.toFixed(4)} continuous soak hours; ${target} requires ${requiredHours}.`,
 		);
 	}
-	if (
-		target === "replace" &&
-		summary.releaseTaggedSoakHours < REQUIRED_SOAK_HOURS.replace
-	) {
+		if (
+			target === "replace" &&
+			summary.releaseTaggedSoakHours < REQUIRED_SOAK_HOURS.replace
+		) {
 		return result(
 			false,
 			target,
 			decision,
 			failingGate,
 			"Replacement requires release-tagged cumulative soak evidence.",
-		);
-	}
-	if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
+			);
+		}
+		if (target === "replace" && !summary.releaseTag) {
+			return result(
+				false,
+				target,
+				decision,
+				failingGate,
+				"Replacement requires a single durable release identity for cumulative soak evidence.",
+			);
+		}
+		if (target === "replace" && !summary.qualifiedPerformanceEvidence) {
 		return result(
 			false,
 			target,
@@ -789,6 +799,22 @@ function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 		);
 	}
 	return runs[0]?.rustBinarySha256 ?? null;
+}
+
+function ledgerReleaseTag(runs: LedgerRun[]): string | null {
+	const releaseTags = new Set(
+		runs
+			.filter(
+				(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
+			.map((run) => run.releaseTag),
+	);
+	if (releaseTags.size > 1) {
+		throw new Error(
+			`Mixed release identities in soak ledger: ${Array.from(releaseTags).join(", ")}. Use a separate ledger per release candidate.`,
+		);
+	}
+	return Array.from(releaseTags)[0] ?? null;
 }
 
 function cleanInterval(run: LedgerRun): { startMs: number; endMs: number } | null {
@@ -927,11 +953,12 @@ export function buildGateLedgerSummary(
 		},
 	};
 
-	return {
-		totalSoakHours,
-		continuousSoakHours,
-		releaseTaggedSoakHours,
-		qualifiedPerformanceEvidence: runs.some(
+		return {
+			totalSoakHours,
+			continuousSoakHours,
+			releaseTaggedSoakHours,
+			releaseTag: ledgerReleaseTag(runs),
+			qualifiedPerformanceEvidence: runs.some(
 			hasReleaseQualifiedPerformanceEvidence,
 		),
 		releaseE2ePass: readinessInput.parity.releaseE2ePass,

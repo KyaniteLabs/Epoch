@@ -91,6 +91,7 @@ type LedgerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	releaseTag: string | null;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
@@ -211,6 +212,22 @@ function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 		run.observabilityLevel === "release" &&
 		run.releaseTag !== null
 	);
+}
+
+function ledgerReleaseTag(runs: LedgerRun[]): string | null {
+	const releaseTags = new Set(
+		runs
+			.filter(
+				(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
+			.map((run) => run.releaseTag),
+	);
+	if (releaseTags.size > 1) {
+		throw new Error(
+			`Mixed release identities in soak ledger: ${Array.from(releaseTags).join(", ")}. Use a separate ledger per release candidate.`,
+		);
+	}
+	return Array.from(releaseTags)[0] ?? null;
 }
 
 function parseLedger(path: string): SoakLedger {
@@ -752,6 +769,7 @@ function buildSummary(
 	const totalSoakHours = numberSum(ledger.runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
+	const releaseTag = ledgerReleaseTag(ledger.runs);
 	const qualifiedPerformanceEvidence = ledger.runs.some(
 		hasReleaseQualifiedPerformanceEvidence,
 	);
@@ -781,6 +799,7 @@ function buildSummary(
 		continuousSoakHours,
 		continuityLostHours: Math.max(0, totalSoakHours - continuousSoakHours),
 		releaseTaggedSoakHours,
+		releaseTag,
 		qualifiedPerformanceEvidence,
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
@@ -810,6 +829,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
+			`  release identity:    ${summary.releaseTag ?? "none"}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  package smoke:       ${summary.packageSmokePass}`,

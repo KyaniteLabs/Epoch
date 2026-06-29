@@ -90,6 +90,7 @@ type SoakStatus = {
 	continuityLostHours: number;
 	continuousGapSeconds: number;
 	releaseTaggedSoakHours: number;
+	releaseTag: string | null;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
@@ -389,6 +390,17 @@ function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	);
 }
 
+function releaseIdentitySet(runs: LedgerRun[]): Set<string> {
+	return new Set(
+		runs
+			.filter(
+				(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+			)
+			.map((run) => run.releaseTag)
+			.filter((releaseTag): releaseTag is string => releaseTag !== null),
+	);
+}
+
 function cleanIntervalForRun(
 	run: LedgerRun,
 ): { startMs: number; endMs: number } | null {
@@ -569,6 +581,9 @@ export function buildSoakStatus(input: {
 			)
 			.map((run) => run.soakHours),
 	);
+	const releaseTags = releaseIdentitySet(runs);
+	const releaseTag =
+		releaseTags.size === 1 ? Array.from(releaseTags)[0] ?? null : null;
 	const qualifiedPerformanceEvidence = runs.some(
 		hasReleaseQualifiedPerformanceEvidence,
 	);
@@ -616,6 +631,9 @@ export function buildSoakStatus(input: {
 	}
 	if (identities.size > 1) {
 		warnings.push("Soak ledger contains multiple Rust binary identities.");
+	}
+	if (releaseTags.size > 1) {
+		warnings.push("Soak ledger contains multiple release identities.");
 	}
 	if (!runnerProcessAlive && runnerState !== null) {
 		warnings.push("Runner state exists, but the recorded process is not alive.");
@@ -697,6 +715,7 @@ export function buildSoakStatus(input: {
 		),
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		releaseTaggedSoakHours,
+		releaseTag,
 		qualifiedPerformanceEvidence,
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
@@ -739,6 +758,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  continuity lost:     ${formatHours(status.continuityLostHours)}h`,
 		`  max clean gap:       ${status.continuousGapSeconds}s`,
 		`  release-tagged soak: ${formatHours(status.releaseTaggedSoakHours)}h`,
+		`  release identity:    ${status.releaseTag ?? "none"}`,
 		`  qualified perf:      ${status.qualifiedPerformanceEvidence}`,
 		`  release e2e:         ${status.releaseE2ePass} (${status.publicSurfaceCoveragePercent}%)`,
 		`  package smoke:       ${status.packageSmokePass}`,

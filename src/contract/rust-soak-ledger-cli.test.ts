@@ -142,16 +142,18 @@ describe("rust-soak-ledger CLI", () => {
 		runLedger(secondPacket, ledgerPath, secondSummary);
 
 		const summary = JSON.parse(readFileSync(secondSummary, "utf8")) as {
-			continuousSoakHours: number;
-			qualifiedPerformanceEvidence: boolean;
+				continuousSoakHours: number;
+				releaseTag: string | null;
+				qualifiedPerformanceEvidence: boolean;
 			releaseE2ePass: boolean;
 			publicSurfaceCoveragePercent: number;
 			httpDeployEnvCoveragePercent: number;
 			packageSmokePass: boolean;
 			readiness: { failingGate: string | null };
-		};
-		expect(summary.continuousSoakHours).toBe(2);
-		expect(summary.qualifiedPerformanceEvidence).toBe(true);
+			};
+			expect(summary.continuousSoakHours).toBe(2);
+			expect(summary.releaseTag).toBe("candidate-1");
+			expect(summary.qualifiedPerformanceEvidence).toBe(true);
 		expect(summary.releaseE2ePass).toBe(true);
 		expect(summary.publicSurfaceCoveragePercent).toBe(100);
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);
