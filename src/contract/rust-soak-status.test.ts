@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { buildSoakStatus, formatSoakStatus } from "./rust-soak-status.js";
+import {
+	buildSoakStatus,
+	formatSoakStatus,
+	soakStatusExitCode,
+} from "./rust-soak-status.js";
 
 const RUST_BINARY_SHA256 =
 	"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const CURRENT_PLATFORM =
+	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
 	"Replacement runner has not recorded release-tagged qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a release-tagged qualified benchmark run is in the ledger.";
+
+function packageCommands(overrides: Record<string, unknown> = {}) {
+	return ["epoch-cli", "epoch-mcp", "epoch-http"].map((name) => ({
+		name,
+		target:
+			name === "epoch-cli"
+				? "node_modules/.bin/epoch"
+				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
+		exitCode: 0,
+		signal: null,
+		stdoutHead:
+			name === "epoch-cli"
+				? '{ "ok": true, "data": {'
+				: name === "epoch-mcp"
+					? 'Content-Length: 36 {"id":1,"jsonrpc":"2.0","result":{}}'
+					: 'health {"status":"ok","tools":24,"uptime":0.0,"version":"0.1.0"}',
+		stderrHead: "",
+		error: null,
+		...overrides,
+	}));
+}
 
 function run(overrides: Record<string, unknown> = {}) {
 	return {
@@ -18,6 +45,9 @@ function run(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
+		packageCommands: packageCommands(),
+		packageCliSha256: RUST_BINARY_SHA256,
 		soakHours: 1,
 		continuousSoakHours: 1,
 		crashes: 0,
@@ -33,6 +63,8 @@ function run(overrides: Record<string, unknown> = {}) {
 		p95LatencyImprovementPercent: 90,
 		startupImprovementPercent: 90,
 		memoryImprovementPercent: 90,
+		performanceToolsBenchmarked: 24,
+		performanceIterationsScale: 1,
 		readinessDecision: "SHADOW",
 		readinessFailingGate: "soak",
 		...overrides,
@@ -71,12 +103,15 @@ describe("buildSoakStatus", () => {
 		expect(status.runCount).toBe(1);
 		expect(status.totalCompletedSoakHours).toBe(1);
 		expect(status.continuousCleanSoakHours).toBe(1);
-		expect(status.continuousGapSeconds).toBe(120);
+		expect(status.continuousGapSeconds).toBe(900);
 		expect(status.releaseTaggedSoakHours).toBe(1);
+		expect(status.releaseContinuousSoakHours).toBe(1);
+		expect(status.releaseTag).toBe("candidate-1");
 		expect(status.qualifiedPerformanceEvidence).toBe(false);
 		expect(status.releaseE2ePass).toBe(true);
 		expect(status.publicSurfaceCoveragePercent).toBe(100);
 		expect(status.httpDeployEnvCoveragePercent).toBe(100);
+		expect(status.packageSmokePass).toBe(true);
 		expect(status.remainingCanaryHours).toBe(23);
 		expect(status.remainingReplaceHours).toBe(71);
 		expect(status.rustBinarySha256).toBe(RUST_BINARY_SHA256);
@@ -84,9 +119,14 @@ describe("buildSoakStatus", () => {
 			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
 		]);
 		expect(formatSoakStatus(status)).toContain("runner:              active");
-		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
+		expect(formatSoakStatus(status)).toContain("max clean gap:       900s");
+		expect(formatSoakStatus(status)).toContain("release continuous:  1.0000h");
 		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
+		expect(formatSoakStatus(status)).toContain(
+			"release identity:    candidate-1",
+		);
 		expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
+		expect(formatSoakStatus(status)).toContain("package smoke:       true");
 		expect(formatSoakStatus(status)).toContain(
 			"runner release tag:  candidate-1",
 		);
@@ -99,6 +139,249 @@ describe("buildSoakStatus", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
 			ledgerRaw: ledger([run({ performanceEvidenceMode: "qualified" })]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				currentRunStartedAt: "2026-06-27T00:01:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.qualifiedPerformanceEvidence).toBe(true);
+		expect(status.warnings).toEqual([]);
+	});
+
+	it("treats warnings as report data unless strict mode is requested", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run()]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 1,
+				maxRuns: null,
+				untilTarget: true,
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.warnings).toContain(
+			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
+		);
+		expect(soakStatusExitCode(status, { strict: false })).toBe(0);
+		expect(soakStatusExitCode(status, { strict: true })).toBe(2);
+	});
+
+	it("surfaces active shadow-soak heartbeat without crediting unfinished evidence", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				currentRunStartedAt: "2026-06-27T00:01:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 0,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			activeShadowSoakProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:10:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 600_000,
+				iterationsRequested: 3,
+				iterationsCompleted: 128,
+				minSecondsRequested: 3600,
+				minSecondsRemaining: 3000,
+				output: ".epoch-promotion/latest/shadow-soak.json",
+				releaseTag: "candidate-1",
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:10:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.runnerState?.startedAt).toBe("2026-06-27T00:00:00.000Z");
+		expect(status.runnerState?.currentRunStartedAt).toBe(
+			"2026-06-27T00:01:00.000Z",
+		);
+		expect(status.activeShadowSoakProgress).toMatchObject({
+			status: "running",
+			iterationsCompleted: 128,
+			minSecondsRemaining: 3000,
+			releaseTag: "candidate-1",
+		});
+		expect(status.totalCompletedSoakHours).toBe(0);
+		expect(status.releaseContinuousSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(formatSoakStatus(status)).toContain("shadow progress:     running");
+		expect(formatSoakStatus(status)).toContain("shadow iterations:   128/3");
+		expect(formatSoakStatus(status)).toContain("shadow remaining:    3000.0s");
+		expect(formatSoakStatus(status)).toContain(
+			"current run started: 2026-06-27T00:01:00.000Z",
+		);
+	});
+
+	it("surfaces active promotion-packet progress without crediting unfinished evidence", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 0,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			activePromotionPacketProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:03:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 180_000,
+				outputDir: ".epoch-promotion/latest",
+				releaseTag: "candidate-1",
+				benchmarkMode: "qualified",
+				currentStep: "promotion-benchmark",
+				completedSteps: ["build-rust-release-cli", "strict-parity"],
+				error: null,
+			},
+			activeReplacementScorecardRaw: {
+				decision: "SHADOW",
+				failingGate: "soak",
+				readyToReplace: false,
+				functionalCompatibilityPercent: 100,
+				replacementGatePassPercent: 86.36,
+				gatesPassed: 19,
+				gatesTotal: 22,
+				summary: {
+					medianLatencyImprovementPercent: 99.1,
+					p95LatencyImprovementPercent: 98.2,
+					continuousSoakHours: 1,
+					requiredContinuousSoakHours: 72,
+				},
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:03:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.activePromotionPacketProgress).toMatchObject({
+			status: "running",
+			currentStep: "promotion-benchmark",
+			completedSteps: ["build-rust-release-cli", "strict-parity"],
+			releaseTag: "candidate-1",
+		});
+		expect(status.activeReplacementScorecard).toMatchObject({
+			decision: "SHADOW",
+			failingGate: "soak",
+			gatesPassed: 19,
+			gatesTotal: 22,
+			functionalCompatibilityPercent: 100,
+		});
+		expect(status.totalCompletedSoakHours).toBe(0);
+		expect(status.releaseContinuousSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(formatSoakStatus(status)).toContain("packet progress:     running");
+		expect(formatSoakStatus(status)).toContain(
+			"packet step:         promotion-benchmark",
+		);
+		expect(formatSoakStatus(status)).toContain("packet completed:    2");
+		expect(formatSoakStatus(status)).toContain(
+			"scorecard decision:  SHADOW",
+		);
+		expect(formatSoakStatus(status)).toContain("scorecard gates:     19/22");
+		expect(formatSoakStatus(status)).toContain(
+			"scorecard soak:      1.0000h/72h",
+		);
+	});
+
+	it("surfaces active benchmark progress without crediting unfinished evidence", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([]),
+			stateRaw: {
+				pid: 123,
+				startedAt: "2026-06-27T00:00:00.000Z",
+				target: "replace",
+				packetDir: ".epoch-promotion/latest",
+				ledger: ".epoch-promotion/soak-ledger.json",
+				releaseTag: "candidate-1",
+				runsStarted: 0,
+				maxRuns: null,
+				untilTarget: true,
+				benchmarkMode: "qualified",
+			},
+			activeBenchmarkProgressRaw: {
+				status: "running",
+				updatedAt: "2026-06-27T00:04:00.000Z",
+				startedAt: "2026-06-27T00:00:00.000Z",
+				elapsedMs: 240_000,
+				output: ".epoch-promotion/latest/perf.json",
+				smoke: false,
+				iterationsScale: 1,
+				maxIterationsPerTool: 10,
+				toolsTotal: 24,
+				toolsCompleted: 7,
+				currentTool: "critical_path",
+				currentToolIndex: 8,
+				currentToolIterations: 10,
+				completedTools: ["get_current_time"],
+				error: null,
+			},
+			runnerAlive: true,
+			generatedAt: "2026-06-27T00:04:00.000Z",
+		});
+
+		expect(status.activeRunner).toBe(true);
+		expect(status.activeBenchmarkProgress).toMatchObject({
+			status: "running",
+			currentTool: "critical_path",
+			toolsTotal: 24,
+			toolsCompleted: 7,
+			currentToolIterations: 10,
+		});
+		expect(status.totalCompletedSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(formatSoakStatus(status)).toContain("bench progress:      running");
+		expect(formatSoakStatus(status)).toContain(
+			"bench tool:          critical_path",
+		);
+		expect(formatSoakStatus(status)).toContain("bench completed:     7/24");
+	});
+
+	it("keeps the replacement performance warning when qualified evidence is partial", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					performanceEvidenceMode: "qualified",
+					performanceToolsBenchmarked: 12,
+				}),
+			]),
 			stateRaw: {
 				pid: 123,
 				startedAt: "2026-06-27T00:00:00.000Z",
@@ -115,8 +398,10 @@ describe("buildSoakStatus", () => {
 			generatedAt: "2026-06-27T01:00:00.000Z",
 		});
 
-		expect(status.qualifiedPerformanceEvidence).toBe(true);
-		expect(status.warnings).toEqual([]);
+		expect(status.qualifiedPerformanceEvidence).toBe(false);
+		expect(status.warnings).toContain(
+			REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING,
+		);
 	});
 
 	it("reports cumulative canary readiness instead of the latest packet readiness", () => {
@@ -163,6 +448,47 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("failing gate:        none");
 	});
 
+	it("tracks replacement remaining time from continuous release-tagged soak", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					id: "run-1",
+					generatedAt: "2026-06-28T12:00:00.000Z",
+					startedAt: "2026-06-27T00:00:00.000Z",
+					endedAt: "2026-06-28T12:00:00.000Z",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+				run({
+					id: "run-2",
+					generatedAt: "2026-06-30T00:00:00.000Z",
+					startedAt: "2026-06-28T12:00:00.000Z",
+					endedAt: "2026-06-30T00:00:00.000Z",
+					releaseTag: null,
+					observabilityLevel: "tool",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+				run({
+					id: "run-3",
+					generatedAt: "2026-07-01T12:00:00.000Z",
+					startedAt: "2026-06-30T00:00:00.000Z",
+					endedAt: "2026-07-01T12:00:00.000Z",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-07-01T12:00:00.000Z",
+		});
+
+		expect(status.continuousCleanSoakHours).toBe(108);
+		expect(status.releaseTaggedSoakHours).toBe(72);
+		expect(status.releaseContinuousSoakHours).toBe(36);
+		expect(status.remainingReplaceHours).toBe(36);
+	});
+
 	it("does not count untagged qualified evidence for replacement status", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
@@ -206,10 +532,11 @@ describe("buildSoakStatus", () => {
 		expect(status.totalCompletedSoakHours).toBe(1);
 		expect(status.continuousCleanSoakHours).toBe(1);
 		expect(status.releaseTaggedSoakHours).toBe(0);
-		expect(status.remainingReplaceHours).toBe(71);
+		expect(status.releaseContinuousSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
 	});
 
-	it("preserves continuity across bounded runner bookkeeping gaps", () => {
+	it("preserves continuity across bounded promotion-verification gaps", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
 			ledgerRaw: ledger([
@@ -221,13 +548,13 @@ describe("buildSoakStatus", () => {
 				}),
 				run({
 					id: "run-2",
-					generatedAt: "2026-06-27T02:00:39.000Z",
-					startedAt: "2026-06-27T01:00:39.000Z",
-					endedAt: "2026-06-27T02:00:39.000Z",
+					generatedAt: "2026-06-27T02:03:00.000Z",
+					startedAt: "2026-06-27T01:03:00.000Z",
+					endedAt: "2026-06-27T02:03:00.000Z",
 				}),
 			]),
 			runnerAlive: false,
-			generatedAt: "2026-06-27T02:00:39.000Z",
+			generatedAt: "2026-06-27T02:03:00.000Z",
 		});
 
 		expect(status.totalCompletedSoakHours).toBe(2);
@@ -235,7 +562,7 @@ describe("buildSoakStatus", () => {
 		expect(status.continuityLostHours).toBe(0);
 	});
 
-	it("breaks continuity when the runner bookkeeping gap exceeds the bound", () => {
+	it("breaks continuity when the promotion-verification gap exceeds the bound", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
 			ledgerRaw: ledger([
@@ -247,13 +574,13 @@ describe("buildSoakStatus", () => {
 				}),
 				run({
 					id: "run-2",
-					generatedAt: "2026-06-27T02:02:01.000Z",
-					startedAt: "2026-06-27T01:02:01.000Z",
-					endedAt: "2026-06-27T02:02:01.000Z",
+					generatedAt: "2026-06-27T02:15:01.000Z",
+					startedAt: "2026-06-27T01:15:01.000Z",
+					endedAt: "2026-06-27T02:15:01.000Z",
 				}),
 			]),
 			runnerAlive: false,
-			generatedAt: "2026-06-27T02:02:01.000Z",
+			generatedAt: "2026-06-27T02:15:01.000Z",
 		});
 
 		expect(status.totalCompletedSoakHours).toBe(2);
@@ -302,7 +629,87 @@ describe("buildSoakStatus", () => {
 		expect(status.releaseE2ePass).toBe(false);
 		expect(status.remainingReplaceHours).toBe(72);
 		expect(status.warnings).toContain(
-			"Ledger includes public-surface, release-E2E, parity, or unclassified failures.",
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
+		);
+	});
+
+	it("does not credit runs without package smoke proof toward continuous clean soak", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ packageSmokePass: false })]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.totalCompletedSoakHours).toBe(1);
+		expect(status.continuousCleanSoakHours).toBe(0);
+		expect(status.packageSmokePass).toBe(false);
+		expect(status.readinessDecision).toBe("SHADOW");
+		expect(status.readinessFailingGate).toBe("package-smoke");
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(status.warnings).toContain(
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
+		);
+	});
+
+	it("does not credit package-smoke rows without per-binary command proof", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ packageCommands: [] })]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.totalCompletedSoakHours).toBe(1);
+		expect(status.continuousCleanSoakHours).toBe(0);
+		expect(status.packageSmokePass).toBe(false);
+		expect(status.packageCommandEvidenceComplete).toBe(false);
+		expect(status.readinessFailingGate).toBe("package-smoke");
+		expect(status.warnings).toContain(
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
+		);
+	});
+
+	it("does not credit package-smoke rows with wrong-platform command targets", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					packageCommands: packageCommands().map((command) =>
+						command.name === "epoch-http"
+							? {
+									...command,
+									target: "prebuilds/linux-x64/epoch-http",
+								}
+							: command,
+					),
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.packageSmokePass).toBe(false);
+		expect(status.packageCommandEvidenceComplete).toBe(false);
+		expect(status.readinessFailingGate).toBe("package-smoke");
+	});
+
+	it("warns when the packaged CLI hash differs from the soaked Rust binary", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					packageCliSha256:
+						"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.packageCliSha256).not.toBe(status.rustBinarySha256);
+		expect(status.warnings).toContain(
+			"Packaged CLI SHA-256 does not match the soaked Rust binary.",
 		);
 	});
 
