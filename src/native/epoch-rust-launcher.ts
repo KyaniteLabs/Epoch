@@ -167,9 +167,13 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	]),
 	command("feedback-health", "feedback_health", []),
 	command("list-tools", "list_tools", [], { wrapOutput: false }),
+	command("data where", "data_where", [], { wrapOutput: false }),
+	command("data status", "data_status", [], { wrapOutput: false }),
 ];
 
-const CLI_BY_PATH = new Map(RUST_CLI_COMMANDS.map((spec) => [spec.path, spec]));
+const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
+	(left, right) => right.path.split(" ").length - left.path.split(" ").length,
+);
 
 function command(
 	path: string,
@@ -211,13 +215,14 @@ export function planInvocation(
 		return { mode: "mcp", root };
 	}
 
-	const commandPath = args[0] ?? "";
-	const spec = CLI_BY_PATH.get(commandPath);
+	const commandMatch = findRustCliCommand(args);
+	const commandPath = commandMatch?.spec.path ?? args[0] ?? "";
+	const spec = commandMatch?.spec;
 	if (!spec || args.includes("--help") || args.includes("-h")) {
 		return { mode: "typescript", root };
 	}
 
-	const input = parseToolInput(spec, args.slice(1));
+	const input = parseToolInput(spec, args.slice(commandMatch.consumed));
 	return {
 		mode: "rust-cli",
 		commandPath,
@@ -226,6 +231,18 @@ export function planInvocation(
 		root,
 		wrapRustOutput: spec.wrapOutput ?? true,
 	};
+}
+
+function findRustCliCommand(
+	args: string[],
+): { spec: CommandSpec; consumed: number } | null {
+	for (const spec of CLI_COMMANDS_BY_LENGTH) {
+		const parts = spec.path.split(" ");
+		if (parts.every((part, index) => args[index] === part)) {
+			return { spec, consumed: parts.length };
+		}
+	}
+	return null;
 }
 
 function parseRootOptions(argv: string[]): RootOptions {
@@ -469,7 +486,103 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 			};
 		});
 	}
+	if (commandPath === "data where" && isObject(data)) {
+		return {
+			dataDir: data["dataDir"],
+			config: data["config"],
+			estimates: data["estimates"],
+			actuals: data["actuals"],
+			toolTelemetry: data["toolTelemetry"],
+			referenceDatabase: data["referenceDatabase"],
+			exportsDir: data["exportsDir"],
+			receiverRecords: data["receiverRecords"],
+			receiverReceipts: data["receiverReceipts"],
+			receiverDedupeKeys: data["receiverDedupeKeys"],
+		};
+	}
+	if (commandPath === "data status" && isObject(data)) {
+		return {
+			dataDir: data["dataDir"],
+			exists: data["exists"],
+			machine: normalizeMachine(data["machine"]),
+			files: normalizeFiles(data["files"]),
+			feedback: normalizeFeedback(data["feedback"]),
+			telemetry: normalizeTelemetry(data["telemetry"]),
+			referenceDatabase: normalizeReferenceDatabase(data["referenceDatabase"]),
+			roleHints: normalizeRoleHints(data["roleHints"]),
+		};
+	}
 	return data;
+}
+
+function normalizeMachine(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		hostname: value["hostname"],
+		platform: value["platform"],
+		arch: value["arch"],
+	};
+}
+
+function normalizeFiles(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		estimates: normalizeFileStatus(value["estimates"]),
+		actuals: normalizeFileStatus(value["actuals"]),
+		toolTelemetry: normalizeFileStatus(value["toolTelemetry"]),
+		receiverRecords: normalizeFileStatus(value["receiverRecords"]),
+		receiverReceipts: normalizeFileStatus(value["receiverReceipts"]),
+	};
+}
+
+function normalizeFileStatus(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		path: value["path"],
+		exists: value["exists"],
+		lines: value["lines"],
+	};
+}
+
+function normalizeFeedback(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		totalEstimates: value["totalEstimates"],
+		totalActuals: value["totalActuals"],
+		matchedPairs: value["matchedPairs"],
+		matchRate: value["matchRate"],
+	};
+}
+
+function normalizeTelemetry(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		enabled: value["enabled"],
+		endpointConfigured: value["endpointConfigured"],
+		queuedRecords: value["queuedRecords"],
+		lastSubmissionAt: value["lastSubmissionAt"],
+		totalRecordsAccepted: value["totalRecordsAccepted"],
+		totalRecordsDeduplicated: value["totalRecordsDeduplicated"],
+	};
+}
+
+function normalizeReferenceDatabase(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		loaded: value["loaded"],
+		path: value["path"],
+		source: value["source"],
+		sampleSize: value["sampleSize"],
+		generatedAt: value["generatedAt"],
+	};
+}
+
+function normalizeRoleHints(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		hasReceiverRecords: value["hasReceiverRecords"],
+		likelyReceiver: value["likelyReceiver"],
+	};
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

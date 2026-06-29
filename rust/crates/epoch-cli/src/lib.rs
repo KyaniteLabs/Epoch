@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use sha2::Sha256;
 use std::env;
 use std::fs::{create_dir_all, read_to_string, rename, write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -16,6 +16,13 @@ pub use epoch_contract::{CLI_COMMAND_PATHS, PublicSurfaceContract, ToolMetadata,
 
 type HmacSha256 = Hmac<Sha256>;
 const CONFIG_FILE: &str = "config.json";
+const ESTIMATES_FILE: &str = "estimates.jsonl";
+const ACTUALS_FILE: &str = "feedback.jsonl";
+const TOOL_TELEMETRY_FILE: &str = "telemetry.jsonl";
+const REFERENCE_DATABASE_FILE: &str = "reference-database.json";
+const RECEIVER_RECORDS_FILE: &str = "telemetry-records.jsonl";
+const RECEIVER_RECEIPTS_FILE: &str = "telemetry-receipts.jsonl";
+const RECEIVER_DEDUPE_KEYS_FILE: &str = "telemetry-record-keys.jsonl";
 const EXPORTS_DIR: &str = "exports";
 const PLACEHOLDER_TELEMETRY_ENDPOINTS: &[&str] =
     &["https://example.com", "https://example.com/v1/telemetry"];
@@ -132,15 +139,8 @@ fn meta_command_value(command_path: &str, input: Value) -> ToolValueResult {
             "payload": input,
             "message": "Share-data payload prepared locally; publication remains an explicit caller action.",
         })),
-        "data" | "data status" => data_status_value(),
-        "data where" => Ok(json!({
-            "bundled": true,
-            "files": [
-                "data/cocomo-calibration-data.json",
-                "data/supplementary-database.json",
-                "src/data/reference-database.json",
-            ],
-        })),
+        "data" | "data status" => Ok(data_status_value()),
+        "data where" => Ok(data_paths_value()),
         _ => Err(cli_unknown_error(command_path)),
     }
 }
@@ -774,49 +774,244 @@ fn self_improve_value(dispatcher: &mut RustToolDispatcher) -> ToolValueResult {
     }))
 }
 
-fn data_status_value() -> ToolValueResult {
-    let calibration = epoch_data::bundled_cocomo_calibration().map_err(data_error)?;
-    let supplementary = epoch_data::bundled_supplementary_database().map_err(data_error)?;
-    let reference = epoch_data::bundled_reference_database().map_err(data_error)?;
-    let project_count = calibration
-        .datasets
-        .iter()
-        .map(|dataset| dataset.projects.len())
-        .sum::<usize>();
-    let declared_project_count = calibration.project_count;
-    let dataset_names = calibration
-        .datasets
-        .iter()
-        .map(|dataset| dataset.name.as_str())
-        .collect::<Vec<_>>();
-
-    Ok(json!({
-        "bundled": true,
-        "mode": "local-rust-runtime",
-        "cocomo": {
-            "datasetNames": dataset_names,
-            "projectCount": project_count,
-            "declaredProjectCount": declared_project_count,
-            "basicCoefficientModes": calibration.derived_factors.cocomo_basic.keys().collect::<Vec<_>>(),
-        },
-        "supplementary": {
-            "loaded": true,
-            "hasModelCalibration": supplementary.get("modelCalibration").is_some(),
-            "hasReferenceClassBaselines": supplementary.get("referenceClassBaselines").is_some(),
-        },
-        "reference": {
-            "loaded": true,
-            "hasToolExecutionBenchmarks": reference.get("toolExecutionBenchmarks").is_some(),
-            "hasTaskTypeCorrectionFactors": reference.get("taskTypeCorrectionFactors").is_some(),
-        },
-    }))
+fn data_paths() -> DataPaths {
+    let dir = epoch_data_dir();
+    DataPaths {
+        data_dir: dir.clone(),
+        config: dir.join(CONFIG_FILE),
+        estimates: dir.join(ESTIMATES_FILE),
+        actuals: dir.join(ACTUALS_FILE),
+        tool_telemetry: dir.join(TOOL_TELEMETRY_FILE),
+        reference_database: dir.join(REFERENCE_DATABASE_FILE),
+        exports_dir: dir.join(EXPORTS_DIR),
+        receiver_records: dir.join(RECEIVER_RECORDS_FILE),
+        receiver_receipts: dir.join(RECEIVER_RECEIPTS_FILE),
+        receiver_dedupe_keys: dir.join(RECEIVER_DEDUPE_KEYS_FILE),
+    }
 }
 
-fn data_error(error: serde_json::Error) -> ToolError {
-    ToolError::new(
-        format!("Bundled Epoch data failed to parse: {error}."),
-        "Run the Rust data crate tests and repair the bundled JSON data files.",
-    )
+#[derive(Debug, Clone)]
+struct DataPaths {
+    data_dir: PathBuf,
+    config: PathBuf,
+    estimates: PathBuf,
+    actuals: PathBuf,
+    tool_telemetry: PathBuf,
+    reference_database: PathBuf,
+    exports_dir: PathBuf,
+    receiver_records: PathBuf,
+    receiver_receipts: PathBuf,
+    receiver_dedupe_keys: PathBuf,
+}
+
+fn data_paths_value() -> Value {
+    let paths = data_paths();
+    json!({
+        "dataDir": path_string(&paths.data_dir),
+        "config": path_string(&paths.config),
+        "estimates": path_string(&paths.estimates),
+        "actuals": path_string(&paths.actuals),
+        "toolTelemetry": path_string(&paths.tool_telemetry),
+        "referenceDatabase": path_string(&paths.reference_database),
+        "exportsDir": path_string(&paths.exports_dir),
+        "receiverRecords": path_string(&paths.receiver_records),
+        "receiverReceipts": path_string(&paths.receiver_receipts),
+        "receiverDedupeKeys": path_string(&paths.receiver_dedupe_keys),
+    })
+}
+
+fn data_status_value() -> Value {
+    let paths = data_paths();
+    let estimates = file_status(&paths.estimates);
+    let actuals = file_status(&paths.actuals);
+    let tool_telemetry = file_status(&paths.tool_telemetry);
+    let receiver_records = file_status(&paths.receiver_records);
+    let receiver_receipts = file_status(&paths.receiver_receipts);
+    let matched_pairs = count_matched_pairs(&paths.estimates, &paths.actuals);
+    let total_estimates = estimates["lines"].as_u64().unwrap_or(0);
+    let total_actuals = actuals["lines"].as_u64().unwrap_or(0);
+    let match_rate = if total_estimates > 0 {
+        ((matched_pairs as f64 / total_estimates as f64) * 1000.0).round() / 10.0
+    } else {
+        0.0
+    };
+    let telemetry = data_telemetry_status();
+    let reference_database = reference_database_status(&paths.reference_database);
+    let has_receiver_records = receiver_records["exists"].as_bool().unwrap_or(false)
+        && receiver_records["lines"].as_u64().unwrap_or(0) > 0;
+
+    json!({
+        "dataDir": path_string(&paths.data_dir),
+        "exists": paths.data_dir.exists(),
+        "machine": {
+            "hostname": hostname(),
+            "platform": node_platform(),
+            "arch": node_arch(),
+        },
+        "files": {
+            "estimates": estimates,
+            "actuals": actuals,
+            "toolTelemetry": tool_telemetry,
+            "receiverRecords": receiver_records,
+            "receiverReceipts": receiver_receipts,
+        },
+        "feedback": {
+            "totalEstimates": total_estimates,
+            "totalActuals": total_actuals,
+            "matchedPairs": matched_pairs,
+            "matchRate": match_rate,
+        },
+        "telemetry": telemetry,
+        "referenceDatabase": reference_database,
+        "roleHints": {
+            "hasReceiverRecords": has_receiver_records,
+            "likelyReceiver": has_receiver_records,
+        },
+    })
+}
+
+fn file_status(path: &Path) -> Value {
+    let exists = path.exists();
+    json!({
+        "path": path_string(path),
+        "exists": exists,
+        "lines": if exists { count_lines(path) } else { 0 },
+    })
+}
+
+fn count_lines(path: &Path) -> usize {
+    read_to_string(path)
+        .map(|raw| raw.lines().filter(|line| !line.trim().is_empty()).count())
+        .unwrap_or(0)
+}
+
+fn count_matched_pairs(estimates_path: &Path, actuals_path: &Path) -> usize {
+    let Ok(raw_estimates) = read_to_string(estimates_path) else {
+        return 0;
+    };
+    let estimate_ids = raw_estimates
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|value| value.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect::<std::collections::BTreeSet<_>>();
+    if estimate_ids.is_empty() {
+        return 0;
+    }
+
+    let Ok(raw_actuals) = read_to_string(actuals_path) else {
+        return 0;
+    };
+    raw_actuals
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|value| {
+            value
+                .get("estimateId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|id| estimate_ids.contains(id))
+        .count()
+}
+
+fn data_telemetry_status() -> Value {
+    let config = load_config();
+    let queued_records =
+        extract_anonymized_records_from_epoch_data(config.telemetry.last_submission_at.as_deref())
+            .map(|records| records.len())
+            .unwrap_or(0);
+    json!({
+        "enabled": config.telemetry.enabled,
+        "endpointConfigured": is_usable_telemetry_endpoint(&config.telemetry.endpoint),
+        "queuedRecords": queued_records,
+        "lastSubmissionAt": config.telemetry.last_submission_at,
+        "totalRecordsAccepted": config.telemetry.total_records_accepted,
+        "totalRecordsDeduplicated": config.telemetry.total_records_deduplicated,
+    })
+}
+
+fn reference_database_status(local_path: &Path) -> Value {
+    let local_exists = local_path.exists();
+    let db = if local_exists {
+        read_reference_database(local_path)
+    } else if let Some(user_path) = user_reference_database_path().filter(|path| path.exists()) {
+        read_reference_database(&user_path)
+    } else {
+        epoch_data::bundled_reference_database().ok()
+    };
+
+    let Some(db) = db else {
+        return json!({
+            "loaded": false,
+            "path": path_string(local_path),
+            "source": Value::Null,
+            "sampleSize": Value::Null,
+            "generatedAt": Value::Null,
+        });
+    };
+
+    json!({
+        "loaded": true,
+        "path": if local_exists { path_string(local_path) } else { "(bundled)".to_string() },
+        "source": db.get("source").cloned().unwrap_or(Value::Null),
+        "sampleSize": db.get("sampleSize").cloned().unwrap_or(Value::Null),
+        "generatedAt": db.get("generatedAt").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn read_reference_database(path: &Path) -> Option<Value> {
+    read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+}
+
+fn user_reference_database_path() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .map(|home| home.join(".epoch").join(REFERENCE_DATABASE_FILE))
+}
+
+fn hostname() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            env::var("COMPUTERNAME")
+                .or_else(|_| env::var("HOSTNAME"))
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_default()
+}
+
+fn node_platform() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "darwin",
+        "windows" => "win32",
+        other => other,
+    }
+}
+
+fn node_arch() -> &'static str {
+    match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "x86" => "ia32",
+        "aarch64" => "arm64",
+        other => other,
+    }
+}
+
+fn path_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 fn cli_unknown_error(command_path: &str) -> ToolError {
@@ -923,8 +1118,24 @@ mod tests {
 
         let data =
             run_cli_command(&mut dispatcher, "data status", json!({})).expect("data status runs");
-        assert_eq!(data["cocomo"]["projectCount"], 195);
-        assert_eq!(data["supplementary"]["hasModelCalibration"], true);
+        assert_eq!(data["dataDir"], data_dir.to_string_lossy().as_ref());
+        assert_eq!(data["exists"], true);
+        assert_eq!(data["files"]["estimates"]["lines"], 0);
+        assert_eq!(data["feedback"]["totalEstimates"], 0);
+        assert_eq!(data["telemetry"]["queuedRecords"], 0);
+        assert_eq!(data["referenceDatabase"]["loaded"], true);
+        assert_eq!(data["referenceDatabase"]["path"], "(bundled)");
+
+        let data_where =
+            run_cli_command(&mut dispatcher, "data where", json!({})).expect("data where runs");
+        assert_eq!(data_where["dataDir"], data_dir.to_string_lossy().as_ref());
+        assert_eq!(
+            data_where["receiverDedupeKeys"],
+            data_dir
+                .join("telemetry-record-keys.jsonl")
+                .to_string_lossy()
+                .as_ref()
+        );
 
         let share = run_cli_command(&mut dispatcher, "share-data", json!({ "ok": true }))
             .expect("share-data runs");

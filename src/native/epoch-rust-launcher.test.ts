@@ -57,7 +57,7 @@ describe("epoch-rust-launcher", () => {
 		expect(planInvocation(["telemetry", "status"]).mode).toBe("typescript");
 		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
 		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
-		expect(planInvocation(["data", "status"]).mode).toBe("typescript");
+		expect(planInvocation(["data"]).mode).toBe("typescript");
 	});
 
 	it("routes shape-compatible list-tools to Rust without wrapping output", () => {
@@ -67,6 +67,18 @@ describe("epoch-rust-launcher", () => {
 		expect(plan.commandPath).toBe("list-tools");
 		expect(plan.wrapRustOutput).toBe(false);
 		expect(plan.input).toEqual({});
+	});
+
+	it("routes shape-compatible data inspection subcommands to Rust", () => {
+		const where = planInvocation(["data", "where"]);
+		const status = planInvocation(["data", "status"]);
+
+		expect(where.mode).toBe("rust-cli");
+		expect(where.commandPath).toBe("data where");
+		expect(where.wrapRustOutput).toBe(false);
+		expect(status.mode).toBe("rust-cli");
+		expect(status.commandPath).toBe("data status");
+		expect(status.wrapRustOutput).toBe(false);
 	});
 
 	it("builds nested time-math operands for Rust CLI", () => {
