@@ -90,6 +90,7 @@ type SoakStatus = {
 	continuityLostHours: number;
 	continuousGapSeconds: number;
 	releaseTaggedSoakHours: number;
+	releaseContinuousSoakHours: number;
 	releaseTag: string | null;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
@@ -462,6 +463,12 @@ function longestContinuousCleanSoakHours(runs: LedgerRun[]): number {
 	return longestObservedMs / 3_600_000;
 }
 
+function releaseTaggedRuns(runs: LedgerRun[]): LedgerRun[] {
+	return runs.filter(
+		(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+	);
+}
+
 function isRunnerProcessAlive(state: RunnerState | null): boolean {
 	if (!state?.pid) return false;
 	try {
@@ -574,12 +581,10 @@ export function buildSoakStatus(input: {
 	const totalCompletedSoakHours = numberSum(runs.map((run) => run.soakHours));
 	const continuousCleanSoakHours = longestContinuousCleanSoakHours(runs);
 	const releaseTaggedSoakHours = numberSum(
-		runs
-			.filter(
-				(run) =>
-					run.observabilityLevel === "release" && run.releaseTag !== null,
-			)
-			.map((run) => run.soakHours),
+		releaseTaggedRuns(runs).map((run) => run.soakHours),
+	);
+	const releaseContinuousSoakHours = longestContinuousCleanSoakHours(
+		releaseTaggedRuns(runs),
 	);
 	const releaseTags = releaseIdentitySet(runs);
 	const releaseTag =
@@ -715,6 +720,7 @@ export function buildSoakStatus(input: {
 		),
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		releaseTaggedSoakHours,
+		releaseContinuousSoakHours,
 		releaseTag,
 		qualifiedPerformanceEvidence,
 		releaseE2ePass,
@@ -725,7 +731,7 @@ export function buildSoakStatus(input: {
 		remainingCanaryHours: Math.max(0, CANARY_SOAK_HOURS - continuousCleanSoakHours),
 		remainingReplaceHours: Math.max(
 			0,
-			REPLACE_SOAK_HOURS - continuousCleanSoakHours,
+			REPLACE_SOAK_HOURS - releaseContinuousSoakHours,
 		),
 		latestRun,
 		rustBinarySha256,
@@ -758,6 +764,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  continuity lost:     ${formatHours(status.continuityLostHours)}h`,
 		`  max clean gap:       ${status.continuousGapSeconds}s`,
 		`  release-tagged soak: ${formatHours(status.releaseTaggedSoakHours)}h`,
+		`  release continuous:  ${formatHours(status.releaseContinuousSoakHours)}h`,
 		`  release identity:    ${status.releaseTag ?? "none"}`,
 		`  qualified perf:      ${status.qualifiedPerformanceEvidence}`,
 		`  release e2e:         ${status.releaseE2ePass} (${status.publicSurfaceCoveragePercent}%)`,

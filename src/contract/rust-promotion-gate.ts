@@ -157,6 +157,7 @@ const ledgerSummarySchema = z.object({
 	totalSoakHours: z.number().nonnegative(),
 	continuousSoakHours: z.number().nonnegative(),
 	releaseTaggedSoakHours: z.number().nonnegative(),
+	releaseContinuousSoakHours: z.number().nonnegative(),
 	releaseTag: z.string().nullable().default(null),
 	qualifiedPerformanceEvidence: z.boolean().default(false),
 	releaseE2ePass: z.boolean().default(false),
@@ -715,6 +716,18 @@ export function assessPromotionGateFromLedgerSummary(
 			"Replacement requires release-tagged cumulative soak evidence.",
 		);
 	}
+	if (
+		target === "replace" &&
+		summary.releaseContinuousSoakHours < REQUIRED_SOAK_HOURS.replace
+	) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			`Ledger summary has ${summary.releaseContinuousSoakHours.toFixed(4)} continuous release-tagged soak hours; replacement requires ${REQUIRED_SOAK_HOURS.replace}.`,
+		);
+	}
 	const releaseIdentityBlocker = releaseIdentityGate(
 		target,
 		decision,
@@ -912,6 +925,12 @@ function longestContinuousCleanSoakHours(runs: LedgerRun[]): number {
 	return longestObservedMs / 3_600_000;
 }
 
+function releaseTaggedRuns(runs: LedgerRun[]): LedgerRun[] {
+	return runs.filter(
+		(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+	);
+}
+
 export function buildGateLedgerSummary(
 	rawLedger: unknown,
 ): z.infer<typeof ledgerSummarySchema> {
@@ -921,13 +940,12 @@ export function buildGateLedgerSummary(
 	);
 	const totalSoakHours = numberSum(runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
+	const releaseRuns = releaseTaggedRuns(runs);
 	const releaseTaggedSoakHours = numberSum(
-		runs
-			.filter(
-				(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
-			)
-			.map((run) => run.soakHours),
+		releaseRuns.map((run) => run.soakHours),
 	);
+	const releaseContinuousSoakHours =
+		longestContinuousCleanSoakHours(releaseRuns);
 	const allSoakIsRelease =
 		totalSoakHours > 0 &&
 		Math.abs(releaseTaggedSoakHours - totalSoakHours) < 1e-9;
@@ -995,6 +1013,7 @@ export function buildGateLedgerSummary(
 			totalSoakHours,
 			continuousSoakHours,
 			releaseTaggedSoakHours,
+			releaseContinuousSoakHours,
 			releaseTag: ledgerReleaseTag(runs),
 			qualifiedPerformanceEvidence: runs.some(
 			hasReleaseQualifiedPerformanceEvidence,

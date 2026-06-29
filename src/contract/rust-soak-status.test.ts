@@ -96,10 +96,11 @@ describe("buildSoakStatus", () => {
 		expect(status.runCount).toBe(1);
 		expect(status.totalCompletedSoakHours).toBe(1);
 		expect(status.continuousCleanSoakHours).toBe(1);
-			expect(status.continuousGapSeconds).toBe(900);
-			expect(status.releaseTaggedSoakHours).toBe(1);
-			expect(status.releaseTag).toBe("candidate-1");
-			expect(status.qualifiedPerformanceEvidence).toBe(false);
+		expect(status.continuousGapSeconds).toBe(900);
+		expect(status.releaseTaggedSoakHours).toBe(1);
+		expect(status.releaseContinuousSoakHours).toBe(1);
+		expect(status.releaseTag).toBe("candidate-1");
+		expect(status.qualifiedPerformanceEvidence).toBe(false);
 		expect(status.releaseE2ePass).toBe(true);
 		expect(status.publicSurfaceCoveragePercent).toBe(100);
 		expect(status.httpDeployEnvCoveragePercent).toBe(100);
@@ -112,11 +113,12 @@ describe("buildSoakStatus", () => {
 		]);
 		expect(formatSoakStatus(status)).toContain("runner:              active");
 		expect(formatSoakStatus(status)).toContain("max clean gap:       900s");
-			expect(formatSoakStatus(status)).toContain("qualified perf:      false");
-			expect(formatSoakStatus(status)).toContain(
-				"release identity:    candidate-1",
-			);
-			expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
+		expect(formatSoakStatus(status)).toContain("release continuous:  1.0000h");
+		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
+		expect(formatSoakStatus(status)).toContain(
+			"release identity:    candidate-1",
+		);
+		expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
 		expect(formatSoakStatus(status)).toContain("package smoke:       true");
 		expect(formatSoakStatus(status)).toContain(
 			"runner release tag:  candidate-1",
@@ -194,6 +196,47 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("failing gate:        none");
 	});
 
+	it("tracks replacement remaining time from continuous release-tagged soak", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					id: "run-1",
+					generatedAt: "2026-06-28T12:00:00.000Z",
+					startedAt: "2026-06-27T00:00:00.000Z",
+					endedAt: "2026-06-28T12:00:00.000Z",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+				run({
+					id: "run-2",
+					generatedAt: "2026-06-30T00:00:00.000Z",
+					startedAt: "2026-06-28T12:00:00.000Z",
+					endedAt: "2026-06-30T00:00:00.000Z",
+					releaseTag: null,
+					observabilityLevel: "tool",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+				run({
+					id: "run-3",
+					generatedAt: "2026-07-01T12:00:00.000Z",
+					startedAt: "2026-06-30T00:00:00.000Z",
+					endedAt: "2026-07-01T12:00:00.000Z",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-07-01T12:00:00.000Z",
+		});
+
+		expect(status.continuousCleanSoakHours).toBe(108);
+		expect(status.releaseTaggedSoakHours).toBe(72);
+		expect(status.releaseContinuousSoakHours).toBe(36);
+		expect(status.remainingReplaceHours).toBe(36);
+	});
+
 	it("does not count untagged qualified evidence for replacement status", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",
@@ -237,7 +280,8 @@ describe("buildSoakStatus", () => {
 		expect(status.totalCompletedSoakHours).toBe(1);
 		expect(status.continuousCleanSoakHours).toBe(1);
 		expect(status.releaseTaggedSoakHours).toBe(0);
-		expect(status.remainingReplaceHours).toBe(71);
+		expect(status.releaseContinuousSoakHours).toBe(0);
+		expect(status.remainingReplaceHours).toBe(72);
 	});
 
 	it("preserves continuity across bounded promotion-verification gaps", () => {

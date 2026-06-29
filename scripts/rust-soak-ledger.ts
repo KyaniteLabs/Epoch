@@ -91,6 +91,7 @@ type LedgerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	releaseContinuousSoakHours: number;
 	releaseTag: string | null;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
@@ -671,17 +672,19 @@ function longestContinuousCleanSoakHours(runs: LedgerRun[]): number {
 	return longestObservedMs / 3_600_000;
 }
 
+function releaseTaggedRuns(runs: LedgerRun[]): LedgerRun[] {
+	return runs.filter(
+		(run) => run.observabilityLevel === "release" && run.releaseTag !== null,
+	);
+}
+
 function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 	const totalSoakHours = numberSum(runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(runs);
 	const rustBinarySha256 = ledgerBinarySha256(runs);
+	const releaseRuns = releaseTaggedRuns(runs);
 	const releaseSoakHours = numberSum(
-		runs
-			.filter(
-				(run) =>
-					run.observabilityLevel === "release" && run.releaseTag !== null,
-			)
-			.map((run) => run.soakHours),
+		releaseRuns.map((run) => run.soakHours),
 	);
 	const allSoakIsRelease =
 		totalSoakHours > 0 && Math.abs(releaseSoakHours - totalSoakHours) < 1e-9;
@@ -759,12 +762,10 @@ function buildSummary(
 	readiness: ReadinessAssessment,
 ): LedgerSummary {
 	const releaseTaggedSoakHours = numberSum(
-		ledger.runs
-			.filter(
-				(run) =>
-					run.observabilityLevel === "release" && run.releaseTag !== null,
-			)
-			.map((run) => run.soakHours),
+		releaseTaggedRuns(ledger.runs).map((run) => run.soakHours),
+	);
+	const releaseContinuousSoakHours = longestContinuousCleanSoakHours(
+		releaseTaggedRuns(ledger.runs),
 	);
 	const totalSoakHours = numberSum(ledger.runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
@@ -799,6 +800,7 @@ function buildSummary(
 		continuousSoakHours,
 		continuityLostHours: Math.max(0, totalSoakHours - continuousSoakHours),
 		releaseTaggedSoakHours,
+		releaseContinuousSoakHours,
 		releaseTag,
 		qualifiedPerformanceEvidence,
 		releaseE2ePass,
@@ -829,6 +831,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
+			`  release continuous:  ${summary.releaseContinuousSoakHours.toFixed(4)}`,
 			`  release identity:    ${summary.releaseTag ?? "none"}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,

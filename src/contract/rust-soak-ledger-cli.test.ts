@@ -143,6 +143,7 @@ describe("rust-soak-ledger CLI", () => {
 
 		const summary = JSON.parse(readFileSync(secondSummary, "utf8")) as {
 				continuousSoakHours: number;
+				releaseContinuousSoakHours: number;
 				releaseTag: string | null;
 				qualifiedPerformanceEvidence: boolean;
 			releaseE2ePass: boolean;
@@ -152,6 +153,7 @@ describe("rust-soak-ledger CLI", () => {
 			readiness: { failingGate: string | null };
 			};
 			expect(summary.continuousSoakHours).toBe(2);
+			expect(summary.releaseContinuousSoakHours).toBe(2);
 			expect(summary.releaseTag).toBe("candidate-1");
 			expect(summary.qualifiedPerformanceEvidence).toBe(true);
 		expect(summary.releaseE2ePass).toBe(true);

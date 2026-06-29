@@ -58,6 +58,7 @@ type LedgerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	releaseContinuousSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
@@ -97,6 +98,7 @@ type RunnerSummary = {
 	continuousSoakHours: number;
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
+	releaseContinuousSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
@@ -318,6 +320,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 		typeof raw.totalSoakHours !== "number" ||
 		typeof raw.continuousSoakHours !== "number" ||
 		typeof raw.releaseTaggedSoakHours !== "number" ||
+		typeof raw.releaseContinuousSoakHours !== "number" ||
 		typeof raw.qualifiedPerformanceEvidence !== "boolean" ||
 		typeof raw.continuousGapSeconds !== "number" ||
 		typeof raw.canarySoakHoursRequired !== "number" ||
@@ -338,6 +341,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 				? raw.continuityLostHours
 				: Math.max(0, raw.totalSoakHours - raw.continuousSoakHours),
 		releaseTaggedSoakHours: raw.releaseTaggedSoakHours,
+		releaseContinuousSoakHours: raw.releaseContinuousSoakHours,
 		qualifiedPerformanceEvidence: raw.qualifiedPerformanceEvidence,
 		releaseE2ePass: raw.releaseE2ePass === true,
 		publicSurfaceCoveragePercent:
@@ -715,6 +719,7 @@ function buildRunnerSummary(
 		continuousSoakHours: ledgerSummary.continuousSoakHours,
 		continuityLostHours: ledgerSummary.continuityLostHours,
 		releaseTaggedSoakHours: ledgerSummary.releaseTaggedSoakHours,
+		releaseContinuousSoakHours: ledgerSummary.releaseContinuousSoakHours,
 		qualifiedPerformanceEvidence: ledgerSummary.qualifiedPerformanceEvidence,
 		releaseE2ePass: ledgerSummary.releaseE2ePass,
 		publicSurfaceCoveragePercent: ledgerSummary.publicSurfaceCoveragePercent,
@@ -751,6 +756,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  total soak hours:    ${summary.totalSoakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
+			`  release continuous:  ${summary.releaseContinuousSoakHours.toFixed(4)}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  package smoke:       ${summary.packageSmokePass}`,

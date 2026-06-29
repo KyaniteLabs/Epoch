@@ -64,6 +64,7 @@ function ledgerSummary(overrides: Record<string, unknown> = {}) {
 		totalSoakHours: 24,
 		continuousSoakHours: 24,
 		releaseTaggedSoakHours: 24,
+		releaseContinuousSoakHours: 24,
 		releaseTag: "candidate-1",
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
@@ -467,6 +468,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 0,
+				releaseContinuousSoakHours: 0,
 				readiness: {
 					decision: "CANARY",
 					failingGate: "observability",
@@ -481,12 +483,39 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 		expect(result.reason).toContain("release-tagged cumulative soak evidence");
 	});
 
+	it("blocks replacement from cumulative evidence without continuous release-tagged soak", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				totalSoakHours: 108,
+				continuousSoakHours: 108,
+				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 36,
+				qualifiedPerformanceEvidence: true,
+				readiness: {
+					decision: "REPLACE",
+					failingGate: null,
+					rationale: "Ready for replacement.",
+				},
+			}),
+			"replace",
+			{
+				currentRustBinarySha256: RUST_BINARY_SHA256,
+				currentReleaseTag: "candidate-1",
+				deploySurface: rustDeploySurface,
+			},
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("continuous release-tagged soak");
+	});
+
 	it("blocks replacement from cumulative summary without a durable release identity", () => {
 		const result = assessPromotionGateFromLedgerSummary(
 			ledgerSummary({
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				releaseTag: null,
 				qualifiedPerformanceEvidence: true,
 				readiness: {
@@ -512,6 +541,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
@@ -537,6 +567,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
@@ -561,6 +592,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: false,
 				readiness: {
 					decision: "REPLACE",
@@ -611,6 +643,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
@@ -636,6 +669,7 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 				totalSoakHours: 72,
 				continuousSoakHours: 72,
 				releaseTaggedSoakHours: 72,
+				releaseContinuousSoakHours: 72,
 				qualifiedPerformanceEvidence: true,
 				readiness: {
 					decision: "REPLACE",
@@ -899,6 +933,44 @@ describe("assessPromotionGateFromLedger", () => {
 
 		expect(summary.totalSoakHours).toBe(2);
 		expect(summary.continuousSoakHours).toBe(2);
+		expect(summary.releaseContinuousSoakHours).toBe(2);
+	});
+
+	it("does not treat release-tagged soak split by untagged soak as continuous replacement evidence", () => {
+		const summary = buildGateLedgerSummary(
+			ledger([
+				ledgerRun({
+					id: "run-1",
+					generatedAt: "2026-06-27T12:00:00.000Z",
+					startedAt: "2026-06-27T00:00:00.000Z",
+					endedAt: "2026-06-28T12:00:00.000Z",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+				ledgerRun({
+					id: "run-2",
+					generatedAt: "2026-06-29T00:00:00.000Z",
+					startedAt: "2026-06-28T12:00:00.000Z",
+					endedAt: "2026-06-30T00:00:00.000Z",
+					releaseTag: null,
+					observabilityLevel: "tool",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+				ledgerRun({
+					id: "run-3",
+					generatedAt: "2026-06-30T12:00:00.000Z",
+					startedAt: "2026-06-30T00:00:00.000Z",
+					endedAt: "2026-07-01T12:00:00.000Z",
+					soakHours: 36,
+					continuousSoakHours: 36,
+				}),
+			]),
+		);
+
+		expect(summary.continuousSoakHours).toBe(108);
+		expect(summary.releaseTaggedSoakHours).toBe(72);
+		expect(summary.releaseContinuousSoakHours).toBe(36);
 	});
 
 	it("blocks replacement when release observability lacks a durable release tag", () => {
