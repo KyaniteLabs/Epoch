@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 type OutputFormat = "json" | "table";
+type RawOutputFormat = "json" | "text";
 type Mode = "mcp" | "http" | "rust-cli" | "typescript";
 type JsonObject = Record<string, unknown>;
 type OptionType =
@@ -23,6 +24,7 @@ export type LauncherPlan = {
 	httpEnv?: Record<string, string>;
 	wrapRustOutput?: boolean;
 	rawRustOutputIndent?: number | null;
+	rawRustOutputFormat?: RawOutputFormat;
 };
 
 type RootOptions = {
@@ -46,6 +48,7 @@ export type CommandSpec = {
 	build?: (values: JsonObject) => JsonObject;
 	wrapOutput?: boolean;
 	rawOutputIndent?: number | null;
+	rawOutputFormat?: RawOutputFormat;
 	route?: (args: string[]) => boolean;
 };
 
@@ -202,6 +205,15 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		wrapOutput: false,
 		rawOutputIndent: null,
 	}),
+	{
+		...command("telemetry delete-data", "telemetry_delete_data", [
+			option("--confirm", "confirm", "boolean"),
+		], {
+			wrapOutput: false,
+			rawOutputFormat: "text",
+		}),
+		build: ({ confirm: _confirm }) => ({}),
+	},
 ];
 
 const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
@@ -212,7 +224,10 @@ function command(
 	path: string,
 	toolName: string,
 	options: OptionSpec[],
-	extra: Pick<CommandSpec, "wrapOutput" | "rawOutputIndent" | "route"> = {},
+	extra: Pick<
+		CommandSpec,
+		"wrapOutput" | "rawOutputIndent" | "rawOutputFormat" | "route"
+	> = {},
 ): CommandSpec {
 	return { path, toolName, options, ...extra };
 }
@@ -269,6 +284,7 @@ export function planInvocation(
 		root,
 		wrapRustOutput: spec.wrapOutput ?? true,
 		rawRustOutputIndent: spec.rawOutputIndent,
+		rawRustOutputFormat: spec.rawOutputFormat,
 	};
 }
 
@@ -485,6 +501,10 @@ function runRustCli(
 		const data = parseJson(child.stdout);
 		if (plan.wrapRustOutput === false) {
 			const rawOutput = normalizeRawRustOutput(commandPath, data);
+			if (plan.rawRustOutputFormat === "text") {
+				process.stdout.write(String(rawOutput));
+				return 0;
+			}
 			const indent = plan.rawRustOutputIndent === null
 				? undefined
 				: (plan.rawRustOutputIndent ?? 2);
@@ -599,7 +619,29 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 			message: data["message"],
 		};
 	}
+	if (commandPath === "telemetry delete-data" && isObject(data)) {
+		return formatTelemetryDeleteData(data["installationId"]);
+	}
 	return data;
+}
+
+function formatTelemetryDeleteData(installationId: unknown): string {
+	const id = typeof installationId === "string" && installationId.length > 0
+		? installationId
+		: "(not generated)";
+	return [
+		"To delete your telemetry data:",
+		"",
+		"1. Delete local data:",
+		"   rm -rf ~/.epoch/estimates.jsonl ~/.epoch/feedback.jsonl ~/.epoch/telemetry.jsonl",
+		"",
+		"2. Delete config:",
+		"   rm ~/.epoch/config.json",
+		"",
+		`3. Your installation ID: ${id}`,
+		"   (When a server endpoint is configured, this ID can be used to request remote deletion.)",
+		"",
+	].join("\n");
 }
 
 function normalizeMachine(value: unknown): unknown {

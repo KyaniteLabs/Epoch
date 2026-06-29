@@ -65,7 +65,6 @@ describe("epoch-rust-launcher", () => {
 			]).mode,
 		).toBe("typescript");
 		expect(planInvocation(["telemetry", "submit"]).mode).toBe("typescript");
-		expect(planInvocation(["telemetry", "delete-data"]).mode).toBe("typescript");
 		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
 		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
 		expect(planInvocation(["data"]).mode).toBe("typescript");
@@ -115,6 +114,7 @@ describe("epoch-rust-launcher", () => {
 			"https://collector.example.net/v1/telemetry",
 		]);
 		const disable = planInvocation(["telemetry", "disable"]);
+		const deleteData = planInvocation(["telemetry", "delete-data", "--confirm"]);
 
 		expect(status.mode).toBe("rust-cli");
 		expect(status.commandPath).toBe("telemetry status");
@@ -145,6 +145,11 @@ describe("epoch-rust-launcher", () => {
 		expect(disable.commandPath).toBe("telemetry disable");
 		expect(disable.wrapRustOutput).toBe(false);
 		expect(disable.rawRustOutputIndent).toBeNull();
+		expect(deleteData.mode).toBe("rust-cli");
+		expect(deleteData.commandPath).toBe("telemetry delete-data");
+		expect(deleteData.input).toEqual({});
+		expect(deleteData.wrapRustOutput).toBe(false);
+		expect(deleteData.rawRustOutputFormat).toBe("text");
 	});
 
 	it("builds nested time-math operands for Rust CLI", () => {
