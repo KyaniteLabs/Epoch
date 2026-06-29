@@ -540,11 +540,16 @@ function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 
 function ledgerPackageCliSha256(runs: LedgerRun[]): string | null {
 	if (runs.length === 0) return null;
-	if (runs.some((run) => !run.packageCliSha256)) return null;
+	const missingIdentity = runs.find((run) => !run.packageCliSha256);
+	if (missingIdentity) {
+		throw new Error(
+			`Soak run ${missingIdentity.id} is missing packageCliSha256; start a fresh ledger or regenerate the packet with current tooling.`,
+		);
+	}
 	const identities = new Set(runs.map((run) => run.packageCliSha256));
 	if (identities.size > 1) {
 		throw new Error(
-			`Mixed package CLI identities in soak ledger: ${Array.from(identities).join(", ")}. Use a separate ledger per package build.`,
+			`Mixed packaged CLI identities in soak ledger: ${Array.from(identities).join(", ")}. Use a separate ledger per package build.`,
 		);
 	}
 	return runs[0]?.packageCliSha256 ?? null;
