@@ -471,12 +471,18 @@ async function main(): Promise<void> {
 		"--quiet",
 	], options);
 
-	const readinessInput = normalizeReadinessEvidence({
-		parity: readJson(rollbackPath),
-		perf: readJson(perfPath),
-	});
 	const perfReport = readJson(perfPath);
 	const e2eReport = readJson(e2ePath);
+	const e2e = e2eEvidence(e2eReport);
+	const readinessInput = normalizeReadinessEvidence({
+		parity: {
+			...(readJson(rollbackPath) as Record<string, unknown>),
+			releaseE2ePass: e2e.releaseE2ePass,
+			publicSurfaceCoveragePercent: e2e.publicSurfaceCoveragePercent ?? 0,
+			httpDeployEnvCoveragePercent: e2e.httpDeployEnvCoveragePercent ?? 0,
+		},
+		perf: perfReport,
+	});
 	const shadowSoak = readJson(shadowPath);
 	const readiness = assessDeployReadiness(readinessInput);
 	const summary = buildSummary(

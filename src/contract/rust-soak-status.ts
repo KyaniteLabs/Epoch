@@ -32,6 +32,9 @@ type LedgerRun = {
 	releaseTag: string | null;
 	rustBinarySha256: string | null;
 	publicSurfaceMatch: boolean;
+	releaseE2ePass: boolean;
+	publicSurfaceCoveragePercent: number;
+	httpDeployEnvCoveragePercent: number;
 	soakHours: number;
 	continuousSoakHours: number;
 	crashes: number;
@@ -65,6 +68,9 @@ type SoakStatus = {
 	continuousGapSeconds: number;
 	releaseTaggedSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
+	releaseE2ePass: boolean;
+	publicSurfaceCoveragePercent: number;
+	httpDeployEnvCoveragePercent: number;
 	remainingCanaryHours: number;
 	remainingReplaceHours: number;
 	latestRun: LedgerRun | null;
@@ -182,6 +188,15 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 		releaseTag: stringField(raw, "releaseTag"),
 		rustBinarySha256: stringField(raw, "rustBinarySha256"),
 		publicSurfaceMatch: raw.publicSurfaceMatch === true,
+		releaseE2ePass: raw.releaseE2ePass === true,
+		publicSurfaceCoveragePercent: numberField(
+			raw,
+			"publicSurfaceCoveragePercent",
+		),
+		httpDeployEnvCoveragePercent: numberField(
+			raw,
+			"httpDeployEnvCoveragePercent",
+		),
 		soakHours: numberField(raw, "soakHours"),
 		continuousSoakHours: numberField(raw, "continuousSoakHours"),
 		crashes: numberField(raw, "crashes"),
@@ -242,6 +257,10 @@ function numberSum(values: number[]): number {
 	return values.reduce((total, value) => total + value, 0);
 }
 
+function numberMin(values: number[]): number {
+	return values.length ? Math.min(...values) : 0;
+}
+
 function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	return (
 		run.performanceEvidenceMode === "qualified" &&
@@ -255,6 +274,9 @@ function cleanIntervalForRun(
 ): { startMs: number; endMs: number } | null {
 	if (
 		!run.publicSurfaceMatch ||
+		!run.releaseE2ePass ||
+		run.publicSurfaceCoveragePercent < 100 ||
+		run.httpDeployEnvCoveragePercent < 100 ||
 		run.unclassifiedFailures > 0 ||
 		run.crashes > 0 ||
 		run.dataLossIncidents > 0 ||
@@ -360,6 +382,20 @@ export function buildSoakStatus(input: {
 	const qualifiedPerformanceEvidence = runs.some(
 		hasReleaseQualifiedPerformanceEvidence,
 	);
+	const releaseE2ePass =
+		runs.length > 0 &&
+		runs.every(
+			(run) =>
+				run.releaseE2ePass &&
+				run.publicSurfaceCoveragePercent >= 100 &&
+				run.httpDeployEnvCoveragePercent >= 100,
+		);
+	const publicSurfaceCoveragePercent = numberMin(
+		runs.map((run) => run.publicSurfaceCoveragePercent),
+	);
+	const httpDeployEnvCoveragePercent = numberMin(
+		runs.map((run) => run.httpDeployEnvCoveragePercent),
+	);
 	const warnings: string[] = [];
 
 	if ((ledger?.ignoredRunCount ?? 0) > 0) {
@@ -420,12 +456,15 @@ export function buildSoakStatus(input: {
 		runs.some(
 			(run) =>
 				!run.publicSurfaceMatch ||
+				!run.releaseE2ePass ||
+				run.publicSurfaceCoveragePercent < 100 ||
+				run.httpDeployEnvCoveragePercent < 100 ||
 				run.outputParityPercent < 100 ||
 				run.errorCompatibilityPercent < 100 ||
 				run.unclassifiedFailures > 0,
 		)
 	) {
-		warnings.push("Ledger includes public-surface, parity, or unclassified failures.");
+		warnings.push("Ledger includes public-surface, release-E2E, parity, or unclassified failures.");
 	}
 
 	return {
@@ -445,6 +484,9 @@ export function buildSoakStatus(input: {
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		releaseTaggedSoakHours,
 		qualifiedPerformanceEvidence,
+		releaseE2ePass,
+		publicSurfaceCoveragePercent,
+		httpDeployEnvCoveragePercent,
 		remainingCanaryHours: Math.max(0, CANARY_SOAK_HOURS - continuousCleanSoakHours),
 		remainingReplaceHours: Math.max(
 			0,
@@ -479,6 +521,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  max clean gap:       ${status.continuousGapSeconds}s`,
 		`  release-tagged soak: ${formatHours(status.releaseTaggedSoakHours)}h`,
 		`  qualified perf:      ${status.qualifiedPerformanceEvidence}`,
+		`  release e2e:         ${status.releaseE2ePass} (${status.publicSurfaceCoveragePercent}%)`,
 		`  canary remaining:    ${formatHours(status.remainingCanaryHours)}h`,
 		`  replace remaining:   ${formatHours(status.remainingReplaceHours)}h`,
 		`  binary sha256:       ${status.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,

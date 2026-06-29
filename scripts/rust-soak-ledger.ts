@@ -41,6 +41,9 @@ type LedgerRun = {
 	rustBinary: string | null;
 	rustBinarySha256: string | null;
 	publicSurfaceMatch: boolean;
+	releaseE2ePass?: boolean;
+	publicSurfaceCoveragePercent?: number;
+	httpDeployEnvCoveragePercent?: number;
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
@@ -77,6 +80,9 @@ type LedgerSummary = {
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
+	releaseE2ePass: boolean;
+	publicSurfaceCoveragePercent: number;
+	httpDeployEnvCoveragePercent: number;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -426,6 +432,11 @@ function ledgerRunFromPacket(
 		rustBinary: binary.rustBinary,
 		rustBinarySha256: binary.rustBinarySha256,
 		publicSurfaceMatch: readinessInput.parity.publicSurfaceMatch,
+		releaseE2ePass: readinessInput.parity.releaseE2ePass,
+		publicSurfaceCoveragePercent:
+			readinessInput.parity.publicSurfaceCoveragePercent,
+		httpDeployEnvCoveragePercent:
+			readinessInput.parity.httpDeployEnvCoveragePercent,
 		outputParityPercent: readinessInput.parity.outputParityPercent,
 		errorCompatibilityPercent: readinessInput.parity.errorCompatibilityPercent,
 		unclassifiedFailures: readinessInput.parity.unclassifiedFailures,
@@ -483,6 +494,7 @@ type SoakInterval = { startMs: number; endMs: number };
 function isCleanRun(run: LedgerRun): boolean {
 	return (
 		run.publicSurfaceMatch &&
+		run.releaseE2ePass === true &&
 		run.unclassifiedFailures === 0 &&
 		run.crashes === 0 &&
 		run.dataLossIncidents === 0 &&
@@ -561,6 +573,15 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 	return normalizeReadinessEvidence({
 		parity: {
 			publicSurfaceMatch: boolAll(runs.map((run) => run.publicSurfaceMatch)),
+			releaseE2ePass: boolAll(
+				runs.map((run) => run.releaseE2ePass === true),
+			),
+			publicSurfaceCoveragePercent: numberMin(
+				runs.map((run) => run.publicSurfaceCoveragePercent ?? 0),
+			),
+			httpDeployEnvCoveragePercent: numberMin(
+				runs.map((run) => run.httpDeployEnvCoveragePercent ?? 0),
+			),
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
@@ -620,6 +641,15 @@ function buildSummary(
 	const qualifiedPerformanceEvidence = ledger.runs.some(
 		hasReleaseQualifiedPerformanceEvidence,
 	);
+	const releaseE2ePass = boolAll(
+		ledger.runs.map((run) => run.releaseE2ePass === true),
+	);
+	const publicSurfaceCoveragePercent = numberMin(
+		ledger.runs.map((run) => run.publicSurfaceCoveragePercent ?? 0),
+	);
+	const httpDeployEnvCoveragePercent = numberMin(
+		ledger.runs.map((run) => run.httpDeployEnvCoveragePercent ?? 0),
+	);
 	return {
 		generatedAt: new Date().toISOString(),
 		ledger: rel(ledgerPath),
@@ -630,6 +660,9 @@ function buildSummary(
 		continuityLostHours: Math.max(0, totalSoakHours - continuousSoakHours),
 		releaseTaggedSoakHours,
 		qualifiedPerformanceEvidence,
+		releaseE2ePass,
+		publicSurfaceCoveragePercent,
+		httpDeployEnvCoveragePercent,
 		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,
@@ -654,6 +687,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
+			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,

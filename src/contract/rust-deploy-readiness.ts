@@ -11,6 +11,9 @@ export type DeployReadinessDecision = z.infer<typeof deployReadinessDecisionSche
 
 export const parityEvidenceSchema = z.object({
 	publicSurfaceMatch: z.boolean(),
+	releaseE2ePass: z.boolean().default(false),
+	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
+	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -163,6 +166,11 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 	return parityEvidenceSchema.parse({
 		publicSurfaceMatch:
 			booleanField(raw, "publicSurfaceMatch") ?? toolsCovered.length >= 24,
+		releaseE2ePass: booleanField(raw, "releaseE2ePass") ?? false,
+		publicSurfaceCoveragePercent:
+			numberField(raw, "publicSurfaceCoveragePercent") ?? 0,
+		httpDeployEnvCoveragePercent:
+			numberField(raw, "httpDeployEnvCoveragePercent") ?? 0,
 		outputParityPercent,
 		errorCompatibilityPercent,
 		unclassifiedFailures,
@@ -274,6 +282,13 @@ function canaryGates(input: ReadinessInput): Gate[] {
 			ok: parity.rustBinarySha256 !== null,
 		},
 		{
+			gate: "release-e2e",
+			ok:
+				parity.releaseE2ePass &&
+				parity.publicSurfaceCoveragePercent >= 100 &&
+				parity.httpDeployEnvCoveragePercent >= 100,
+		},
+		{
 			gate: "performance",
 			ok:
 				perf.medianLatencyImprovementPercent >= 10 &&
@@ -312,6 +327,13 @@ function replaceGates(input: ReadinessInput): Gate[] {
 		{
 			gate: "binary-identity",
 			ok: parity.rustBinarySha256 !== null,
+		},
+		{
+			gate: "release-e2e",
+			ok:
+				parity.releaseE2ePass &&
+				parity.publicSurfaceCoveragePercent >= 100 &&
+				parity.httpDeployEnvCoveragePercent >= 100,
 		},
 		{
 			gate: "performance",
@@ -377,7 +399,7 @@ export function assessDeployReadiness(input: ReadinessInput): ReadinessAssessmen
 		decision: "REPLACE",
 		failingGate: null,
 		rationale:
-			"Rust meets every parity, performance, soak, rollback, and observability gate, so it may become the default implementation.",
+			"Rust meets every parity, release-E2E, performance, soak, rollback, and observability gate, so it may become the default implementation.",
 	};
 }
 

@@ -15,6 +15,9 @@ function run(overrides: Record<string, unknown> = {}) {
 		releaseTag: "candidate-1",
 		rustBinarySha256: RUST_BINARY_SHA256,
 		publicSurfaceMatch: true,
+		releaseE2ePass: true,
+		publicSurfaceCoveragePercent: 100,
+		httpDeployEnvCoveragePercent: 100,
 		soakHours: 1,
 		continuousSoakHours: 1,
 		crashes: 0,
@@ -65,6 +68,9 @@ describe("buildSoakStatus", () => {
 		expect(status.continuousGapSeconds).toBe(120);
 		expect(status.releaseTaggedSoakHours).toBe(1);
 		expect(status.qualifiedPerformanceEvidence).toBe(false);
+		expect(status.releaseE2ePass).toBe(true);
+		expect(status.publicSurfaceCoveragePercent).toBe(100);
+		expect(status.httpDeployEnvCoveragePercent).toBe(100);
 		expect(status.remainingCanaryHours).toBe(23);
 		expect(status.remainingReplaceHours).toBe(71);
 		expect(status.rustBinarySha256).toBe(RUST_BINARY_SHA256);
@@ -74,6 +80,7 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("runner:              active");
 		expect(formatSoakStatus(status)).toContain("max clean gap:       120s");
 		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
+		expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
 		expect(formatSoakStatus(status)).toContain(
 			"runner release tag:  candidate-1",
 		);
@@ -223,6 +230,29 @@ describe("buildSoakStatus", () => {
 		expect(status.remainingReplaceHours).toBe(72);
 		expect(status.warnings).toContain(
 			"Ledger includes crashes, data-loss incidents, or telemetry anomalies.",
+		);
+	});
+
+	it("does not credit runs without release E2E toward continuous clean soak", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					releaseE2ePass: false,
+					publicSurfaceCoveragePercent: 100,
+					httpDeployEnvCoveragePercent: 100,
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.totalCompletedSoakHours).toBe(1);
+		expect(status.continuousCleanSoakHours).toBe(0);
+		expect(status.releaseE2ePass).toBe(false);
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(status.warnings).toContain(
+			"Ledger includes public-surface, release-E2E, parity, or unclassified failures.",
 		);
 	});
 

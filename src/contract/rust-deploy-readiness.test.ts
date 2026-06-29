@@ -17,6 +17,9 @@ function replaceReadyInput(): ReadinessInput {
 	return {
 		parity: {
 			publicSurfaceMatch: true,
+			releaseE2ePass: true,
+			publicSurfaceCoveragePercent: 100,
+			httpDeployEnvCoveragePercent: 100,
 			outputParityPercent: 100,
 			errorCompatibilityPercent: 100,
 			unclassifiedFailures: 0,
@@ -55,6 +58,9 @@ function withPerf(overrides: Partial<ReadinessInput["perf"]>): ReadinessInput {
 function rawReplaceReadyParity(): Record<string, unknown> {
 	return {
 		toolsCovered: Array.from({ length: 24 }, (_, index) => `tool_${index}`),
+		releaseE2ePass: true,
+		publicSurfaceCoveragePercent: 100,
+		httpDeployEnvCoveragePercent: 100,
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		diffs: [],
@@ -84,6 +90,9 @@ describe("assessDeployReadiness", () => {
 		const result = assessDeployReadiness({
 			parity: {
 				publicSurfaceMatch: true,
+				releaseE2ePass: true,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
 				outputParityPercent: 98.9,
 				errorCompatibilityPercent: 97.9,
 				unclassifiedFailures: 1,
@@ -153,11 +162,27 @@ describe("assessDeployReadiness", () => {
 		expect(result.failingGate).toBe("binary-identity");
 	});
 
+	it("stays SHADOW when release E2E proof is missing", () => {
+		const result = assessDeployReadiness(
+			withParity({
+				releaseE2ePass: false,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
+			}),
+		);
+
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("release-e2e");
+	});
+
 	it("never promotes to CANARY without rollback, soak, or observability evidence", () => {
 		// Regression guard: shadow-grade compatibility alone must not clear canary.
 		const result = assessDeployReadiness({
 			parity: {
 				publicSurfaceMatch: true,
+				releaseE2ePass: true,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
 				outputParityPercent: 99.6,
 				errorCompatibilityPercent: 99.6,
 				unclassifiedFailures: 0,
@@ -248,6 +273,9 @@ describe("assessDeployReadinessFromJson", () => {
 		expect(input).toMatchObject({
 			parity: {
 				publicSurfaceMatch: true,
+				releaseE2ePass: false,
+				publicSurfaceCoveragePercent: 0,
+				httpDeployEnvCoveragePercent: 0,
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
@@ -285,6 +313,9 @@ describe("assessDeployReadinessFromJson", () => {
 				rollbackValidated: true,
 				rollbackRehearsed: true,
 				observabilityLevel: "release",
+				releaseE2ePass: true,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
 				unresolvedTelemetryAnomalies: 0,
 			},
 			perf: {
@@ -358,6 +389,9 @@ describe("assessDeployReadinessFromJson", () => {
 				toolsCovered: Array.from({ length: 24 }, (_, index) => `tool_${index}`),
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
+				releaseE2ePass: true,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
 				diffs: [],
 				meta: { rustBinarySha256: RUST_BINARY_SHA256 },
 				soakHours: 72,
@@ -393,6 +427,9 @@ describe("assessDeployReadinessFromJson", () => {
 		const result = assessDeployReadinessFromJson({
 			parity: {
 				publicSurfaceMatch: true,
+				releaseE2ePass: true,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
 				outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,

@@ -59,6 +59,9 @@ type LedgerSummary = {
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
+	releaseE2ePass: boolean;
+	publicSurfaceCoveragePercent: number;
+	httpDeployEnvCoveragePercent: number;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -93,6 +96,9 @@ type RunnerSummary = {
 	continuityLostHours: number;
 	releaseTaggedSoakHours: number;
 	qualifiedPerformanceEvidence: boolean;
+	releaseE2ePass: boolean;
+	publicSurfaceCoveragePercent: number;
+	httpDeployEnvCoveragePercent: number;
 	rustBinarySha256: string | null;
 	remainingSoakHours: number;
 	files: {
@@ -322,6 +328,15 @@ function parseLedgerSummary(path: string): LedgerSummary {
 				: Math.max(0, raw.totalSoakHours - raw.continuousSoakHours),
 		releaseTaggedSoakHours: raw.releaseTaggedSoakHours,
 		qualifiedPerformanceEvidence: raw.qualifiedPerformanceEvidence,
+		releaseE2ePass: raw.releaseE2ePass === true,
+		publicSurfaceCoveragePercent:
+			typeof raw.publicSurfaceCoveragePercent === "number"
+				? raw.publicSurfaceCoveragePercent
+				: 0,
+		httpDeployEnvCoveragePercent:
+			typeof raw.httpDeployEnvCoveragePercent === "number"
+				? raw.httpDeployEnvCoveragePercent
+				: 0,
 		rustBinarySha256:
 			typeof raw.rustBinarySha256 === "string" ? raw.rustBinarySha256 : null,
 		continuousGapSeconds: raw.continuousGapSeconds,
@@ -603,6 +618,9 @@ function buildRunnerSummary(
 		continuityLostHours: ledgerSummary.continuityLostHours,
 		releaseTaggedSoakHours: ledgerSummary.releaseTaggedSoakHours,
 		qualifiedPerformanceEvidence: ledgerSummary.qualifiedPerformanceEvidence,
+		releaseE2ePass: ledgerSummary.releaseE2ePass,
+		publicSurfaceCoveragePercent: ledgerSummary.publicSurfaceCoveragePercent,
+		httpDeployEnvCoveragePercent: ledgerSummary.httpDeployEnvCoveragePercent,
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
 			0,
@@ -633,6 +651,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  continuous soak:     ${summary.continuousSoakHours.toFixed(4)}`,
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
+			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  remaining hours:     ${summary.remainingSoakHours.toFixed(4)}`,
 			`  readiness:           ${summary.readiness.decision}`,

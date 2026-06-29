@@ -68,6 +68,9 @@ const runnerSummarySchema = z.object({
 	targetSatisfiedBy: z.literal("scorer").nullable(),
 	smokeTargetReached: z.boolean().default(false),
 	qualifiedPerformanceEvidence: z.boolean().default(false),
+	releaseE2ePass: z.boolean().default(false),
+	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
+	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
@@ -85,6 +88,9 @@ const ledgerRunSchema = z.object({
 	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	publicSurfaceMatch: z.boolean(),
+	releaseE2ePass: z.boolean().default(false),
+	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
+	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -115,6 +121,9 @@ const ledgerSummarySchema = z.object({
 	continuousSoakHours: z.number().nonnegative(),
 	releaseTaggedSoakHours: z.number().nonnegative(),
 	qualifiedPerformanceEvidence: z.boolean().default(false),
+	releaseE2ePass: z.boolean().default(false),
+	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
+	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
 		decision: deployReadinessDecisionSchema,
@@ -304,6 +313,19 @@ export function assessPromotionGate(
 		);
 	}
 	if (
+		!summary.releaseE2ePass ||
+		summary.publicSurfaceCoveragePercent < 100 ||
+		summary.httpDeployEnvCoveragePercent < 100
+	) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires release-binary E2E coverage for public surfaces and deploy environment parity.",
+		);
+	}
+	if (
 		summary.target === target &&
 		(!summary.targetReached || summary.targetSatisfiedBy !== "scorer")
 	) {
@@ -373,6 +395,19 @@ export function assessPromotionGateFromLedgerSummary(
 			decision,
 			failingGate,
 			`Current Rust binary SHA-256 ${options.currentRustBinarySha256} does not match soak evidence ${summary.rustBinarySha256}.`,
+		);
+	}
+	if (
+		!summary.releaseE2ePass ||
+		summary.publicSurfaceCoveragePercent < 100 ||
+		summary.httpDeployEnvCoveragePercent < 100
+	) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires release-binary E2E coverage for public surfaces and deploy environment parity.",
 		);
 	}
 	if (
@@ -471,6 +506,7 @@ function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 function cleanInterval(run: LedgerRun): { startMs: number; endMs: number } | null {
 	if (
 		!run.publicSurfaceMatch ||
+		!run.releaseE2ePass ||
 		run.unclassifiedFailures > 0 ||
 		run.crashes > 0 ||
 		run.dataLossIncidents > 0 ||
@@ -553,6 +589,13 @@ export function buildGateLedgerSummary(
 	const readinessInput: ReadinessInput = {
 		parity: {
 			publicSurfaceMatch: boolAll(runs.map((run) => run.publicSurfaceMatch)),
+			releaseE2ePass: boolAll(runs.map((run) => run.releaseE2ePass)),
+			publicSurfaceCoveragePercent: numberMin(
+				runs.map((run) => run.publicSurfaceCoveragePercent),
+			),
+			httpDeployEnvCoveragePercent: numberMin(
+				runs.map((run) => run.httpDeployEnvCoveragePercent),
+			),
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
@@ -595,6 +638,11 @@ export function buildGateLedgerSummary(
 		qualifiedPerformanceEvidence: runs.some(
 			hasReleaseQualifiedPerformanceEvidence,
 		),
+		releaseE2ePass: readinessInput.parity.releaseE2ePass,
+		publicSurfaceCoveragePercent:
+			readinessInput.parity.publicSurfaceCoveragePercent,
+		httpDeployEnvCoveragePercent:
+			readinessInput.parity.httpDeployEnvCoveragePercent,
 		rustBinarySha256: readinessInput.parity.rustBinarySha256,
 		readiness: assessDeployReadiness(readinessInput),
 	};

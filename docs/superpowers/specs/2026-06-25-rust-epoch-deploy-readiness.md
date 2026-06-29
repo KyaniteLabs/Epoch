@@ -25,13 +25,14 @@ Rust must match the TypeScript oracle on the public contract:
 - Write tools: `record_actual` and `batch_record_actuals` preserved.
 - HTTP routes: 11/11 exact match.
 - CLI command paths: 39/39 exact match.
+- Release-binary E2E coverage: public surfaces and HTTP deploy environment parity must both report 100%.
 
 Thresholds:
 
 - `NO` if any public-surface mismatch exists.
 - `SHADOW` if public-surface parity is complete but tool output parity is below 99.5%.
-- `CANARY` if tool output parity is at least 99.5% across the agreed fixture suite.
-- `REPLACE` if parity is 100% across the full fixture suite with the compatibility exceptions explicitly approved.
+- `CANARY` if tool output parity is at least 99.5% across the agreed fixture suite and release-binary E2E proof is present.
+- `REPLACE` if parity is 100% across the full fixture suite with the compatibility exceptions explicitly approved and release-binary E2E proof is present.
 
 ### 2. Error and Output Compatibility Gate
 
@@ -107,6 +108,7 @@ Readiness decisions are computed from parity and performance evidence:
 
 - `parity.json` for contract, output, error, soak, rollback, and observability evidence.
 - `perf.json` for latency, startup, and memory evidence.
+- `e2e.json` for release-binary public-surface and HTTP deploy environment coverage.
 
 The scorer (`pnpm run contract:rust-readiness`) accepts either a single combined `readiness.json` with top-level `parity` and `perf` keys, or the two evidence files passed separately. It emits the decision, the first failing gate, and a short rationale that can be pasted into a release note.
 
@@ -124,6 +126,7 @@ The command writes a git-ignored packet under `.epoch-promotion/latest/` by defa
 
 - `parity.json` from the strict TypeScript-vs-Rust parity gate.
 - `perf.json` from the promotion benchmark run. The default packet path uses smoke mode for fast repeated soak packets; replacement evidence must include a non-smoke qualified benchmark report.
+- `e2e.json` from the release-binary E2E gate; promotion requires 100% declared public-surface coverage and 100% HTTP deploy environment coverage.
 - `shadow-soak.json` from repeated hidden TypeScript-oracle comparisons, including `soakHours`, `continuousSoakHours`, and the SHA-256 of the Rust binary under test.
 - `shadow-soak-rollback.json` after the rollback rehearsal enriches the parity evidence.
 - `readiness-input.json`, `readiness-assessment.json`, and `promotion-packet.json`.
@@ -153,6 +156,7 @@ The ledger is conservative:
 
 - It sums crashes, data-loss incidents, unresolved telemetry anomalies, and unclassified failures across all runs.
 - It uses the worst observed compatibility and performance percentages across all runs, and tracks whether any run included qualified non-smoke benchmark evidence.
+- It only credits runs with passing release-binary E2E coverage toward the continuous clean soak window.
 - It fails closed if any run is missing `rustBinarySha256` or if runs from different Rust binary hashes are mixed in one ledger.
 - It only credits clean contiguous observation windows toward `continuousSoakHours`; orchestration gaps up to 120 seconds can preserve continuity but do not earn soak credit.
 - It counts rollback as ready only after at least one successful rehearsal.
@@ -164,7 +168,7 @@ To keep a long soak resumable, use the runner instead of hand-looping packet plu
 pnpm run promotion:rust-soak-runner -- --target canary --max-runs 1 --release-tag <release-or-commit-id>
 ```
 
-The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's 120-second continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. `--until-target` keeps running only while the first blocker is `soak`; if compatibility, performance, rollback, observability, binary identity, or qualified performance evidence blocks promotion, it stops with `stopReason: "non-soak-gate-blocked"`. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence plus any extra promotion-gate evidence quality requirements; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
+The runner starts at most one packet by default, appends it to `.epoch-promotion/soak-ledger.json`, and writes `.epoch-promotion/latest/soak-runner-summary.json`. For real canary or replacement evidence, prefer one supervised long invocation with `--until-target`; optionally pair it with `--max-runs` as a safety cap. Manual restarts separated by more than the ledger's 120-second continuity gap increase `continuityLostHours` and do not advance the continuous soak gate. `--until-target` keeps running only while the first blocker is `soak`; if compatibility, release-E2E, performance, rollback, observability, binary identity, or qualified performance evidence blocks promotion, it stops with `stopReason: "non-soak-gate-blocked"`. Re-run only until the summary reports `targetReached: true`. `targetReached` is scorer-only deployment evidence plus any extra promotion-gate evidence quality requirements; a local smoke override can only set `smokeTargetReached`. Keep the ledger outside `--packet-dir`; packet directories are cleaned before each packet run.
 
 Before canarying or replacing TypeScript, run the final promotion gate against the runner summary:
 
