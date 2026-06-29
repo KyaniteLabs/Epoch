@@ -248,13 +248,14 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		command("telemetry submit", "telemetry_submit", [
 			option("--endpoint", "endpoint", "string"),
 			option("--force", "force", "boolean"),
-			option("--min-interval-hours", "min_interval_hours", "string"),
+			option("--min-interval-hours", "min_interval_hours", "string", {
+				valueLabel: "<n>",
+			}),
 		], {
 			wrapOutput: false,
 			rawOutputIndent: 2,
 			exitByPayloadOk: true,
 			plainTelemetryEndpointErrors: true,
-			route: telemetrySubmitRoute,
 		}),
 		command("share-data", "share_data", [
 			option("--output", "output", "string"),
@@ -498,27 +499,8 @@ function parseBooleanFlag(def: OptionSpec, raw: string): boolean {
 	throw new Error(`${def.flag} must be true or false, got "${raw}"`);
 }
 
-function telemetrySubmitRoute(args: string[]): boolean {
-	const minIntervalHours = optionValue(args, "--min-interval-hours");
-	return minIntervalHours !== null;
-}
-
 function hasFlag(args: string[], flag: string): boolean {
 	return args.includes(flag) || args.some((arg) => arg.startsWith(`${flag}=`));
-}
-
-function optionValue(args: string[], flag: string): string | undefined | null {
-	for (let index = 0; index < args.length; index += 1) {
-		const token = args[index];
-		if (token === flag) {
-			const value = args[index + 1];
-			return value && !value.startsWith("--") ? value : null;
-		}
-		if (token?.startsWith(`${flag}=`)) {
-			return token.slice(flag.length + 1);
-		}
-	}
-	return undefined;
 }
 
 function missingOptionArgumentMessage(def: OptionSpec): string {

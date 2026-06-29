@@ -256,6 +256,9 @@ describe("epoch-rust-launcher", () => {
 				"0x10",
 			]).mode,
 		).toBe("rust-cli");
+		expect(() =>
+			planInvocation(["telemetry", "submit", "--min-interval-hours"]),
+		).toThrow("error: option '--min-interval-hours <n>' argument missing");
 	});
 
 	it("routes share-data to Rust with TypeScript export options", () => {
