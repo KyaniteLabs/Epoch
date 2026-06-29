@@ -759,6 +759,51 @@ function buildSummary(
 	};
 }
 
+function interimReadinessInput(options: {
+	parityReport: unknown;
+	perfReport: unknown;
+	e2eReport: unknown;
+	packageSmoke: PackageSmokeEvidence;
+	releaseTag?: string;
+}): ReadinessInput {
+	const e2e = e2eEvidence(options.e2eReport);
+	const rustBinary = resolve(REPO_ROOT, "rust/target/release/epoch-cli");
+	return normalizeReadinessEvidence({
+		parity: {
+			...(isObject(options.parityReport) ? options.parityReport : {}),
+			releaseE2ePass: e2e.releaseE2ePass,
+			publicSurfaceCoveragePercent: e2e.publicSurfaceCoveragePercent ?? 0,
+			httpDeployEnvCoveragePercent: e2e.httpDeployEnvCoveragePercent ?? 0,
+			packageSmokePass: options.packageSmoke.ok,
+			rustBinarySha256: existsSync(rustBinary) ? sha256File(rustBinary) : null,
+			soakHours: 0,
+			continuousSoakHours: 0,
+			crashes: 0,
+			dataLossIncidents: 0,
+			unresolvedTelemetryAnomalies: 0,
+			rollbackValidated: false,
+			rollbackRehearsed: false,
+			observabilityLevel: options.releaseTag ? "release" : "tool",
+			compatibilityExceptionsApproved: true,
+		},
+		perf: options.perfReport,
+	});
+}
+
+function writeInterimReplacementScorecard(
+	path: string,
+	options: {
+		parityReport: unknown;
+		perfReport: unknown;
+		e2eReport: unknown;
+		packageSmoke: PackageSmokeEvidence;
+		releaseTag?: string;
+	},
+): void {
+	const readinessInput = interimReadinessInput(options);
+	writeJson(path, buildReplacementScorecard(readinessInput));
+}
+
 function printSummary(
 	summary: PacketSummary,
 	scorecard: ReplacementScorecard,
@@ -854,6 +899,13 @@ async function main(): Promise<void> {
 	if (!packageSmoke.ok) {
 		throw new Error(packageSmoke.reason);
 	}
+	writeInterimReplacementScorecard(replacementScorecardPath, {
+		parityReport: readJson(parityPath),
+		perfReport: readJson(perfPath),
+		e2eReport: readJson(e2ePath),
+		packageSmoke,
+		releaseTag: options.releaseTag,
+	});
 
 	const shadowArgs = [
 		"exec",
