@@ -27,14 +27,16 @@
 // ---------------------------------------------------------------------------
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Isolate every TypeScript-side side effect (telemetry / feedback persistence)
-// into a throwaway temp dir BEFORE the dispatcher is exercised, so the run
-// never touches ~/.epoch or the working tree.
+// Isolate import-time TypeScript side effects (telemetry / feedback persistence)
+// into a throwaway temp dir BEFORE the dispatcher is loaded, so the run never
+// touches ~/.epoch or the working tree. Individual cases get stricter
+// implementation-local data dirs below; sharing a data dir between TypeScript
+// and Rust would turn valid write compatibility into false duplicate failures.
 const ISOLATED_DATA_DIR = mkdtempSync(join(tmpdir(), "epoch-rust-adversarial-"));
 process.env["EPOCH_DATA_DIR"] = ISOLATED_DATA_DIR;
 process.env["EPOCH_TELEMETRY_DISABLED"] = "1";
@@ -264,39 +266,49 @@ function unknownToolCase(category: string, id: string, tool: string): CaseSpec {
 // TypeScript evaluation
 // ---------------------------------------------------------------------------
 
-async function evaluateTs(spec: CaseSpec): Promise<Outcome> {
-  if (spec.mode === "raw") {
-    // Transport layer: both MCP (SDK) and HTTP (c.req.json) reject unparseable
-    // bodies before dispatch is ever reached. Mirror that with JSON.parse.
+async function evaluateTs(spec: CaseSpec, dataDir: string): Promise<Outcome> {
+  const previousDataDir = process.env["EPOCH_DATA_DIR"];
+  process.env["EPOCH_DATA_DIR"] = dataDir;
+  try {
+    if (spec.mode === "raw") {
+      // Transport layer: both MCP (SDK) and HTTP (c.req.json) reject unparseable
+      // bodies before dispatch is ever reached. Mirror that with JSON.parse.
+      try {
+        JSON.parse(spec.raw ?? "");
+        return { polarity: "accepted", rejectKind: "none", detail: "JSON.parse accepted raw input" };
+      } catch (err) {
+        return {
+          polarity: "rejected",
+          rejectKind: "transport",
+          detail: `JSON.parse threw: ${(err as Error).message}`,
+        };
+      }
+    }
+
     try {
-      JSON.parse(spec.raw ?? "");
-      return { polarity: "accepted", rejectKind: "none", detail: "JSON.parse accepted raw input" };
-    } catch (err) {
+      const result = await dispatch(spec.tool, spec.args as Record<string, unknown>);
+      if (result.ok) {
+        return { polarity: "accepted", rejectKind: "none", detail: "dispatch returned ok" };
+      }
       return {
         polarity: "rejected",
-        rejectKind: "transport",
-        detail: `JSON.parse threw: ${(err as Error).message}`,
+        rejectKind: "validation",
+        detail: result.error?.message ?? "dispatch returned not-ok",
+      };
+    } catch (err) {
+      // dispatch() catches handler throws, so this only fires on a real crash.
+      return {
+        polarity: "crash",
+        rejectKind: "none",
+        detail: `dispatch threw: ${(err as Error).message}`,
       };
     }
-  }
-
-  try {
-    const result = await dispatch(spec.tool, spec.args as Record<string, unknown>);
-    if (result.ok) {
-      return { polarity: "accepted", rejectKind: "none", detail: "dispatch returned ok" };
+  } finally {
+    if (previousDataDir === undefined) {
+      delete process.env["EPOCH_DATA_DIR"];
+    } else {
+      process.env["EPOCH_DATA_DIR"] = previousDataDir;
     }
-    return {
-      polarity: "rejected",
-      rejectKind: "validation",
-      detail: result.error?.message ?? "dispatch returned not-ok",
-    };
-  } catch (err) {
-    // dispatch() catches handler throws, so this only fires on a real crash.
-    return {
-      polarity: "crash",
-      rejectKind: "none",
-      detail: `dispatch threw: ${(err as Error).message}`,
-    };
   }
 }
 
@@ -322,11 +334,16 @@ function parseFramed(stdout: string): unknown {
   return JSON.parse(candidate.trim());
 }
 
-function evaluateRust(binary: string, spec: CaseSpec): Outcome {
+function evaluateRust(binary: string, spec: CaseSpec, dataDir: string): Outcome {
   const line = buildLine(spec);
   const proc = spawnSync(binary, {
     input: `${line}\n`,
     encoding: "utf-8",
+    env: {
+      ...process.env,
+      EPOCH_DATA_DIR: dataDir,
+      EPOCH_TELEMETRY_DISABLED: "1",
+    },
     timeout: 20_000,
     maxBuffer: 16 * 1024 * 1024,
   });
@@ -497,8 +514,17 @@ async function main(): Promise<void> {
 
   const results: CaseResult[] = [];
   for (const spec of CASES) {
-    const ts = await evaluateTs(spec);
-    const rust = evaluateRust(binary, spec);
+    const tsDataDir = mkdtempSync(join(tmpdir(), `epoch-rust-adversarial-ts-${spec.id}-`));
+    const rustDataDir = mkdtempSync(join(tmpdir(), `epoch-rust-adversarial-rust-${spec.id}-`));
+    let ts: Outcome;
+    let rust: Outcome;
+    try {
+      ts = await evaluateTs(spec, tsDataDir);
+      rust = evaluateRust(binary, spec, rustDataDir);
+    } finally {
+      rmSync(tsDataDir, { recursive: true, force: true });
+      rmSync(rustDataDir, { recursive: true, force: true });
+    }
     const { verdict, severity, diff } = compare(spec, ts, rust);
     results.push({
       id: spec.id,
