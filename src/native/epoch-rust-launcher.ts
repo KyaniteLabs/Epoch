@@ -169,6 +169,8 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	command("list-tools", "list_tools", [], { wrapOutput: false }),
 	command("data where", "data_where", [], { wrapOutput: false }),
 	command("data status", "data_status", [], { wrapOutput: false }),
+	command("telemetry status", "telemetry_status", [], { wrapOutput: false }),
+	command("telemetry preview", "telemetry_preview", [], { wrapOutput: false }),
 ];
 
 const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
@@ -512,6 +514,12 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 			roleHints: normalizeRoleHints(data["roleHints"]),
 		};
 	}
+	if (commandPath === "telemetry status" && isObject(data)) {
+		return normalizeTelemetryStatus(data);
+	}
+	if (commandPath === "telemetry preview" && isObject(data)) {
+		return normalizeTelemetryPreview(data);
+	}
 	return data;
 }
 
@@ -563,6 +571,50 @@ function normalizeTelemetry(value: unknown): unknown {
 		lastSubmissionAt: value["lastSubmissionAt"],
 		totalRecordsAccepted: value["totalRecordsAccepted"],
 		totalRecordsDeduplicated: value["totalRecordsDeduplicated"],
+	};
+}
+
+function normalizeTelemetryStatus(value: Record<string, unknown>): unknown {
+	return {
+		enabled: value["enabled"],
+		source: value["source"],
+		endpoint: value["endpoint"],
+		endpointSource: value["endpointSource"],
+		endpointConfigured: value["endpointConfigured"],
+		queuedRecords: value["queuedRecords"],
+		lastSubmissionAt: value["lastSubmissionAt"],
+		totalRecordsSubmitted: value["totalRecordsSubmitted"],
+		lastSubmissionAcceptedCount: value["lastSubmissionAcceptedCount"],
+		lastSubmissionDeduplicatedCount: value["lastSubmissionDeduplicatedCount"],
+		totalRecordsAccepted: value["totalRecordsAccepted"],
+		totalRecordsDeduplicated: value["totalRecordsDeduplicated"],
+		installationId: value["installationId"],
+	};
+}
+
+function normalizeTelemetryPreview(value: Record<string, unknown>): unknown {
+	const sample = Array.isArray(value["sample"])
+		? value["sample"].map((record) => normalizeAnonymizedTelemetryRecord(record))
+		: value["sample"];
+	return {
+		totalRecords: value["totalRecords"],
+		fields: value["fields"],
+		strippedFields: value["strippedFields"],
+		sample,
+	};
+}
+
+function normalizeAnonymizedTelemetryRecord(value: unknown): unknown {
+	if (!isObject(value)) return value;
+	return {
+		task_type: value["task_type"],
+		complexity: value["complexity"],
+		tool: value["tool"],
+		estimated_hours: value["estimated_hours"],
+		actual_hours: value["actual_hours"],
+		ratio: value["ratio"],
+		date: value["date"],
+		completed_at: value["completed_at"],
 	};
 }
 
