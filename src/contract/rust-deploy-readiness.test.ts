@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	assessDeployReadiness,
 	assessDeployReadinessFromJson,
+	buildReplacementScorecard,
+	buildReplacementScorecardFromJson,
 	normalizeReadinessEvidence,
 	type ReadinessInput,
 } from "./rust-deploy-readiness.js";
@@ -86,6 +88,100 @@ describe("assessDeployReadiness", () => {
 
 		expect(result.decision).toBe("NO");
 		expect(result.failingGate).toBe("public-surface");
+	});
+
+	it("quantifies a replacement-ready Rust candidate", () => {
+		const scorecard = buildReplacementScorecard(
+			replaceReadyInput(),
+			"2026-06-27T00:00:00.000Z",
+		);
+
+		expect(scorecard.generatedAt).toBe("2026-06-27T00:00:00.000Z");
+		expect(scorecard.readyToReplace).toBe(true);
+		expect(scorecard.decision).toBe("REPLACE");
+		expect(scorecard.failingGate).toBeNull();
+		expect(scorecard.functionalCompatibilityPercent).toBe(100);
+		expect(scorecard.replacementGatePassPercent).toBe(100);
+		expect(scorecard.gatesPassed).toBe(scorecard.gatesTotal);
+		expect(scorecard.summary).toMatchObject({
+			outputParityPercent: 100,
+			errorCompatibilityPercent: 100,
+			unclassifiedFailures: 0,
+			medianLatencyImprovementPercent: 25,
+			p95LatencyImprovementPercent: 12,
+			continuousSoakHours: 72,
+			requiredContinuousSoakHours: 72,
+		});
+	});
+
+	it("keeps short-soak Rust blocked while preserving compatibility and superiority metrics", () => {
+		const scorecard = buildReplacementScorecard(
+			withParity({ soakHours: 1, continuousSoakHours: 1 }),
+			"2026-06-27T00:00:00.000Z",
+		);
+
+		expect(scorecard.readyToReplace).toBe(false);
+		expect(scorecard.decision).toBe("SHADOW");
+		expect(scorecard.failingGate).toBe("soak");
+		expect(scorecard.functionalCompatibilityPercent).toBe(100);
+		expect(scorecard.replacementGatePassPercent).toBeLessThan(100);
+		expect(scorecard.summary.medianLatencyImprovementPercent).toBe(25);
+		expect(scorecard.summary.continuousSoakHours).toBe(1);
+		expect(
+			scorecard.categories.reliability.find(
+				(gate) => gate.gate === "continuous-soak-hours",
+			),
+		).toMatchObject({ ok: false, actual: 1, required: 72 });
+	});
+
+	it("quantifies final promotion-packet summaries directly", () => {
+		const scorecard = buildReplacementScorecardFromJson(
+			{
+				evidence: {
+					compatibility: {
+						publicSurfaceMatch: true,
+						releaseE2ePass: true,
+						publicSurfaceCoveragePercent: 100,
+						httpDeployEnvCoveragePercent: 100,
+						outputParityPercent: 100,
+						errorCompatibilityPercent: 100,
+						unclassifiedFailures: 0,
+					},
+					performance: {
+						medianLatencyImprovementPercent: 99,
+						p95LatencyImprovementPercent: 98,
+						startupImprovementPercent: 97,
+						memoryImprovementPercent: 96,
+					},
+					reliability: {
+						soakHours: 72,
+						continuousSoakHours: 72,
+						crashes: 0,
+						dataLossIncidents: 0,
+						unresolvedTelemetryAnomalies: 0,
+					},
+					rollback: {
+						validated: true,
+						rehearsed: true,
+					},
+					observability: {
+						level: "release",
+					},
+					binary: {
+						rustBinarySha256: RUST_BINARY_SHA256,
+					},
+					deploy: {
+						packageSmokePass: true,
+					},
+				},
+			},
+			"2026-06-27T00:00:00.000Z",
+		);
+
+		expect(scorecard.readyToReplace).toBe(true);
+		expect(scorecard.functionalCompatibilityPercent).toBe(100);
+		expect(scorecard.replacementGatePassPercent).toBe(100);
+		expect(scorecard.summary.medianLatencyImprovementPercent).toBe(99);
 	});
 
 	it("returns SHADOW when compatibility is incomplete", () => {
