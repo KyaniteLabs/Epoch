@@ -147,11 +147,13 @@ function parseArgs(argv: string[]): CliOptions {
 	};
 	const args = argv[0] === "--" ? argv.slice(1) : argv;
 	let maxRunsProvided = false;
+	let targetProvided = false;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === "--target") {
 			options.target = parseTarget(args[++i]);
+			targetProvided = true;
 		} else if (arg === "--target-hours") {
 			options.targetHoursOverride = positiveNumber(args[++i], "--target-hours");
 		} else if (arg === "--packet-dir") {
@@ -192,6 +194,11 @@ function parseArgs(argv: string[]): CliOptions {
 	if (options.target === "replace" && !options.releaseTag) {
 		throw new Error(
 			"--target replace requires --release-tag so replacement evidence can reach release observability.",
+		);
+	}
+	if (options.untilTarget && options.releaseTag && !targetProvided) {
+		throw new Error(
+			"--target must be explicit for release-tagged --until-target runs so canary and replacement soak evidence cannot be confused.",
 		);
 	}
 	if (options.untilTarget && !maxRunsProvided) {
