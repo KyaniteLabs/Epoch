@@ -92,6 +92,7 @@ type PacketSummary = {
 			packageTarball: string | null;
 			packageBinTarget: string | null;
 			packagePrebuilds: string[];
+			packageCliSha256: string | null;
 			commandExitCode: number | null;
 			packageCommands: PackageSmokeCommandEvidence[];
 		};
@@ -343,6 +344,7 @@ type PackageSmokeEvidence = {
 	platform: string;
 	binTarget: string | null;
 	prebuilds: string[];
+	packageCliSha256: string | null;
 	commandExitCode: number | null;
 	stdoutHead: string;
 	stderrHead: string;
@@ -579,6 +581,10 @@ async function runPackageSmoke(options: { quiet: boolean }): Promise<PackageSmok
 		const prebuilds = requiredPackagePrebuilds(packageRoot)
 			.filter((file) => existsSync(file))
 			.map((file) => relative(packageRoot, file).replaceAll("\\", "/"));
+		const packageCliPath = packagePrebuildPath(packageRoot, "epoch-cli");
+		const packageCliSha256 = existsSync(packageCliPath)
+			? sha256File(packageCliPath)
+			: null;
 		const binPath = join(
 			appDir,
 			"node_modules",
@@ -664,6 +670,7 @@ async function runPackageSmoke(options: { quiet: boolean }): Promise<PackageSmok
 			platform: platformTag(),
 			binTarget,
 			prebuilds,
+			packageCliSha256,
 			commandExitCode: cliCommand.exitCode,
 			stdoutHead: cliCommand.stdoutHead,
 			stderrHead: cliCommand.stderrHead,
@@ -722,9 +729,10 @@ function buildSummary(
 			deploy: {
 				packageSmokePass: packageSmoke.ok,
 				packageTarball: packageSmoke.tarball,
-				packageBinTarget: packageSmoke.binTarget,
-				packagePrebuilds: packageSmoke.prebuilds,
-				commandExitCode: packageSmoke.commandExitCode,
+			packageBinTarget: packageSmoke.binTarget,
+			packagePrebuilds: packageSmoke.prebuilds,
+			packageCliSha256: packageSmoke.packageCliSha256,
+			commandExitCode: packageSmoke.commandExitCode,
 				packageCommands: packageSmoke.commands,
 			},
 		},

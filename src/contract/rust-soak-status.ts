@@ -43,6 +43,7 @@ type LedgerRun = {
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
 	packageCommands: PackageCommandEvidence[];
+	packageCliSha256: string | null;
 	soakHours: number;
 	continuousSoakHours: number;
 	crashes: number;
@@ -98,6 +99,7 @@ type SoakStatus = {
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
 	packageCommandEvidenceComplete: boolean;
+	packageCliSha256: string | null;
 	remainingCanaryHours: number;
 	remainingReplaceHours: number;
 	latestRun: LedgerRun | null;
@@ -300,6 +302,7 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 		),
 		packageSmokePass: raw.packageSmokePass === true,
 		packageCommands: parsePackageCommands(raw.packageCommands),
+		packageCliSha256: stringField(raw, "packageCliSha256"),
 		soakHours: numberField(raw, "soakHours"),
 		continuousSoakHours: numberField(raw, "continuousSoakHours"),
 		crashes: numberField(raw, "crashes"),
@@ -611,6 +614,15 @@ export function buildSoakStatus(input: {
 		);
 	const packageCommandEvidenceComplete =
 		runs.length > 0 && runs.every(hasRequiredPackageCommands);
+	const packageCliIdentities = new Set(
+		runs
+			.map((run) => run.packageCliSha256)
+			.filter((value): value is string => Boolean(value)),
+	);
+	const packageCliSha256 =
+		packageCliIdentities.size === 1
+			? Array.from(packageCliIdentities)[0] ?? null
+			: null;
 	const publicSurfaceCoveragePercent = numberMin(
 		runs.map((run) => run.publicSurfaceCoveragePercent),
 	);
@@ -640,6 +652,19 @@ export function buildSoakStatus(input: {
 	}
 	if (identities.size > 1) {
 		warnings.push("Soak ledger contains multiple Rust binary identities.");
+	}
+	if (runs.some((run) => !run.packageCliSha256)) {
+		warnings.push("At least one soak run is missing packageCliSha256.");
+	}
+	if (packageCliIdentities.size > 1) {
+		warnings.push("Soak ledger contains multiple packaged CLI identities.");
+	}
+	if (
+		rustBinarySha256 !== null &&
+		packageCliSha256 !== null &&
+		rustBinarySha256 !== packageCliSha256
+	) {
+		warnings.push("Packaged CLI SHA-256 does not match the soaked Rust binary.");
 	}
 	if (releaseTags.size > 1) {
 		warnings.push("Soak ledger contains multiple release identities.");
@@ -732,6 +757,7 @@ export function buildSoakStatus(input: {
 		httpDeployEnvCoveragePercent,
 		packageSmokePass,
 		packageCommandEvidenceComplete,
+		packageCliSha256,
 		remainingCanaryHours: Math.max(0, CANARY_SOAK_HOURS - continuousCleanSoakHours),
 		remainingReplaceHours: Math.max(
 			0,
@@ -773,6 +799,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  qualified perf:      ${status.qualifiedPerformanceEvidence}`,
 		`  release e2e:         ${status.releaseE2ePass} (${status.publicSurfaceCoveragePercent}%)`,
 		`  package smoke:       ${status.packageSmokePass}`,
+		`  package cli sha256:  ${status.packageCliSha256?.slice(0, 16) ?? "unavailable"}`,
 		`  canary remaining:    ${formatHours(status.remainingCanaryHours)}h`,
 		`  replace remaining:   ${formatHours(status.remainingReplaceHours)}h`,
 		`  binary sha256:       ${status.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,

@@ -46,6 +46,7 @@ type LedgerRun = {
 	httpDeployEnvCoveragePercent?: number;
 	packageSmokePass?: boolean;
 	packageCommands?: PackageCommandEvidence[];
+	packageCliSha256: string | null;
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
@@ -99,6 +100,7 @@ type LedgerSummary = {
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
 	packageCommandEvidenceComplete: boolean;
+	packageCliSha256: string | null;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -349,6 +351,15 @@ function packageCommandsFromSummary(summary: unknown): PackageCommandEvidence[] 
 	return parsePackageCommands(deploy.packageCommands);
 }
 
+function packageCliSha256FromSummary(summary: unknown): string | null {
+	if (!isObject(summary) || !isObject(summary.evidence)) return null;
+	const deploy = summary.evidence.deploy;
+	if (!isObject(deploy)) return null;
+	return typeof deploy.packageCliSha256 === "string"
+		? deploy.packageCliSha256
+		: null;
+}
+
 function hasRequiredPackageCommands(run: Pick<LedgerRun, "packageCommands">): boolean {
 	const commands = run.packageCommands ?? [];
 	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
@@ -392,6 +403,10 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 		),
 		packageSmokePass: booleanField(value, "packageSmokePass", false),
 		packageCommands: parsePackageCommands(value.packageCommands),
+		packageCliSha256:
+			typeof value.packageCliSha256 === "string"
+				? value.packageCliSha256
+				: null,
 		outputParityPercent: numberField(value, "outputParityPercent", 0),
 		errorCompatibilityPercent: numberField(
 			value,
@@ -565,6 +580,7 @@ function ledgerRunFromPacket(
 			readinessInput.parity.httpDeployEnvCoveragePercent,
 		packageSmokePass: readinessInput.parity.packageSmokePass,
 		packageCommands,
+		packageCliSha256: packageCliSha256FromSummary(summary),
 		outputParityPercent: readinessInput.parity.outputParityPercent,
 		errorCompatibilityPercent: readinessInput.parity.errorCompatibilityPercent,
 		unclassifiedFailures: readinessInput.parity.unclassifiedFailures,
@@ -615,6 +631,23 @@ function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 		);
 	}
 	return runs[0]?.rustBinarySha256 ?? null;
+}
+
+function ledgerPackageCliSha256(runs: LedgerRun[]): string | null {
+	if (runs.length === 0) return null;
+	const missingIdentity = runs.find((run) => !run.packageCliSha256);
+	if (missingIdentity) {
+		throw new Error(
+			`Soak run ${missingIdentity.id} is missing packageCliSha256; start a fresh ledger or regenerate the packet with current tooling.`,
+		);
+	}
+	const identities = new Set(runs.map((run) => run.packageCliSha256));
+	if (identities.size > 1) {
+		throw new Error(
+			`Mixed packaged CLI identities in soak ledger: ${Array.from(identities).join(", ")}. Use a separate ledger per package build.`,
+		);
+	}
+	return runs[0]?.packageCliSha256 ?? null;
 }
 
 type SoakInterval = { startMs: number; endMs: number };
@@ -774,6 +807,7 @@ function buildSummary(
 	const totalSoakHours = numberSum(ledger.runs.map((run) => run.soakHours));
 	const continuousSoakHours = longestContinuousCleanSoakHours(ledger.runs);
 	const rustBinarySha256 = ledgerBinarySha256(ledger.runs);
+	const packageCliSha256 = ledgerPackageCliSha256(ledger.runs);
 	const releaseTag = ledgerReleaseTag(ledger.runs);
 	const qualifiedPerformanceEvidence = ledger.runs.some(
 		hasReleaseQualifiedPerformanceEvidence,
@@ -812,6 +846,7 @@ function buildSummary(
 		httpDeployEnvCoveragePercent,
 		packageSmokePass,
 		packageCommandEvidenceComplete,
+		packageCliSha256,
 		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,
@@ -840,6 +875,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  package smoke:       ${summary.packageSmokePass}`,
+			`  package cli sha256:  ${summary.packageCliSha256?.slice(0, 16) ?? "unavailable"}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,

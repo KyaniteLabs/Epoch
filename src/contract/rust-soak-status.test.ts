@@ -43,6 +43,7 @@ function run(overrides: Record<string, unknown> = {}) {
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
 		packageCommands: packageCommands(),
+		packageCliSha256: RUST_BINARY_SHA256,
 		soakHours: 1,
 		continuousSoakHours: 1,
 		crashes: 0,
@@ -440,6 +441,25 @@ describe("buildSoakStatus", () => {
 		expect(status.packageSmokePass).toBe(false);
 		expect(status.packageCommandEvidenceComplete).toBe(false);
 		expect(status.readinessFailingGate).toBe("package-smoke");
+	});
+
+	it("warns when the packaged CLI hash differs from the soaked Rust binary", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					packageCliSha256:
+						"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.packageCliSha256).not.toBe(status.rustBinarySha256);
+		expect(status.warnings).toContain(
+			"Packaged CLI SHA-256 does not match the soaked Rust binary.",
+		);
 	});
 
 	it("warns when a state file remains but the runner process is dead", () => {

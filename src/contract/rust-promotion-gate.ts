@@ -98,6 +98,7 @@ const runnerSummarySchema = z.object({
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	packageSmokePass: z.boolean().default(false),
 	packageCommandEvidenceComplete: z.boolean().default(false),
+	packageCliSha256: z.string().regex(SHA256_HEX).nullable().default(null),
 	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
@@ -130,6 +131,7 @@ const ledgerRunSchema = z.object({
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	packageSmokePass: z.boolean().default(false),
 	packageCommands: z.array(packageCommandEvidenceSchema).default([]),
+	packageCliSha256: z.string().regex(SHA256_HEX).nullable().default(null),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -167,6 +169,7 @@ const ledgerSummarySchema = z.object({
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	packageSmokePass: z.boolean().default(false),
 	packageCommandEvidenceComplete: z.boolean().default(false),
+	packageCliSha256: z.string().regex(SHA256_HEX).nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
 		decision: deployReadinessDecisionSchema,
@@ -431,6 +434,34 @@ function deploySurfaceGate(
 	);
 }
 
+function packageArtifactIdentityGate(
+	target: Target,
+	decision: z.infer<typeof deployReadinessDecisionSchema>,
+	failingGate: string | null,
+	rustBinarySha256: string,
+	packageCliSha256: string | null,
+): PromotionGateResult | null {
+	if (!packageCliSha256) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires packaged CLI SHA-256 evidence from the installable Rust package.",
+		);
+	}
+	if (packageCliSha256 !== rustBinarySha256) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			`packaged CLI SHA-256 ${packageCliSha256} does not match soak evidence ${rustBinarySha256}.`,
+		);
+	}
+	return null;
+}
+
 function releaseIdentityGate(
 	target: Target,
 	decision: z.infer<typeof deployReadinessDecisionSchema>,
@@ -584,6 +615,14 @@ export function assessPromotionGate(
 			"Promotion requires package smoke evidence that executes epoch-cli, epoch-mcp, and epoch-http from the installable Rust package.",
 		);
 	}
+	const packageArtifactBlocker = packageArtifactIdentityGate(
+		target,
+		decision,
+		failingGate,
+		summary.rustBinarySha256,
+		summary.packageCliSha256,
+	);
+	if (packageArtifactBlocker) return packageArtifactBlocker;
 	if (
 		summary.target === target &&
 		(!summary.targetReached || summary.targetSatisfiedBy !== "scorer")
@@ -694,6 +733,14 @@ export function assessPromotionGateFromLedgerSummary(
 			"Promotion requires package smoke evidence that executes epoch-cli, epoch-mcp, and epoch-http from the installable Rust package.",
 		);
 	}
+	const packageArtifactBlocker = packageArtifactIdentityGate(
+		target,
+		decision,
+		failingGate,
+		summary.rustBinarySha256,
+		summary.packageCliSha256,
+	);
+	if (packageArtifactBlocker) return packageArtifactBlocker;
 	if (
 		summary.totalSoakHours < requiredHours ||
 		summary.continuousSoakHours < requiredHours
@@ -854,6 +901,23 @@ function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 		);
 	}
 	return runs[0]?.rustBinarySha256 ?? null;
+}
+
+function ledgerPackageCliSha256(runs: LedgerRun[]): string | null {
+	if (runs.length === 0) return null;
+	const missingIdentity = runs.find((run) => !run.packageCliSha256);
+	if (missingIdentity) {
+		throw new Error(
+			`Soak run ${missingIdentity.id} is missing packageCliSha256; start a fresh ledger or regenerate the packet with current tooling.`,
+		);
+	}
+	const identities = new Set(runs.map((run) => run.packageCliSha256));
+	if (identities.size > 1) {
+		throw new Error(
+			`Mixed packaged CLI identities in soak ledger: ${Array.from(identities).join(", ")}. Use a separate ledger per package build.`,
+		);
+	}
+	return runs[0]?.packageCliSha256 ?? null;
 }
 
 function ledgerReleaseTag(runs: LedgerRun[]): string | null {
@@ -1025,9 +1089,10 @@ export function buildGateLedgerSummary(
 		releaseE2ePass: readinessInput.parity.releaseE2ePass,
 		publicSurfaceCoveragePercent:
 			readinessInput.parity.publicSurfaceCoveragePercent,
-		httpDeployEnvCoveragePercent:
-			readinessInput.parity.httpDeployEnvCoveragePercent,
+			httpDeployEnvCoveragePercent:
+				readinessInput.parity.httpDeployEnvCoveragePercent,
 		packageSmokePass: readinessInput.parity.packageSmokePass,
+		packageCliSha256: ledgerPackageCliSha256(runs),
 		packageCommandEvidenceComplete: boolAll(
 			runs.map(hasRequiredPackageCommands),
 		),

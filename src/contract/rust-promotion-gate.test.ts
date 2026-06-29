@@ -48,6 +48,7 @@ function runnerSummary(overrides: Record<string, unknown> = {}) {
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
 		packageCommandEvidenceComplete: true,
+		packageCliSha256: RUST_BINARY_SHA256,
 		releaseTag: "candidate-1",
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
@@ -71,6 +72,7 @@ function ledgerSummary(overrides: Record<string, unknown> = {}) {
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
 		packageCommandEvidenceComplete: true,
+		packageCliSha256: RUST_BINARY_SHA256,
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
 			decision: "CANARY",
@@ -95,6 +97,7 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
 		packageCommands: packageCommands(),
+		packageCliSha256: RUST_BINARY_SHA256,
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		unclassifiedFailures: 0,
@@ -407,6 +410,20 @@ describe("assessPromotionGate", () => {
 		expect(result.reason).toContain("package smoke evidence");
 	});
 
+	it("blocks runner summaries when the packaged CLI prebuild hash differs from soak evidence", () => {
+		const result = assessPromotionGate(
+			runnerSummary({
+				packageCliSha256:
+					"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+			}),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("packaged CLI SHA-256");
+	});
+
 	it("passes replacement when strict scorer, release evidence, and qualified performance agree", () => {
 		const result = assessPromotionGate(
 			runnerSummary({
@@ -637,6 +654,20 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 		expect(result.reason).toContain("package smoke evidence");
 	});
 
+	it("blocks cumulative summaries when the packaged CLI prebuild hash differs from soak evidence", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({
+				packageCliSha256:
+					"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+			}),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("packaged CLI SHA-256");
+	});
+
 	it("passes replacement from cumulative summary with qualified performance proof", () => {
 		const result = assessPromotionGateFromLedgerSummary(
 			ledgerSummary({
@@ -842,6 +873,23 @@ describe("assessPromotionGateFromLedger", () => {
 		expect(summary.packageSmokePass).toBe(false);
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("package smoke evidence");
+	});
+
+	it("blocks direct ledger evidence when the packaged CLI prebuild hash differs from soak evidence", () => {
+		const rawLedger = ledger([
+			ledgerRun({
+				packageCliSha256:
+					"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+			}),
+		]);
+		const summary = buildGateLedgerSummary(rawLedger);
+		const result = assessPromotionGateFromLedger(rawLedger, "canary", {
+			currentRustBinarySha256: RUST_BINARY_SHA256,
+		});
+
+		expect(summary.packageCliSha256).not.toBe(summary.rustBinarySha256);
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("packaged CLI SHA-256");
 	});
 
 	it("blocks package command proof with the wrong HTTP runtime signature", () => {

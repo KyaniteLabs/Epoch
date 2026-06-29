@@ -82,7 +82,10 @@ function packet(
 		evidence: {
 			observability: { releaseTag: "candidate-1" },
 			performance: { evidenceMode: options.performanceEvidenceMode },
-			deploy: { packageCommands: packageCommands() },
+			deploy: {
+				packageCommands: packageCommands(),
+				packageCliSha256: RUST_BINARY_SHA256,
+			},
 		},
 	});
 	writeJson(join(dir, "shadow-soak.json"), {
@@ -144,6 +147,7 @@ describe("rust-soak-ledger CLI", () => {
 		const summary = JSON.parse(readFileSync(secondSummary, "utf8")) as {
 				continuousSoakHours: number;
 				releaseContinuousSoakHours: number;
+				packageCliSha256: string | null;
 				releaseTag: string | null;
 				qualifiedPerformanceEvidence: boolean;
 			releaseE2ePass: boolean;
@@ -154,6 +158,7 @@ describe("rust-soak-ledger CLI", () => {
 			};
 			expect(summary.continuousSoakHours).toBe(2);
 			expect(summary.releaseContinuousSoakHours).toBe(2);
+			expect(summary.packageCliSha256).toBe(RUST_BINARY_SHA256);
 			expect(summary.releaseTag).toBe("candidate-1");
 			expect(summary.qualifiedPerformanceEvidence).toBe(true);
 		expect(summary.releaseE2ePass).toBe(true);
