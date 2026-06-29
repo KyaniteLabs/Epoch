@@ -8,15 +8,19 @@
 // local artifact paths, so the default output directory is git-ignored.
 // ---------------------------------------------------------------------------
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
 import {
 	assessDeployReadiness,
@@ -81,11 +85,19 @@ type PacketSummary = {
 			rustBinary: string | null;
 			rustBinarySha256: string | null;
 		};
+		deploy: {
+			packageSmokePass: boolean;
+			packageTarball: string | null;
+			packageBinTarget: string | null;
+			packagePrebuilds: string[];
+			commandExitCode: number | null;
+		};
 	};
 	files: {
 		parity: string;
 		perf: string;
 		e2e: string;
+		packageSmoke: string;
 		shadowSoak: string;
 		rollback: string;
 		readinessInput: string;
@@ -96,6 +108,7 @@ type PacketSummary = {
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_OUTPUT_DIR = ".epoch-promotion/latest";
+const RUST_BINARIES = ["epoch-cli", "epoch-mcp", "epoch-http"] as const;
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
@@ -228,6 +241,19 @@ function rel(path: string): string {
 	return relative(REPO_ROOT, path);
 }
 
+function platformTag(): string {
+	const arch = process.arch === "x64" ? "x64" : process.arch;
+	return `${process.platform}-${arch}`;
+}
+
+function requiredPackagePrebuilds(packageRoot: string): string[] {
+	const suffix = process.platform === "win32" ? ".exe" : "";
+	const platform = platformTag();
+	return RUST_BINARIES.map((binary) =>
+		join(packageRoot, "prebuilds", platform, `${binary}${suffix}`),
+	);
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -300,6 +326,103 @@ function e2eEvidence(e2eReport: unknown): {
 	};
 }
 
+type PackageSmokeEvidence = {
+	ok: boolean;
+	reason: string;
+	tarball: string | null;
+	platform: string;
+	binTarget: string | null;
+	prebuilds: string[];
+	commandExitCode: number | null;
+	stdoutHead: string;
+	stderrHead: string;
+};
+
+function head(value: string): string {
+	return value.split(/\r?\n/).slice(0, 3).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function runPackageSmoke(options: { quiet: boolean }): PackageSmokeEvidence {
+	if (!options.quiet) process.stderr.write("[promotion] package install smoke...\n");
+	const root = mkdtempSync(join(tmpdir(), "epoch-package-smoke-"));
+	const packDir = join(root, "pack");
+	const appDir = join(root, "app");
+	mkdirSync(packDir, { recursive: true });
+	mkdirSync(appDir, { recursive: true });
+	try {
+		const packOutput = execFileSync("npm", ["pack", "--pack-destination", packDir], {
+			cwd: REPO_ROOT,
+			encoding: "utf8",
+			maxBuffer: 64 * 1024 * 1024,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const tarballName = packOutput.trim().split(/\r?\n/).at(-1) ?? "";
+		const tarball = resolve(packDir, tarballName);
+		execFileSync("npm", ["init", "-y"], {
+			cwd: appDir,
+			stdio: "ignore",
+		});
+		execFileSync("npm", ["install", tarball, "--ignore-scripts"], {
+			cwd: appDir,
+			stdio: "ignore",
+		});
+		const packageRoot = join(appDir, "node_modules", "@kyanitelabs", "epoch");
+		const prebuilds = requiredPackagePrebuilds(packageRoot)
+			.filter((file) => existsSync(file))
+			.map((file) => relative(packageRoot, file).replaceAll("\\", "/"));
+		const binPath = join(
+			appDir,
+			"node_modules",
+			".bin",
+			process.platform === "win32" ? "epoch.cmd" : "epoch",
+		);
+		let binTarget: string | null = null;
+		try {
+			binTarget = readlinkSync(binPath);
+		} catch {
+			binTarget = existsSync(binPath) ? binPath : null;
+		}
+		const command = spawnSync(
+			binPath,
+			[
+				"pert-estimate",
+				"--optimistic",
+				"1",
+				"--most-likely",
+				"2",
+				"--pessimistic",
+				"4",
+			],
+			{
+				cwd: appDir,
+				encoding: "utf8",
+				env: { ...process.env, EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "0" },
+			},
+		);
+		const requiredCount = RUST_BINARIES.length;
+		const ok =
+			prebuilds.length === requiredCount &&
+			command.status === 0 &&
+			command.stdout.includes('"ok": true');
+		const reason = ok
+			? "Packed package installed and executed through Rust prebuilds."
+			: `Package smoke failed: ${prebuilds.length}/${requiredCount} Rust prebuilds present, command exit ${command.status ?? "null"}.`;
+		return {
+			ok,
+			reason,
+			tarball: basename(tarball),
+			platform: platformTag(),
+			binTarget,
+			prebuilds,
+			commandExitCode: command.status,
+			stdoutHead: head(command.stdout),
+			stderrHead: head(command.stderr),
+		};
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
 function buildSummary(
 	outputDir: string,
 	readinessInput: ReadinessInput,
@@ -308,6 +431,7 @@ function buildSummary(
 	shadowSoak: unknown,
 	perfReport: unknown,
 	e2eReport: unknown,
+	packageSmoke: PackageSmokeEvidence,
 ): PacketSummary {
 	const e2e = e2eEvidence(e2eReport);
 	return {
@@ -344,11 +468,19 @@ function buildSummary(
 				replaceRequires: "release",
 			},
 			binary: binaryEvidence(shadowSoak),
+			deploy: {
+				packageSmokePass: packageSmoke.ok,
+				packageTarball: packageSmoke.tarball,
+				packageBinTarget: packageSmoke.binTarget,
+				packagePrebuilds: packageSmoke.prebuilds,
+				commandExitCode: packageSmoke.commandExitCode,
+			},
 		},
 		files: {
 			parity: rel(resolve(outputDir, "parity.json")),
 			perf: rel(resolve(outputDir, "perf.json")),
 			e2e: rel(resolve(outputDir, "e2e.json")),
+			packageSmoke: rel(resolve(outputDir, "package-smoke.json")),
 			shadowSoak: rel(resolve(outputDir, "shadow-soak.json")),
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
 			readinessInput: rel(resolve(outputDir, "readiness-input.json")),
@@ -370,6 +502,7 @@ function printSummary(summary: PacketSummary): void {
 			`  median improvement:  ${summary.evidence.performance.medianLatencyImprovementPercent.toFixed(2)}%`,
 			`  p95 improvement:     ${summary.evidence.performance.p95LatencyImprovementPercent.toFixed(2)}%`,
 			`  perf evidence:       ${summary.evidence.performance.evidenceMode}`,
+			`  package smoke:       ${summary.evidence.deploy.packageSmokePass ? "pass" : "fail"}`,
 			`  soak hours:          ${summary.evidence.reliability.soakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.evidence.reliability.continuousSoakHours.toFixed(4)}`,
 			`  rollback rehearsed:  ${summary.evidence.rollback.rehearsed}`,
@@ -393,6 +526,7 @@ async function main(): Promise<void> {
 	const parityPath = resolve(outputDir, "parity.json");
 	const perfPath = resolve(outputDir, "perf.json");
 	const e2ePath = resolve(outputDir, "e2e.json");
+	const packageSmokePath = resolve(outputDir, "package-smoke.json");
 	const shadowPath = resolve(outputDir, "shadow-soak.json");
 	const rollbackPath = resolve(outputDir, "shadow-soak-rollback.json");
 	const readinessInputPath = resolve(outputDir, "readiness-input.json");
@@ -440,6 +574,12 @@ async function main(): Promise<void> {
 		resolve(REPO_ROOT, "docs/superpowers/reports/rust-promotion-e2e.json"),
 		e2ePath,
 	);
+
+	const packageSmoke = runPackageSmoke(options);
+	writeJson(packageSmokePath, packageSmoke);
+	if (!packageSmoke.ok) {
+		throw new Error(packageSmoke.reason);
+	}
 
 	const shadowArgs = [
 		"exec",
@@ -493,6 +633,7 @@ async function main(): Promise<void> {
 		shadowSoak,
 		perfReport,
 		e2eReport,
+		packageSmoke,
 	);
 
 	writeJson(readinessInputPath, readinessInput);

@@ -9,6 +9,11 @@ import {
 
 const RUST_BINARY_SHA256 =
 	"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const CURRENT_PLATFORM =
+	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
+const REQUIRED_PACKAGE_ARTIFACTS = ["epoch-cli", "epoch-mcp", "epoch-http"].map(
+	(binary) => `prebuilds/${CURRENT_PLATFORM}/${binary}${process.platform === "win32" ? ".exe" : ""}`,
+);
 
 function runnerSummary(overrides: Record<string, unknown> = {}) {
 	return {
@@ -94,6 +99,7 @@ const rustDeploySurface = {
 	reasons: [],
 	packageBinEntrypoint: "bin/epoch-rust-launcher.js",
 	packageFiles: ["dist", "data", "bin", "prebuilds"],
+	packageArtifactFiles: REQUIRED_PACKAGE_ARTIFACTS,
 	dockerEntrypoint: 'ENTRYPOINT ["epoch-http"]',
 	checks: {
 		packageBinRoutesToRust: true,
@@ -126,11 +132,28 @@ describe("auditDeploySurface", () => {
 				bin: { epoch: "bin/epoch-rust-launcher.js" },
 				files: ["dist", "data", "prebuilds"],
 			},
+			packageArtifactFiles: REQUIRED_PACKAGE_ARTIFACTS,
 			dockerfile: 'FROM scratch\nENTRYPOINT ["epoch-http"]\n',
 		});
 
 		expect(surface.ok).toBe(true);
 		expect(surface.reasons).toEqual([]);
+	});
+
+	it("rejects declared prebuilds when the actual package artifacts are missing", () => {
+		const surface = auditDeploySurface({
+			packageJson: {
+				bin: { epoch: "dist/native/epoch-rust-launcher.js" },
+				files: ["dist", "data", "prebuilds"],
+			},
+			packageArtifactFiles: [],
+			dockerfile: 'FROM scratch\nENTRYPOINT ["epoch-http"]\n',
+		});
+
+		expect(surface.ok).toBe(false);
+		expect(surface.checks.packageBinRoutesToRust).toBe(true);
+		expect(surface.checks.packageFilesIncludeRustArtifacts).toBe(false);
+		expect(surface.reasons.join(" ")).toContain("prebuild binaries are missing");
 	});
 });
 

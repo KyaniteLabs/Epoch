@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readSync } from "node:fs";
+import { existsSync, readSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -564,7 +564,18 @@ export function runPlannedInvocation(
 				: "epoch-cli";
 	const binary = resolveRustBinary(packageRoot, binaryName, env);
 	if (!binary) {
-		return runTypeScriptEntrypoint(packageRoot, plan.root.args, env);
+		if (allowsTypeScriptFallback(env)) {
+			return runTypeScriptEntrypoint(packageRoot, plan.root.args, env);
+		}
+		process.stderr.write(
+			[
+				`Epoch Rust launcher could not find ${binaryName}.`,
+				"Build release binaries or install a package with prebuilt Rust artifacts.",
+				"Set EPOCH_ALLOW_TYPESCRIPT_FALLBACK=1 only for explicit rollback/debug use.",
+				"",
+			].join("\n"),
+		);
+		return 1;
 	}
 
 	if (plan.mode === "rust-cli") {
@@ -576,6 +587,11 @@ export function runPlannedInvocation(
 		env: { ...process.env, ...env, ...(plan.httpEnv ?? {}) },
 	});
 	return child.status ?? 1;
+}
+
+function allowsTypeScriptFallback(env: NodeJS.ProcessEnv): boolean {
+	const value = env["EPOCH_ALLOW_TYPESCRIPT_FALLBACK"]?.toLowerCase();
+	return value === "1" || value === "true" || value === "yes";
 }
 
 function runRustCli(
@@ -1095,7 +1111,9 @@ function formatValue(lines: string[], value: unknown, depth: number): void {
 function isEntrypoint(): boolean {
 	const entrypoint = process.argv[1];
 	if (!entrypoint) return false;
-	return import.meta.url === pathToFileURL(resolve(entrypoint)).href;
+	const resolved = resolve(entrypoint);
+	const actual = existsSync(resolved) ? realpathSync(resolved) : resolved;
+	return import.meta.url === pathToFileURL(actual).href;
 }
 
 function main(): void {

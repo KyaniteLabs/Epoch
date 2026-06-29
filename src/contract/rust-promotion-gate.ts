@@ -49,6 +49,7 @@ export type DeploySurfaceEvidence = {
 	reasons: string[];
 	packageBinEntrypoint: string | null;
 	packageFiles: string[];
+	packageArtifactFiles: string[];
 	dockerEntrypoint: string | null;
 	checks: {
 		packageBinRoutesToRust: boolean;
@@ -274,6 +275,24 @@ function filesIncludeRustArtifacts(files: string[]): boolean {
 	);
 }
 
+function platformTag(): string {
+	const arch = process.arch === "x64" ? "x64" : process.arch;
+	return `${process.platform}-${arch}`;
+}
+
+function requiredPrebuildArtifactFiles(): string[] {
+	const suffix = process.platform === "win32" ? ".exe" : "";
+	const platform = platformTag();
+	return ["epoch-cli", "epoch-mcp", "epoch-http"].map(
+		(binary) => `prebuilds/${platform}/${binary}${suffix}`,
+	);
+}
+
+function rustPrebuildArtifactsPresent(files: string[]): boolean {
+	const normalized = new Set(files.map((entry) => entry.replaceAll("\\", "/")));
+	return requiredPrebuildArtifactFiles().every((entry) => normalized.has(entry));
+}
+
 function dockerEntrypoint(text: string | null): string | null {
 	if (!text) return null;
 	return (
@@ -288,6 +307,7 @@ function dockerEntrypoint(text: string | null): string | null {
 export function auditDeploySurface(raw: {
 	packageJson: unknown;
 	dockerfile?: string | null;
+	packageArtifactFiles?: string[];
 }): DeploySurfaceEvidence {
 	const packageJson =
 		typeof raw.packageJson === "object" &&
@@ -303,10 +323,16 @@ export function auditDeploySurface(raw: {
 			: {};
 	const packageBinEntrypoint = valueAsString(bin["epoch"]);
 	const packageFiles = stringArray(packageJson["files"]);
+	const packageArtifactFiles = stringArray(raw.packageArtifactFiles);
 	const dockerEntry = dockerEntrypoint(raw.dockerfile ?? null);
+	const packageDeclaresRustArtifacts = filesIncludeRustArtifacts(packageFiles);
+	const packageHasRustArtifacts =
+		packageArtifactFiles.length > 0 &&
+		rustPrebuildArtifactsPresent(packageArtifactFiles);
 	const checks = {
 		packageBinRoutesToRust: routesToRust(packageBinEntrypoint),
-		packageFilesIncludeRustArtifacts: filesIncludeRustArtifacts(packageFiles),
+		packageFilesIncludeRustArtifacts:
+			packageDeclaresRustArtifacts && packageHasRustArtifacts,
 		dockerEntrypointRoutesToRust: raw.dockerfile
 			? routesToRust(dockerEntry)
 			: true,
@@ -318,7 +344,11 @@ export function auditDeploySurface(raw: {
 		);
 	}
 	if (!checks.packageFilesIncludeRustArtifacts) {
-		reasons.push("package files do not include Rust/native binary artifacts");
+		reasons.push(
+			packageDeclaresRustArtifacts
+				? `package files declare Rust artifacts but current ${platformTag()} prebuild binaries are missing`
+				: "package files do not include Rust/native binary artifacts",
+		);
 	}
 	if (!checks.dockerEntrypointRoutesToRust) {
 		reasons.push(
@@ -331,9 +361,16 @@ export function auditDeploySurface(raw: {
 		reasons,
 		packageBinEntrypoint,
 		packageFiles,
+		packageArtifactFiles,
 		dockerEntrypoint: dockerEntry,
 		checks,
 	};
+}
+
+function packageArtifactFilesFromRepo(repoRoot: string): string[] {
+	return requiredPrebuildArtifactFiles().filter((entry) =>
+		existsSync(join(repoRoot, entry)),
+	);
 }
 
 function auditDeploySurfaceFromRepo(repoRoot = process.cwd()): DeploySurfaceEvidence {
@@ -342,7 +379,11 @@ function auditDeploySurfaceFromRepo(repoRoot = process.cwd()): DeploySurfaceEvid
 	const dockerfile = existsSync(dockerfilePath)
 		? readFileSync(dockerfilePath, "utf8")
 		: null;
-	return auditDeploySurface({ packageJson, dockerfile });
+	return auditDeploySurface({
+		packageJson,
+		dockerfile,
+		packageArtifactFiles: packageArtifactFilesFromRepo(repoRoot),
+	});
 }
 
 function deploySurfaceGate(

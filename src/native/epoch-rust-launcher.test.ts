@@ -317,6 +317,62 @@ describe("epoch-rust-launcher", () => {
 			.toThrow("error: option '--default-complexity <n>' argument missing");
 	});
 
+	it("fails closed when a Rust-routed command has no Rust binary", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-missing-bin-"));
+		try {
+			const output = captureOutput(() =>
+				runPlannedInvocation(
+					planInvocation([
+						"pert-estimate",
+						"--optimistic",
+						"1",
+						"--most-likely",
+						"2",
+						"--pessimistic",
+						"4",
+					]),
+					root,
+					{},
+				),
+			);
+
+			expect(output.status).toBe(1);
+			expect(output.stderr).toContain(
+				"Epoch Rust launcher could not find epoch-cli.",
+			);
+			expect(output.stderr).toContain("EPOCH_ALLOW_TYPESCRIPT_FALLBACK=1");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("allows TypeScript fallback only when explicitly requested", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-fallback-"));
+		try {
+			const dist = join(root, "dist");
+			mkdirSync(dist, { recursive: true });
+			writeFileSync(join(dist, "index.js"), "process.exit(23);\n");
+
+			expect(
+				runPlannedInvocation(
+					planInvocation([
+						"pert-estimate",
+						"--optimistic",
+						"1",
+						"--most-likely",
+						"2",
+						"--pessimistic",
+						"4",
+					]),
+					root,
+					{ EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "1" },
+				),
+			).toBe(23);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("prints telemetry submit payloads in TypeScript order and exits by ok", () => {
 		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-run-"));
 		try {
