@@ -31,10 +31,10 @@ function packageCommands(overrides: Record<string, unknown> = {}) {
 		signal: null,
 		stdoutHead:
 			name === "epoch-cli"
-				? '{"ok": true}'
+				? '{ "ok": true, "data": {'
 				: name === "epoch-mcp"
-					? 'Content-Length: 36 {"result":{}}'
-					: 'health {"status":"ok","tools":24}',
+					? 'Content-Length: 36 {"id":1,"jsonrpc":"2.0","result":{}}'
+					: 'health {"status":"ok","tools":24,"uptime":0.0,"version":"0.1.0"}',
 		stderrHead: "",
 		error: null,
 		...overrides,
@@ -596,6 +596,48 @@ describe("assessPromotionGateFromLedger", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("release-binary E2E coverage");
+	});
+
+	it("blocks direct ledger evidence without installable package smoke proof", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([ledgerRun({ packageSmokePass: false })]),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("package smoke evidence");
+	});
+
+	it("blocks direct ledger evidence without per-binary package command proof", () => {
+		const rawLedger = ledger([ledgerRun({ packageCommands: [] })]);
+		const summary = buildGateLedgerSummary(rawLedger);
+		const result = assessPromotionGateFromLedger(
+			rawLedger,
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(summary.packageCommandEvidenceComplete).toBe(false);
+		expect(summary.packageSmokePass).toBe(false);
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("package smoke evidence");
+	});
+
+	it("blocks package command proof with the wrong HTTP runtime signature", () => {
+		const rawLedger = ledger([
+			ledgerRun({
+				packageCommands: packageCommands().map((command) =>
+					command.name === "epoch-http"
+						? { ...command, stdoutHead: "Usage: epoch-http [HOST:PORT]" }
+						: command,
+				),
+			}),
+		]);
+		const summary = buildGateLedgerSummary(rawLedger);
+
+		expect(summary.packageCommandEvidenceComplete).toBe(false);
+		expect(summary.packageSmokePass).toBe(false);
 	});
 
 	it("blocks replacement when qualified performance evidence is not release-tagged", () => {
