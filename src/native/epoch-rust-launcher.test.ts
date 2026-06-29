@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -666,6 +667,85 @@ describe("epoch-rust-launcher", () => {
 			expect(
 				resolveRustBinary(root, "epoch-cli", { EPOCH_RUST_BIN_DIR: explicitDir }),
 			).toBe(explicit);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("verifies package prebuild checksums before resolving them", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-prebuild-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const arch = process.arch === "x64" ? "x64" : process.arch;
+			const platform = `${process.platform}-${arch}`;
+			const prebuildDir = join(root, "prebuilds", platform);
+			const prebuild = join(prebuildDir, `epoch-cli${suffix}`);
+			const contents = "fixture-prebuild";
+			mkdirSync(prebuildDir, { recursive: true });
+			writeFileSync(prebuild, contents);
+			chmodSync(prebuild, 0o755);
+			writeFileSync(
+				join(prebuildDir, "manifest.json"),
+				`${JSON.stringify({
+					platform,
+					checksums: {
+						[`epoch-cli${suffix}`]: createHash("sha256")
+							.update(contents)
+							.digest("hex"),
+					},
+				})}\n`,
+			);
+
+			expect(resolveRustBinary(root, "epoch-cli", {})).toBe(prebuild);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("fails closed on prebuild checksum mismatch without TypeScript fallback", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-prebuild-bad-"));
+		try {
+			const suffix = process.platform === "win32" ? ".exe" : "";
+			const arch = process.arch === "x64" ? "x64" : process.arch;
+			const platform = `${process.platform}-${arch}`;
+			const prebuildDir = join(root, "prebuilds", platform);
+			const prebuild = join(prebuildDir, `epoch-cli${suffix}`);
+			const dist = join(root, "dist");
+			mkdirSync(prebuildDir, { recursive: true });
+			mkdirSync(dist, { recursive: true });
+			writeFileSync(prebuild, "tampered-prebuild");
+			chmodSync(prebuild, 0o755);
+			writeFileSync(join(dist, "index.js"), "process.exit(23);\n");
+			writeFileSync(
+				join(prebuildDir, "manifest.json"),
+				`${JSON.stringify({
+					platform,
+					checksums: { [`epoch-cli${suffix}`]: "0".repeat(64) },
+				})}\n`,
+			);
+
+			expect(() => resolveRustBinary(root, "epoch-cli", {})).toThrow(
+				/checksum mismatch/,
+			);
+
+			const output = captureOutput(() =>
+				runPlannedInvocation(
+					planInvocation([
+						"pert-estimate",
+						"--optimistic",
+						"1",
+						"--most-likely",
+						"2",
+						"--pessimistic",
+						"4",
+					]),
+					root,
+					{ EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "1" },
+				),
+			);
+			expect(output.status).toBe(1);
+			expect(output.stderr).toContain("Epoch Rust launcher rejected epoch-cli");
+			expect(output.stderr).toContain("checksum mismatch");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -534,17 +535,50 @@ export function resolveRustBinary(
 	env: NodeJS.ProcessEnv = process.env,
 ): string | null {
 	const suffix = process.platform === "win32" ? ".exe" : "";
-	const candidates = [];
 	const explicitDir = env["EPOCH_RUST_BIN_DIR"];
-	if (explicitDir) candidates.push(join(explicitDir, `${name}${suffix}`));
-	candidates.push(join(packageRoot, "rust", "target", "release", `${name}${suffix}`));
-	candidates.push(join(packageRoot, "prebuilds", platformTag(), `${name}${suffix}`));
-	return candidates.find((candidate) => existsSync(candidate)) ?? null;
+	const explicit = explicitDir ? join(explicitDir, `${name}${suffix}`) : null;
+	if (explicit && existsSync(explicit)) return explicit;
+	const release = join(packageRoot, "rust", "target", "release", `${name}${suffix}`);
+	if (existsSync(release)) return release;
+	const platform = platformTag();
+	const prebuild = join(packageRoot, "prebuilds", platform, `${name}${suffix}`);
+	if (existsSync(prebuild)) {
+		verifyPrebuildChecksum(packageRoot, platform, `${name}${suffix}`, prebuild);
+		return prebuild;
+	}
+	return null;
 }
 
 function platformTag(): string {
 	const arch = process.arch === "x64" ? "x64" : process.arch;
 	return `${process.platform}-${arch}`;
+}
+
+function verifyPrebuildChecksum(
+	packageRoot: string,
+	platform: string,
+	fileName: string,
+	binaryPath: string,
+): void {
+	const manifestPath = join(packageRoot, "prebuilds", platform, "manifest.json");
+	if (!existsSync(manifestPath)) {
+		throw new Error(`Missing Rust prebuild manifest: ${manifestPath}`);
+	}
+	const manifest = parseJson(readFileSync(manifestPath, "utf8"));
+	if (!isObject(manifest) || manifest["platform"] !== platform) {
+		throw new Error(`Rust prebuild manifest does not match ${platform}: ${manifestPath}`);
+	}
+	const checksums = manifest["checksums"];
+	if (!isObject(checksums) || typeof checksums[fileName] !== "string") {
+		throw new Error(`Rust prebuild manifest is missing checksum for ${fileName}`);
+	}
+	const expected = checksums[fileName];
+	const actual = createHash("sha256").update(readFileSync(binaryPath)).digest("hex");
+	if (actual !== expected) {
+		throw new Error(
+			`Rust prebuild checksum mismatch for ${fileName}: ${actual} !== ${expected}`,
+		);
+	}
 }
 
 export function runPlannedInvocation(
@@ -560,9 +594,17 @@ export function runPlannedInvocation(
 		plan.mode === "http"
 			? "epoch-http"
 			: plan.mode === "mcp"
-				? "epoch-mcp"
-				: "epoch-cli";
-	const binary = resolveRustBinary(packageRoot, binaryName, env);
+			? "epoch-mcp"
+			: "epoch-cli";
+	let binary: string | null;
+	try {
+		binary = resolveRustBinary(packageRoot, binaryName, env);
+	} catch (error) {
+		process.stderr.write(
+			`Epoch Rust launcher rejected ${binaryName}: ${error instanceof Error ? error.message : String(error)}\n`,
+		);
+		return 1;
+	}
 	if (!binary) {
 		if (allowsTypeScriptFallback(env)) {
 			return runTypeScriptEntrypoint(packageRoot, plan.root.args, env);
