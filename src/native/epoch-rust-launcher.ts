@@ -173,6 +173,9 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	command("data status", "data_status", [], { wrapOutput: false }),
 	command("telemetry status", "telemetry_status", [], { wrapOutput: false }),
 	command("telemetry preview", "telemetry_preview", [], { wrapOutput: false }),
+	command("telemetry export", "telemetry_export", [
+		option("--output", "output", "string"),
+	], { wrapOutput: false, rawOutputIndent: null }),
 	command("telemetry set-endpoint", "telemetry_set_endpoint", [
 		option("--endpoint", "endpoint", "string", { required: true }),
 	], { wrapOutput: false, rawOutputIndent: null }),
@@ -532,6 +535,13 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 	}
 	if (commandPath === "telemetry preview" && isObject(data)) {
 		return normalizeTelemetryPreview(data);
+	}
+	if (commandPath === "telemetry export" && isObject(data)) {
+		return {
+			ok: data["ok"],
+			path: data["path"],
+			message: data["message"],
+		};
 	}
 	if (commandPath === "telemetry set-endpoint" && isObject(data)) {
 		return {

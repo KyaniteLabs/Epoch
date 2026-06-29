@@ -437,7 +437,7 @@ fn anonymized_records_from_store(
             );
             object.insert(
                 "complexity".to_string(),
-                record.complexity.map(Value::from).unwrap_or(Value::Null),
+                record.complexity.map(js_json_number).unwrap_or(Value::Null),
             );
             object.insert(
                 "tool".to_string(),
@@ -445,15 +445,15 @@ fn anonymized_records_from_store(
             );
             object.insert(
                 "estimated_hours".to_string(),
-                Value::from(round_to(record.estimated_hours, 2)),
+                rounded_json_number(record.estimated_hours, 2),
             );
             object.insert(
                 "actual_hours".to_string(),
-                Value::from(round_to(record.actual_hours, 2)),
+                rounded_json_number(record.actual_hours, 2),
             );
             object.insert(
                 "ratio".to_string(),
-                Value::from(round_to(record.actual_hours / record.estimated_hours, 4)),
+                rounded_json_number(record.actual_hours / record.estimated_hours, 4),
             );
             object.insert(
                 "date".to_string(),
@@ -469,24 +469,61 @@ fn anonymized_records_from_store(
 }
 
 fn export_telemetry_records(records: &[Value], output: Option<&str>) -> Result<String, ToolError> {
-    let path = output.map(PathBuf::from).unwrap_or_else(|| {
-        epoch_data_dir()
-            .join(EXPORTS_DIR)
-            .join(default_export_filename())
-    });
-    if output.is_none()
-        && let Some(parent) = path.parent()
-    {
-        create_dir_all(parent).map_err(config_io_error)?;
-    }
-    let raw = serde_json::to_string_pretty(records).map_err(|error| {
-        ToolError::new(
-            format!("Failed to serialize telemetry export: {error}."),
-            "Inspect local feedback records before exporting.",
-        )
-    })?;
+    let exports_dir = epoch_data_dir().join(EXPORTS_DIR);
+    create_dir_all(&exports_dir).map_err(config_io_error)?;
+    let path = output
+        .map(PathBuf::from)
+        .unwrap_or_else(|| exports_dir.join(default_export_filename()));
+    let raw = serialize_telemetry_export_records(records)?;
     write(&path, raw).map_err(config_io_error)?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+fn serialize_telemetry_export_records(records: &[Value]) -> Result<String, ToolError> {
+    if records.is_empty() {
+        return Ok("[]".to_string());
+    }
+
+    let mut raw = String::from("[\n");
+    for (record_index, record) in records.iter().enumerate() {
+        let Some(record) = record.as_object() else {
+            return Err(telemetry_cli_error(
+                "telemetry export record was not a JSON object",
+            ));
+        };
+        raw.push_str("  {\n");
+        for (field_index, field) in ANONYMIZED_RECORD_FIELDS.iter().enumerate() {
+            raw.push_str("    ");
+            raw.push_str(&serde_json::to_string(field).map_err(|error| {
+                ToolError::new(
+                    format!("Failed to serialize telemetry export field: {error}."),
+                    "Inspect local feedback records before exporting.",
+                )
+            })?);
+            raw.push_str(": ");
+            raw.push_str(
+                &serde_json::to_string(record.get(*field).unwrap_or(&Value::Null)).map_err(
+                    |error| {
+                        ToolError::new(
+                            format!("Failed to serialize telemetry export value: {error}."),
+                            "Inspect local feedback records before exporting.",
+                        )
+                    },
+                )?,
+            );
+            if field_index + 1 < ANONYMIZED_RECORD_FIELDS.len() {
+                raw.push(',');
+            }
+            raw.push('\n');
+        }
+        raw.push_str("  }");
+        if record_index + 1 < records.len() {
+            raw.push(',');
+        }
+        raw.push('\n');
+    }
+    raw.push(']');
+    Ok(raw)
 }
 
 fn submit_telemetry(force: bool, min_interval_hours: Option<f64>) -> ToolValueResult {
@@ -722,6 +759,22 @@ fn normalize_timestamp(value: &str) -> String {
 fn round_to(value: f64, decimals: i32) -> f64 {
     let factor = 10_f64.powi(decimals);
     (value * factor).round() / factor
+}
+
+fn rounded_json_number(value: f64, decimals: i32) -> Value {
+    js_json_number(round_to(value, decimals))
+}
+
+fn js_json_number(value: f64) -> Value {
+    if value.is_finite()
+        && value.fract() == 0.0
+        && value >= i64::MIN as f64
+        && value <= i64::MAX as f64
+    {
+        Value::from(value as i64)
+    } else {
+        Value::from(value)
+    }
 }
 
 fn epoch_data_dir() -> PathBuf {
@@ -1265,7 +1318,24 @@ mod tests {
         .expect("export telemetry");
         assert_eq!(exported["ok"], true);
         let raw = read_to_string(output).expect("export written");
-        assert!(raw.contains("\"task_type\""));
+        assert_eq!(
+            raw,
+            concat!(
+                "[\n",
+                "  {\n",
+                "    \"task_type\": \"feature\",\n",
+                "    \"complexity\": 3,\n",
+                "    \"tool\": \"pert_estimate\",\n",
+                "    \"estimated_hours\": 4,\n",
+                "    \"actual_hours\": 5,\n",
+                "    \"ratio\": 1.25,\n",
+                "    \"date\": \"2026-05-07\",\n",
+                "    \"completed_at\": \"2026-05-07T00:00:00.000Z\"\n",
+                "  }\n",
+                "]"
+            )
+        );
+        assert!(data_dir.join("exports").exists());
 
         clear_epoch_env();
         let _ = remove_dir_all(data_dir);
