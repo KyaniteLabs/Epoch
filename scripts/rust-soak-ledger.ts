@@ -267,6 +267,17 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 				? value.rustBinarySha256
 				: null,
 		publicSurfaceMatch: booleanField(value, "publicSurfaceMatch", false),
+		releaseE2ePass: booleanField(value, "releaseE2ePass", false),
+		publicSurfaceCoveragePercent: numberField(
+			value,
+			"publicSurfaceCoveragePercent",
+			0,
+		),
+		httpDeployEnvCoveragePercent: numberField(
+			value,
+			"httpDeployEnvCoveragePercent",
+			0,
+		),
 		outputParityPercent: numberField(value, "outputParityPercent", 0),
 		errorCompatibilityPercent: numberField(
 			value,
