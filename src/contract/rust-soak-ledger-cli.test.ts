@@ -25,10 +25,11 @@ function packet(
 	writeJson(join(dir, "readiness-input.json"), {
 		parity: {
 			publicSurfaceMatch: true,
-			releaseE2ePass: true,
-			publicSurfaceCoveragePercent: 100,
-			httpDeployEnvCoveragePercent: 100,
-			outputParityPercent: 100,
+				releaseE2ePass: true,
+				publicSurfaceCoveragePercent: 100,
+				httpDeployEnvCoveragePercent: 100,
+				packageSmokePass: true,
+				outputParityPercent: 100,
 			errorCompatibilityPercent: 100,
 			unclassifiedFailures: 0,
 			rustBinarySha256: RUST_BINARY_SHA256,
@@ -123,6 +124,7 @@ describe("rust-soak-ledger CLI", () => {
 			releaseE2ePass: boolean;
 			publicSurfaceCoveragePercent: number;
 			httpDeployEnvCoveragePercent: number;
+			packageSmokePass: boolean;
 			readiness: { failingGate: string | null };
 		};
 		expect(summary.continuousSoakHours).toBe(2);
@@ -130,6 +132,7 @@ describe("rust-soak-ledger CLI", () => {
 		expect(summary.releaseE2ePass).toBe(true);
 		expect(summary.publicSurfaceCoveragePercent).toBe(100);
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);
+		expect(summary.packageSmokePass).toBe(true);
 		expect(summary.readiness.failingGate).toBe("soak");
 	});
 });

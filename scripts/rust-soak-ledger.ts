@@ -44,6 +44,7 @@ type LedgerRun = {
 	releaseE2ePass?: boolean;
 	publicSurfaceCoveragePercent?: number;
 	httpDeployEnvCoveragePercent?: number;
+	packageSmokePass?: boolean;
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
@@ -83,6 +84,7 @@ type LedgerSummary = {
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -278,6 +280,7 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 			"httpDeployEnvCoveragePercent",
 			0,
 		),
+		packageSmokePass: booleanField(value, "packageSmokePass", false),
 		outputParityPercent: numberField(value, "outputParityPercent", 0),
 		errorCompatibilityPercent: numberField(
 			value,
@@ -448,6 +451,7 @@ function ledgerRunFromPacket(
 			readinessInput.parity.publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent:
 			readinessInput.parity.httpDeployEnvCoveragePercent,
+		packageSmokePass: readinessInput.parity.packageSmokePass,
 		outputParityPercent: readinessInput.parity.outputParityPercent,
 		errorCompatibilityPercent: readinessInput.parity.errorCompatibilityPercent,
 		unclassifiedFailures: readinessInput.parity.unclassifiedFailures,
@@ -506,6 +510,7 @@ function isCleanRun(run: LedgerRun): boolean {
 	return (
 		run.publicSurfaceMatch &&
 		run.releaseE2ePass === true &&
+		run.packageSmokePass === true &&
 		run.unclassifiedFailures === 0 &&
 		run.crashes === 0 &&
 		run.dataLossIncidents === 0 &&
@@ -593,6 +598,9 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 			httpDeployEnvCoveragePercent: numberMin(
 				runs.map((run) => run.httpDeployEnvCoveragePercent ?? 0),
 			),
+			packageSmokePass: boolAll(
+				runs.map((run) => run.packageSmokePass === true),
+			),
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
@@ -655,6 +663,9 @@ function buildSummary(
 	const releaseE2ePass = boolAll(
 		ledger.runs.map((run) => run.releaseE2ePass === true),
 	);
+	const packageSmokePass = boolAll(
+		ledger.runs.map((run) => run.packageSmokePass === true),
+	);
 	const publicSurfaceCoveragePercent = numberMin(
 		ledger.runs.map((run) => run.publicSurfaceCoveragePercent ?? 0),
 	);
@@ -674,6 +685,7 @@ function buildSummary(
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,
+		packageSmokePass,
 		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,
@@ -699,6 +711,7 @@ function printSummary(summary: LedgerSummary): void {
 			`  release soak hours:  ${summary.releaseTaggedSoakHours.toFixed(4)}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
+			`  package smoke:       ${summary.packageSmokePass}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  decision:            ${summary.readiness.decision}`,
 			`  failing gate:        ${summary.readiness.failingGate ?? "none"}`,

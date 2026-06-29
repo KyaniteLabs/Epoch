@@ -87,6 +87,7 @@ const runnerSummarySchema = z.object({
 	releaseE2ePass: z.boolean().default(false),
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
+	packageSmokePass: z.boolean().default(false),
 	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
@@ -107,6 +108,7 @@ const ledgerRunSchema = z.object({
 	releaseE2ePass: z.boolean().default(false),
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
+	packageSmokePass: z.boolean().default(false),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -140,6 +142,7 @@ const ledgerSummarySchema = z.object({
 	releaseE2ePass: z.boolean().default(false),
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
+	packageSmokePass: z.boolean().default(false),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
 		decision: deployReadinessDecisionSchema,
@@ -502,6 +505,15 @@ export function assessPromotionGate(
 			"Promotion requires release-binary E2E coverage for public surfaces and deploy environment parity.",
 		);
 	}
+	if (!summary.packageSmokePass) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires package smoke evidence from the installable Rust package.",
+		);
+	}
 	if (
 		summary.target === target &&
 		(!summary.targetReached || summary.targetSatisfiedBy !== "scorer")
@@ -592,6 +604,15 @@ export function assessPromotionGateFromLedgerSummary(
 			decision,
 			failingGate,
 			"Promotion requires release-binary E2E coverage for public surfaces and deploy environment parity.",
+		);
+	}
+	if (!summary.packageSmokePass) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires package smoke evidence from the installable Rust package.",
 		);
 	}
 	if (
@@ -691,6 +712,7 @@ function cleanInterval(run: LedgerRun): { startMs: number; endMs: number } | nul
 	if (
 		!run.publicSurfaceMatch ||
 		!run.releaseE2ePass ||
+		!run.packageSmokePass ||
 		run.unclassifiedFailures > 0 ||
 		run.crashes > 0 ||
 		run.dataLossIncidents > 0 ||
@@ -780,6 +802,7 @@ export function buildGateLedgerSummary(
 			httpDeployEnvCoveragePercent: numberMin(
 				runs.map((run) => run.httpDeployEnvCoveragePercent),
 			),
+			packageSmokePass: boolAll(runs.map((run) => run.packageSmokePass)),
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
@@ -827,6 +850,7 @@ export function buildGateLedgerSummary(
 			readinessInput.parity.publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent:
 			readinessInput.parity.httpDeployEnvCoveragePercent,
+		packageSmokePass: readinessInput.parity.packageSmokePass,
 		rustBinarySha256: readinessInput.parity.rustBinarySha256,
 		readiness: assessDeployReadiness(readinessInput),
 	};

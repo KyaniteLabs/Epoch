@@ -620,6 +620,7 @@ async function main(): Promise<void> {
 			releaseE2ePass: e2e.releaseE2ePass,
 			publicSurfaceCoveragePercent: e2e.publicSurfaceCoveragePercent ?? 0,
 			httpDeployEnvCoveragePercent: e2e.httpDeployEnvCoveragePercent ?? 0,
+			packageSmokePass: packageSmoke.ok,
 		},
 		perf: perfReport,
 	});

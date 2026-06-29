@@ -14,6 +14,7 @@ export const parityEvidenceSchema = z.object({
 	releaseE2ePass: z.boolean().default(false),
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
+	packageSmokePass: z.boolean().default(false),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -171,6 +172,7 @@ function normalizeParityEvidence(raw: unknown): ReadinessInput["parity"] {
 			numberField(raw, "publicSurfaceCoveragePercent") ?? 0,
 		httpDeployEnvCoveragePercent:
 			numberField(raw, "httpDeployEnvCoveragePercent") ?? 0,
+		packageSmokePass: booleanField(raw, "packageSmokePass") ?? false,
 		outputParityPercent,
 		errorCompatibilityPercent,
 		unclassifiedFailures,
@@ -288,6 +290,7 @@ function canaryGates(input: ReadinessInput): Gate[] {
 				parity.publicSurfaceCoveragePercent >= 100 &&
 				parity.httpDeployEnvCoveragePercent >= 100,
 		},
+		{ gate: "package-smoke", ok: parity.packageSmokePass },
 		{
 			gate: "performance",
 			ok:
@@ -335,6 +338,7 @@ function replaceGates(input: ReadinessInput): Gate[] {
 				parity.publicSurfaceCoveragePercent >= 100 &&
 				parity.httpDeployEnvCoveragePercent >= 100,
 		},
+		{ gate: "package-smoke", ok: parity.packageSmokePass },
 		{
 			gate: "performance",
 			ok:
@@ -399,7 +403,7 @@ export function assessDeployReadiness(input: ReadinessInput): ReadinessAssessmen
 		decision: "REPLACE",
 		failingGate: null,
 		rationale:
-			"Rust meets every parity, release-E2E, performance, soak, rollback, and observability gate, so it may become the default implementation.",
+			"Rust meets every parity, release-E2E, package-smoke, performance, soak, rollback, and observability gate, so it may become the default implementation.",
 	};
 }
 

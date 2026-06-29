@@ -41,6 +41,7 @@ type LedgerRun = {
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
 	soakHours: number;
 	continuousSoakHours: number;
 	crashes: number;
@@ -83,6 +84,7 @@ type SoakStatus = {
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
 	remainingCanaryHours: number;
 	remainingReplaceHours: number;
 	latestRun: LedgerRun | null;
@@ -209,6 +211,7 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 			raw,
 			"httpDeployEnvCoveragePercent",
 		),
+		packageSmokePass: raw.packageSmokePass === true,
 		soakHours: numberField(raw, "soakHours"),
 		continuousSoakHours: numberField(raw, "continuousSoakHours"),
 		crashes: numberField(raw, "crashes"),
@@ -310,6 +313,7 @@ function cleanIntervalForRun(
 	if (
 		!run.publicSurfaceMatch ||
 		!run.releaseE2ePass ||
+		!run.packageSmokePass ||
 		run.publicSurfaceCoveragePercent < 100 ||
 		run.httpDeployEnvCoveragePercent < 100 ||
 		run.unclassifiedFailures > 0 ||
@@ -390,6 +394,7 @@ function cumulativeReadiness(
 	releaseE2ePass: boolean,
 	publicSurfaceCoveragePercent: number,
 	httpDeployEnvCoveragePercent: number,
+	packageSmokePass: boolean,
 ): ReadinessAssessment | null {
 	if (runs.length === 0) return null;
 	const outputParityPercent = numberMin(
@@ -410,6 +415,7 @@ function cumulativeReadiness(
 			releaseE2ePass,
 			publicSurfaceCoveragePercent,
 			httpDeployEnvCoveragePercent,
+			packageSmokePass,
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
@@ -491,6 +497,8 @@ export function buildSoakStatus(input: {
 				run.publicSurfaceCoveragePercent >= 100 &&
 				run.httpDeployEnvCoveragePercent >= 100,
 		);
+	const packageSmokePass =
+		runs.length > 0 && runs.every((run) => run.packageSmokePass);
 	const publicSurfaceCoveragePercent = numberMin(
 		runs.map((run) => run.publicSurfaceCoveragePercent),
 	);
@@ -508,6 +516,7 @@ export function buildSoakStatus(input: {
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,
+		packageSmokePass,
 	);
 	const warnings: string[] = [];
 
@@ -570,6 +579,7 @@ export function buildSoakStatus(input: {
 			(run) =>
 				!run.publicSurfaceMatch ||
 				!run.releaseE2ePass ||
+				!run.packageSmokePass ||
 				run.publicSurfaceCoveragePercent < 100 ||
 				run.httpDeployEnvCoveragePercent < 100 ||
 				run.outputParityPercent < 100 ||
@@ -577,7 +587,9 @@ export function buildSoakStatus(input: {
 				run.unclassifiedFailures > 0,
 		)
 	) {
-		warnings.push("Ledger includes public-surface, release-E2E, parity, or unclassified failures.");
+		warnings.push(
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
+		);
 	}
 
 	return {
@@ -600,6 +612,7 @@ export function buildSoakStatus(input: {
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,
+		packageSmokePass,
 		remainingCanaryHours: Math.max(0, CANARY_SOAK_HOURS - continuousCleanSoakHours),
 		remainingReplaceHours: Math.max(
 			0,
@@ -638,6 +651,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  release-tagged soak: ${formatHours(status.releaseTaggedSoakHours)}h`,
 		`  qualified perf:      ${status.qualifiedPerformanceEvidence}`,
 		`  release e2e:         ${status.releaseE2ePass} (${status.publicSurfaceCoveragePercent}%)`,
+		`  package smoke:       ${status.packageSmokePass}`,
 		`  canary remaining:    ${formatHours(status.remainingCanaryHours)}h`,
 		`  replace remaining:   ${formatHours(status.remainingReplaceHours)}h`,
 		`  binary sha256:       ${status.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,

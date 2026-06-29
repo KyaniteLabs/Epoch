@@ -25,6 +25,7 @@ function runnerSummary(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
 		releaseTag: "candidate-1",
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
@@ -44,6 +45,7 @@ function ledgerSummary(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
 			decision: "CANARY",
@@ -66,6 +68,7 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		unclassifiedFailures: 0,
@@ -319,6 +322,17 @@ describe("assessPromotionGate", () => {
 		expect(result.reason).toContain("release-binary E2E coverage");
 	});
 
+	it("blocks runner summaries without installable package smoke proof", () => {
+		const result = assessPromotionGate(
+			runnerSummary({ packageSmokePass: false }),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("package smoke evidence");
+	});
+
 	it("passes replacement when strict scorer, release evidence, and qualified performance agree", () => {
 		const result = assessPromotionGate(
 			runnerSummary({
@@ -427,6 +441,17 @@ describe("assessPromotionGateFromLedgerSummary", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("release-binary E2E coverage");
+	});
+
+	it("blocks cumulative summaries without installable package smoke proof", () => {
+		const result = assessPromotionGateFromLedgerSummary(
+			ledgerSummary({ packageSmokePass: false }),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("package smoke evidence");
 	});
 
 	it("passes replacement from cumulative summary with qualified performance proof", () => {
@@ -559,6 +584,17 @@ describe("assessPromotionGateFromLedger", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("release-binary E2E coverage");
+	});
+
+	it("blocks direct ledger evidence without installable package smoke proof", () => {
+		const result = assessPromotionGateFromLedger(
+			ledger([ledgerRun({ packageSmokePass: false })]),
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("package smoke evidence");
 	});
 
 	it("blocks replacement when qualified performance evidence is not release-tagged", () => {

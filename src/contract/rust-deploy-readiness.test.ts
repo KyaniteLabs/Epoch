@@ -20,6 +20,7 @@ function replaceReadyInput(): ReadinessInput {
 			releaseE2ePass: true,
 			publicSurfaceCoveragePercent: 100,
 			httpDeployEnvCoveragePercent: 100,
+			packageSmokePass: true,
 			outputParityPercent: 100,
 			errorCompatibilityPercent: 100,
 			unclassifiedFailures: 0,
@@ -61,6 +62,7 @@ function rawReplaceReadyParity(): Record<string, unknown> {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		diffs: [],
@@ -93,6 +95,7 @@ describe("assessDeployReadiness", () => {
 				releaseE2ePass: true,
 				publicSurfaceCoveragePercent: 100,
 				httpDeployEnvCoveragePercent: 100,
+				packageSmokePass: true,
 				outputParityPercent: 98.9,
 				errorCompatibilityPercent: 97.9,
 				unclassifiedFailures: 1,
@@ -175,6 +178,15 @@ describe("assessDeployReadiness", () => {
 		expect(result.failingGate).toBe("release-e2e");
 	});
 
+	it("stays SHADOW when installable package smoke proof is missing", () => {
+		const result = assessDeployReadiness(
+			withParity({ packageSmokePass: false }),
+		);
+
+		expect(result.decision).toBe("SHADOW");
+		expect(result.failingGate).toBe("package-smoke");
+	});
+
 	it("never promotes to CANARY without rollback, soak, or observability evidence", () => {
 		// Regression guard: shadow-grade compatibility alone must not clear canary.
 		const result = assessDeployReadiness({
@@ -183,6 +195,7 @@ describe("assessDeployReadiness", () => {
 				releaseE2ePass: true,
 				publicSurfaceCoveragePercent: 100,
 				httpDeployEnvCoveragePercent: 100,
+				packageSmokePass: true,
 				outputParityPercent: 99.6,
 				errorCompatibilityPercent: 99.6,
 				unclassifiedFailures: 0,
@@ -273,10 +286,11 @@ describe("assessDeployReadinessFromJson", () => {
 		expect(input).toMatchObject({
 			parity: {
 				publicSurfaceMatch: true,
-				releaseE2ePass: false,
-				publicSurfaceCoveragePercent: 0,
-				httpDeployEnvCoveragePercent: 0,
-				outputParityPercent: 100,
+					releaseE2ePass: false,
+					publicSurfaceCoveragePercent: 0,
+					httpDeployEnvCoveragePercent: 0,
+					packageSmokePass: false,
+					outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
 				rustBinarySha256: null,
@@ -316,6 +330,7 @@ describe("assessDeployReadinessFromJson", () => {
 				releaseE2ePass: true,
 				publicSurfaceCoveragePercent: 100,
 				httpDeployEnvCoveragePercent: 100,
+				packageSmokePass: true,
 				unresolvedTelemetryAnomalies: 0,
 			},
 			perf: {
@@ -392,6 +407,7 @@ describe("assessDeployReadinessFromJson", () => {
 				releaseE2ePass: true,
 				publicSurfaceCoveragePercent: 100,
 				httpDeployEnvCoveragePercent: 100,
+				packageSmokePass: true,
 				diffs: [],
 				meta: { rustBinarySha256: RUST_BINARY_SHA256 },
 				soakHours: 72,
@@ -427,10 +443,11 @@ describe("assessDeployReadinessFromJson", () => {
 		const result = assessDeployReadinessFromJson({
 			parity: {
 				publicSurfaceMatch: true,
-				releaseE2ePass: true,
-				publicSurfaceCoveragePercent: 100,
-				httpDeployEnvCoveragePercent: 100,
-				outputParityPercent: 100,
+					releaseE2ePass: true,
+					publicSurfaceCoveragePercent: 100,
+					httpDeployEnvCoveragePercent: 100,
+					packageSmokePass: true,
+					outputParityPercent: 100,
 				errorCompatibilityPercent: 100,
 				unclassifiedFailures: 0,
 				rustBinarySha256: RUST_BINARY_SHA256,

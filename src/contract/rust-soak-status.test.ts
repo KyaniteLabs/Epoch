@@ -18,6 +18,7 @@ function run(overrides: Record<string, unknown> = {}) {
 		releaseE2ePass: true,
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
+		packageSmokePass: true,
 		soakHours: 1,
 		continuousSoakHours: 1,
 		crashes: 0,
@@ -77,6 +78,7 @@ describe("buildSoakStatus", () => {
 		expect(status.releaseE2ePass).toBe(true);
 		expect(status.publicSurfaceCoveragePercent).toBe(100);
 		expect(status.httpDeployEnvCoveragePercent).toBe(100);
+		expect(status.packageSmokePass).toBe(true);
 		expect(status.remainingCanaryHours).toBe(23);
 		expect(status.remainingReplaceHours).toBe(71);
 		expect(status.rustBinarySha256).toBe(RUST_BINARY_SHA256);
@@ -87,6 +89,7 @@ describe("buildSoakStatus", () => {
 		expect(formatSoakStatus(status)).toContain("max clean gap:       900s");
 		expect(formatSoakStatus(status)).toContain("qualified perf:      false");
 		expect(formatSoakStatus(status)).toContain("release e2e:         true (100%)");
+		expect(formatSoakStatus(status)).toContain("package smoke:       true");
 		expect(formatSoakStatus(status)).toContain(
 			"runner release tag:  candidate-1",
 		);
@@ -302,7 +305,26 @@ describe("buildSoakStatus", () => {
 		expect(status.releaseE2ePass).toBe(false);
 		expect(status.remainingReplaceHours).toBe(72);
 		expect(status.warnings).toContain(
-			"Ledger includes public-surface, release-E2E, parity, or unclassified failures.",
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
+		);
+	});
+
+	it("does not credit runs without package smoke proof toward continuous clean soak", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ packageSmokePass: false })]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.totalCompletedSoakHours).toBe(1);
+		expect(status.continuousCleanSoakHours).toBe(0);
+		expect(status.packageSmokePass).toBe(false);
+		expect(status.readinessDecision).toBe("SHADOW");
+		expect(status.readinessFailingGate).toBe("package-smoke");
+		expect(status.remainingReplaceHours).toBe(72);
+		expect(status.warnings).toContain(
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
 		);
 	});
 

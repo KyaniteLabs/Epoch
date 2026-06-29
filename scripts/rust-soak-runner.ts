@@ -62,6 +62,7 @@ type LedgerSummary = {
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -99,6 +100,7 @@ type RunnerSummary = {
 	releaseE2ePass: boolean;
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
+	packageSmokePass: boolean;
 	rustBinarySha256: string | null;
 	remainingSoakHours: number;
 	files: {
@@ -337,6 +339,7 @@ function parseLedgerSummary(path: string): LedgerSummary {
 			typeof raw.httpDeployEnvCoveragePercent === "number"
 				? raw.httpDeployEnvCoveragePercent
 				: 0,
+		packageSmokePass: raw.packageSmokePass === true,
 		rustBinarySha256:
 			typeof raw.rustBinarySha256 === "string" ? raw.rustBinarySha256 : null,
 		continuousGapSeconds: raw.continuousGapSeconds,
@@ -471,9 +474,40 @@ function acquireLock(lockPath: string): () => void {
 			2,
 		)}\n`,
 	);
+	let released = false;
 	return () => {
+		if (released) return;
+		released = true;
 		closeSync(fd);
 		removeIfExists(lockPath);
+	};
+}
+
+const SIGNAL_EXIT_CODES = {
+	SIGHUP: 129,
+	SIGINT: 130,
+	SIGTERM: 143,
+} as const;
+
+function installTerminationCleanup(cleanup: () => void): () => void {
+	const signals = Object.keys(SIGNAL_EXIT_CODES) as Array<
+		keyof typeof SIGNAL_EXIT_CODES
+	>;
+	const handlers = new Map<keyof typeof SIGNAL_EXIT_CODES, () => void>();
+
+	for (const signal of signals) {
+		const handler = () => {
+			cleanup();
+			process.exit(SIGNAL_EXIT_CODES[signal]);
+		};
+		handlers.set(signal, handler);
+		process.once(signal, handler);
+	}
+
+	return () => {
+		for (const [signal, handler] of handlers) {
+			process.off(signal, handler);
+		}
 	};
 }
 
@@ -621,6 +655,7 @@ function buildRunnerSummary(
 		releaseE2ePass: ledgerSummary.releaseE2ePass,
 		publicSurfaceCoveragePercent: ledgerSummary.publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent: ledgerSummary.httpDeployEnvCoveragePercent,
+		packageSmokePass: ledgerSummary.packageSmokePass,
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
 			0,
@@ -652,6 +687,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  continuity lost:     ${summary.continuityLostHours.toFixed(4)}`,
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
+			`  package smoke:       ${summary.packageSmokePass}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  remaining hours:     ${summary.remainingSoakHours.toFixed(4)}`,
 			`  readiness:           ${summary.readiness.decision}`,
@@ -676,6 +712,14 @@ try {
 	const statePath = resolve(REPO_ROOT, RUNNER_STATE);
 	assertNoUncleanState(statePath);
 	const releaseLock = acquireLock(lockPath);
+	let cleanedUp = false;
+	const cleanup = () => {
+		if (cleanedUp) return;
+		cleanedUp = true;
+		removeIfExists(statePath);
+		releaseLock();
+	};
+	const uninstallTerminationCleanup = installTerminationCleanup(cleanup);
 	let exitCode = 0;
 
 	try {
@@ -736,8 +780,8 @@ try {
 			exitCode = 2;
 		}
 	} finally {
-		removeIfExists(statePath);
-		releaseLock();
+		uninstallTerminationCleanup();
+		cleanup();
 	}
 
 	if (exitCode !== 0) {
