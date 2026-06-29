@@ -6,7 +6,7 @@ pub use epoch_contract::{
     PublicSurfaceContract, ToolAnnotations, ToolMetadata, find_tool, tool_names, tool_registry,
     write_tool_names,
 };
-pub use protocol::{McpRuntime, process_json_rpc, process_message_stream};
+pub use protocol::{McpRuntime, process_json_rpc, process_message_reader, process_message_stream};
 
 pub fn mcp_tool_definitions() -> &'static [ToolMetadata] {
     tool_registry()

@@ -1,6 +1,7 @@
 use crate::RustToolDispatcher;
 use epoch_contract::{ToolError, tool_registry};
 use serde_json::{Value, json};
+use std::io::{self, BufRead, Write};
 
 #[derive(Debug, Clone, Default)]
 pub struct McpRuntime {
@@ -118,6 +119,56 @@ pub fn process_message_stream(runtime: &mut McpRuntime, input: &str) -> String {
     responses.join("")
 }
 
+pub fn process_message_reader<R: BufRead, W: Write>(
+    runtime: &mut McpRuntime,
+    mut reader: R,
+    mut writer: W,
+) -> io::Result<()> {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes_read = reader.read_line(&mut line)?;
+        if bytes_read == 0 {
+            return Ok(());
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(content_length) = content_length(trimmed) {
+            read_headers(&mut reader)?;
+            let mut body = vec![0_u8; content_length];
+            reader.read_exact(&mut body)?;
+            let raw = String::from_utf8_lossy(&body);
+            write_response(runtime, &raw, &mut writer)?;
+            continue;
+        }
+
+        write_response(runtime, trimmed, &mut writer)?;
+    }
+}
+
+fn read_headers<R: BufRead>(reader: &mut R) -> io::Result<()> {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let bytes_read = reader.read_line(&mut line)?;
+        if bytes_read == 0 || line.trim().is_empty() {
+            return Ok(());
+        }
+    }
+}
+
+fn write_response<W: Write>(runtime: &mut McpRuntime, raw: &str, writer: &mut W) -> io::Result<()> {
+    if let Some(response) = process_json_rpc(runtime, raw) {
+        writer.write_all(frame_message(&response.to_string()).as_bytes())?;
+        writer.flush()?;
+    }
+    Ok(())
+}
+
 fn initialize_result() -> Value {
     json!({
         "protocolVersion": "2024-11-05",
@@ -199,8 +250,12 @@ fn params(name: &str, arguments: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{McpRuntime, frame_message, params, process_json_rpc, process_message_stream};
+    use super::{
+        McpRuntime, frame_message, params, process_json_rpc, process_message_reader,
+        process_message_stream,
+    };
     use serde_json::json;
+    use std::io::Cursor;
 
     #[test]
     fn handles_initialize_and_tools_list() {
@@ -265,5 +320,38 @@ mod tests {
         let mut runtime = McpRuntime::new();
         let output = process_message_stream(&mut runtime, raw);
         assert!(output.contains("\"result\":{}"));
+    }
+
+    #[test]
+    fn reader_stream_flushes_each_line_delimited_response() {
+        let input = Cursor::new(
+            r#"{ "jsonrpc": "2.0", "id": 1, "method": "ping" }
+{ "jsonrpc": "2.0", "id": 2, "method": "ping" }
+"#,
+        );
+        let mut output = Vec::new();
+        let mut runtime = McpRuntime::new();
+
+        process_message_reader(&mut runtime, input, &mut output).expect("stream processes");
+
+        let text = String::from_utf8(output).expect("utf8");
+        assert_eq!(text.matches("Content-Length:").count(), 2);
+        assert!(text.contains("\"id\":1"));
+        assert!(text.contains("\"id\":2"));
+    }
+
+    #[test]
+    fn reader_stream_supports_content_length_frames() {
+        let raw = r#"{ "jsonrpc": "2.0", "id": 7, "method": "ping" }"#;
+        let input = Cursor::new(frame_message(raw));
+        let mut output = Vec::new();
+        let mut runtime = McpRuntime::new();
+
+        process_message_reader(&mut runtime, input, &mut output).expect("stream processes");
+
+        let text = String::from_utf8(output).expect("utf8");
+        assert!(text.contains("Content-Length:"));
+        assert!(text.contains("\"id\":7"));
+        assert!(text.contains("\"result\":{}"));
     }
 }
