@@ -759,6 +759,31 @@ describe("buildSoakStatus", () => {
 		);
 	});
 
+	it("does not report replacement readiness when the packaged CLI hash differs", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					soakHours: 72,
+					continuousSoakHours: 72,
+					endedAt: "2026-06-30T00:00:00.000Z",
+					performanceEvidenceMode: "qualified",
+					packageCliSha256:
+						"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-30T00:00:00.000Z",
+		});
+
+		expect(status.packageSmokePass).toBe(true);
+		expect(status.readinessDecision).not.toBe("REPLACE");
+		expect(status.readinessFailingGate).toBe("package-smoke");
+		expect(status.warnings).toContain(
+			"Packaged CLI SHA-256 does not match the soaked Rust binary.",
+		);
+	});
+
 	it("warns when a state file remains but the runner process is dead", () => {
 		const status = buildSoakStatus({
 			ledgerPath: ".epoch-promotion/soak-ledger.json",

@@ -791,15 +791,6 @@ export function buildSoakStatus(input: {
 				run.publicSurfaceCoveragePercent >= 100 &&
 				run.httpDeployEnvCoveragePercent >= 100,
 		);
-	const packageSmokePass =
-		runs.length > 0 &&
-		runs.every(
-			(run) =>
-				run.packageSmokePass && hasRequiredPackageCommands(run.packageCommands),
-		);
-	const packageCommandEvidenceComplete =
-		runs.length > 0 &&
-		runs.every((run) => hasRequiredPackageCommands(run.packageCommands));
 	const packageCliIdentities = new Set(
 		runs
 			.map((run) => run.packageCliSha256)
@@ -809,14 +800,29 @@ export function buildSoakStatus(input: {
 		packageCliIdentities.size === 1
 			? Array.from(packageCliIdentities)[0] ?? null
 			: null;
+	const rustBinarySha256 =
+		identities.size === 1 ? Array.from(identities)[0] ?? null : null;
+	const packageArtifactIdentityPass =
+		rustBinarySha256 !== null &&
+		packageCliSha256 !== null &&
+		rustBinarySha256 === packageCliSha256;
+	const packageSmokePass =
+		runs.length > 0 &&
+		runs.every(
+			(run) =>
+				run.packageSmokePass && hasRequiredPackageCommands(run.packageCommands),
+		);
+	const readinessPackageSmokePass =
+		packageSmokePass && packageArtifactIdentityPass;
+	const packageCommandEvidenceComplete =
+		runs.length > 0 &&
+		runs.every((run) => hasRequiredPackageCommands(run.packageCommands));
 	const publicSurfaceCoveragePercent = numberMin(
 		runs.map((run) => run.publicSurfaceCoveragePercent),
 	);
 	const httpDeployEnvCoveragePercent = numberMin(
 		runs.map((run) => run.httpDeployEnvCoveragePercent),
 	);
-	const rustBinarySha256 =
-		identities.size === 1 ? Array.from(identities)[0] ?? null : null;
 	const readiness = cumulativeReadiness(
 		runs,
 		rustBinarySha256,
@@ -826,7 +832,7 @@ export function buildSoakStatus(input: {
 		releaseE2ePass,
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,
-		packageSmokePass,
+		readinessPackageSmokePass,
 	);
 	const warnings: string[] = [];
 
