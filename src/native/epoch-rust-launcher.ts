@@ -16,6 +16,7 @@ export type LauncherPlan = {
 	root: RootOptions;
 	httpEnv?: Record<string, string>;
 	wrapRustOutput?: boolean;
+	rawRustOutputIndent?: number | null;
 };
 
 type RootOptions = {
@@ -38,6 +39,7 @@ export type CommandSpec = {
 	options: OptionSpec[];
 	build?: (values: JsonObject) => JsonObject;
 	wrapOutput?: boolean;
+	rawOutputIndent?: number | null;
 };
 
 const RUST_CLI_COMMANDS: CommandSpec[] = [
@@ -171,6 +173,13 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 	command("data status", "data_status", [], { wrapOutput: false }),
 	command("telemetry status", "telemetry_status", [], { wrapOutput: false }),
 	command("telemetry preview", "telemetry_preview", [], { wrapOutput: false }),
+	command("telemetry set-endpoint", "telemetry_set_endpoint", [
+		option("--endpoint", "endpoint", "string", { required: true }),
+	], { wrapOutput: false, rawOutputIndent: null }),
+	command("telemetry disable", "telemetry_disable", [], {
+		wrapOutput: false,
+		rawOutputIndent: null,
+	}),
 ];
 
 const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
@@ -181,7 +190,7 @@ function command(
 	path: string,
 	toolName: string,
 	options: OptionSpec[],
-	extra: Pick<CommandSpec, "wrapOutput"> = {},
+	extra: Pick<CommandSpec, "wrapOutput" | "rawOutputIndent"> = {},
 ): CommandSpec {
 	return { path, toolName, options, ...extra };
 }
@@ -232,6 +241,7 @@ export function planInvocation(
 		input,
 		root,
 		wrapRustOutput: spec.wrapOutput ?? true,
+		rawRustOutputIndent: spec.rawOutputIndent,
 	};
 }
 
@@ -435,7 +445,10 @@ function runRustCli(
 		const data = parseJson(child.stdout);
 		if (plan.wrapRustOutput === false) {
 			const rawOutput = normalizeRawRustOutput(commandPath, data);
-			process.stdout.write(`${JSON.stringify(rawOutput, null, 2)}\n`);
+			const indent = plan.rawRustOutputIndent === null
+				? undefined
+				: (plan.rawRustOutputIndent ?? 2);
+			process.stdout.write(`${JSON.stringify(rawOutput, null, indent)}\n`);
 			return 0;
 		}
 		const result = { ok: true as const, data };
@@ -519,6 +532,18 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 	}
 	if (commandPath === "telemetry preview" && isObject(data)) {
 		return normalizeTelemetryPreview(data);
+	}
+	if (commandPath === "telemetry set-endpoint" && isObject(data)) {
+		return {
+			ok: data["ok"],
+			endpoint: data["endpoint"],
+		};
+	}
+	if (commandPath === "telemetry disable" && isObject(data)) {
+		return {
+			ok: data["ok"],
+			message: data["message"],
+		};
 	}
 	return data;
 }

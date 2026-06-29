@@ -56,6 +56,9 @@ describe("epoch-rust-launcher", () => {
 	it("keeps unported meta commands on the TypeScript compatibility path", () => {
 		expect(planInvocation(["telemetry"]).mode).toBe("typescript");
 		expect(planInvocation(["telemetry", "enable"]).mode).toBe("typescript");
+		expect(planInvocation(["telemetry", "export"]).mode).toBe("typescript");
+		expect(planInvocation(["telemetry", "submit"]).mode).toBe("typescript");
+		expect(planInvocation(["telemetry", "delete-data"]).mode).toBe("typescript");
 		expect(planInvocation(["share-data", "--validate"]).mode).toBe("typescript");
 		expect(planInvocation(["self-improve"]).mode).toBe("typescript");
 		expect(planInvocation(["data"]).mode).toBe("typescript");
@@ -85,6 +88,13 @@ describe("epoch-rust-launcher", () => {
 	it("routes shape-compatible telemetry inspection subcommands to Rust", () => {
 		const status = planInvocation(["telemetry", "status"]);
 		const preview = planInvocation(["telemetry", "preview"]);
+		const setEndpoint = planInvocation([
+			"telemetry",
+			"set-endpoint",
+			"--endpoint",
+			"https://collector.example.net/v1/telemetry",
+		]);
+		const disable = planInvocation(["telemetry", "disable"]);
 
 		expect(status.mode).toBe("rust-cli");
 		expect(status.commandPath).toBe("telemetry status");
@@ -92,6 +102,17 @@ describe("epoch-rust-launcher", () => {
 		expect(preview.mode).toBe("rust-cli");
 		expect(preview.commandPath).toBe("telemetry preview");
 		expect(preview.wrapRustOutput).toBe(false);
+		expect(setEndpoint.mode).toBe("rust-cli");
+		expect(setEndpoint.commandPath).toBe("telemetry set-endpoint");
+		expect(setEndpoint.input).toEqual({
+			endpoint: "https://collector.example.net/v1/telemetry",
+		});
+		expect(setEndpoint.wrapRustOutput).toBe(false);
+		expect(setEndpoint.rawRustOutputIndent).toBeNull();
+		expect(disable.mode).toBe("rust-cli");
+		expect(disable.commandPath).toBe("telemetry disable");
+		expect(disable.wrapRustOutput).toBe(false);
+		expect(disable.rawRustOutputIndent).toBeNull();
 	});
 
 	it("builds nested time-math operands for Rust CLI", () => {
