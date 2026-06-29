@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 type OutputFormat = "json" | "table";
 type RawOutputFormat = "json" | "text";
@@ -911,10 +911,12 @@ function formatValue(lines: string[], value: unknown, depth: number): void {
 	lines.push(`${indent}${String(value)}`);
 }
 
-function isEntrypoint(): boolean {
-	const entrypoint = process.argv[1];
+export function isEntrypoint(
+	entrypoint = process.argv[1],
+	moduleUrl = import.meta.url,
+): boolean {
 	if (!entrypoint) return false;
-	return import.meta.url === pathToFileURL(resolve(entrypoint)).href;
+	return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(resolve(entrypoint));
 }
 
 function main(): void {

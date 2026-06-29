@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
+	isEntrypoint,
 	planInvocation,
 	resolveRustBinary,
 	runPlannedInvocation,
@@ -320,6 +329,22 @@ describe("epoch-rust-launcher", () => {
 			expect(
 				resolveRustBinary(root, "epoch-cli", { EPOCH_RUST_BIN_DIR: explicitDir }),
 			).toBe(explicit);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("recognizes symlinked npm bin shims as the launcher entrypoint", () => {
+		const root = mkdtempSync(join(tmpdir(), "epoch-launcher-entrypoint-"));
+		try {
+			const realFile = join(root, "package", "dist", "native", "epoch-rust-launcher.js");
+			const shim = join(root, "app", "node_modules", ".bin", "epoch");
+			mkdirSync(join(root, "package", "dist", "native"), { recursive: true });
+			mkdirSync(join(root, "app", "node_modules", ".bin"), { recursive: true });
+			writeFileSync(realFile, "#!/usr/bin/env node\n");
+			symlinkSync(realFile, shim);
+
+			expect(isEntrypoint(shim, pathToFileURL(realFile).href)).toBe(true);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -8,15 +8,21 @@
 // local artifact paths, so the default output directory is git-ignored.
 // ---------------------------------------------------------------------------
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { relative, resolve } from "node:path";
+import { request } from "node:http";
+import { createServer } from "node:net";
+import { basename, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
 import {
 	assessDeployReadiness,
@@ -83,11 +89,20 @@ type PacketSummary = {
 			rustBinary: string | null;
 			rustBinarySha256: string | null;
 		};
+		deploy: {
+			packageSmokePass: boolean;
+			packageTarball: string | null;
+			packageBinTarget: string | null;
+			packagePrebuilds: string[];
+			commandExitCode: number | null;
+			packageCommands: PackageSmokeCommandEvidence[];
+		};
 	};
 	files: {
 		parity: string;
 		perf: string;
 		e2e: string;
+		packageSmoke: string;
 		shadowSoak: string;
 		rollback: string;
 		readinessInput: string;
@@ -99,6 +114,7 @@ type PacketSummary = {
 
 const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_OUTPUT_DIR = ".epoch-promotion/latest";
+const RUST_BINARIES = ["epoch-cli", "epoch-mcp", "epoch-http"] as const;
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
@@ -231,6 +247,26 @@ function rel(path: string): string {
 	return relative(REPO_ROOT, path);
 }
 
+function platformTag(): string {
+	const arch = process.arch === "x64" ? "x64" : process.arch;
+	return `${process.platform}-${arch}`;
+}
+
+function packagePrebuildPath(packageRoot: string, binary: string): string {
+	const suffix = process.platform === "win32" ? ".exe" : "";
+	const platform = platformTag();
+	return join(packageRoot, "prebuilds", platform, `${binary}${suffix}`);
+}
+
+function packagePrebuildTarget(binary: string): string {
+	const suffix = process.platform === "win32" ? ".exe" : "";
+	return ["prebuilds", platformTag(), `${binary}${suffix}`].join("/");
+}
+
+function requiredPackagePrebuilds(packageRoot: string): string[] {
+	return RUST_BINARIES.map((binary) => packagePrebuildPath(packageRoot, binary));
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -303,6 +339,344 @@ function e2eEvidence(e2eReport: unknown): {
 	};
 }
 
+type PackageSmokeEvidence = {
+	ok: boolean;
+	reason: string;
+	tarball: string | null;
+	platform: string;
+	binTarget: string | null;
+	prebuilds: string[];
+	commandExitCode: number | null;
+	stdoutHead: string;
+	stderrHead: string;
+	commands: PackageSmokeCommandEvidence[];
+};
+
+type PackageSmokeCommandEvidence = {
+	name: string;
+	target: string;
+	exitCode: number | null;
+	signal: NodeJS.Signals | null;
+	stdoutHead: string;
+	stderrHead: string;
+	error: string | null;
+};
+
+type PackageSmokeCommandResult = PackageSmokeCommandEvidence & {
+	stdout: string;
+	stderr: string;
+};
+
+function head(value: string): string {
+	return value.split(/\r?\n/).slice(0, 3).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function runSmokeCommand(
+	name: string,
+	target: string,
+	binary: string,
+	args: string[],
+	options: {
+		cwd: string;
+		input?: string;
+	},
+): PackageSmokeCommandResult {
+	const command = spawnSync(binary, args, {
+		cwd: options.cwd,
+		encoding: "utf8",
+		input: options.input,
+		env: { ...process.env, EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "0" },
+	});
+	const stdout = typeof command.stdout === "string" ? command.stdout : "";
+	const stderr = typeof command.stderr === "string" ? command.stderr : "";
+	return {
+		name,
+		target,
+		exitCode: command.status,
+		signal: command.signal,
+		stdout,
+		stderr,
+		stdoutHead: head(stdout),
+		stderrHead: head(stderr),
+		error: command.error instanceof Error ? command.error.message : null,
+	};
+}
+
+function commandEvidence(
+	command: PackageSmokeCommandResult,
+): PackageSmokeCommandEvidence {
+	return {
+		name: command.name,
+		target: command.target,
+		exitCode: command.exitCode,
+		signal: command.signal,
+		stdoutHead: command.stdoutHead,
+		stderrHead: command.stderrHead,
+		error: command.error,
+	};
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function getFreeLoopbackPort(): Promise<number> {
+	return new Promise((resolvePort, reject) => {
+		const server = createServer();
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			if (typeof address !== "object" || address === null) {
+				server.close(() => reject(new Error("Could not allocate loopback port.")));
+				return;
+			}
+			const port = address.port;
+			server.close((error) => {
+				if (error) reject(error);
+				else resolvePort(port);
+			});
+		});
+	});
+}
+
+function httpGet(path: string, timeoutMs: number): Promise<string> {
+	return new Promise((resolveBody, reject) => {
+		const req = request(path, { timeout: timeoutMs }, (res) => {
+			let body = "";
+			res.setEncoding("utf8");
+			res.on("data", (chunk) => {
+				body += chunk;
+			});
+			res.on("end", () => {
+				if (res.statusCode !== 200) {
+					reject(new Error(`HTTP ${res.statusCode ?? "unknown"}: ${head(body)}`));
+					return;
+				}
+				resolveBody(body);
+			});
+		});
+		req.on("timeout", () => {
+			req.destroy(new Error("HTTP health request timed out."));
+		});
+		req.on("error", reject);
+		req.end();
+	});
+}
+
+async function waitForHttpHealth(port: number): Promise<string> {
+	const deadline = Date.now() + 5_000;
+	let lastError: unknown = null;
+	while (Date.now() < deadline) {
+		try {
+			const body = await httpGet(`http://127.0.0.1:${port}/health`, 500);
+			const parsed = JSON.parse(body) as unknown;
+			if (
+				isObject(parsed) &&
+				parsed.status === "ok" &&
+				parsed.tools === 24
+			) {
+				return body;
+			}
+			throw new Error(`Unexpected health response: ${head(body)}`);
+		} catch (error) {
+			lastError = error;
+			await sleep(100);
+		}
+	}
+	throw lastError instanceof Error
+		? lastError
+		: new Error("HTTP health check did not pass.");
+}
+
+async function runHttpServerSmoke(
+	name: string,
+	target: string,
+	binary: string,
+	options: { cwd: string },
+): Promise<PackageSmokeCommandResult> {
+	const port = await getFreeLoopbackPort();
+	const child = spawn(binary, [`127.0.0.1:${port}`], {
+		cwd: options.cwd,
+		env: { ...process.env, EPOCH_ALLOW_TYPESCRIPT_FALLBACK: "0" },
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	let stdout = "";
+	let stderr = "";
+	child.stdout.setEncoding("utf8");
+	child.stderr.setEncoding("utf8");
+	child.stdout.on("data", (chunk) => {
+		stdout += chunk;
+	});
+	child.stderr.on("data", (chunk) => {
+		stderr += chunk;
+	});
+
+	let exitCode: number | null = null;
+	let signal: NodeJS.Signals | null = null;
+	const exited = new Promise<void>((resolveExit) => {
+		child.once("exit", (code, exitSignal) => {
+			exitCode = code;
+			signal = exitSignal;
+			resolveExit();
+		});
+	});
+
+	let error: string | null = null;
+	let healthOk = false;
+	try {
+		const healthBody = await waitForHttpHealth(port);
+		stdout += `\nhealth ${head(healthBody)}`;
+		healthOk = true;
+		exitCode = 0;
+		signal = null;
+	} catch (caught) {
+		error = caught instanceof Error ? caught.message : String(caught);
+	} finally {
+		if (!child.killed) child.kill("SIGTERM");
+		await Promise.race([exited, sleep(1_000)]);
+		if (exitCode === null && !child.killed) child.kill("SIGKILL");
+	}
+	if (healthOk) {
+		exitCode = 0;
+		signal = null;
+	}
+
+	return {
+		name,
+		target,
+		exitCode,
+		signal,
+		stdout,
+		stderr,
+		stdoutHead: head(stdout),
+		stderrHead: head(stderr),
+		error,
+	};
+}
+
+async function runPackageSmoke(options: { quiet: boolean }): Promise<PackageSmokeEvidence> {
+	if (!options.quiet) process.stderr.write("[promotion] package install smoke...\n");
+	const root = mkdtempSync(join(tmpdir(), "epoch-package-smoke-"));
+	const packDir = join(root, "pack");
+	const appDir = join(root, "app");
+	mkdirSync(packDir, { recursive: true });
+	mkdirSync(appDir, { recursive: true });
+	try {
+		const packOutput = execFileSync("npm", ["pack", "--pack-destination", packDir], {
+			cwd: REPO_ROOT,
+			encoding: "utf8",
+			maxBuffer: 64 * 1024 * 1024,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+		const tarballName = packOutput.trim().split(/\r?\n/).at(-1) ?? "";
+		const tarball = resolve(packDir, tarballName);
+		execFileSync("npm", ["init", "-y"], {
+			cwd: appDir,
+			stdio: "ignore",
+		});
+		execFileSync("npm", ["install", tarball, "--ignore-scripts"], {
+			cwd: appDir,
+			stdio: "ignore",
+		});
+		const packageRoot = join(appDir, "node_modules", "@kyanitelabs", "epoch");
+		const prebuilds = requiredPackagePrebuilds(packageRoot)
+			.filter((file) => existsSync(file))
+			.map((file) => relative(packageRoot, file).replaceAll("\\", "/"));
+		const binPath = join(
+			appDir,
+			"node_modules",
+			".bin",
+			process.platform === "win32" ? "epoch.cmd" : "epoch",
+		);
+		let binTarget: string | null = null;
+		try {
+			binTarget = readlinkSync(binPath);
+		} catch {
+			binTarget = existsSync(binPath) ? binPath : null;
+		}
+		const cliCommand = runSmokeCommand(
+			"epoch-cli",
+			"node_modules/.bin/epoch",
+			binPath,
+			[
+				"pert-estimate",
+				"--optimistic",
+				"1",
+				"--most-likely",
+				"2",
+				"--pessimistic",
+				"4",
+			],
+			{ cwd: appDir },
+		);
+		const mcpCommand = runSmokeCommand(
+			"epoch-mcp",
+			packagePrebuildTarget("epoch-mcp"),
+			packagePrebuildPath(packageRoot, "epoch-mcp"),
+			[],
+			{
+				cwd: appDir,
+				input: '{"jsonrpc":"2.0","id":1,"method":"ping"}\n',
+			},
+		);
+		const httpCommand = await runHttpServerSmoke(
+			"epoch-http",
+			packagePrebuildTarget("epoch-http"),
+			packagePrebuildPath(packageRoot, "epoch-http"),
+			{ cwd: appDir },
+		);
+		const commandChecks = [
+			{
+				name: cliCommand.name,
+				ok:
+					cliCommand.exitCode === 0 &&
+					cliCommand.stdout.includes('"ok": true'),
+			},
+			{
+				name: mcpCommand.name,
+				ok:
+					mcpCommand.exitCode === 0 &&
+					mcpCommand.stdout.startsWith("Content-Length:") &&
+					mcpCommand.stdout.includes('"result":{}'),
+			},
+			{
+				name: httpCommand.name,
+				ok:
+					httpCommand.exitCode === 0 &&
+					httpCommand.stdout.includes('"status":"ok"') &&
+					httpCommand.stdout.includes('"tools":24'),
+			},
+		];
+		const failedCommands = commandChecks
+			.filter((check) => !check.ok)
+			.map((check) => check.name);
+		const commands = [cliCommand, mcpCommand, httpCommand].map(commandEvidence);
+		const requiredCount = RUST_BINARIES.length;
+		const ok = prebuilds.length === requiredCount && failedCommands.length === 0;
+		const reason = ok
+			? "Packed package installed and executed CLI, MCP, and HTTP Rust prebuilds."
+			: `Package smoke failed: ${prebuilds.length}/${requiredCount} Rust prebuilds present${
+					failedCommands.length > 0
+						? `, failed commands: ${failedCommands.join(", ")}`
+						: ""
+				}.`;
+		return {
+			ok,
+			reason,
+			tarball: basename(tarball),
+			platform: platformTag(),
+			binTarget,
+			prebuilds,
+			commandExitCode: cliCommand.exitCode,
+			stdoutHead: cliCommand.stdoutHead,
+			stderrHead: cliCommand.stderrHead,
+			commands,
+		};
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
 function buildSummary(
 	outputDir: string,
 	readinessInput: ReadinessInput,
@@ -311,11 +685,11 @@ function buildSummary(
 	shadowSoak: unknown,
 	perfReport: unknown,
 	e2eReport: unknown,
+	packageSmoke: PackageSmokeEvidence,
 ): PacketSummary {
 	const e2e = e2eEvidence(e2eReport);
-	const generatedAt = new Date().toISOString();
 	return {
-		generatedAt,
+		generatedAt: new Date().toISOString(),
 		readiness,
 		evidence: {
 			compatibility: {
@@ -348,11 +722,20 @@ function buildSummary(
 				replaceRequires: "release",
 			},
 			binary: binaryEvidence(shadowSoak),
+			deploy: {
+				packageSmokePass: packageSmoke.ok,
+				packageTarball: packageSmoke.tarball,
+				packageBinTarget: packageSmoke.binTarget,
+				packagePrebuilds: packageSmoke.prebuilds,
+				commandExitCode: packageSmoke.commandExitCode,
+				packageCommands: packageSmoke.commands,
+			},
 		},
 		files: {
 			parity: rel(resolve(outputDir, "parity.json")),
 			perf: rel(resolve(outputDir, "perf.json")),
 			e2e: rel(resolve(outputDir, "e2e.json")),
+			packageSmoke: rel(resolve(outputDir, "package-smoke.json")),
 			shadowSoak: rel(resolve(outputDir, "shadow-soak.json")),
 			rollback: rel(resolve(outputDir, "shadow-soak-rollback.json")),
 			readinessInput: rel(resolve(outputDir, "readiness-input.json")),
@@ -379,6 +762,7 @@ function printSummary(
 			`  p95 improvement:     ${summary.evidence.performance.p95LatencyImprovementPercent.toFixed(2)}%`,
 			`  replacement gates:   ${scorecard.gatesPassed}/${scorecard.gatesTotal} (${scorecard.replacementGatePassPercent.toFixed(2)}%)`,
 			`  perf evidence:       ${summary.evidence.performance.evidenceMode}`,
+			`  package smoke:       ${summary.evidence.deploy.packageSmokePass ? "pass" : "fail"}`,
 			`  soak hours:          ${summary.evidence.reliability.soakHours.toFixed(4)}`,
 			`  continuous soak:     ${summary.evidence.reliability.continuousSoakHours.toFixed(4)}`,
 			`  rollback rehearsed:  ${summary.evidence.rollback.rehearsed}`,
@@ -402,6 +786,7 @@ async function main(): Promise<void> {
 	const parityPath = resolve(outputDir, "parity.json");
 	const perfPath = resolve(outputDir, "perf.json");
 	const e2ePath = resolve(outputDir, "e2e.json");
+	const packageSmokePath = resolve(outputDir, "package-smoke.json");
 	const shadowPath = resolve(outputDir, "shadow-soak.json");
 	const rollbackPath = resolve(outputDir, "shadow-soak-rollback.json");
 	const readinessInputPath = resolve(outputDir, "readiness-input.json");
@@ -451,6 +836,12 @@ async function main(): Promise<void> {
 		e2ePath,
 	);
 
+	const packageSmoke = await runPackageSmoke(options);
+	writeJson(packageSmokePath, packageSmoke);
+	if (!packageSmoke.ok) {
+		throw new Error(packageSmoke.reason);
+	}
+
 	const shadowArgs = [
 		"exec",
 		"tsx",
@@ -490,6 +881,7 @@ async function main(): Promise<void> {
 			releaseE2ePass: e2e.releaseE2ePass,
 			publicSurfaceCoveragePercent: e2e.publicSurfaceCoveragePercent ?? 0,
 			httpDeployEnvCoveragePercent: e2e.httpDeployEnvCoveragePercent ?? 0,
+			packageSmokePass: packageSmoke.ok,
 		},
 		perf: perfReport,
 	});
@@ -503,6 +895,7 @@ async function main(): Promise<void> {
 		shadowSoak,
 		perfReport,
 		e2eReport,
+		packageSmoke,
 	);
 	const replacementScorecard = buildReplacementScorecard(
 		readinessInput,
