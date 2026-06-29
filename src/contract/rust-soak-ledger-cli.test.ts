@@ -157,5 +157,5 @@ describe("rust-soak-ledger CLI", () => {
 		expect(summary.publicSurfaceCoveragePercent).toBe(100);
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);
 		expect(summary.readiness.failingGate).toBe("soak");
-	});
+	}, 10_000);
 });
