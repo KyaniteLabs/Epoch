@@ -8,7 +8,11 @@ import {
 	buildReplacementScorecardFromJson,
 	type ReplacementScorecard,
 } from "./rust-deploy-readiness.js";
-import { buildGateLedgerReadinessInput } from "./rust-promotion-gate.js";
+import {
+	assessPromotionGateFromLedger,
+	buildGateLedgerReadinessInput,
+	buildGateLedgerSummary,
+} from "./rust-promotion-gate.js";
 
 const USAGE =
 	"Usage:\n" +
@@ -44,6 +48,85 @@ function isSoakLedger(value: unknown): boolean {
 
 function formatPercent(value: number): string {
 	return `${value.toFixed(2)}%`;
+}
+
+type ScorecardGate = ReplacementScorecard["categories"]["deploy"][number];
+
+function flattenScorecardGates(
+	categories: ReplacementScorecard["categories"],
+): ScorecardGate[] {
+	return Object.values(categories).flat();
+}
+
+function firstFailingGate(
+	categories: ReplacementScorecard["categories"],
+): string | null {
+	return flattenScorecardGates(categories).find((gate) => !gate.ok)?.gate ?? null;
+}
+
+function withRecalculatedGates(
+	scorecard: ReplacementScorecard,
+	categories: ReplacementScorecard["categories"],
+): ReplacementScorecard {
+	const gates = flattenScorecardGates(categories);
+	const gatesPassed = gates.filter((gate) => gate.ok).length;
+	const failingGate = firstFailingGate(categories);
+	return {
+		...scorecard,
+		categories,
+		failingGate,
+		readyToReplace: scorecard.decision === "REPLACE" && failingGate === null,
+		replacementGatePassPercent:
+			gates.length === 0 ? 0 : (gatesPassed / gates.length) * 100,
+		gatesPassed,
+		gatesTotal: gates.length,
+	};
+}
+
+function ledgerReplacementScorecard(rawLedger: unknown): ReplacementScorecard {
+	const summary = buildGateLedgerSummary(rawLedger);
+	const scorecard = buildReplacementScorecard(
+		buildGateLedgerReadinessInput(rawLedger),
+	);
+	const categories: ReplacementScorecard["categories"] = {
+		...scorecard.categories,
+		performance: [
+			...scorecard.categories.performance,
+			{
+				gate: "qualified-release-performance",
+				ok: summary.qualifiedPerformanceEvidence,
+				actual: summary.qualifiedPerformanceEvidence,
+				required: true,
+			},
+		],
+		deploy: [
+			...scorecard.categories.deploy,
+			{
+				gate: "release-identity",
+				ok: summary.releaseTag !== null,
+				actual: summary.releaseTag,
+				required: "release tag",
+			},
+			{
+				gate: "package-cli-identity",
+				ok:
+					summary.packageCliSha256 !== null &&
+					summary.packageCliSha256 === summary.rustBinarySha256,
+				actual: summary.packageCliSha256,
+				required: summary.rustBinarySha256 ?? "soaked rust binary sha256",
+			},
+		],
+	};
+	const recalculated = withRecalculatedGates(scorecard, categories);
+	const gate = assessPromotionGateFromLedger(rawLedger, "replace", {
+		currentRustBinarySha256: summary.rustBinarySha256,
+		currentReleaseTag: summary.releaseTag,
+	});
+	return {
+		...recalculated,
+		readyToReplace: recalculated.readyToReplace && gate.ok,
+		failingGate: gate.ok ? recalculated.failingGate : recalculated.failingGate ?? gate.failingGate,
+	};
 }
 
 export function formatReplacementScorecard(
@@ -97,7 +180,7 @@ function main(argv: string[]): number {
 	}
 
 	const scorecard = isSoakLedger(raw)
-		? buildReplacementScorecard(buildGateLedgerReadinessInput(raw))
+		? ledgerReplacementScorecard(raw)
 		: buildReplacementScorecardFromJson(raw);
 	const json = `${JSON.stringify(scorecard, null, 2)}\n`;
 
