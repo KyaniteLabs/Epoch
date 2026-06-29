@@ -10,7 +10,24 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+function optionValue(argv, name) {
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === name) return argv[i + 1];
+		if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+	}
+	return null;
+}
+
+function packageRoot(argv) {
+	const raw =
+		optionValue(argv, "--root") ?? process.env.EPOCH_PREBUILD_ROOT ?? null;
+	return raw
+		? resolve(raw)
+		: resolve(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+const root = packageRoot(process.argv.slice(2));
 const arch = process.arch === "x64" ? "x64" : process.arch;
 const platform = `${process.platform}-${arch}`;
 const suffix = process.platform === "win32" ? ".exe" : "";

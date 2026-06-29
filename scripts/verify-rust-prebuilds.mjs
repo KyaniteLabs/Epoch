@@ -3,11 +3,25 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-const root = resolve(new URL("..", import.meta.url).pathname);
 const binaries = ["epoch-cli", "epoch-mcp", "epoch-http"];
 const checksumPattern = /^[a-f0-9]{64}$/;
 const currentArch = process.arch === "x64" ? "x64" : process.arch;
 const currentPlatform = `${process.platform}-${currentArch}`;
+
+function optionValue(argv, name) {
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === name) return argv[i + 1];
+		if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+	}
+	return null;
+}
+
+function packageRoot(argv) {
+	const raw =
+		optionValue(argv, "--root") ?? process.env.EPOCH_PREBUILD_ROOT ?? null;
+	return raw ? resolve(raw) : resolve(new URL("..", import.meta.url).pathname);
+}
 
 function platformsFromArgs(argv) {
 	const fromFlag = argv.find((arg) => arg.startsWith("--platforms="));
@@ -118,7 +132,9 @@ function manifestPathFor(dir) {
 }
 
 function main() {
-	const platforms = platformsFromArgs(process.argv.slice(2));
+	const args = process.argv.slice(2);
+	const root = packageRoot(args);
+	const platforms = platformsFromArgs(args);
 	if (platforms.length === 0) {
 		throw new Error("No prebuild platforms requested");
 	}
