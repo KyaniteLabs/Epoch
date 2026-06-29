@@ -45,6 +45,7 @@ type LedgerRun = {
 	publicSurfaceCoveragePercent?: number;
 	httpDeployEnvCoveragePercent?: number;
 	packageSmokePass?: boolean;
+	packageCommands?: PackageCommandEvidence[];
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
@@ -63,6 +64,16 @@ type LedgerRun = {
 	performanceEvidenceMode: "smoke" | "qualified";
 	readinessDecision: string;
 	readinessFailingGate: string | null;
+};
+
+type PackageCommandEvidence = {
+	name: string;
+	target: string;
+	exitCode: number | null;
+	signal: string | null;
+	stdoutHead: string;
+	stderrHead: string;
+	error: string | null;
 };
 
 type SoakLedger = {
@@ -85,6 +96,7 @@ type LedgerSummary = {
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
+	packageCommandEvidenceComplete: boolean;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -102,6 +114,11 @@ const REPO_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const DEFAULT_PACKET_DIR = ".epoch-promotion/latest";
 const DEFAULT_LEDGER = ".epoch-promotion/soak-ledger.json";
 const MAX_CONTINUOUS_GAP_MS = 15 * 60_000;
+const REQUIRED_PACKAGE_COMMANDS = new Set([
+	"epoch-cli",
+	"epoch-mcp",
+	"epoch-http",
+]);
 
 function parseArgs(argv: string[]): CliOptions {
 	const options: CliOptions = {
@@ -247,6 +264,46 @@ function observabilityLevel(value: unknown): LedgerRun["observabilityLevel"] {
 	return value === "release" || value === "tool" ? value : "basic";
 }
 
+function parsePackageCommand(value: unknown): PackageCommandEvidence | null {
+	if (!isObject(value) || typeof value.name !== "string") return null;
+	return {
+		name: value.name,
+		target: typeof value.target === "string" ? value.target : "",
+		exitCode: typeof value.exitCode === "number" ? value.exitCode : null,
+		signal: typeof value.signal === "string" ? value.signal : null,
+		stdoutHead: typeof value.stdoutHead === "string" ? value.stdoutHead : "",
+		stderrHead: typeof value.stderrHead === "string" ? value.stderrHead : "",
+		error: typeof value.error === "string" ? value.error : null,
+	};
+}
+
+function parsePackageCommands(value: unknown): PackageCommandEvidence[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map(parsePackageCommand)
+		.filter((command): command is PackageCommandEvidence => command !== null);
+}
+
+function packageCommandsFromSummary(summary: unknown): PackageCommandEvidence[] {
+	if (!isObject(summary) || !isObject(summary.evidence)) return [];
+	const deploy = summary.evidence.deploy;
+	if (!isObject(deploy)) return [];
+	return parsePackageCommands(deploy.packageCommands);
+}
+
+function hasRequiredPackageCommands(run: Pick<LedgerRun, "packageCommands">): boolean {
+	const commands = run.packageCommands ?? [];
+	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
+		const command = commands.find((candidate) => candidate.name === name);
+		return (
+			command !== undefined &&
+			command.exitCode === 0 &&
+			command.signal === null &&
+			command.error === null
+		);
+	});
+}
+
 function parseLedgerRun(value: unknown): LedgerRun | null {
 	if (
 		!isObject(value) ||
@@ -281,6 +338,7 @@ function parseLedgerRun(value: unknown): LedgerRun | null {
 			0,
 		),
 		packageSmokePass: booleanField(value, "packageSmokePass", false),
+		packageCommands: parsePackageCommands(value.packageCommands),
 		outputParityPercent: numberField(value, "outputParityPercent", 0),
 		errorCompatibilityPercent: numberField(
 			value,
@@ -432,6 +490,7 @@ function ledgerRunFromPacket(
 	const readiness = packetReadiness(summary);
 	const binary = packetBinaryIdentity(shadowSoak);
 	const performanceEvidenceMode = packetPerformanceEvidenceMode(summary);
+	const packageCommands = packageCommandsFromSummary(summary);
 	const window = packetWindow(
 		shadowSoak,
 		generatedAt,
@@ -452,6 +511,7 @@ function ledgerRunFromPacket(
 		httpDeployEnvCoveragePercent:
 			readinessInput.parity.httpDeployEnvCoveragePercent,
 		packageSmokePass: readinessInput.parity.packageSmokePass,
+		packageCommands,
 		outputParityPercent: readinessInput.parity.outputParityPercent,
 		errorCompatibilityPercent: readinessInput.parity.errorCompatibilityPercent,
 		unclassifiedFailures: readinessInput.parity.unclassifiedFailures,
@@ -511,6 +571,7 @@ function isCleanRun(run: LedgerRun): boolean {
 		run.publicSurfaceMatch &&
 		run.releaseE2ePass === true &&
 		run.packageSmokePass === true &&
+		hasRequiredPackageCommands(run) &&
 		run.unclassifiedFailures === 0 &&
 		run.crashes === 0 &&
 		run.dataLossIncidents === 0 &&
@@ -599,7 +660,10 @@ function cumulativeInput(runs: LedgerRun[]): ReadinessInput {
 				runs.map((run) => run.httpDeployEnvCoveragePercent ?? 0),
 			),
 			packageSmokePass: boolAll(
-				runs.map((run) => run.packageSmokePass === true),
+				runs.map(
+					(run) =>
+						run.packageSmokePass === true && hasRequiredPackageCommands(run),
+				),
 			),
 			outputParityPercent,
 			errorCompatibilityPercent,
@@ -664,7 +728,12 @@ function buildSummary(
 		ledger.runs.map((run) => run.releaseE2ePass === true),
 	);
 	const packageSmokePass = boolAll(
-		ledger.runs.map((run) => run.packageSmokePass === true),
+		ledger.runs.map(
+			(run) => run.packageSmokePass === true && hasRequiredPackageCommands(run),
+		),
+	);
+	const packageCommandEvidenceComplete = boolAll(
+		ledger.runs.map(hasRequiredPackageCommands),
 	);
 	const publicSurfaceCoveragePercent = numberMin(
 		ledger.runs.map((run) => run.publicSurfaceCoveragePercent ?? 0),
@@ -686,6 +755,7 @@ function buildSummary(
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,
 		packageSmokePass,
+		packageCommandEvidenceComplete,
 		rustBinarySha256,
 		continuousGapSeconds: MAX_CONTINUOUS_GAP_MS / 1000,
 		canarySoakHoursRequired: 24,

@@ -42,6 +42,7 @@ type LedgerRun = {
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
+	packageCommands: PackageCommandEvidence[];
 	soakHours: number;
 	continuousSoakHours: number;
 	crashes: number;
@@ -60,6 +61,15 @@ type LedgerRun = {
 	performanceEvidenceMode: "smoke" | "qualified";
 	readinessDecision: string | null;
 	readinessFailingGate: string | null;
+};
+type PackageCommandEvidence = {
+	name: string;
+	target: string;
+	exitCode: number | null;
+	signal: string | null;
+	stdoutHead: string;
+	stderrHead: string;
+	error: string | null;
 };
 type SoakLedger = {
 	version: 1;
@@ -85,6 +95,7 @@ type SoakStatus = {
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
+	packageCommandEvidenceComplete: boolean;
 	remainingCanaryHours: number;
 	remainingReplaceHours: number;
 	latestRun: LedgerRun | null;
@@ -106,6 +117,11 @@ const DEFAULT_STATE = ".epoch-promotion/soak-runner-state.json";
 const MAX_CONTINUOUS_GAP_MS = 15 * 60_000;
 const CANARY_SOAK_HOURS = 24;
 const REPLACE_SOAK_HOURS = 72;
+const REQUIRED_PACKAGE_COMMANDS = new Set([
+	"epoch-cli",
+	"epoch-mcp",
+	"epoch-http",
+]);
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
 	"Replacement runner has not recorded release-tagged qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a release-tagged qualified benchmark run is in the ledger.";
 
@@ -185,6 +201,40 @@ function booleanField(
 	return typeof value === "boolean" ? value : null;
 }
 
+function parsePackageCommand(value: unknown): PackageCommandEvidence | null {
+	if (!isObject(value) || typeof value.name !== "string") return null;
+	return {
+		name: value.name,
+		target: typeof value.target === "string" ? value.target : "",
+		exitCode: typeof value.exitCode === "number" ? value.exitCode : null,
+		signal: typeof value.signal === "string" ? value.signal : null,
+		stdoutHead: typeof value.stdoutHead === "string" ? value.stdoutHead : "",
+		stderrHead: typeof value.stderrHead === "string" ? value.stderrHead : "",
+		error: typeof value.error === "string" ? value.error : null,
+	};
+}
+
+function parsePackageCommands(value: unknown): PackageCommandEvidence[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map(parsePackageCommand)
+		.filter((command): command is PackageCommandEvidence => command !== null);
+}
+
+function hasRequiredPackageCommands(run: LedgerRun): boolean {
+	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
+		const command = run.packageCommands.find(
+			(candidate) => candidate.name === name,
+		);
+		return (
+			command !== undefined &&
+			command.exitCode === 0 &&
+			command.signal === null &&
+			command.error === null
+		);
+	});
+}
+
 function parseLedgerRun(raw: unknown): LedgerRun | null {
 	if (!isObject(raw)) return null;
 	if (
@@ -212,6 +262,7 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 			"httpDeployEnvCoveragePercent",
 		),
 		packageSmokePass: raw.packageSmokePass === true,
+		packageCommands: parsePackageCommands(raw.packageCommands),
 		soakHours: numberField(raw, "soakHours"),
 		continuousSoakHours: numberField(raw, "continuousSoakHours"),
 		crashes: numberField(raw, "crashes"),
@@ -314,6 +365,7 @@ function cleanIntervalForRun(
 		!run.publicSurfaceMatch ||
 		!run.releaseE2ePass ||
 		!run.packageSmokePass ||
+		!hasRequiredPackageCommands(run) ||
 		run.publicSurfaceCoveragePercent < 100 ||
 		run.httpDeployEnvCoveragePercent < 100 ||
 		run.unclassifiedFailures > 0 ||
@@ -498,7 +550,12 @@ export function buildSoakStatus(input: {
 				run.httpDeployEnvCoveragePercent >= 100,
 		);
 	const packageSmokePass =
-		runs.length > 0 && runs.every((run) => run.packageSmokePass);
+		runs.length > 0 &&
+		runs.every(
+			(run) => run.packageSmokePass && hasRequiredPackageCommands(run),
+		);
+	const packageCommandEvidenceComplete =
+		runs.length > 0 && runs.every(hasRequiredPackageCommands);
 	const publicSurfaceCoveragePercent = numberMin(
 		runs.map((run) => run.publicSurfaceCoveragePercent),
 	);
@@ -580,6 +637,7 @@ export function buildSoakStatus(input: {
 				!run.publicSurfaceMatch ||
 				!run.releaseE2ePass ||
 				!run.packageSmokePass ||
+				!hasRequiredPackageCommands(run) ||
 				run.publicSurfaceCoveragePercent < 100 ||
 				run.httpDeployEnvCoveragePercent < 100 ||
 				run.outputParityPercent < 100 ||
@@ -613,6 +671,7 @@ export function buildSoakStatus(input: {
 		publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent,
 		packageSmokePass,
+		packageCommandEvidenceComplete,
 		remainingCanaryHours: Math.max(0, CANARY_SOAK_HOURS - continuousCleanSoakHours),
 		remainingReplaceHours: Math.max(
 			0,

@@ -63,6 +63,7 @@ type LedgerSummary = {
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
+	packageCommandEvidenceComplete: boolean;
 	rustBinarySha256: string | null;
 	continuousGapSeconds: number;
 	canarySoakHoursRequired: number;
@@ -101,6 +102,7 @@ type RunnerSummary = {
 	publicSurfaceCoveragePercent: number;
 	httpDeployEnvCoveragePercent: number;
 	packageSmokePass: boolean;
+	packageCommandEvidenceComplete: boolean;
 	rustBinarySha256: string | null;
 	remainingSoakHours: number;
 	files: {
@@ -656,6 +658,8 @@ function buildRunnerSummary(
 		publicSurfaceCoveragePercent: ledgerSummary.publicSurfaceCoveragePercent,
 		httpDeployEnvCoveragePercent: ledgerSummary.httpDeployEnvCoveragePercent,
 		packageSmokePass: ledgerSummary.packageSmokePass,
+		packageCommandEvidenceComplete:
+			ledgerSummary.packageCommandEvidenceComplete,
 		rustBinarySha256: ledgerSummary.rustBinarySha256,
 		remainingSoakHours: Math.max(
 			0,
@@ -688,6 +692,7 @@ function printSummary(summary: RunnerSummary): void {
 			`  qualified perf:      ${summary.qualifiedPerformanceEvidence}`,
 			`  release e2e:         ${summary.releaseE2ePass} (${summary.publicSurfaceCoveragePercent}%)`,
 			`  package smoke:       ${summary.packageSmokePass}`,
+			`  package commands:    ${summary.packageCommandEvidenceComplete}`,
 			`  binary sha256:       ${summary.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 			`  remaining hours:     ${summary.remainingSoakHours.toFixed(4)}`,
 			`  readiness:           ${summary.readiness.decision}`,

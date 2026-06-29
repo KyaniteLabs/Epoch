@@ -67,6 +67,11 @@ const REQUIRED_SOAK_HOURS: Record<Target, number> = {
 	canary: 24,
 	replace: 72,
 };
+const REQUIRED_PACKAGE_COMMANDS = new Set([
+	"epoch-cli",
+	"epoch-mcp",
+	"epoch-http",
+]);
 const DECISION_RANK: Record<
 	z.infer<typeof deployReadinessDecisionSchema>,
 	number
@@ -88,6 +93,7 @@ const runnerSummarySchema = z.object({
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	packageSmokePass: z.boolean().default(false),
+	packageCommandEvidenceComplete: z.boolean().default(false),
 	releaseTag: z.string().nullable().default(null),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
@@ -95,6 +101,16 @@ const runnerSummarySchema = z.object({
 		failingGate: z.string().nullable(),
 		rationale: z.string().default(""),
 	}),
+});
+
+const packageCommandEvidenceSchema = z.object({
+	name: z.string(),
+	target: z.string().default(""),
+	exitCode: z.number().nullable().default(null),
+	signal: z.string().nullable().default(null),
+	stdoutHead: z.string().default(""),
+	stderrHead: z.string().default(""),
+	error: z.string().nullable().default(null),
 });
 
 const ledgerRunSchema = z.object({
@@ -109,6 +125,7 @@ const ledgerRunSchema = z.object({
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	packageSmokePass: z.boolean().default(false),
+	packageCommands: z.array(packageCommandEvidenceSchema).default([]),
 	outputParityPercent: z.number().min(0).max(100),
 	errorCompatibilityPercent: z.number().min(0).max(100),
 	unclassifiedFailures: z.number().int().nonnegative(),
@@ -143,6 +160,7 @@ const ledgerSummarySchema = z.object({
 	publicSurfaceCoveragePercent: z.number().min(0).max(100).default(0),
 	httpDeployEnvCoveragePercent: z.number().min(0).max(100).default(0),
 	packageSmokePass: z.boolean().default(false),
+	packageCommandEvidenceComplete: z.boolean().default(false),
 	rustBinarySha256: z.string().regex(SHA256_HEX).nullable(),
 	readiness: z.object({
 		decision: deployReadinessDecisionSchema,
@@ -514,6 +532,15 @@ export function assessPromotionGate(
 			"Promotion requires package smoke evidence from the installable Rust package.",
 		);
 	}
+	if (!summary.packageCommandEvidenceComplete) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires package smoke evidence that executes epoch-cli, epoch-mcp, and epoch-http from the installable Rust package.",
+		);
+	}
 	if (
 		summary.target === target &&
 		(!summary.targetReached || summary.targetSatisfiedBy !== "scorer")
@@ -615,6 +642,15 @@ export function assessPromotionGateFromLedgerSummary(
 			"Promotion requires package smoke evidence from the installable Rust package.",
 		);
 	}
+	if (!summary.packageCommandEvidenceComplete) {
+		return result(
+			false,
+			target,
+			decision,
+			failingGate,
+			"Promotion requires package smoke evidence that executes epoch-cli, epoch-mcp, and epoch-http from the installable Rust package.",
+		);
+	}
 	if (
 		summary.totalSoakHours < requiredHours ||
 		summary.continuousSoakHours < requiredHours
@@ -691,6 +727,22 @@ function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
 	);
 }
 
+function hasRequiredPackageCommands(
+	run: Pick<LedgerRun, "packageCommands">,
+): boolean {
+	return Array.from(REQUIRED_PACKAGE_COMMANDS).every((name) => {
+		const command = run.packageCommands.find(
+			(candidate) => candidate.name === name,
+		);
+		return (
+			command !== undefined &&
+			command.exitCode === 0 &&
+			command.signal === null &&
+			command.error === null
+		);
+	});
+}
+
 function ledgerBinarySha256(runs: LedgerRun[]): string | null {
 	if (runs.length === 0) return null;
 	const missingIdentity = runs.find((run) => !run.rustBinarySha256);
@@ -713,6 +765,7 @@ function cleanInterval(run: LedgerRun): { startMs: number; endMs: number } | nul
 		!run.publicSurfaceMatch ||
 		!run.releaseE2ePass ||
 		!run.packageSmokePass ||
+		!hasRequiredPackageCommands(run) ||
 		run.unclassifiedFailures > 0 ||
 		run.crashes > 0 ||
 		run.dataLossIncidents > 0 ||
@@ -802,7 +855,12 @@ export function buildGateLedgerSummary(
 			httpDeployEnvCoveragePercent: numberMin(
 				runs.map((run) => run.httpDeployEnvCoveragePercent),
 			),
-			packageSmokePass: boolAll(runs.map((run) => run.packageSmokePass)),
+			packageSmokePass: boolAll(
+				runs.map(
+					(run) =>
+						run.packageSmokePass === true && hasRequiredPackageCommands(run),
+				),
+			),
 			outputParityPercent,
 			errorCompatibilityPercent,
 			unclassifiedFailures,
@@ -851,6 +909,9 @@ export function buildGateLedgerSummary(
 		httpDeployEnvCoveragePercent:
 			readinessInput.parity.httpDeployEnvCoveragePercent,
 		packageSmokePass: readinessInput.parity.packageSmokePass,
+		packageCommandEvidenceComplete: boolAll(
+			runs.map(hasRequiredPackageCommands),
+		),
 		rustBinarySha256: readinessInput.parity.rustBinarySha256,
 		readiness: assessDeployReadiness(readinessInput),
 	};

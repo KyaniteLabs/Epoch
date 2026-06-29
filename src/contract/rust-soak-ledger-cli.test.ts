@@ -8,9 +8,26 @@ import { describe, expect, it } from "vitest";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const RUST_BINARY_SHA256 =
 	"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const CURRENT_PLATFORM =
+	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 
 function writeJson(path: string, value: unknown): void {
 	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function packageCommands(): Record<string, unknown>[] {
+	return ["epoch-cli", "epoch-mcp", "epoch-http"].map((name) => ({
+		name,
+		target:
+			name === "epoch-cli"
+				? "node_modules/.bin/epoch"
+				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
+		exitCode: 0,
+		signal: null,
+		stdoutHead: name === "epoch-http" ? "Usage: epoch-http" : "ok",
+		stderrHead: "",
+		error: null,
+	}));
 }
 
 function packet(
@@ -60,6 +77,7 @@ function packet(
 		evidence: {
 			observability: { releaseTag: "candidate-1" },
 			performance: { evidenceMode: options.performanceEvidenceMode },
+			deploy: { packageCommands: packageCommands() },
 		},
 	});
 	writeJson(join(dir, "shadow-soak.json"), {

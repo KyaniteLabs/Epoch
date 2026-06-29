@@ -15,6 +15,22 @@ const REQUIRED_PACKAGE_ARTIFACTS = ["epoch-cli", "epoch-mcp", "epoch-http"].map(
 	(binary) => `prebuilds/${CURRENT_PLATFORM}/${binary}${process.platform === "win32" ? ".exe" : ""}`,
 );
 
+function packageCommands(overrides: Record<string, unknown> = {}) {
+	return ["epoch-cli", "epoch-mcp", "epoch-http"].map((name) => ({
+		name,
+		target:
+			name === "epoch-cli"
+				? "node_modules/.bin/epoch"
+				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
+		exitCode: 0,
+		signal: null,
+		stdoutHead: name === "epoch-http" ? "Usage: epoch-http" : "ok",
+		stderrHead: "",
+		error: null,
+		...overrides,
+	}));
+}
+
 function runnerSummary(overrides: Record<string, unknown> = {}) {
 	return {
 		target: "canary",
@@ -26,6 +42,7 @@ function runnerSummary(overrides: Record<string, unknown> = {}) {
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
+		packageCommandEvidenceComplete: true,
 		releaseTag: "candidate-1",
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
@@ -46,6 +63,7 @@ function ledgerSummary(overrides: Record<string, unknown> = {}) {
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
+		packageCommandEvidenceComplete: true,
 		rustBinarySha256: RUST_BINARY_SHA256,
 		readiness: {
 			decision: "CANARY",
@@ -69,6 +87,7 @@ function ledgerRun(overrides: Record<string, unknown> = {}) {
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
+		packageCommands: packageCommands(),
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		unclassifiedFailures: 0,
@@ -593,6 +612,21 @@ describe("assessPromotionGateFromLedger", () => {
 			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
 		);
 
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("package smoke evidence");
+	});
+
+	it("blocks direct ledger evidence without per-binary package command proof", () => {
+		const rawLedger = ledger([ledgerRun({ packageCommands: [] })]);
+		const summary = buildGateLedgerSummary(rawLedger);
+		const result = assessPromotionGateFromLedger(
+			rawLedger,
+			"canary",
+			{ currentRustBinarySha256: RUST_BINARY_SHA256 },
+		);
+
+		expect(summary.packageCommandEvidenceComplete).toBe(false);
+		expect(summary.packageSmokePass).toBe(false);
 		expect(result.ok).toBe(false);
 		expect(result.reason).toContain("package smoke evidence");
 	});

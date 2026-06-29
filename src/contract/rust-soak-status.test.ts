@@ -3,8 +3,26 @@ import { buildSoakStatus, formatSoakStatus } from "./rust-soak-status.js";
 
 const RUST_BINARY_SHA256 =
 	"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const CURRENT_PLATFORM =
+	`${process.platform}-${process.arch === "x64" ? "x64" : process.arch}`;
 const REPLACEMENT_NEEDS_QUALIFIED_PERFORMANCE_WARNING =
 	"Replacement runner has not recorded release-tagged qualified non-smoke performance evidence; soak time may continue, but replacement remains gated until a release-tagged qualified benchmark run is in the ledger.";
+
+function packageCommands(overrides: Record<string, unknown> = {}) {
+	return ["epoch-cli", "epoch-mcp", "epoch-http"].map((name) => ({
+		name,
+		target:
+			name === "epoch-cli"
+				? "node_modules/.bin/epoch"
+				: `prebuilds/${CURRENT_PLATFORM}/${name}${process.platform === "win32" ? ".exe" : ""}`,
+		exitCode: 0,
+		signal: null,
+		stdoutHead: name === "epoch-http" ? "Usage: epoch-http" : "ok",
+		stderrHead: "",
+		error: null,
+		...overrides,
+	}));
+}
 
 function run(overrides: Record<string, unknown> = {}) {
 	return {
@@ -19,6 +37,7 @@ function run(overrides: Record<string, unknown> = {}) {
 		publicSurfaceCoveragePercent: 100,
 		httpDeployEnvCoveragePercent: 100,
 		packageSmokePass: true,
+		packageCommands: packageCommands(),
 		soakHours: 1,
 		continuousSoakHours: 1,
 		crashes: 0,
@@ -323,6 +342,24 @@ describe("buildSoakStatus", () => {
 		expect(status.readinessDecision).toBe("SHADOW");
 		expect(status.readinessFailingGate).toBe("package-smoke");
 		expect(status.remainingReplaceHours).toBe(72);
+		expect(status.warnings).toContain(
+			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
+		);
+	});
+
+	it("does not credit package-smoke rows without per-binary command proof", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([run({ packageCommands: [] })]),
+			runnerAlive: false,
+			generatedAt: "2026-06-27T01:00:00.000Z",
+		});
+
+		expect(status.totalCompletedSoakHours).toBe(1);
+		expect(status.continuousCleanSoakHours).toBe(0);
+		expect(status.packageSmokePass).toBe(false);
+		expect(status.packageCommandEvidenceComplete).toBe(false);
+		expect(status.readinessFailingGate).toBe("package-smoke");
 		expect(status.warnings).toContain(
 			"Ledger includes public-surface, release-E2E, package-smoke, parity, or unclassified failures.",
 		);
