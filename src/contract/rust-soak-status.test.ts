@@ -269,6 +269,21 @@ describe("buildSoakStatus", () => {
 				completedSteps: ["build-rust-release-cli", "strict-parity"],
 				error: null,
 			},
+			activeReplacementScorecardRaw: {
+				decision: "SHADOW",
+				failingGate: "soak",
+				readyToReplace: false,
+				functionalCompatibilityPercent: 100,
+				replacementGatePassPercent: 86.36,
+				gatesPassed: 19,
+				gatesTotal: 22,
+				summary: {
+					medianLatencyImprovementPercent: 99.1,
+					p95LatencyImprovementPercent: 98.2,
+					continuousSoakHours: 1,
+					requiredContinuousSoakHours: 72,
+				},
+			},
 			runnerAlive: true,
 			generatedAt: "2026-06-27T00:03:00.000Z",
 		});
@@ -280,6 +295,13 @@ describe("buildSoakStatus", () => {
 			completedSteps: ["build-rust-release-cli", "strict-parity"],
 			releaseTag: "candidate-1",
 		});
+		expect(status.activeReplacementScorecard).toMatchObject({
+			decision: "SHADOW",
+			failingGate: "soak",
+			gatesPassed: 19,
+			gatesTotal: 22,
+			functionalCompatibilityPercent: 100,
+		});
 		expect(status.totalCompletedSoakHours).toBe(0);
 		expect(status.releaseContinuousSoakHours).toBe(0);
 		expect(status.remainingReplaceHours).toBe(72);
@@ -288,6 +310,13 @@ describe("buildSoakStatus", () => {
 			"packet step:         promotion-benchmark",
 		);
 		expect(formatSoakStatus(status)).toContain("packet completed:    2");
+		expect(formatSoakStatus(status)).toContain(
+			"scorecard decision:  SHADOW",
+		);
+		expect(formatSoakStatus(status)).toContain("scorecard gates:     19/22");
+		expect(formatSoakStatus(status)).toContain(
+			"scorecard soak:      1.0000h/72h",
+		);
 	});
 
 	it("surfaces active benchmark progress without crediting unfinished evidence", () => {

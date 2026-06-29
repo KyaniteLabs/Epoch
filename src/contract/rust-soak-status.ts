@@ -72,6 +72,19 @@ type BenchmarkProgress = {
 	completedTools: string[];
 	error: string | null;
 };
+type ReplacementScorecardStatus = {
+	decision: string | null;
+	failingGate: string | null;
+	readyToReplace: boolean;
+	functionalCompatibilityPercent: number;
+	replacementGatePassPercent: number;
+	gatesPassed: number;
+	gatesTotal: number;
+	medianLatencyImprovementPercent: number;
+	p95LatencyImprovementPercent: number;
+	continuousSoakHours: number;
+	requiredContinuousSoakHours: number;
+};
 type LedgerRun = {
 	id: string;
 	generatedAt: string;
@@ -133,6 +146,7 @@ type SoakStatus = {
 	activePromotionPacketProgress: PromotionPacketProgress | null;
 	activeBenchmarkProgress: BenchmarkProgress | null;
 	activeShadowSoakProgress: ShadowSoakProgress | null;
+	activeReplacementScorecard: ReplacementScorecardStatus | null;
 	totalCompletedSoakHours: number;
 	continuousCleanSoakHours: number;
 	continuityLostHours: number;
@@ -517,6 +531,56 @@ function parseBenchmarkProgress(raw: unknown): BenchmarkProgress | null {
 	};
 }
 
+function parseReplacementScorecard(
+	raw: unknown,
+): ReplacementScorecardStatus | null {
+	if (!isObject(raw)) return null;
+	const summary = isObject(raw.summary) ? raw.summary : {};
+	const gatesPassed = numberField(raw, "gatesPassed", -1);
+	const gatesTotal = numberField(raw, "gatesTotal", -1);
+	const replacementGatePassPercent = numberField(
+		raw,
+		"replacementGatePassPercent",
+		-1,
+	);
+	const functionalCompatibilityPercent = numberField(
+		raw,
+		"functionalCompatibilityPercent",
+		-1,
+	);
+	if (
+		gatesPassed < 0 ||
+		gatesTotal < 0 ||
+		replacementGatePassPercent < 0 ||
+		functionalCompatibilityPercent < 0
+	) {
+		return null;
+	}
+	return {
+		decision: stringField(raw, "decision"),
+		failingGate: stringField(raw, "failingGate"),
+		readyToReplace: raw.readyToReplace === true,
+		functionalCompatibilityPercent,
+		replacementGatePassPercent,
+		gatesPassed,
+		gatesTotal,
+		medianLatencyImprovementPercent: numberField(
+			summary,
+			"medianLatencyImprovementPercent",
+		),
+		p95LatencyImprovementPercent: numberField(
+			summary,
+			"p95LatencyImprovementPercent",
+		),
+		continuousSoakHours: numberField(summary, "continuousSoakHours"),
+		requiredContinuousSoakHours: numberField(
+			summary,
+			"requiredContinuousSoakHours",
+			REPLACE_SOAK_HOURS,
+		),
+	};
+}
+
 function numberSum(values: number[]): number {
 	return values.reduce((total, value) => total + value, 0);
 }
@@ -715,6 +779,7 @@ export function buildSoakStatus(input: {
 	activePromotionPacketProgressRaw?: unknown | null;
 	activeBenchmarkProgressRaw?: unknown | null;
 	activeShadowSoakProgressRaw?: unknown | null;
+	activeReplacementScorecardRaw?: unknown | null;
 	generatedAt?: string;
 	runnerAlive?: boolean;
 }): SoakStatus {
@@ -737,6 +802,9 @@ export function buildSoakStatus(input: {
 		: null;
 	const activeShadowSoakProgress = activeRunner
 		? parseShadowSoakProgress(input.activeShadowSoakProgressRaw ?? null)
+		: null;
+	const activeReplacementScorecard = activeRunner
+		? parseReplacementScorecard(input.activeReplacementScorecardRaw ?? null)
 		: null;
 	const identities = new Set(
 		runs
@@ -902,6 +970,7 @@ export function buildSoakStatus(input: {
 		activePromotionPacketProgress,
 		activeBenchmarkProgress,
 		activeShadowSoakProgress,
+		activeReplacementScorecard,
 		totalCompletedSoakHours,
 		continuousCleanSoakHours,
 		continuityLostHours: Math.max(
@@ -985,6 +1054,17 @@ export function formatSoakStatus(status: SoakStatus): string {
 			`  packet updated:      ${status.activePromotionPacketProgress.updatedAt}`,
 		);
 	}
+	if (status.activeReplacementScorecard) {
+		lines.push(
+			`  scorecard decision:  ${status.activeReplacementScorecard.decision ?? "unknown"}`,
+			`  scorecard blocker:   ${status.activeReplacementScorecard.failingGate ?? "none"}`,
+			`  scorecard compat:    ${status.activeReplacementScorecard.functionalCompatibilityPercent.toFixed(2)}%`,
+			`  scorecard gates:     ${status.activeReplacementScorecard.gatesPassed}/${status.activeReplacementScorecard.gatesTotal} (${status.activeReplacementScorecard.replacementGatePassPercent.toFixed(2)}%)`,
+			`  scorecard p50 perf:  ${status.activeReplacementScorecard.medianLatencyImprovementPercent.toFixed(2)}%`,
+			`  scorecard p95 perf:  ${status.activeReplacementScorecard.p95LatencyImprovementPercent.toFixed(2)}%`,
+			`  scorecard soak:      ${status.activeReplacementScorecard.continuousSoakHours.toFixed(4)}h/${status.activeReplacementScorecard.requiredContinuousSoakHours}h`,
+		);
+	}
 	if (status.activeBenchmarkProgress) {
 		lines.push(
 			`  bench progress:      ${status.activeBenchmarkProgress.status}`,
@@ -1038,6 +1118,11 @@ export function main(argv: string[]): number {
 		const activeBenchmarkProgressRaw = runnerState?.packetDir
 			? readJsonIfExists(resolve(REPO_ROOT, runnerState.packetDir, "perf-progress.json"))
 			: null;
+		const activeReplacementScorecardRaw = runnerState?.packetDir
+			? readJsonIfExists(
+					resolve(REPO_ROOT, runnerState.packetDir, "replacement-scorecard.json"),
+				)
+			: null;
 		const status = buildSoakStatus({
 			ledgerPath: options.ledgerPath,
 			ledgerRaw: readJsonIfExists(ledgerPath),
@@ -1045,6 +1130,7 @@ export function main(argv: string[]): number {
 			activePromotionPacketProgressRaw,
 			activeBenchmarkProgressRaw,
 			activeShadowSoakProgressRaw,
+			activeReplacementScorecardRaw,
 			runnerAlive: runnerState ? isRunnerProcessAlive(runnerState) : false,
 		});
 		process.stdout.write(
