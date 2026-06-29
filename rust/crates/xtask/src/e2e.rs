@@ -26,7 +26,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const REPORT_PATH: &str = "docs/superpowers/reports/rust-promotion-e2e.json";
 const CONTRACT_PATH: &str = "docs/superpowers/contracts/epoch-public-surface.json";
@@ -207,6 +207,7 @@ fn tool_for_cli_command(command: &str) -> Option<&'static str> {
 
 fn cli_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surface>> {
     let mut out = Vec::new();
+    let data_dir = isolated_data_dir("cli");
     for command in &contract.cli_command_paths {
         let input = match tool_for_cli_command(command) {
             Some(tool) => {
@@ -217,8 +218,9 @@ fn cli_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surface
         let mut args: Vec<String> = command.split(' ').map(str::to_string).collect();
         args.push(serde_json::to_string(&input)?);
 
-        let output = Command::new(bin)
-            .args(&args)
+        let mut cli = Command::new(bin);
+        cli.env("EPOCH_DATA_DIR", &data_dir).args(&args);
+        let output = cli
             .output()
             .with_context(|| format!("failed to spawn epoch-cli for `{command}`"))?;
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -242,6 +244,7 @@ fn cli_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surface
             detail,
         });
     }
+    remove_dir_if_exists(&data_dir);
     Ok(out)
 }
 
@@ -267,7 +270,9 @@ fn mcp_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<McpOutcome>
     }
     let payload = format!("{}\n", lines.join("\n"));
 
+    let data_dir = isolated_data_dir("mcp");
     let mut child = Command::new(bin)
+        .env("EPOCH_DATA_DIR", &data_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -282,6 +287,7 @@ fn mcp_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<McpOutcome>
     let output = child
         .wait_with_output()
         .context("failed to read epoch-mcp output")?;
+    remove_dir_if_exists(&data_dir);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     let mut by_id: BTreeMap<i64, Value> = BTreeMap::new();
@@ -426,7 +432,9 @@ fn parse_frames(input: &str) -> Vec<Value> {
 fn http_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surface>> {
     let port = free_port()?;
     let addr = format!("127.0.0.1:{port}");
+    let data_dir = isolated_data_dir("http");
     let mut child = Command::new(bin)
+        .env("EPOCH_DATA_DIR", &data_dir)
         .arg(&addr)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -455,6 +463,7 @@ fn http_sweep(bin: &Path, contract: &PublicSurfaceContract) -> Result<Vec<Surfac
 
     let _ = child.kill();
     let _ = child.wait();
+    remove_dir_if_exists(&data_dir);
     work
 }
 
@@ -523,8 +532,10 @@ impl HttpDeployCheck {
     }
 
     fn run_health(&self, bin: &Path, addr: &str) -> Surface {
+        let data_dir = isolated_data_dir("http-deploy");
         let mut command = Command::new(bin);
         clear_http_env(&mut command);
+        command.env("EPOCH_DATA_DIR", &data_dir);
         for (name, value) in &self.env {
             command.env(name, value);
         }
@@ -542,6 +553,7 @@ impl HttpDeployCheck {
         })();
         let _ = child.kill();
         let _ = child.wait();
+        remove_dir_if_exists(&data_dir);
 
         match result {
             Ok((status, body)) => {
@@ -579,6 +591,24 @@ impl HttpDeployCheck {
 fn clear_http_env(command: &mut Command) {
     for name in ["EPOCH_HTTP_ADDR", "EPOCH_HOST", "EPOCH_PORT", "PORT"] {
         command.env_remove(name);
+    }
+}
+
+fn isolated_data_dir(label: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    std::env::temp_dir().join(format!(
+        "epoch-rust-e2e-{label}-{}-{}",
+        std::process::id(),
+        nanos
+    ))
+}
+
+fn remove_dir_if_exists(path: &Path) {
+    if path.exists() {
+        let _ = std::fs::remove_dir_all(path);
     }
 }
 

@@ -111,6 +111,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "epoch-contract",
+ "serde",
  "serde_json",
 ]
 

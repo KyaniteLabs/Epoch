@@ -6,12 +6,21 @@ use epoch_contract::{
     FeedbackMetricSummary, FeedbackProvenanceSummary, FeedbackSelfImprovement,
     PendingEstimateRecord, RecordActualFailureReason, TaskType,
 };
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
+use std::fs::{File, OpenOptions, create_dir_all};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 
 const MINIMUM_RECORDED_ACTUAL_HOURS: f64 = 0.0;
 const MINIMUM_CALIBRATION_ACTUAL_HOURS: f64 = 0.01;
 const MIN_RATIO: f64 = 0.03;
+const ESTIMATES_FILE: &str = "estimates.jsonl";
+const ACTUALS_FILE: &str = "feedback.jsonl";
+const DRY_RUN_ESTIMATES_FILE: &str = "estimates.dry-run.jsonl";
+const DRY_RUN_ACTUALS_FILE: &str = "feedback.dry-run.jsonl";
 const SYNTHETIC_PREFIXES: &[&str] = &[
     "seed-",
     "test-",
@@ -57,11 +66,36 @@ pub struct CalibrationFilters {
 pub struct FeedbackStore {
     estimates: Vec<EstimateRecord>,
     actuals: Vec<ActualRecord>,
+    persistence: Option<FeedbackPersistence>,
+}
+
+#[derive(Debug, Clone)]
+struct FeedbackPersistence {
+    data_dir: PathBuf,
 }
 
 impl FeedbackStore {
     pub fn new(estimates: Vec<EstimateRecord>, actuals: Vec<ActualRecord>) -> Self {
-        Self { estimates, actuals }
+        Self {
+            estimates,
+            actuals,
+            persistence: None,
+        }
+    }
+
+    pub fn from_epoch_data_dir() -> std::io::Result<Self> {
+        Self::from_data_dir(epoch_data_dir())
+    }
+
+    pub fn from_data_dir(data_dir: impl Into<PathBuf>) -> std::io::Result<Self> {
+        let data_dir = data_dir.into();
+        let estimates = read_jsonl(&data_dir.join(ESTIMATES_FILE))?;
+        let actuals = read_jsonl(&data_dir.join(ACTUALS_FILE))?;
+        Ok(Self {
+            estimates,
+            actuals,
+            persistence: Some(FeedbackPersistence { data_dir }),
+        })
     }
 
     pub fn estimates(&self) -> &[EstimateRecord] {
@@ -74,6 +108,19 @@ impl FeedbackStore {
 
     pub fn add_estimate(&mut self, estimate: EstimateRecord) {
         self.estimates.push(estimate);
+    }
+
+    pub fn record_estimate(
+        &mut self,
+        estimate: EstimateRecord,
+    ) -> Result<(), RecordActualFailureReason> {
+        if let Some(persistence) = &self.persistence {
+            persistence
+                .append_estimate(&estimate)
+                .map_err(|_| RecordActualFailureReason::WriteFailed)?;
+        }
+        self.estimates.push(estimate);
+        Ok(())
     }
 
     pub fn record_actual(
@@ -108,7 +155,7 @@ impl FeedbackStore {
             return Err(RecordActualFailureReason::Duplicate);
         }
 
-        self.actuals.push(ActualRecord {
+        let actual = ActualRecord {
             estimate_id,
             actual_hours,
             notes,
@@ -116,7 +163,13 @@ impl FeedbackStore {
             completed_at: None,
             calibration_provenance: None,
             calibration_usage: None,
-        });
+        };
+        if let Some(persistence) = &self.persistence {
+            persistence
+                .append_actual(&actual)
+                .map_err(|_| RecordActualFailureReason::WriteFailed)?;
+        }
+        self.actuals.push(actual);
         Ok(())
     }
 
@@ -201,6 +254,85 @@ impl FeedbackStore {
     pub fn health_report(&self) -> FeedbackHealthReport {
         feedback_health_report(&self.estimates, &self.actuals)
     }
+}
+
+impl FeedbackPersistence {
+    fn append_estimate(&self, estimate: &EstimateRecord) -> std::io::Result<()> {
+        self.append_json(target_estimates_file(), estimate)
+    }
+
+    fn append_actual(&self, actual: &ActualRecord) -> std::io::Result<()> {
+        self.append_json(target_actuals_file(), actual)
+    }
+
+    fn append_json<T: Serialize>(&self, filename: &str, record: &T) -> std::io::Result<()> {
+        create_dir_all(&self.data_dir)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.data_dir.join(filename))?;
+        serde_json::to_writer(&mut file, record).map_err(std::io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    }
+}
+
+fn epoch_data_dir() -> PathBuf {
+    env::var_os("EPOCH_DATA_DIR")
+        .and_then(non_empty_os_path)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".epoch")))
+        .unwrap_or_else(|| PathBuf::from(".epoch"))
+}
+
+fn non_empty_os_path(value: std::ffi::OsString) -> Option<PathBuf> {
+    let path = PathBuf::from(value);
+    if path.as_os_str().is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+fn target_estimates_file() -> &'static str {
+    if is_dry_run() {
+        DRY_RUN_ESTIMATES_FILE
+    } else {
+        ESTIMATES_FILE
+    }
+}
+
+fn target_actuals_file() -> &'static str {
+    if is_dry_run() {
+        DRY_RUN_ACTUALS_FILE
+    } else {
+        ACTUALS_FILE
+    }
+}
+
+fn is_dry_run() -> bool {
+    matches!(
+        env::var("EPOCH_DRY_RUN").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE")
+    )
+}
+
+fn read_jsonl<T: DeserializeOwned>(path: &Path) -> std::io::Result<Vec<T>> {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut records = Vec::new();
+    for line in BufReader::new(file).lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(record) = serde_json::from_str::<T>(&line) {
+            records.push(record);
+        }
+    }
+    Ok(records)
 }
 
 pub fn match_estimates_to_actuals(
@@ -882,6 +1014,7 @@ mod tests {
     };
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
+    use std::fs;
 
     #[test]
     fn records_actuals_and_rejects_invalid_feedback() {
@@ -910,6 +1043,56 @@ mod tests {
             Err(RecordActualFailureReason::Duplicate)
         );
         assert_eq!(store.actuals().len(), 1);
+    }
+
+    #[test]
+    fn persistent_store_reads_typescript_jsonl_and_appends_compatible_records() {
+        let dir = temp_data_dir("persistent-store");
+        fs::create_dir_all(&dir).expect("temp data dir");
+        fs::write(
+            dir.join("estimates.jsonl"),
+            concat!(
+                r#"{"id":"ts-est-1","tool":"pert_estimate","inputs":{"task_type":"feature"},"outputs":{"expected":2.5},"estimatedAt":"2026-01-10T12:00:00Z","source":"typescript"}"#,
+                "\nnot-json\n"
+            ),
+        )
+        .expect("write estimates");
+        fs::write(
+            dir.join("feedback.jsonl"),
+            r#"{"estimateId":"done-1","actualHours":4,"reportedAt":"2026-01-11T00:00:00Z"}"#,
+        )
+        .expect("write actuals");
+
+        let mut store = FeedbackStore::from_data_dir(&dir).expect("load persistent store");
+
+        assert_eq!(store.estimates().len(), 1);
+        assert_eq!(store.actuals().len(), 1);
+        assert_eq!(store.pending_estimates(10)[0].estimate.id, "ts-est-1");
+        store
+            .record_actual_detailed(
+                "ts-est-1",
+                3.25,
+                Some("real follow-up".to_string()),
+                "2026-01-12T00:00:00Z",
+            )
+            .expect("record actual");
+        store
+            .record_estimate(estimate(
+                "rust-est-2",
+                "pert_estimate",
+                inputs([("task_type", json!("bugfix"))]),
+                outputs([("expected", json!(1.5))]),
+            ))
+            .expect("record estimate");
+
+        let actuals = fs::read_to_string(dir.join("feedback.jsonl")).expect("read actuals");
+        assert!(actuals.contains(r#""estimateId":"ts-est-1""#));
+        assert!(actuals.contains(r#""actualHours":3.25"#));
+        let estimates = fs::read_to_string(dir.join("estimates.jsonl")).expect("read estimates");
+        assert!(estimates.contains(r#""id":"rust-est-2""#));
+        assert!(estimates.contains(r#""estimatedAt":"2026-01-10T12:00:00Z""#));
+
+        fs::remove_dir_all(dir).expect("cleanup temp data dir");
     }
 
     #[test]
@@ -1202,5 +1385,15 @@ mod tests {
 
     fn reported_at() -> String {
         "2026-01-11T00:00:00Z".to_string()
+    }
+
+    fn temp_data_dir(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "epoch-rust-feedback-{label}-{}-{}",
+            std::process::id(),
+            chrono::Utc::now()
+                .timestamp_nanos_opt()
+                .expect("timestamp nanos")
+        ))
     }
 }

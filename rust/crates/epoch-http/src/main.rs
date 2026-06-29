@@ -1,4 +1,5 @@
 use epoch_http::{HttpMethod, RustHttpResponse, RustHttpRouter};
+use epoch_mcp::RustToolDispatcher;
 use serde_json::{Value, json};
 use std::{
     io::{Read, Write},
@@ -21,7 +22,11 @@ fn main() {
     });
     eprintln!("epoch-http listening on http://{address}");
 
-    let router = Arc::new(Mutex::new(RustHttpRouter::new()));
+    let dispatcher = RustToolDispatcher::persistent_from_env().unwrap_or_else(|error| {
+        eprintln!("failed to initialize feedback store: {error}");
+        std::process::exit(1);
+    });
+    let router = Arc::new(Mutex::new(RustHttpRouter::with_dispatcher(dispatcher)));
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {

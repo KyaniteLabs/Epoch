@@ -7,7 +7,10 @@ fn main() {
     let Some((command, input)) = parse_invocation(args) else {
         print_usage_and_exit();
     };
-    let mut dispatcher = RustToolDispatcher::new();
+    let mut dispatcher = RustToolDispatcher::persistent_from_env().unwrap_or_else(|error| {
+        eprintln!("failed to initialize feedback store: {error}");
+        std::process::exit(1);
+    });
 
     match run_cli_json(&mut dispatcher, &command, &input) {
         Ok(value) => println!(

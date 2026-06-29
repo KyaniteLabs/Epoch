@@ -47,6 +47,10 @@ impl RustToolDispatcher {
         Self::default()
     }
 
+    pub fn persistent_from_env() -> std::io::Result<Self> {
+        FeedbackStore::from_epoch_data_dir().map(Self::with_feedback_store)
+    }
+
     pub fn with_feedback_store(feedback: FeedbackStore) -> Self {
         let next_feedback_id = next_feedback_id(&feedback);
         Self {
@@ -88,7 +92,7 @@ impl RustToolDispatcher {
             _ => return Err(unknown_tool_error(tool_name)),
         };
 
-        Ok(self.record_feedback_candidate(tool_name, input, data))
+        self.record_feedback_candidate(tool_name, input, data)
     }
 
     fn dispatch_get_current_time(&mut self, input: &Value) -> ToolValueResult {
@@ -621,29 +625,36 @@ impl RustToolDispatcher {
         tool_name: &str,
         input: Value,
         mut data: Value,
-    ) -> Value {
+    ) -> ToolValueResult {
         let Some(output) = data.as_object() else {
-            return data;
+            return Ok(data);
         };
         if !has_hour_estimate(output) {
-            return data;
+            return Ok(data);
         }
 
         self.next_feedback_id += 1;
         let estimate_id = format!("rust-estimate-{}", self.next_feedback_id);
-        self.feedback.add_estimate(EstimateRecord {
-            id: estimate_id.clone(),
-            tool: tool_name.to_string(),
-            inputs: value_object_to_btree(input.as_object()),
-            outputs: value_object_to_btree(Some(output)),
-            estimated_at: Utc::now().to_rfc3339(),
-            source: None,
-        });
+        self.feedback
+            .record_estimate(EstimateRecord {
+                id: estimate_id.clone(),
+                tool: tool_name.to_string(),
+                inputs: value_object_to_btree(input.as_object()),
+                outputs: value_object_to_btree(Some(output)),
+                estimated_at: Utc::now().to_rfc3339(),
+                source: None,
+            })
+            .map_err(|reason| {
+                ToolError::new(
+                    format!("Failed to record feedback estimate for {tool_name}: {reason:?}."),
+                    "Check EPOCH_DATA_DIR permissions or retry with a writable data directory.",
+                )
+            })?;
 
         if let Some(output) = data.as_object_mut() {
             output.insert("feedbackRef".to_string(), Value::String(estimate_id));
         }
-        data
+        Ok(data)
     }
 
     fn historical_records(&self, filters: CalibrationFilters) -> Vec<HistoricalRecord> {
@@ -1183,7 +1194,9 @@ fn wrong_task(index: usize) -> ToolError {
 mod tests {
     use super::{RustToolDispatcher, dispatch_stateless};
     use epoch_contract::{ToolError, tool_names};
+    use epoch_core::feedback::FeedbackStore;
     use serde_json::{Value, json};
+    use std::fs;
 
     #[test]
     fn rejects_unknown_tools_with_available_list() {
@@ -1374,6 +1387,43 @@ mod tests {
     }
 
     #[test]
+    fn persistent_dispatcher_appends_feedback_jsonl_records() {
+        let dir = temp_data_dir("dispatcher");
+        let store = FeedbackStore::from_data_dir(&dir).expect("persistent store");
+        let mut dispatcher = RustToolDispatcher::with_feedback_store(store);
+
+        let result = dispatcher
+            .dispatch(
+                "pert_estimate",
+                json!({
+                    "optimistic": 1,
+                    "most_likely": 2,
+                    "pessimistic": 4,
+                    "task_type": "bugfix"
+                }),
+            )
+            .expect("estimate dispatches");
+        let estimate_id = result["feedbackRef"].as_str().expect("feedback ref");
+        assert_eq!(estimate_id, "rust-estimate-1");
+
+        dispatcher
+            .dispatch(
+                "record_actual",
+                json!({ "estimate_id": estimate_id, "actual_hours": 2.5 }),
+            )
+            .expect("actual records");
+
+        let estimates = fs::read_to_string(dir.join("estimates.jsonl")).expect("estimates file");
+        assert!(estimates.contains(r#""id":"rust-estimate-1""#));
+        assert!(estimates.contains(r#""estimatedAt":"#));
+        let actuals = fs::read_to_string(dir.join("feedback.jsonl")).expect("actuals file");
+        assert!(actuals.contains(r#""estimateId":"rust-estimate-1""#));
+        assert!(actuals.contains(r#""actualHours":2.5"#));
+
+        fs::remove_dir_all(dir).expect("cleanup temp data dir");
+    }
+
+    #[test]
     fn dispatches_cost_analytics_risk_and_validation_tools() {
         let mut dispatcher = RustToolDispatcher::new();
 
@@ -1508,5 +1558,15 @@ mod tests {
             ),
             ("feedback_health", json!({})),
         ])
+    }
+
+    fn temp_data_dir(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "epoch-rust-dispatcher-{label}-{}-{}",
+            std::process::id(),
+            chrono::Utc::now()
+                .timestamp_nanos_opt()
+                .expect("timestamp nanos")
+        ))
     }
 }

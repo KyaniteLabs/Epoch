@@ -1,4 +1,4 @@
-use epoch_mcp::{McpRuntime, process_message_stream};
+use epoch_mcp::{McpRuntime, RustToolDispatcher, process_message_stream};
 use std::io::{self, Read};
 
 fn main() {
@@ -8,6 +8,10 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut runtime = McpRuntime::new();
+    let dispatcher = RustToolDispatcher::persistent_from_env().unwrap_or_else(|error| {
+        eprintln!("failed to initialize feedback store: {error}");
+        std::process::exit(1);
+    });
+    let mut runtime = McpRuntime::with_dispatcher(dispatcher);
     print!("{}", process_message_stream(&mut runtime, &input));
 }
