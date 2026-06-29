@@ -23,10 +23,16 @@ function run(overrides: Record<string, unknown> = {}) {
 		crashes: 0,
 		dataLossIncidents: 0,
 		unresolvedTelemetryAnomalies: 0,
+		rollbackValidated: true,
+		rollbackRehearsed: true,
 		outputParityPercent: 100,
 		errorCompatibilityPercent: 100,
 		unclassifiedFailures: 0,
 		observabilityLevel: "release",
+		medianLatencyImprovementPercent: 90,
+		p95LatencyImprovementPercent: 90,
+		startupImprovementPercent: 90,
+		memoryImprovementPercent: 90,
 		readinessDecision: "SHADOW",
 		readinessFailingGate: "soak",
 		...overrides,
@@ -111,6 +117,50 @@ describe("buildSoakStatus", () => {
 
 		expect(status.qualifiedPerformanceEvidence).toBe(true);
 		expect(status.warnings).toEqual([]);
+	});
+
+	it("reports cumulative canary readiness instead of the latest packet readiness", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					soakHours: 24,
+					continuousSoakHours: 24,
+					endedAt: "2026-06-28T00:00:00.000Z",
+					readinessDecision: "SHADOW",
+					readinessFailingGate: "soak",
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-28T00:00:00.000Z",
+		});
+
+		expect(status.readinessDecision).toBe("CANARY");
+		expect(status.readinessFailingGate).toBe("soak");
+		expect(formatSoakStatus(status)).toContain("readiness:           CANARY");
+	});
+
+	it("reports cumulative replacement readiness when the ledger satisfies all scorer gates", () => {
+		const status = buildSoakStatus({
+			ledgerPath: ".epoch-promotion/soak-ledger.json",
+			ledgerRaw: ledger([
+				run({
+					soakHours: 72,
+					continuousSoakHours: 72,
+					endedAt: "2026-06-30T00:00:00.000Z",
+					performanceEvidenceMode: "qualified",
+					readinessDecision: "SHADOW",
+					readinessFailingGate: "soak",
+				}),
+			]),
+			runnerAlive: false,
+			generatedAt: "2026-06-30T00:00:00.000Z",
+		});
+
+		expect(status.readinessDecision).toBe("REPLACE");
+		expect(status.readinessFailingGate).toBeNull();
+		expect(formatSoakStatus(status)).toContain("readiness:           REPLACE");
+		expect(formatSoakStatus(status)).toContain("failing gate:        none");
 	});
 
 	it("does not count untagged qualified evidence for replacement status", () => {

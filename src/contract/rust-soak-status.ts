@@ -11,6 +11,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+	assessDeployReadiness,
+	type ReadinessAssessment,
+	type ReadinessInput,
+} from "./rust-deploy-readiness.js";
+
 type Target = "canary" | "replace";
 type RunnerState = {
 	pid: number | null;
@@ -40,10 +46,16 @@ type LedgerRun = {
 	crashes: number;
 	dataLossIncidents: number;
 	unresolvedTelemetryAnomalies: number;
+	rollbackValidated: boolean;
+	rollbackRehearsed: boolean;
 	outputParityPercent: number;
 	errorCompatibilityPercent: number;
 	unclassifiedFailures: number;
 	observabilityLevel: string | null;
+	medianLatencyImprovementPercent: number;
+	p95LatencyImprovementPercent: number;
+	startupImprovementPercent: number;
+	memoryImprovementPercent: number;
 	performanceEvidenceMode: "smoke" | "qualified";
 	readinessDecision: string | null;
 	readinessFailingGate: string | null;
@@ -205,10 +217,25 @@ function parseLedgerRun(raw: unknown): LedgerRun | null {
 			raw,
 			"unresolvedTelemetryAnomalies",
 		),
+		rollbackValidated: raw.rollbackValidated === true,
+		rollbackRehearsed: raw.rollbackRehearsed === true,
 		outputParityPercent: numberField(raw, "outputParityPercent"),
 		errorCompatibilityPercent: numberField(raw, "errorCompatibilityPercent"),
 		unclassifiedFailures: numberField(raw, "unclassifiedFailures"),
 		observabilityLevel: stringField(raw, "observabilityLevel"),
+		medianLatencyImprovementPercent: numberField(
+			raw,
+			"medianLatencyImprovementPercent",
+		),
+		p95LatencyImprovementPercent: numberField(
+			raw,
+			"p95LatencyImprovementPercent",
+		),
+		startupImprovementPercent: numberField(
+			raw,
+			"startupImprovementPercent",
+		),
+		memoryImprovementPercent: numberField(raw, "memoryImprovementPercent"),
 		performanceEvidenceMode:
 			raw.performanceEvidenceMode === "qualified" ? "qualified" : "smoke",
 		readinessDecision: stringField(raw, "readinessDecision"),
@@ -259,6 +286,14 @@ function numberSum(values: number[]): number {
 
 function numberMin(values: number[]): number {
 	return values.length ? Math.min(...values) : 0;
+}
+
+function boolAll(values: boolean[]): boolean {
+	return values.length > 0 && values.every(Boolean);
+}
+
+function boolSome(values: boolean[]): boolean {
+	return values.some(Boolean);
 }
 
 function hasReleaseQualifiedPerformanceEvidence(run: LedgerRun): boolean {
@@ -346,6 +381,72 @@ function sameRepoPath(left: string, right: string): boolean {
 	return resolve(REPO_ROOT, left) === resolve(REPO_ROOT, right);
 }
 
+function cumulativeReadiness(
+	runs: LedgerRun[],
+	rustBinarySha256: string | null,
+	totalCompletedSoakHours: number,
+	continuousCleanSoakHours: number,
+	releaseTaggedSoakHours: number,
+	releaseE2ePass: boolean,
+	publicSurfaceCoveragePercent: number,
+	httpDeployEnvCoveragePercent: number,
+): ReadinessAssessment | null {
+	if (runs.length === 0) return null;
+	const outputParityPercent = numberMin(
+		runs.map((run) => run.outputParityPercent),
+	);
+	const errorCompatibilityPercent = numberMin(
+		runs.map((run) => run.errorCompatibilityPercent),
+	);
+	const unclassifiedFailures = numberSum(
+		runs.map((run) => run.unclassifiedFailures),
+	);
+	const allSoakIsRelease =
+		totalCompletedSoakHours > 0 &&
+		Math.abs(releaseTaggedSoakHours - totalCompletedSoakHours) < 1e-9;
+	const input: ReadinessInput = {
+		parity: {
+			publicSurfaceMatch: boolAll(runs.map((run) => run.publicSurfaceMatch)),
+			releaseE2ePass,
+			publicSurfaceCoveragePercent,
+			httpDeployEnvCoveragePercent,
+			outputParityPercent,
+			errorCompatibilityPercent,
+			unclassifiedFailures,
+			rustBinarySha256,
+			soakHours: totalCompletedSoakHours,
+			continuousSoakHours: continuousCleanSoakHours,
+			crashes: numberSum(runs.map((run) => run.crashes)),
+			dataLossIncidents: numberSum(runs.map((run) => run.dataLossIncidents)),
+			rollbackValidated: boolSome(runs.map((run) => run.rollbackValidated)),
+			rollbackRehearsed: boolSome(runs.map((run) => run.rollbackRehearsed)),
+			observabilityLevel: allSoakIsRelease ? "release" : "tool",
+			unresolvedTelemetryAnomalies: numberSum(
+				runs.map((run) => run.unresolvedTelemetryAnomalies),
+			),
+			compatibilityExceptionsApproved:
+				outputParityPercent >= 100 &&
+				errorCompatibilityPercent >= 100 &&
+				unclassifiedFailures === 0,
+		},
+		perf: {
+			medianLatencyImprovementPercent: numberMin(
+				runs.map((run) => run.medianLatencyImprovementPercent),
+			),
+			p95LatencyImprovementPercent: numberMin(
+				runs.map((run) => run.p95LatencyImprovementPercent),
+			),
+			startupImprovementPercent: numberMin(
+				runs.map((run) => run.startupImprovementPercent),
+			),
+			memoryImprovementPercent: numberMin(
+				runs.map((run) => run.memoryImprovementPercent),
+			),
+		},
+	};
+	return assessDeployReadiness(input);
+}
+
 export function buildSoakStatus(input: {
 	ledgerPath: string;
 	ledgerRaw: unknown | null;
@@ -395,6 +496,18 @@ export function buildSoakStatus(input: {
 	);
 	const httpDeployEnvCoveragePercent = numberMin(
 		runs.map((run) => run.httpDeployEnvCoveragePercent),
+	);
+	const rustBinarySha256 =
+		identities.size === 1 ? Array.from(identities)[0] ?? null : null;
+	const readiness = cumulativeReadiness(
+		runs,
+		rustBinarySha256,
+		totalCompletedSoakHours,
+		continuousCleanSoakHours,
+		releaseTaggedSoakHours,
+		releaseE2ePass,
+		publicSurfaceCoveragePercent,
+		httpDeployEnvCoveragePercent,
 	);
 	const warnings: string[] = [];
 
@@ -493,16 +606,19 @@ export function buildSoakStatus(input: {
 			REPLACE_SOAK_HOURS - continuousCleanSoakHours,
 		),
 		latestRun,
-		rustBinarySha256:
-			identities.size === 1 ? Array.from(identities)[0] ?? null : null,
-		readinessDecision: latestRun?.readinessDecision ?? null,
-		readinessFailingGate: latestRun?.readinessFailingGate ?? null,
+		rustBinarySha256,
+		readinessDecision: readiness?.decision ?? null,
+		readinessFailingGate: readiness?.failingGate ?? null,
 		warnings,
 	};
 }
 
 function formatHours(value: number): string {
 	return value.toFixed(4);
+}
+
+function formatFailingGate(status: SoakStatus): string {
+	return status.readinessFailingGate ?? (status.readinessDecision ? "none" : "unknown");
 }
 
 export function formatSoakStatus(status: SoakStatus): string {
@@ -526,7 +642,7 @@ export function formatSoakStatus(status: SoakStatus): string {
 		`  replace remaining:   ${formatHours(status.remainingReplaceHours)}h`,
 		`  binary sha256:       ${status.rustBinarySha256?.slice(0, 16) ?? "unavailable"}`,
 		`  readiness:           ${status.readinessDecision ?? "unknown"}`,
-		`  failing gate:        ${status.readinessFailingGate ?? "unknown"}`,
+		`  failing gate:        ${formatFailingGate(status)}`,
 		`  latest run:          ${latest?.endedAt ?? "none"}`,
 	];
 
