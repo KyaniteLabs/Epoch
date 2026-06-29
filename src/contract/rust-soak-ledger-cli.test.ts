@@ -83,6 +83,7 @@ function packet(
 			observability: { releaseTag: "candidate-1" },
 			performance: { evidenceMode: options.performanceEvidenceMode },
 			deploy: {
+				packageCliSha256: RUST_BINARY_SHA256,
 				packageCommands: packageCommands(),
 			},
 		},
@@ -145,17 +146,23 @@ describe("rust-soak-ledger CLI", () => {
 
 		const summary = JSON.parse(readFileSync(secondSummary, "utf8")) as {
 			continuousSoakHours: number;
+			releaseContinuousSoakHours: number;
 			qualifiedPerformanceEvidence: boolean;
 			releaseE2ePass: boolean;
 			publicSurfaceCoveragePercent: number;
 			httpDeployEnvCoveragePercent: number;
+			packageCommandEvidenceComplete: boolean;
+			packageCliSha256: string | null;
 			readiness: { failingGate: string | null };
 		};
 		expect(summary.continuousSoakHours).toBe(2);
+		expect(summary.releaseContinuousSoakHours).toBe(2);
 		expect(summary.qualifiedPerformanceEvidence).toBe(true);
 		expect(summary.releaseE2ePass).toBe(true);
 		expect(summary.publicSurfaceCoveragePercent).toBe(100);
 		expect(summary.httpDeployEnvCoveragePercent).toBe(100);
+		expect(summary.packageCommandEvidenceComplete).toBe(true);
+		expect(summary.packageCliSha256).toBe(RUST_BINARY_SHA256);
 		expect(summary.readiness.failingGate).toBe("soak");
 	}, 15_000);
 });

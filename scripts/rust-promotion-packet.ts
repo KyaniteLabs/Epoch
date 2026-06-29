@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
@@ -94,6 +95,7 @@ type PacketSummary = {
 			packageTarball: string | null;
 			packageBinTarget: string | null;
 			packagePrebuilds: string[];
+			packageCliSha256: string | null;
 			commandExitCode: number | null;
 			packageCommands: PackageSmokeCommandEvidence[];
 		};
@@ -346,6 +348,7 @@ type PackageSmokeEvidence = {
 	platform: string;
 	binTarget: string | null;
 	prebuilds: string[];
+	packageCliSha256: string | null;
 	commandExitCode: number | null;
 	stdoutHead: string;
 	stderrHead: string;
@@ -369,6 +372,10 @@ type PackageSmokeCommandResult = PackageSmokeCommandEvidence & {
 
 function head(value: string): string {
 	return value.split(/\r?\n/).slice(0, 3).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function sha256File(path: string): string {
+	return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 function runSmokeCommand(
@@ -582,6 +589,10 @@ async function runPackageSmoke(options: { quiet: boolean }): Promise<PackageSmok
 		const prebuilds = requiredPackagePrebuilds(packageRoot)
 			.filter((file) => existsSync(file))
 			.map((file) => relative(packageRoot, file).replaceAll("\\", "/"));
+		const packageCliPath = packagePrebuildPath(packageRoot, "epoch-cli");
+		const packageCliSha256 = existsSync(packageCliPath)
+			? sha256File(packageCliPath)
+			: null;
 		const binPath = join(
 			appDir,
 			"node_modules",
@@ -667,6 +678,7 @@ async function runPackageSmoke(options: { quiet: boolean }): Promise<PackageSmok
 			platform: platformTag(),
 			binTarget,
 			prebuilds,
+			packageCliSha256,
 			commandExitCode: cliCommand.exitCode,
 			stdoutHead: cliCommand.stdoutHead,
 			stderrHead: cliCommand.stderrHead,
@@ -727,6 +739,7 @@ function buildSummary(
 				packageTarball: packageSmoke.tarball,
 				packageBinTarget: packageSmoke.binTarget,
 				packagePrebuilds: packageSmoke.prebuilds,
+				packageCliSha256: packageSmoke.packageCliSha256,
 				commandExitCode: packageSmoke.commandExitCode,
 				packageCommands: packageSmoke.commands,
 			},
