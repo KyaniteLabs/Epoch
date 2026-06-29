@@ -25,6 +25,7 @@ export type LauncherPlan = {
 	wrapRustOutput?: boolean;
 	rawRustOutputIndent?: number | null;
 	rawRustOutputFormat?: RawOutputFormat;
+	exitByPayloadOk?: boolean;
 };
 
 type RootOptions = {
@@ -49,6 +50,7 @@ export type CommandSpec = {
 	wrapOutput?: boolean;
 	rawOutputIndent?: number | null;
 	rawOutputFormat?: RawOutputFormat;
+	exitByPayloadOk?: boolean;
 	route?: (args: string[]) => boolean;
 };
 
@@ -214,6 +216,16 @@ const RUST_CLI_COMMANDS: CommandSpec[] = [
 		}),
 		build: ({ confirm: _confirm }) => ({}),
 	},
+	command("telemetry submit", "telemetry_submit", [
+		option("--endpoint", "endpoint", "string"),
+		option("--force", "force", "boolean"),
+		option("--min-interval-hours", "min_interval_hours", "number"),
+	], {
+		wrapOutput: false,
+		rawOutputIndent: 2,
+		exitByPayloadOk: true,
+		route: telemetrySubmitRoute,
+	}),
 ];
 
 const CLI_COMMANDS_BY_LENGTH = [...RUST_CLI_COMMANDS].sort(
@@ -226,7 +238,11 @@ function command(
 	options: OptionSpec[],
 	extra: Pick<
 		CommandSpec,
-		"wrapOutput" | "rawOutputIndent" | "rawOutputFormat" | "route"
+		| "wrapOutput"
+		| "rawOutputIndent"
+		| "rawOutputFormat"
+		| "exitByPayloadOk"
+		| "route"
 	> = {},
 ): CommandSpec {
 	return { path, toolName, options, ...extra };
@@ -285,6 +301,7 @@ export function planInvocation(
 		wrapRustOutput: spec.wrapOutput ?? true,
 		rawRustOutputIndent: spec.rawOutputIndent,
 		rawRustOutputFormat: spec.rawOutputFormat,
+		exitByPayloadOk: spec.exitByPayloadOk,
 	};
 }
 
@@ -427,6 +444,79 @@ function parseBooleanFlag(def: OptionSpec, raw: string): boolean {
 	throw new Error(`${def.flag} must be true or false, got "${raw}"`);
 }
 
+function telemetrySubmitRoute(args: string[]): boolean {
+	const endpoint = optionValue(args, "--endpoint");
+	if (endpoint !== undefined) {
+		if (endpoint === null || !isValidTelemetryEndpoint(endpoint)) return false;
+	}
+	const minIntervalHours = optionValue(args, "--min-interval-hours");
+	if (minIntervalHours !== undefined) {
+		if (
+			minIntervalHours === null ||
+			!isSafeTelemetrySubmitInterval(minIntervalHours)
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function optionValue(args: string[], flag: string): string | undefined | null {
+	for (let index = 0; index < args.length; index += 1) {
+		const token = args[index];
+		if (token === flag) {
+			const value = args[index + 1];
+			return value && !value.startsWith("--") ? value : null;
+		}
+		if (token?.startsWith(`${flag}=`)) {
+			return token.slice(flag.length + 1);
+		}
+	}
+	return undefined;
+}
+
+function isValidTelemetryEndpoint(endpoint: string): boolean {
+	const trimmed = endpoint.trim();
+	let parsed: URL;
+	try {
+		parsed = new URL(trimmed);
+	} catch {
+		return false;
+	}
+
+	const isLocalHttp =
+		parsed.protocol === "http:" &&
+		["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
+	const isTailscaleHttp =
+		parsed.protocol === "http:" && isTailscalePrivateIpv4(parsed.hostname);
+	return parsed.protocol === "https:" || isLocalHttp || isTailscaleHttp;
+}
+
+function isSafeTelemetrySubmitInterval(raw: string): boolean {
+	const trimmed = raw.trim();
+	if (trimmed === "") return false;
+	const tsValue = Number(trimmed);
+	const launcherValue = Number.parseFloat(trimmed);
+	return (
+		Number.isFinite(tsValue) &&
+		tsValue >= 0 &&
+		Number.isFinite(launcherValue) &&
+		launcherValue === tsValue
+	);
+}
+
+function isTailscalePrivateIpv4(hostname: string): boolean {
+	const parts = hostname.split(".").map((part) => Number(part));
+	if (
+		parts.length !== 4 ||
+		parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+	) {
+		return false;
+	}
+	const [first, second] = parts as [number, number, number, number];
+	return first === 100 && second >= 64 && second <= 127;
+}
+
 function compactObject(input: JsonObject): JsonObject {
 	return Object.fromEntries(
 		Object.entries(input).filter(([, value]) => value !== undefined),
@@ -509,7 +599,9 @@ function runRustCli(
 				? undefined
 				: (plan.rawRustOutputIndent ?? 2);
 			process.stdout.write(`${JSON.stringify(rawOutput, null, indent)}\n`);
-			return 0;
+			return plan.exitByPayloadOk && isObject(rawOutput) && rawOutput["ok"] === false
+				? 1
+				: 0;
 		}
 		const result = { ok: true as const, data };
 		if (plan.root.format === "table") {
@@ -621,6 +713,15 @@ function normalizeRawRustOutput(commandPath: string, data: unknown): unknown {
 	}
 	if (commandPath === "telemetry delete-data" && isObject(data)) {
 		return formatTelemetryDeleteData(data["installationId"]);
+	}
+	if (commandPath === "telemetry submit" && isObject(data)) {
+		return {
+			ok: data["ok"],
+			recordCount: data["recordCount"],
+			accepted: data["accepted"],
+			deduplicated: data["deduplicated"],
+			error: data["error"],
+		};
 	}
 	return data;
 }
