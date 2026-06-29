@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-06-29
+
+### Added
+- Rust promotion evidence packet tooling for strict TypeScript parity, qualified performance comparison, release-binary E2E coverage, package smoke proof, rollback rehearsal, cumulative soak ledgers, and replacement scorecards.
+- Rust package launcher and prebuild staging support for CLI, MCP, and HTTP binaries behind the npm `epoch` entrypoint.
+- Release-gate commands for Rust parity, adversarial compatibility, shadow soak, soak status, soak runner, promotion gate, and replacement scorecard reporting.
+
+### Changed
+- Rust replacement readiness now fails closed on deploy evidence quality: release-tagged qualified benchmarks, package command signatures, binary identity, public-surface coverage, HTTP deploy coverage, rollback proof, and continuous clean soak are all scored explicitly.
+- Telemetry submit now routes through the Rust launcher so the replacement candidate covers the full user-facing command surface.
+
+### Fixed
+- Installed-package smoke checks now prove the packaged CLI, MCP stdio, and live HTTP `/health` paths rather than trusting package metadata alone.
+- Soak ledgers, status reports, promotion gates, and replacement scorecards now share one package evidence validator to avoid drift between operator status and deploy automation.
+
 ## [0.2.7] - 2026-05-25
 
 ### Fixed
