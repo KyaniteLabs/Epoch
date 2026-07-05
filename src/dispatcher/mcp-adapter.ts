@@ -25,16 +25,48 @@ const WRITE_ANNOTATIONS = {
 
 const WRITE_TOOLS = new Set(["record_actual", "batch_record_actuals"]);
 
+function unwrapObjectSchema(schema: z.ZodTypeAny): z.ZodObject<z.ZodRawShape> {
+  let current: unknown = schema;
+
+  for (let depth = 0; depth < 10; depth += 1) {
+    if (current instanceof z.ZodObject) {
+      return current as z.ZodObject<z.ZodRawShape>;
+    }
+
+    if (!current || typeof current !== "object") {
+      break;
+    }
+
+    const candidate = current as {
+      unwrap?: () => unknown;
+      innerType?: () => unknown;
+      _def?: { innerType?: unknown; schema?: unknown; type?: unknown };
+    };
+    const def = candidate._def;
+    const next =
+      (typeof candidate.unwrap === "function" ? candidate.unwrap() : undefined) ??
+      (typeof candidate.innerType === "function" ? candidate.innerType() : undefined) ??
+      def?.innerType ??
+      def?.schema ??
+      (typeof def?.type === "object" ? def.type : undefined);
+
+    if (!next || next === current) {
+      break;
+    }
+
+    current = next;
+  }
+
+  throw new TypeError("Expected MCP tool input schema to unwrap to a ZodObject");
+}
+
 export function registerAllMcpTools(server: McpServer): void {
   for (const [name, def] of TOOL_REGISTRY) {
     const annotations = WRITE_TOOLS.has(name) ? WRITE_ANNOTATIONS : READ_ONLY_ANNOTATIONS;
 
-    // Extract ZodRawShape — unwrap ZodEffects/ZodBranded to reach the inner ZodObject
-    let schema: z.ZodTypeAny = def.inputSchema as z.ZodTypeAny;
-    while (schema instanceof z.ZodEffects || schema instanceof z.ZodBranded) {
-      schema = schema instanceof z.ZodEffects ? schema.innerType() : schema.unwrap();
-    }
-    const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
+    // Extract ZodRawShape. Zod v4 removed some v3 wrapper classes, so unwrap
+    // via stable methods/internals instead of naming those classes directly.
+    const shape = unwrapObjectSchema(def.inputSchema as z.ZodTypeAny).shape;
 
     // Bounded cast: MCP SDK validates via Zod before calling handler,
     // so Record<string, unknown> is safe here.
