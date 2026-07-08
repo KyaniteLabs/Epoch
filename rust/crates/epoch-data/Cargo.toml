@@ -1,0 +1,15 @@
+[package]
+name = "epoch-data"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+epoch-contract = { path = "../epoch-contract" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+epoch-core = { path = "../epoch-core" }

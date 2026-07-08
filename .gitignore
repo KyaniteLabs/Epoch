@@ -1,5 +1,7 @@
 node_modules/
 dist/
+rust/target/
+prebuilds/
 .worktrees/
 *.tsbuildinfo
 .DS_Store
@@ -13,4 +15,5 @@ coverage/
 *.key
 .claude/
 .omx/
+.epoch-promotion/
 canary-report.json
