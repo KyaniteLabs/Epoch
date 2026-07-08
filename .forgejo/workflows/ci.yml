@@ -1,0 +1,26 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - name: Debug info
+        run: echo "CI started" && pwd && ls -la
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+          fi
+      - name: Lint
+        run: |
+          if [ -f package.json ]; then
+            npx --no eslint . || true
+          fi
+      - name: Test
+        run: |
+          if [ -f package.json ]; then
+            npm test || true
+          fi

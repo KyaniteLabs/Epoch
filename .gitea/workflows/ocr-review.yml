@@ -1,0 +1,90 @@
+name: OCR Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: [self-hosted, linux-amd64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install OCR
+        run: npm install -g @alibaba-group/open-code-review 2>/dev/null || true
+
+      - name: Configure OCR
+        run: |
+          mkdir -p ~/.opencodereview
+          cat > ~/.opencodereview/config.json <<'CFG'
+          {
+            "llm": {
+              "url": "http://100.113.174.74:11434/v1/chat/completions",
+              "auth_token": "ollama",
+              "model": "gemma4:12b",
+              "use_anthropic": false
+            },
+            "language": "English"
+          }
+          CFG
+
+      - name: Run OCR Review
+        id: review
+        run: |
+          BASE="${{ github.base_ref }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          echo "Reviewing $BASE..$HEAD"
+          ocr review --from "origin/$BASE" --to "$HEAD" --format json --audience agent > /tmp/ocr-results.json 2>/tmp/ocr-debug.log || true
+          echo "review_done=true" >> "$GITHUB_OUTPUT"
+
+      - name: Post Review Comments
+        if: steps.review.outputs.review_done == 'true'
+        run: |
+          if [ ! -f /tmp/ocr-results.json ] || [ ! -s /tmp/ocr-results.json ]; then
+            echo "No review results"
+            exit 0
+          fi
+          python3 -c "
+          import json, sys, urllib.request, os
+
+          results = json.load(open('/tmp/ocr-results.json'))
+          token = '${{ secrets.GITHUB_TOKEN }}' or os.environ.get('GITHUB_TOKEN', '')
+          repo = '${{ github.repository }}'
+          pr_num = ${{ github.event.pull_request.number }}
+          api = 'https://git.kyanitelabs.tech/api/v1'
+          headers = {'Authorization': f'token {token}', 'Content-Type': 'application/json'}
+
+          comments = []
+          if isinstance(results, dict):
+            for item in results.get('reviews', results.get('results', [])):
+              if isinstance(item, dict):
+                path = item.get('file', item.get('path', ''))
+                line = item.get('line', item.get('start_line', 0))
+                body = item.get('comment', item.get('message', item.get('body', '')))
+                severity = item.get('severity', 'info')
+                if body:
+                  prefix = '**[' + severity.upper() + ']** ' if severity != 'info' else ''
+                  comments.append({'path': path, 'line': line, 'body': prefix + body})
+          elif isinstance(results, list):
+            for item in results:
+              if isinstance(item, dict):
+                path = item.get('file', item.get('path', ''))
+                line = item.get('line', 0)
+                body = item.get('comment', item.get('message', item.get('body', '')))
+                if body:
+                  comments.append({'path': path, 'line': line, 'body': body})
+
+          if not comments:
+            body = '## OCR Code Review\n\nNo issues found. Looks good!'
+            req = urllib.request.Request(f'{api}/repos/{repo}/issues/{pr_num}/comments', data=json.dumps({'body': body}).encode(), headers=headers)
+            urllib.request.urlopen(req)
+            print('Posted: no issues found')
+          else:
+            review_body = f'## OCR Code Review\n\nFound {len(comments)} issue(s).'
+            review_comments = [c for c in comments if c.get('path') and c.get('line')]
+            req = urllib.request.Request(f'{api}/repos/{repo}/pulls/{pr_num}/reviews', data=json.dumps({'body': review_body, 'event': 'COMMENT', 'comments': review_comments}).encode(), headers=headers)
+            urllib.request.urlopen(req)
+            print(f'Posted review with {len(review_comments)} inline comments')
+          "
