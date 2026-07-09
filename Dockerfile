@@ -1,6 +1,6 @@
 # Minimal native image so MCP directories can start the stdio server and run
 # introspection checks without booting the TypeScript runtime.
-FROM rust:1.96.1-slim-bookworm AS rust-builder
+FROM rust:1.97.0-slim-bookworm AS rust-builder
 WORKDIR /app
 COPY rust ./rust
 COPY data ./data
