@@ -28,6 +28,11 @@ import {
   inferScopeFromComplexity,
 } from "../lib/analytics.js";
 import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import {
+  isPertLearnedCorrectionEnabled,
+  getPertToolTaskCorrection,
+  composePertCorrectionFactor,
+} from "../lib/calibration-factors.js";
 import { tokenCostEstimate, compareModels } from "../lib/cost.js";
 import { computeAccuracyTrend } from "../lib/accuracy-trend.js";
 import { scheduleRisk } from "../lib/risk.js";
@@ -438,10 +443,22 @@ Use when estimating task duration with uncertain outcomes.`,
       const result = pertEstimate(p.optimistic, p.most_likely, p.pessimistic, p.unit);
       if (!result.ok) return result;
 
+      // Learned-correction wiring (feature-flagged, default OFF): when enabled
+      // and task_type is supplied, replace the ai_native developerProfile
+      // correction factor in the adjustedEstimate computation with the learned
+      // (pert_estimate, task_type) factor IFF that cell has n >= MIN_RECORDS_PER_FACTOR.
+      // Never multiplies the two factors together. See calibration-factors.ts
+      // composePertCorrectionFactor() for the composition rule.
+      let correctionFactor = profile.correctionFactor;
+      if (isPertLearnedCorrectionEnabled() && p.task_type) {
+        const learned = getPertToolTaskCorrection(p.task_type);
+        correctionFactor = composePertCorrectionFactor(learned, profile.correctionFactor).factor;
+      }
+
       const data: Record<string, unknown> = {
         ...result.data,
         developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
-        adjustedEstimate: Math.round(result.data.expected * profile.correctionFactor * 100) / 100,
+        adjustedEstimate: Math.round(result.data.expected * correctionFactor * 100) / 100,
       };
 
       // Cross-check with reference class for AI-native workflows

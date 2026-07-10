@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `pert_estimate`'s headline `adjustedEstimate` value shifts when the (opt-in, default OFF) `EPOCH_PERT_LEARNED_CORRECTION` flag is enabled: for a given `task_type`, once the learned (`pert_estimate`, `task_type`) correction factor has at least `MIN_RECORDS_PER_FACTOR` (3) matched, exclusion-filtered estimate/actual pairs, that learned factor REPLACES the `ai_native` developer-profile correction factor in the `adjustedEstimate` computation (never multiplied with it). Below that threshold, behavior is unchanged. No output keys are added or removed. See `scripts/backtest-pert-correction.mjs` for the MdAPE/median-ratio backtest guard that gates recommending the flag be turned on.
+
 ## [0.2.9] - 2026-06-29
 
 ### Added

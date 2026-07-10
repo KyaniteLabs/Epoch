@@ -2,13 +2,21 @@
 // Tests for src/lib/calibration-factors.ts
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
 	computeTaskTypeCorrectionFactors,
 	computeGlobalCorrectionFactor,
 	computeToolTaskCorrectionFactors,
 	computeComplexityCorrectionFactors,
 	isCorrectionEligibleRecord,
+	MIN_RECORDS_PER_FACTOR,
+	isPertLearnedCorrectionEnabled,
+	loadPertMatchedRecords,
+	getPertToolTaskCorrection,
+	composePertCorrectionFactor,
 } from "./calibration-factors.js";
 import type { HistoricalRecord } from "../types/index.js";
 
@@ -206,5 +214,195 @@ describe("calibration-factors", () => {
 			// complexity is undefined, so nothing should be grouped
 			expect(Object.keys(factors)).toHaveLength(0);
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// PERT learned-correction wiring (Phase 1 Task 0)
+// ---------------------------------------------------------------------------
+
+describe("isPertLearnedCorrectionEnabled", () => {
+	const original = process.env["EPOCH_PERT_LEARNED_CORRECTION"];
+
+	afterEach(() => {
+		if (original === undefined) {
+			delete process.env["EPOCH_PERT_LEARNED_CORRECTION"];
+		} else {
+			process.env["EPOCH_PERT_LEARNED_CORRECTION"] = original;
+		}
+	});
+
+	it("defaults to disabled (unset)", () => {
+		delete process.env["EPOCH_PERT_LEARNED_CORRECTION"];
+		expect(isPertLearnedCorrectionEnabled()).toBe(false);
+	});
+
+	it("is enabled for '1'", () => {
+		process.env["EPOCH_PERT_LEARNED_CORRECTION"] = "1";
+		expect(isPertLearnedCorrectionEnabled()).toBe(true);
+	});
+
+	it("is enabled for 'true'", () => {
+		process.env["EPOCH_PERT_LEARNED_CORRECTION"] = "true";
+		expect(isPertLearnedCorrectionEnabled()).toBe(true);
+	});
+
+	it("is disabled for '0'", () => {
+		process.env["EPOCH_PERT_LEARNED_CORRECTION"] = "0";
+		expect(isPertLearnedCorrectionEnabled()).toBe(false);
+	});
+
+	it("is disabled for any other value", () => {
+		process.env["EPOCH_PERT_LEARNED_CORRECTION"] = "yes";
+		expect(isPertLearnedCorrectionEnabled()).toBe(false);
+	});
+});
+
+describe("composePertCorrectionFactor", () => {
+	it("REPLACES the profile factor with the learned factor when n >= MIN_RECORDS_PER_FACTOR", () => {
+		const result = composePertCorrectionFactor({ factor: 2.0, n: MIN_RECORDS_PER_FACTOR }, 1.8);
+		expect(result.factor).toBe(2.0);
+		expect(result.source).toBe("learned");
+		expect(result.note).toBeUndefined();
+	});
+
+	it("never multiplies the learned factor with the profile factor", () => {
+		const result = composePertCorrectionFactor({ factor: 2.0, n: 5 }, 1.5);
+		expect(result.factor).toBe(2.0);
+		expect(result.factor).not.toBe(2.0 * 1.5);
+	});
+
+	it("keeps the developer-profile factor unchanged when n < MIN_RECORDS_PER_FACTOR", () => {
+		const result = composePertCorrectionFactor({ factor: 2.0, n: 2 }, 1.8);
+		expect(result.factor).toBe(1.8);
+		expect(result.source).toBe("profile");
+		expect(result.note).toBeUndefined();
+	});
+
+	it("falls back to a neutral 1.0 with a human-readable low-n note when there is no profile factor", () => {
+		const result = composePertCorrectionFactor({ factor: 2.0, n: 1 }, undefined);
+		expect(result.factor).toBe(1.0);
+		expect(result.source).toBe("default");
+		expect(result.note).toBeDefined();
+		expect(result.note).toContain("n=1");
+		expect(result.note).toContain(`< ${MIN_RECORDS_PER_FACTOR}`);
+	});
+
+	it("treats n === MIN_RECORDS_PER_FACTOR as sufficient (boundary)", () => {
+		const result = composePertCorrectionFactor({ factor: 1.5, n: MIN_RECORDS_PER_FACTOR }, 1.8);
+		expect(result.source).toBe("learned");
+	});
+
+	it("treats n === MIN_RECORDS_PER_FACTOR - 1 as insufficient (boundary)", () => {
+		const result = composePertCorrectionFactor({ factor: 1.5, n: MIN_RECORDS_PER_FACTOR - 1 }, 1.8);
+		expect(result.source).toBe("profile");
+	});
+});
+
+describe("loadPertMatchedRecords / getPertToolTaskCorrection (ledger integration)", () => {
+	let previousDataDir: string | undefined;
+	let tempDataDir: string;
+
+	beforeEach(() => {
+		previousDataDir = process.env["EPOCH_DATA_DIR"];
+		tempDataDir = mkdtempSync(join(tmpdir(), "epoch-pert-correction-test-"));
+		process.env["EPOCH_DATA_DIR"] = tempDataDir;
+	});
+
+	afterEach(() => {
+		if (previousDataDir === undefined) {
+			delete process.env["EPOCH_DATA_DIR"];
+		} else {
+			process.env["EPOCH_DATA_DIR"] = previousDataDir;
+		}
+		rmSync(tempDataDir, { recursive: true, force: true });
+	});
+
+	function writeJsonl(filename: string, records: unknown[]): void {
+		writeFileSync(
+			join(tempDataDir, filename),
+			records.map((r) => JSON.stringify(r)).join("\n") + "\n",
+			"utf-8",
+		);
+	}
+
+	it("returns an empty list when no ledger files exist", () => {
+		expect(loadPertMatchedRecords()).toEqual([]);
+	});
+
+	it("loads matched pert_estimate pairs and computes the learned factor + n", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "pe-1", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-01T00:00:00.000Z" },
+			{ id: "pe-2", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-02T00:00:00.000Z" },
+			{ id: "pe-3", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-03T00:00:00.000Z" },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "pe-1", actualHours: 20, reportedAt: "2026-06-01T01:00:00.000Z" },
+			{ estimateId: "pe-2", actualHours: 20, reportedAt: "2026-06-02T01:00:00.000Z" },
+			{ estimateId: "pe-3", actualHours: 20, reportedAt: "2026-06-03T01:00:00.000Z" },
+		]);
+
+		const records = loadPertMatchedRecords();
+		expect(records).toHaveLength(3);
+		expect(records.every((r) => r.taskType === "bugfix")).toBe(true);
+
+		const correction = getPertToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(3);
+		// median ratio of [2.0, 2.0, 2.0] = 2.0
+		expect(correction.factor).toBeCloseTo(2.0, 1);
+	});
+
+	it("reports n below matched pairs when fewer than MIN_RECORDS_PER_FACTOR are present", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "pe-1", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-01T00:00:00.000Z" },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "pe-1", actualHours: 20, reportedAt: "2026-06-01T01:00:00.000Z" },
+		]);
+
+		const correction = getPertToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(1);
+		expect(correction.n).toBeLessThan(MIN_RECORDS_PER_FACTOR);
+	});
+
+	it("excludes records for tools other than pert_estimate", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "ce-1", tool: "cocomo_estimate", inputs: { task_type: "bugfix" }, outputs: { personMonthsLlmAdjusted: 1 }, estimatedAt: "2026-06-01T00:00:00.000Z" },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "ce-1", actualHours: 20, reportedAt: "2026-06-01T01:00:00.000Z" },
+		]);
+
+		expect(loadPertMatchedRecords()).toEqual([]);
+	});
+
+	it("excludes synthetic-id records via the shared exclusion predicate", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "seed-pe-1", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-01T00:00:00.000Z" },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "seed-pe-1", actualHours: 20, reportedAt: "2026-06-01T01:00:00.000Z" },
+		]);
+
+		expect(loadPertMatchedRecords()).toEqual([]);
+	});
+
+	it("excludes quarantine-flagged overlay records", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "pe-q1", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-01T00:00:00.000Z" },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "pe-q1", actualHours: 20, reportedAt: "2026-06-01T01:00:00.000Z" },
+		]);
+		writeJsonl("estimates.flags.jsonl", [
+			{ id: "pe-q1", seq: 1, recordedAt: "2026-06-01T02:00:00.000Z", quarantined: true, reason: "test" },
+		]);
+
+		expect(loadPertMatchedRecords()).toEqual([]);
+	});
+
+	it("defaults getPertToolTaskCorrection to factor 1.0 with n=0 for an unknown task type", () => {
+		const correction = getPertToolTaskCorrection("nonexistent-type");
+		expect(correction).toEqual({ factor: 1.0, n: 0 });
 	});
 });
