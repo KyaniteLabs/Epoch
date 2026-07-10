@@ -28,7 +28,7 @@ describe("public surface inventory", () => {
 		expect(collectCliCommandPaths(createCliProgram())).toEqual(
 			EXPECTED_CLI_COMMAND_PATHS,
 		);
-		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(40);
+		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(41);
 	});
 
 	it("matches the live HTTP routes", () => {
@@ -64,6 +64,6 @@ describe("public surface inventory", () => {
 			"batch_record_actuals",
 		]);
 		expect(parsed.http_routes).toHaveLength(11);
-		expect(parsed.cli_command_paths).toHaveLength(40);
+		expect(parsed.cli_command_paths).toHaveLength(41);
 	});
 });
