@@ -80,14 +80,15 @@ export interface ActualRecord {
 // ---- Overlay records --------------------------------------------------------
 
 /**
- * An append-only overlay record annotating one ledger record by id.
- * Every overlay record carries a monotonic `seq` assigned at write time —
- * this is the deterministic tiebreak for conflict resolution (per plan
- * decision: last-write-wins by `recordedAt`, tiebreak on equal timestamps
- * = monotonic `seq`, NOT file/line order — cross-filesystem/cross-language
- * safe, unlike file order).
+ * Explicit overlay-record fields, deliberately kept free of an inline index
+ * signature. `appendOverlayRecord` below computes `Omit<OverlayRecordCore, ...>`
+ * — Omit'ing keys off a type that itself carries a `[key: string]: unknown`
+ * index signature collapses `keyof` to `string`, which silently drops the
+ * required-ness of every named field (including `id`). Compute Omit against
+ * this index-signature-free core instead, then intersect the index signature
+ * back in via `OverlayRecord` below.
  */
-export interface OverlayRecord {
+export interface OverlayRecordCore {
   id: string;
   seq: number;
   recordedAt: string;
@@ -95,8 +96,24 @@ export interface OverlayRecord {
   reason?: string;
   orphan?: boolean;
   taskLabel?: string;
-  [key: string]: unknown;
 }
+
+/**
+ * An append-only overlay record annotating one ledger record by id.
+ * Every overlay record carries a monotonic `seq` assigned at write time —
+ * this is the deterministic tiebreak for conflict resolution (per plan
+ * decision: last-write-wins by `recordedAt`, tiebreak on equal timestamps
+ * = monotonic `seq`, NOT file/line order — cross-filesystem/cross-language
+ * safe, unlike file order).
+ *
+ * Overlay sidecar files (flags/labels/tasktype/...) may carry additional
+ * caller-defined fields beyond the explicit core above (e.g. the
+ * normalize-task-types migration writes `taskTypeRaw`/`taskTypeNormalized`)
+ * — the intersection with `Record<string, unknown>` preserves that
+ * extensibility on the on-disk overlay format without reintroducing the
+ * inline index signature that collapsed `keyof` (see OverlayRecordCore).
+ */
+export type OverlayRecord = OverlayRecordCore & Record<string, unknown>;
 
 /**
  * Append a new overlay record to a sidecar file, auto-assigning the next
@@ -106,7 +123,7 @@ export interface OverlayRecord {
  */
 export function appendOverlayRecord(
   filename: string,
-  record: Omit<OverlayRecord, "seq" | "recordedAt"> & { recordedAt?: string },
+  record: Omit<OverlayRecordCore, "seq" | "recordedAt"> & { recordedAt?: string } & Record<string, unknown>,
   appendLine: (filename: string, data: unknown) => boolean,
 ): OverlayRecord {
   const existing = readLines<OverlayRecord>(filename);
