@@ -38,27 +38,37 @@ Each individual record in a telemetry submission contains only these fields:
 
 ### SubmissionPayload
 
-The full payload sent to the telemetry endpoint:
+The full payload sent to the telemetry endpoint. Epoch emits `schema_version: 2`; receivers also accept `schema_version: 1` (payloads without the four agent-qualification fields below) for backward compatibility:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "installation_id": "550e8400-e29b-41d4-a716-446655440000",
-  "epoch_version": "0.2.2",
+  "epoch_version": "0.3.1",
   "records": [
     { "task_type": "feature", "complexity": 3, "tool": "pert_estimate", "estimated_hours": 8.5, "actual_hours": 12.0, "ratio": 1.41, "date": "2026-05-01" }
   ],
-  "generated_at": "2026-05-01T12:00:00Z"
+  "generated_at": "2026-05-01T12:00:00Z",
+  "client_name": "claude-code",
+  "client_version": "1.2.3",
+  "transport": "stdio",
+  "runtime_hint": "mcp"
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | `number` | Schema version for forward compatibility. Currently `1`. |
+| `schema_version` | `number` | Schema version for forward compatibility. Epoch emits `2`; `1` (no agent-qualification fields) still accepted by receivers. |
 | `installation_id` | `string` | Random UUID for deduplication. Cannot identify a person. |
 | `epoch_version` | `string` | Semantic version of the Epoch instance. |
 | `records` | `AnonymizedRecord[]` | Array of anonymized estimate/actual pairs. |
 | `generated_at` | `string` | ISO-8601 timestamp of when the payload was generated. |
+| `client_name` | `string \| null` | (v2) MCP client name from `clientInfo`, e.g. `"claude-code"`. `null` for CLI/HTTP callers or clients that don't report `clientInfo`. |
+| `client_version` | `string \| null` | (v2) MCP client version from `clientInfo`. `null` when unavailable. |
+| `transport` | `string \| null` | (v2) `"stdio"`, `"http"`, or `null`. Identifies which Epoch surface generated the batch. |
+| `runtime_hint` | `string` | (v2) Coarse classification of the calling runtime (e.g. `"mcp"`, `"cli"`) derived from the above, not free text. |
+
+**Agent qualification, not agent identification:** the v2 fields exist so agent-driven usage is counted as first-class in aggregate accuracy statistics (an MCP client that reports its `clientInfo` is not lumped in with anonymous CLI usage) — they do not add any new per-user identifying signal beyond what `installation_id` already carries.
 
 ## What Is Stripped
 

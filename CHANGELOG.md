@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Docs refresh: README/llms.txt/server.json now reflect the shipped `estimate_from_context` tool (24→25 tools), the current Claude 5 model catalog, and an evidence-backed self-improvement section (`scripts/backtest-pert-correction.mjs` receipt).
+
 ## [0.3.1] - 2026-07-10
 
 ### Removed
