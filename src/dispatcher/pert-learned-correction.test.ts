@@ -23,8 +23,9 @@ import { getDeveloperProfileGradient } from "../lib/profiles.js";
 import { MIN_RECORDS_PER_FACTOR } from "../lib/calibration-factors.js";
 import type { ToolResult } from "../types/index.js";
 
-const handler = TOOL_REGISTRY.get("pert_estimate")?.handler;
-if (!handler) throw new Error("pert_estimate handler not registered");
+const maybeHandler = TOOL_REGISTRY.get("pert_estimate")?.handler;
+if (!maybeHandler) throw new Error("pert_estimate handler not registered");
+const handler = maybeHandler;
 
 function callPert(input: Record<string, unknown>): Record<string, unknown> {
   const result = handler(input) as ToolResult<Record<string, unknown>>;
