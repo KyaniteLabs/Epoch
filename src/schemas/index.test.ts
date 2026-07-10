@@ -38,6 +38,18 @@ describe("enum schemas", () => {
     expect(llmModelEnum.safeParse("gpt-5").success).toBe(false);
   });
 
+  it("llmModelEnum accepts the Claude 5 family / current models added in Phase 5", () => {
+    for (const model of ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]) {
+      expect(llmModelEnum.safeParse(model).success, model).toBe(true);
+    }
+  });
+
+  it("llmModelEnum keeps the pre-Phase-5 Claude aliases (additive superset)", () => {
+    for (const model of ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022"]) {
+      expect(llmModelEnum.safeParse(model).success, model).toBe(true);
+    }
+  });
+
   it("reasoningDepthEnum rejects invalid depth", () => {
     expect(reasoningDepthEnum.safeParse("extreme").success).toBe(false);
   });

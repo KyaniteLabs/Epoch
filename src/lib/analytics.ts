@@ -37,10 +37,30 @@ interface ModelCalibration {
   readonly toolCallLatencyMs: number;
 }
 
+// Model catalog refreshed 2026-07-09 (Phase 5). The 4 new claude-* entries
+// below are latency/throughput CALIBRATION values (tokensPerSecond,
+// reasoningOverheadMs, toolCallLatencyMs) — these are NOT pricing and are
+// NOT primary-source verified; they reuse the nearest existing same-tier
+// Claude model's figures as a documented placeholder pending real telemetry
+// (getModelCalibration() in this file prefers live telemetry / reference-db
+// stats over this table when enough samples exist — see lines below). Actual
+// PRICING for these models (costInput/costOutput) lives in
+// data/supplementary-database.json's `modelCalibration` and IS
+// primary-source verified — see that file's `sources` array and
+// src/schemas/index.ts's llmModelEnum comment for the citation.
 const MODEL_CALIBRATIONS: Record<string, ModelCalibration> = {
   "claude-3.5-haiku-20241022": { tokensPerSecond: 100, reasoningOverheadMs: 145, toolCallLatencyMs: 200 },
   "claude-opus-4-20250514": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
   "claude-sonnet-4-20250514": { tokensPerSecond: 72, reasoningOverheadMs: 205, toolCallLatencyMs: 200 },
+  // Placeholder: same figures as claude-3.5-haiku-20241022 (nearest fast-tier sibling).
+  "claude-haiku-4-5": { tokensPerSecond: 100, reasoningOverheadMs: 145, toolCallLatencyMs: 200 },
+  // Placeholder: same figures as claude-opus-4-20250514 (nearest premium-tier sibling).
+  "claude-opus-4-8": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
+  // Placeholder: same figures as claude-sonnet-4-20250514 (nearest standard-tier sibling).
+  "claude-sonnet-5": { tokensPerSecond: 72, reasoningOverheadMs: 205, toolCallLatencyMs: 200 },
+  // Placeholder: reuses claude-opus-4-20250514's figures — Claude Fable 5 is
+  // the top-tier/most-capable model; no closer existing sibling in this table.
+  "claude-fable-5": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
   "deepseek-v3": { tokensPerSecond: 97, reasoningOverheadMs: 410, toolCallLatencyMs: 200 },
   "gemini-2.0-flash": { tokensPerSecond: 230, reasoningOverheadMs: 90, toolCallLatencyMs: 200 },
   "gemini-2.5-pro": { tokensPerSecond: 68, reasoningOverheadMs: 280, toolCallLatencyMs: 200 },

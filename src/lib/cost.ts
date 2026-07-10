@@ -22,6 +22,7 @@ const AVG_TOOL_CALL_TOKENS = 200;
 
 const FAST_MODELS = new Set([
   "claude-3.5-haiku-20241022",
+  "claude-haiku-4-5",
   "gpt-4o-mini",
   "gemini-2.0-flash",
   "llama-3.1-70b",
@@ -29,6 +30,8 @@ const FAST_MODELS = new Set([
 
 const PREMIUM_MODELS = new Set([
   "claude-opus-4-20250514",
+  "claude-opus-4-8",
+  "claude-fable-5",
   "gpt-4-turbo",
 ]);
 
