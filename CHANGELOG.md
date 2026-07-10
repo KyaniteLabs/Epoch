@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Docs refresh: README/llms.txt/server.json now reflect the shipped `estimate_from_context` tool (24→25 tools), the current Claude 5 model catalog, and an evidence-backed self-improvement section (`scripts/backtest-pert-correction.mjs` receipt).
 
+### Explored (no shipped change)
+- Investigated a single-file `bun build --compile` executable as a faster-startup alternative to `npx` distribution. Currently **blocked** by a Bun 1.3.14 bundler linking defect that only manifests when the CLI dispatcher and MCP entry (`@modelcontextprotocol/sdk`, which calls `z.custom()` at module top level) are bundled together — each half compiles and runs correctly in isolation. Full repro, root-cause analysis, and a ready-to-use `scripts/build-binary.sh` (for once Bun ships a fix) are in `docs/BINARY.md`. No runtime code changed.
+
 ## [0.3.1] - 2026-07-10
 
 ### Removed
