@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-10
+
 ### Added (Phase 3 contract wave — additive, non-breaking)
 - Optional `task_label`, `project`, `session_id` string inputs on all 8 estimation tools (`pert_estimate`, `reference_class_estimate`, `cocomo_estimate`, `sprint_forecast`, `monte_carlo_schedule`, `schedule_risk`, `critical_path`, `token_time_bridge`). Persisted verbatim on the estimate row; `task_label` is additionally surfaced as an optional `task_label` field on each entry in `get_pending_estimates` output when present.
 - Optional `complexity` (1–5) input on `pert_estimate`, matching the existing `reference_class_estimate` complexity scale. Currently persisted for future per-complexity correction-factor conditioning; not yet applied to the headline estimate.
