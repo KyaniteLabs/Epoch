@@ -6,6 +6,7 @@ import { computeAccuracyMetrics } from "./analytics.js";
 import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE } from "./ledger.js";
 import type { EstimateRecord, ActualRecord } from "./ledger.js";
 import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js";
+import { canonicalizeToolName } from "./tool-aliases.js";
 
 export type { EstimateRecord, ActualRecord };
 
@@ -95,7 +96,12 @@ export function recordEstimate(
   const id = randomUUID();
   const record: EstimateRecord = {
     id,
-    tool,
+    // Normalize the tool spelling at ingest (camelCase writers, known aliases)
+    // so calibration reads never fragment the same tool across spellings.
+    // Falls back to the raw value when it can't be resolved — recordEstimate
+    // never rejects a write; unresolvable tool names are guarded downstream
+    // at the actual-recording step (see recordActualDetailed).
+    tool: canonicalizeToolName(tool) ?? tool,
     inputs,
     outputs,
     estimatedAt: new Date().toISOString(),
@@ -145,8 +151,8 @@ export function recordToolCall(
 }
 
 export type RecordActualResult =
-  | { ok: true }
-  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" };
+  | { ok: true; flagged?: "unit_suspect" }
+  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" };
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
@@ -155,17 +161,41 @@ const DRY_RUN_ESTIMATES_FILE = "estimates.dry-run.jsonl";
 /** Actuals must be positive to be recorded. */
 const MINIMUM_RECORDED_ACTUAL_HOURS = 0;
 
+/** Units an actual may be submitted in; normalized to hours at ingest (day/week use the same 8h/40h work-period convention as estimation.ts's toHours()). */
+export type ActualUnit = "minutes" | "hours" | "days" | "weeks";
+
+const ACTUAL_UNIT_TO_HOURS: Record<ActualUnit, number> = {
+  minutes: 1 / 60,
+  hours: 1,
+  days: 8,
+  weeks: 40,
+};
+
+/** Ratio (in either direction) between normalized actual hours and the matched estimate's hours above which a unit mistake (e.g. person-months entered as hours) is likely. Recorded, not silently ingested — flagged "unit_suspect". */
+const UNIT_SUSPECT_RATIO = 10;
+
+function normalizeActualHours(value: number, unit?: ActualUnit): number {
+  if (!unit) return value;
+  return value * ACTUAL_UNIT_TO_HOURS[unit];
+}
+
 function isDryRun(): boolean {
   return process.env["EPOCH_DRY_RUN"] === "1" || process.env["EPOCH_DRY_RUN"] === "true";
 }
 
-export function recordActual(estimateId: string, actualHours: number, notes?: string): boolean {
-  const result = recordActualDetailed(estimateId, actualHours, notes);
+export function recordActual(estimateId: string, actualHours: number, notes?: string, unit?: ActualUnit): boolean {
+  const result = recordActualDetailed(estimateId, actualHours, notes, unit);
   return result.ok;
 }
 
-export function recordActualDetailed(estimateId: string, actualHours: number, notes?: string): RecordActualResult {
-  if (actualHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
+export function recordActualDetailed(
+  estimateId: string,
+  actualHours: number,
+  notes?: string,
+  unit?: ActualUnit,
+): RecordActualResult {
+  const normalizedHours = normalizeActualHours(actualHours, unit);
+  if (normalizedHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
 
   // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
   if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
@@ -176,9 +206,27 @@ export function recordActualDetailed(estimateId: string, actualHours: number, no
     return { ok: false, reason: "duplicate" };
   }
 
+  // Guard against actuals joining an estimate whose tool name is unknown/unmapped
+  // or a raw id (a garbled `tool` field) — such joins would silently corrupt
+  // by-tool calibration math. Orphan actuals (no matching estimate on file)
+  // are left to the existing join-time handling elsewhere and are not rejected here.
+  const matchedEstimate = readLines<EstimateRecord>(ESTIMATES_FILE).find((e) => e.id === estimateId);
+  let flagged: "unit_suspect" | undefined;
+  if (matchedEstimate) {
+    if (canonicalizeToolName(matchedEstimate.tool) === null) {
+      return { ok: false, reason: "unknown_tool" };
+    }
+
+    const estimatedHours = extractEstimatedHours(matchedEstimate.outputs);
+    if (estimatedHours !== null && estimatedHours > 0 && normalizedHours > 0) {
+      const ratio = Math.max(normalizedHours / estimatedHours, estimatedHours / normalizedHours);
+      if (ratio > UNIT_SUSPECT_RATIO) flagged = "unit_suspect";
+    }
+  }
+
   const record: ActualRecord = {
     estimateId,
-    actualHours,
+    actualHours: normalizedHours,
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
   };
@@ -186,7 +234,8 @@ export function recordActualDetailed(estimateId: string, actualHours: number, no
   // Dry-run mode: write to separate file so tests never touch production data
   const targetFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
   const written = appendLine(targetFile, record);
-  return written ? { ok: true } : { ok: false, reason: "write_failed" };
+  if (!written) return { ok: false, reason: "write_failed" };
+  return flagged ? { ok: true, flagged } : { ok: true };
 }
 
 export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasActual: boolean }> {
@@ -364,6 +413,12 @@ export function matchEstimatesToActuals(
 
     const estHours = extractEstimatedHours(est.outputs);
 
+    // Resolve tool spelling once per record so filtering/grouping/inference
+    // below never fragment the same tool across camelCase/alias variants.
+    // Falls back to the raw value when unresolvable — read-side canonicalization
+    // normalizes, it does not exclude (that stays isExcluded()'s job).
+    const canonicalTool = canonicalizeToolName(est.tool) ?? est.tool;
+
     // Single exclusion truth: seed/synthetic, smoke, explicit-exclude,
     // 2026-05-05 exact-match backfill signature, ratio outliers, and
     // below-threshold microtask artifacts are all determined here.
@@ -374,11 +429,11 @@ export function matchEstimatesToActuals(
     // calibration-exclusion reason — kept as a separate check.
     if (estHours === null) continue;
 
-    const type = (est.inputs["task_type"] as string) ?? inferTaskType(est.tool);
+    const type = (est.inputs["task_type"] as string) ?? inferTaskType(canonicalTool);
 
     if (filters?.taskType && type !== filters.taskType) continue;
     if (filters?.teamId && est.inputs["team_id"] !== filters.teamId) continue;
-    if (filters?.tool && est.tool !== filters.tool) continue;
+    if (filters?.tool && canonicalTool !== filters.tool) continue;
 
     const complexity = typeof est.inputs["complexity"] === "number"
       ? est.inputs["complexity"]
@@ -389,7 +444,7 @@ export function matchEstimatesToActuals(
       taskType: type,
       estimatedHours: estHours,
       actualHours: act.actualHours,
-      tool: est.tool,
+      tool: canonicalTool,
       ...(complexity !== undefined && { complexity }),
       ...(filters?.teamId && { teamId: filters.teamId }),
       completedAt,

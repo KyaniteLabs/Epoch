@@ -20,6 +20,7 @@ import {
   recordEstimate,
   recordToolCall,
   recordActual,
+  recordActualDetailed,
   getPendingEstimates,
   getCalibrationData,
   batchRecordActuals,
@@ -1313,5 +1314,229 @@ describe("cappedMdape in feedback health", () => {
     const type = defined(report.byTaskType["testing"]);
     // Trend requires 6+ records to compute; with 3, metrics still has trend="stable"
     expect(typeof type.trend).toBe("string");
+  });
+});
+
+// ---- Phase 1 ingest guards: tool-name canonicalization ----
+
+describe("recordEstimate tool canonicalization", () => {
+  it("normalizes a camelCase tool name to canonical snake_case", () => {
+    recordEstimate("pertEstimate", { optimistic: 5 }, { expected: 7 });
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.tool).toBe("pert_estimate");
+  });
+
+  it("resolves manual_pert_estimate via the explicit alias map", () => {
+    recordEstimate("manual_pert_estimate", { optimistic: 5 }, { expected: 7 });
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.tool).toBe("pert_estimate");
+  });
+
+  it("leaves an already-canonical tool name unchanged", () => {
+    recordEstimate("cocomo_estimate", {}, {});
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.tool).toBe("cocomo_estimate");
+  });
+
+  it("falls back to the raw value for a tool name that cannot be resolved (never rejects a write)", () => {
+    recordEstimate("totally_unknown_tool", {}, {});
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.tool).toBe("totally_unknown_tool");
+  });
+});
+
+describe("matchEstimatesToActuals tool canonicalization", () => {
+  it("groups a camelCase-spelled tool under its canonical name when filtering by tool", () => {
+    const estimates = [
+      { id: "est-1", tool: "pertEstimate", inputs: {}, outputs: { totalHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+      { id: "est-2", tool: "pert_estimate", inputs: {}, outputs: { totalHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+    ];
+    const actuals = [
+      { estimateId: "est-1", actualHours: 12, reportedAt: "2026-01-10T00:00:00Z" },
+      { estimateId: "est-2", actualHours: 12, reportedAt: "2026-01-10T00:00:00Z" },
+    ];
+    const records = matchFixtureRecords(estimates, actuals);
+    expect(records).toHaveLength(2);
+    expect(records.every((r) => r.tool === "pert_estimate")).toBe(true);
+
+    const filtered = matchEstimatesToActuals(estimates, actuals, { tool: "pert_estimate" });
+    expect(filtered).toHaveLength(2);
+  });
+
+  it("passes through a tool name that cannot be canonicalized unchanged rather than dropping the record", () => {
+    const estimates = [
+      { id: "est-1", tool: "external_partner_tool", inputs: {}, outputs: { totalHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" },
+    ];
+    const actuals = [{ estimateId: "est-1", actualHours: 12, reportedAt: "2026-01-10T00:00:00Z" }];
+    const records = matchFixtureRecords(estimates, actuals);
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).tool).toBe("external_partner_tool");
+  });
+});
+
+// ---- Phase 1 ingest guards: recordActualDetailed unknown_tool / raw-UUID rejection ----
+
+describe("recordActualDetailed unknown_tool rejection", () => {
+  it("rejects an actual whose matched estimate has an unmapped tool name", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", tool: "totally_unknown_tool" }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 5);
+    expect(result).toEqual({ ok: false, reason: "unknown_tool" });
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("rejects an actual whose matched estimate's tool is a raw UUID", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", tool: "550e8400-e29b-41d4-a716-446655440000" }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 5);
+    expect(result).toEqual({ ok: false, reason: "unknown_tool" });
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("accepts an actual whose matched estimate has a resolvable (camelCase) tool name", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", tool: "pertEstimate" }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 5);
+    expect(result.ok).toBe(true);
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+  });
+
+  it("does not reject an orphan actual (no matching estimate on file)", () => {
+    mockReadFileSync.mockReturnValue("");
+    const result = recordActualDetailed("no-such-estimate", 5);
+    expect(result.ok).toBe(true);
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+  });
+});
+
+// ---- Phase 1 ingest guards: unit normalization + unit_suspect flag ----
+
+describe("recordActualDetailed unit normalization", () => {
+  beforeEach(() => {
+    mockReadFileSync.mockReturnValue("");
+  });
+
+  it("treats an omitted unit as hours (no change to existing behavior)", () => {
+    recordActualDetailed("est-1", 5);
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(5);
+  });
+
+  it("normalizes minutes to hours", () => {
+    recordActualDetailed("est-1", 30, undefined, "minutes");
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBeCloseTo(0.5, 10);
+  });
+
+  it("normalizes days to hours (8h/day convention)", () => {
+    recordActualDetailed("est-1", 2, undefined, "days");
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(16);
+  });
+
+  it("normalizes weeks to hours (40h/week convention)", () => {
+    recordActualDetailed("est-1", 1, undefined, "weeks");
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(40);
+  });
+
+  it("passes hours through unchanged", () => {
+    recordActualDetailed("est-1", 7.5, undefined, "hours");
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(7.5);
+  });
+
+  it("rejects below-threshold actuals after normalization, not before", () => {
+    // 0 minutes normalizes to 0 hours either way — still rejected.
+    const result = recordActualDetailed("est-1", 0, undefined, "minutes");
+    expect(result).toEqual({ ok: false, reason: "below_threshold" });
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("recordActualDetailed unit_suspect flag", () => {
+  it("flags a >10x ratio between normalized actual and estimated hours, but still records it", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 5 } }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 100); // 100 / 5 = 20x
+    expect(result).toEqual({ ok: true, flagged: "unit_suspect" });
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.actualHours).toBe(100);
+  });
+
+  it("flags a >10x ratio in the opposite direction (actual far below estimate)", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 100 } }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 5); // 100 / 5 = 20x
+    expect(result).toEqual({ ok: true, flagged: "unit_suspect" });
+  });
+
+  it("does not flag a ratio at or below 10x", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 5 } }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 45); // 45 / 5 = 9x
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("does not flag when there is no matching estimate to compare against", () => {
+    mockReadFileSync.mockReturnValue("");
+    const result = recordActualDetailed("no-such-estimate", 100);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("evaluates the ratio against the normalized (unit-converted) hours, catching a person-months-as-hours mistake", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        // Estimate expects ~4h; actual submitted as "2 days" (16h) is well within range,
+        // but submitted as "2 weeks" (80h) is a 20x ratio and should be caught.
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 4 } }) + "\n";
+      }
+      return "";
+    });
+
+    const withinRange = recordActualDetailed("est-1", 2, undefined, "days");
+    expect(withinRange).toEqual({ ok: true });
+
+    mockAppendFileSync.mockClear();
+    const suspect = recordActualDetailed("est-1", 2, undefined, "weeks");
+    expect(suspect).toEqual({ ok: true, flagged: "unit_suspect" });
   });
 });
