@@ -26,6 +26,7 @@ import {
   batchRecordActuals,
   getFeedbackHealthReport,
   matchEstimatesToActuals,
+  getDedupHitCount,
 } from "./feedback.js";
 import type { ActualRecord, EstimateRecord } from "./feedback.js";
 import { defined } from "../test-support.js";
@@ -112,6 +113,179 @@ describe("recordEstimate", () => {
       if (original === undefined) delete process.env["EPOCH_PENDING_TTL_DAYS"];
       else process.env["EPOCH_PENDING_TTL_DAYS"] = original;
     }
+  });
+});
+
+// ---- recordEstimate dedup get-or-create (Phase 4, Pre-mortem Scenario 3) ----
+
+describe("recordEstimate dedup get-or-create", () => {
+  function withEnv(vars: Record<string, string | undefined>, fn: () => void) {
+    const original: Record<string, string | undefined> = {};
+    for (const key of Object.keys(vars)) original[key] = process.env[key];
+    try {
+      for (const [key, value] of Object.entries(vars)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fn();
+    } finally {
+      for (const [key, value] of Object.entries(original)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  }
+
+  function pendingEstimateLine(overrides: Partial<{ id: string; tool: string; inputs: Record<string, unknown>; estimatedAt: string; expiresAt: string }> = {}) {
+    return JSON.stringify({
+      id: "existing-pending",
+      tool: "pert_estimate",
+      inputs: { session_id: "sess-1", task_type: "feature" },
+      outputs: { expected: 7 },
+      estimatedAt: new Date().toISOString(),
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      ...overrides,
+    });
+  }
+
+  it("is a no-op (byte-identical behavior) when EPOCH_DEDUP_WINDOW is unset, even with a session_id", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: undefined }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine() + "\n";
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234"); // freshly minted, not the existing pending id
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("is a no-op when EPOCH_DEDUP_WINDOW is set but no session_id is supplied", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine() + "\n";
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("reuses the existing pending estimate id for same tool + same inputs + same session_id within the window (no new row)", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      const before = getDedupHitCount();
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine() + "\n";
+        if (p.endsWith("feedback.jsonl")) return "";
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("existing-pending");
+      expect(mockAppendFileSync).not.toHaveBeenCalled();
+      expect(getDedupHitCount()).toBe(before + 1);
+    });
+  });
+
+  it("mints a new id when the session_id differs", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine() + "\n"; // session_id: sess-1
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-2", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("mints a new id when inputs differ (different signature) even in the same session", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine() + "\n"; // task_type: feature
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "bugfix" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("mints a new id when the existing pending estimate is outside the dedup window", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "5" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) {
+          return pendingEstimateLine({ estimatedAt: new Date(Date.now() - 60 * 60_000).toISOString() }) + "\n"; // 60 min ago, window = 5 min
+        }
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("mints a new id when the matching estimate already has an actual (no longer pending)", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine({ id: "already-actualed" }) + "\n";
+        if (p.endsWith("feedback.jsonl")) return makeActual({ estimateId: "already-actualed", actualHours: 5 }) + "\n";
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("mints a new id when the matching estimate is TTL-expired", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) {
+          return pendingEstimateLine({ expiresAt: new Date(Date.now() - 60_000).toISOString() }) + "\n";
+        }
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("mints a new id (never guesses) when multiple pending candidates match ambiguously", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) {
+          return pendingEstimateLine({ id: "dup-a" }) + "\n" + pendingEstimateLine({ id: "dup-b" }) + "\n";
+        }
+        return "";
+      });
+      const id = recordEstimate("pert_estimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("test-uuid-1234");
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("matches across camelCase/canonical tool-name spelling", () => {
+    withEnv({ EPOCH_DEDUP_WINDOW: "30" }, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return pendingEstimateLine({ tool: "pert_estimate" }) + "\n";
+        return "";
+      });
+      const id = recordEstimate("pertEstimate", { session_id: "sess-1", task_type: "feature" }, { expected: 7 });
+      expect(id).toBe("existing-pending");
+      expect(mockAppendFileSync).not.toHaveBeenCalled();
+    });
   });
 });
 
