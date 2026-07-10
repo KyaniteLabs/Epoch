@@ -38,7 +38,7 @@ Six layers, 25 tools:
 | Analytics (5) | reference_class_estimate, estimate_from_context, calibrate_estimates, token_time_bridge, token_cost_estimate | Data-driven estimation from history and free-text context |
 | Validation (3) | cocomo_validate, cocomo_ground_truth, accuracy_trend | Model validation and accuracy tracking |
 | Risk (2) | schedule_risk, compare_models | Schedule risk and model comparison |
-| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals |
+| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals — or let `epoch auto-actuals --session <id>` (CLI) close it automatically at session end with provenance-labeled wall-clock actuals |
 
 ## Tool Reference
 
