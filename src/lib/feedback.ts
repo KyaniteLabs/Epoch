@@ -6,8 +6,55 @@ import { computeAccuracyMetrics } from "./analytics.js";
 import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE } from "./ledger.js";
 import type { EstimateRecord, ActualRecord } from "./ledger.js";
 import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js";
+import { canonicalizeToolName } from "./tool-aliases.js";
 
 export type { EstimateRecord, ActualRecord };
+
+/** Default pending-estimate TTL, in days. Overridable via EPOCH_PENDING_TTL_DAYS. */
+const DEFAULT_PENDING_TTL_DAYS = 30;
+
+/** Resolve the pending-estimate TTL (days) from env, falling back to the default. */
+function pendingTtlDays(): number {
+  const raw = process.env["EPOCH_PENDING_TTL_DAYS"];
+  const n = raw !== undefined ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_PENDING_TTL_DAYS;
+}
+
+/** Default minimum matched-pair sample size required before a calibration verdict is reported. */
+const DEFAULT_MIN_N_FOR_VERDICT = 20;
+
+/** Resolve MIN_N_FOR_VERDICT from env (EPOCH_MIN_N_FOR_VERDICT), falling back to the default. */
+export function minNForVerdict(): number {
+  const raw = process.env["EPOCH_MIN_N_FOR_VERDICT"];
+  const n = raw !== undefined ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MIN_N_FOR_VERDICT;
+}
+
+/**
+ * Build the calibration verdict/recommendation string for a byTool/byTaskType
+ * bucket, gated on MIN_N_FOR_VERDICT (Phase 1 Task 1). Below the threshold,
+ * no directional claim ("Sufficient for calibration", "systematic
+ * overestimation", etc.) is made — only an "insufficient sample" statement.
+ */
+function calibrationRecommendation(
+  pairs: number,
+  metrics: { cappedMdape: number; bias: number } | null,
+  minN: number,
+  zeroMessage: string,
+): string {
+  if (pairs === 0) {
+    return `Insufficient sample (n=0). ${zeroMessage}`;
+  }
+  if (pairs < minN) {
+    const needed = minN - pairs;
+    return `Insufficient sample (n=${pairs}). Need ${needed} more matched pair${needed === 1 ? "" : "s"} before a calibration verdict is reported (minimum ${minN}).`;
+  }
+  const bl = biasLabel(metrics?.bias ?? null);
+  if (pairs < 10) {
+    return `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}). Collect more to improve reliability.`;
+  }
+  return `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
+}
 
 function biasLabel(bias: number | null): string {
   if (bias === null) return "";
@@ -49,19 +96,63 @@ export function recordEstimate(
   const id = randomUUID();
   const record: EstimateRecord = {
     id,
-    tool,
+    // Normalize the tool spelling at ingest (camelCase writers, known aliases)
+    // so calibration reads never fragment the same tool across spellings.
+    // Falls back to the raw value when it can't be resolved — recordEstimate
+    // never rejects a write; unresolvable tool names are guarded downstream
+    // at the actual-recording step (see recordActualDetailed).
+    tool: canonicalizeToolName(tool) ?? tool,
     inputs,
     outputs,
     estimatedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + pendingTtlDays() * 86_400_000).toISOString(),
     ...(source && { source }),
   };
   appendLine(isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE, record);
   return id;
 }
 
+/** Non-estimation tool-call telemetry (Phase 1 Task 3): never joins the estimates ledger. */
+export interface ToolCallRecord {
+  id: string;
+  tool: string;
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  calledAt: string;
+  source?: string;
+}
+
+/** File used for non-estimation tool-call telemetry — kept separate from ESTIMATES_FILE. */
+const TOOL_CALLS_FILE = "tool-calls.jsonl";
+const DRY_RUN_TOOL_CALLS_FILE = "tool-calls.dry-run.jsonl";
+
+/**
+ * Record a non-estimation tool call (e.g. get_current_time, feedback_health,
+ * record_actual) as telemetry, separate from the estimates ledger. These
+ * calls must never be counted as estimates in totalEstimates/matchRate.
+ */
+export function recordToolCall(
+  tool: string,
+  inputs: Record<string, unknown>,
+  outputs: Record<string, unknown>,
+  source?: string,
+): string {
+  const id = randomUUID();
+  const record: ToolCallRecord = {
+    id,
+    tool,
+    inputs,
+    outputs,
+    calledAt: new Date().toISOString(),
+    ...(source && { source }),
+  };
+  appendLine(isDryRun() ? DRY_RUN_TOOL_CALLS_FILE : TOOL_CALLS_FILE, record);
+  return id;
+}
+
 export type RecordActualResult =
-  | { ok: true }
-  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" };
+  | { ok: true; flagged?: "unit_suspect" }
+  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" };
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
@@ -70,17 +161,41 @@ const DRY_RUN_ESTIMATES_FILE = "estimates.dry-run.jsonl";
 /** Actuals must be positive to be recorded. */
 const MINIMUM_RECORDED_ACTUAL_HOURS = 0;
 
+/** Units an actual may be submitted in; normalized to hours at ingest (day/week use the same 8h/40h work-period convention as estimation.ts's toHours()). */
+export type ActualUnit = "minutes" | "hours" | "days" | "weeks";
+
+const ACTUAL_UNIT_TO_HOURS: Record<ActualUnit, number> = {
+  minutes: 1 / 60,
+  hours: 1,
+  days: 8,
+  weeks: 40,
+};
+
+/** Ratio (in either direction) between normalized actual hours and the matched estimate's hours above which a unit mistake (e.g. person-months entered as hours) is likely. Recorded, not silently ingested — flagged "unit_suspect". */
+const UNIT_SUSPECT_RATIO = 10;
+
+function normalizeActualHours(value: number, unit?: ActualUnit): number {
+  if (!unit) return value;
+  return value * ACTUAL_UNIT_TO_HOURS[unit];
+}
+
 function isDryRun(): boolean {
   return process.env["EPOCH_DRY_RUN"] === "1" || process.env["EPOCH_DRY_RUN"] === "true";
 }
 
-export function recordActual(estimateId: string, actualHours: number, notes?: string): boolean {
-  const result = recordActualDetailed(estimateId, actualHours, notes);
+export function recordActual(estimateId: string, actualHours: number, notes?: string, unit?: ActualUnit): boolean {
+  const result = recordActualDetailed(estimateId, actualHours, notes, unit);
   return result.ok;
 }
 
-export function recordActualDetailed(estimateId: string, actualHours: number, notes?: string): RecordActualResult {
-  if (actualHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
+export function recordActualDetailed(
+  estimateId: string,
+  actualHours: number,
+  notes?: string,
+  unit?: ActualUnit,
+): RecordActualResult {
+  const normalizedHours = normalizeActualHours(actualHours, unit);
+  if (normalizedHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
 
   // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
   if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
@@ -91,9 +206,27 @@ export function recordActualDetailed(estimateId: string, actualHours: number, no
     return { ok: false, reason: "duplicate" };
   }
 
+  // Guard against actuals joining an estimate whose tool name is unknown/unmapped
+  // or a raw id (a garbled `tool` field) — such joins would silently corrupt
+  // by-tool calibration math. Orphan actuals (no matching estimate on file)
+  // are left to the existing join-time handling elsewhere and are not rejected here.
+  const matchedEstimate = readLines<EstimateRecord>(ESTIMATES_FILE).find((e) => e.id === estimateId);
+  let flagged: "unit_suspect" | undefined;
+  if (matchedEstimate) {
+    if (canonicalizeToolName(matchedEstimate.tool) === null) {
+      return { ok: false, reason: "unknown_tool" };
+    }
+
+    const estimatedHours = extractEstimatedHours(matchedEstimate.outputs);
+    if (estimatedHours !== null && estimatedHours > 0 && normalizedHours > 0) {
+      const ratio = Math.max(normalizedHours / estimatedHours, estimatedHours / normalizedHours);
+      if (ratio > UNIT_SUSPECT_RATIO) flagged = "unit_suspect";
+    }
+  }
+
   const record: ActualRecord = {
     estimateId,
-    actualHours,
+    actualHours: normalizedHours,
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
   };
@@ -101,7 +234,8 @@ export function recordActualDetailed(estimateId: string, actualHours: number, no
   // Dry-run mode: write to separate file so tests never touch production data
   const targetFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
   const written = appendLine(targetFile, record);
-  return written ? { ok: true } : { ok: false, reason: "write_failed" };
+  if (!written) return { ok: false, reason: "write_failed" };
+  return flagged ? { ok: true, flagged } : { ok: true };
 }
 
 export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasActual: boolean }> {
@@ -112,6 +246,13 @@ export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasAct
   return estimates
     .map((e) => ({ ...e, hasActual: actualIds.has(e.id) }))
     .filter((e) => !e.hasActual)
+    .filter((e) => {
+      // Pending-TTL expiry (Phase 1 Task 7): route through the shared
+      // isExcluded() predicate so this stays coordinated with exclusion.ts's
+      // ttl_expired semantics — only exclude on that specific reason.
+      const verdict = isExcluded({ id: e.id, tool: e.tool, estimatedAt: e.estimatedAt, expiresAt: e.expiresAt });
+      return !(verdict.excluded && verdict.reason === "ttl_expired");
+    })
     .slice(-limit);
 }
 
@@ -272,6 +413,12 @@ export function matchEstimatesToActuals(
 
     const estHours = extractEstimatedHours(est.outputs);
 
+    // Resolve tool spelling once per record so filtering/grouping/inference
+    // below never fragment the same tool across camelCase/alias variants.
+    // Falls back to the raw value when unresolvable — read-side canonicalization
+    // normalizes, it does not exclude (that stays isExcluded()'s job).
+    const canonicalTool = canonicalizeToolName(est.tool) ?? est.tool;
+
     // Single exclusion truth: seed/synthetic, smoke, explicit-exclude,
     // 2026-05-05 exact-match backfill signature, ratio outliers, and
     // below-threshold microtask artifacts are all determined here.
@@ -282,11 +429,11 @@ export function matchEstimatesToActuals(
     // calibration-exclusion reason — kept as a separate check.
     if (estHours === null) continue;
 
-    const type = (est.inputs["task_type"] as string) ?? inferTaskType(est.tool);
+    const type = (est.inputs["task_type"] as string) ?? inferTaskType(canonicalTool);
 
     if (filters?.taskType && type !== filters.taskType) continue;
     if (filters?.teamId && est.inputs["team_id"] !== filters.teamId) continue;
-    if (filters?.tool && est.tool !== filters.tool) continue;
+    if (filters?.tool && canonicalTool !== filters.tool) continue;
 
     const complexity = typeof est.inputs["complexity"] === "number"
       ? est.inputs["complexity"]
@@ -297,7 +444,7 @@ export function matchEstimatesToActuals(
       taskType: type,
       estimatedHours: estHours,
       actualHours: act.actualHours,
-      tool: est.tool,
+      tool: canonicalTool,
       ...(complexity !== undefined && { complexity }),
       ...(filters?.teamId && { teamId: filters.teamId }),
       completedAt,
@@ -469,22 +616,14 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     toolRecords.set(toolKey, records);
   }
 
+  const minN = minNForVerdict();
+
   const byTool: FeedbackHealthReport["byTool"] = {};
   for (const [tool, count] of toolEstimates) {
     const matched = toolRecords.get(tool) ?? [];
     const metrics = matched.length >= 2 ? computeAccuracyMetrics(matched) : null;
     const pairs = matched.length;
-    let recommendation: string;
-    const bl = biasLabel(metrics?.bias ?? null);
-    if (pairs === 0) {
-      recommendation = "No matched pairs. Record actuals to start calibration.";
-    } else if (pairs < 3) {
-      recommendation = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
-    } else if (pairs < 10) {
-      recommendation = `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}). Collect more to improve reliability.`;
-    } else {
-      recommendation = `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
-    }
+    const recommendation = calibrationRecommendation(pairs, metrics, minN, "No matched pairs. Record actuals to start calibration.");
     byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, cappedMdape: metrics?.cappedMdape ?? null, bias: metrics?.bias ?? null, trend: metrics?.trend ?? null, recommendation };
   }
 
@@ -507,17 +646,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     const records = typeGroups.get(type) ?? [];
     const metrics = records.length >= 2 ? computeAccuracyMetrics(records) : null;
     const pairs = records.length;
-    let typeRec: string;
-    const tbl = biasLabel(metrics?.bias ?? null);
-    if (pairs === 0) {
-      typeRec = "No matched pairs. Use this task type in estimates and record actuals.";
-    } else if (pairs < 3) {
-      typeRec = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
-    } else if (pairs < 10) {
-      typeRec = `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${tbl}). Collect more to improve reliability.`;
-    } else {
-      typeRec = `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${tbl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
-    }
+    const typeRec = calibrationRecommendation(pairs, metrics, minN, "No matched pairs. Use this task type in estimates and record actuals.");
     byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, cappedMdape: metrics?.cappedMdape ?? null, bias: metrics?.bias ?? null, trend: metrics?.trend ?? null, recommendation: typeRec };
   }
 

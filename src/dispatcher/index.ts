@@ -5,9 +5,9 @@
 // ---------------------------------------------------------------------------
 
 import type { ToolResult } from "../types/index.js";
-import { TOOL_REGISTRY, TOOL_NAMES } from "./tool-registry.js";
+import { TOOL_REGISTRY, TOOL_NAMES, isEstimationTool } from "./tool-registry.js";
 import { getTelemetry } from "../lib/telemetry.js";
-import { recordEstimate } from "../lib/feedback.js";
+import { recordEstimate, recordToolCall } from "../lib/feedback.js";
 import { notifyToolCall } from "../lib/self-improve.js";
 
 // ---- Dispatch ---------------------------------------------------------------
@@ -42,10 +42,18 @@ export async function dispatch(
     if (result.ok) {
       const data = (result as { ok: true; data: unknown }).data;
       if (data && typeof data === "object") {
-        const estimateId = recordEstimate(toolName, rawInput, data as Record<string, unknown>, resolveSource());
         const d = data as Record<string, unknown>;
-        if (hasHourEstimate(d)) {
-          d.feedbackRef = estimateId;
+        // Phase 1 Task 3: only tools that produce a time/effort estimate join
+        // the estimates ledger (and are eligible for record_actual pairing).
+        // Everything else is non-estimation telemetry — routed to a separate
+        // stream so it never inflates totalEstimates/matchRate.
+        if (isEstimationTool(toolName)) {
+          const estimateId = recordEstimate(toolName, rawInput, d, resolveSource());
+          if (hasHourEstimate(d)) {
+            d.feedbackRef = estimateId;
+          }
+        } else {
+          recordToolCall(toolName, rawInput, d, resolveSource());
         }
       }
     }

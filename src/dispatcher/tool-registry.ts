@@ -914,3 +914,47 @@ export const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map(
 );
 
 export const TOOL_NAMES: Set<string> = new Set(Object.keys(handlers));
+
+// ---- Estimation vs. telemetry classification (Phase 1 Task 3) --------------
+//
+// Only tools that actually PRODUCE a time/effort estimate get recorded to the
+// estimates ledger (estimates.jsonl) and are eligible for record_actual
+// pairing. Every other registered tool call (temporal helpers, feedback
+// plumbing, comparison/validation reports) is non-estimation telemetry and
+// must be routed to recordToolCall() / tool-calls.jsonl instead — see
+// dispatch() in src/dispatcher/index.ts, the sole recordEstimate() call site.
+// Every tool name registered above must appear in exactly one of these sets.
+
+export const ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
+  "pert_estimate",
+  "reference_class_estimate",
+  "cocomo_estimate",
+  "sprint_forecast",
+  "monte_carlo_schedule",
+  "schedule_risk",
+  "critical_path",
+  "token_time_bridge",
+]);
+
+export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
+  "record_actual",
+  "batch_record_actuals",
+  "get_current_time",
+  "convert_timezone",
+  "parse_duration",
+  "time_math",
+  "add_business_days",
+  "count_business_days",
+  "feedback_health",
+  "get_pending_estimates",
+  "accuracy_trend",
+  "calibrate_estimates",
+  "compare_models",
+  "token_cost_estimate",
+  "cocomo_validate",
+  "cocomo_ground_truth",
+]);
+
+export function isEstimationTool(toolName: string): boolean {
+  return ESTIMATION_TOOLS.has(toolName);
+}
