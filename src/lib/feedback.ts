@@ -7,6 +7,7 @@ import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE } from "./ledger.js";
 import type { EstimateRecord, ActualRecord } from "./ledger.js";
 import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName } from "./tool-aliases.js";
+import { debugLog } from "./internal/logging.js";
 
 export type { EstimateRecord, ActualRecord };
 
@@ -18,6 +19,88 @@ function pendingTtlDays(): number {
   const raw = process.env["EPOCH_PENDING_TTL_DAYS"];
   const n = raw !== undefined ? Number(raw) : NaN;
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_PENDING_TTL_DAYS;
+}
+
+/**
+ * Dedup get-or-create window, in minutes (Phase 4, Pre-mortem Scenario 3).
+ * Unset (default) = feature OFF: recordEstimate() always mints a new row,
+ * byte-identical to pre-Phase-4 behavior. Set via EPOCH_DEDUP_WINDOW.
+ */
+function dedupWindowMinutes(): number | null {
+  const raw = process.env["EPOCH_DEDUP_WINDOW"];
+  if (raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Count of recordEstimate() calls that reused an existing pending estimate
+ * instead of appending a new row (dedup-hit counter, plan §4 Observability).
+ * Process-lifetime counter, not persisted — mirrors self-improve.ts's
+ * in-memory callCounter pattern.
+ */
+let dedupHitCount = 0;
+
+/** Number of dedup hits since process start. Exposed for tests/observability. */
+export function getDedupHitCount(): number {
+  return dedupHitCount;
+}
+
+/** Deterministic signature over an estimate's inputs, used to match "identical" dedup calls regardless of key order. */
+function inputsSignature(inputs: Record<string, unknown>): string {
+  return JSON.stringify(sortKeysDeep(inputs));
+}
+
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return Object.fromEntries(entries.map(([k, v]) => [k, sortKeysDeep(v)]));
+  }
+  return value;
+}
+
+/**
+ * Find a single pending estimate to reuse for a dedup get-or-create call
+ * (Phase 4, Pre-mortem Scenario 3): same canonical tool + same normalized
+ * inputs signature + same session_id, estimated within the dedup window,
+ * and still pending (no matched actual, not TTL-expired).
+ *
+ * Ambiguity is never guessed — mirrors the Phase 2 orphan re-link policy
+ * ("exactly one candidate ⇒ relink; zero or >1 ⇒ never guess"): zero or
+ * multiple candidates both fall through to minting a new row.
+ */
+function findDedupMatch(
+  canonicalTool: string,
+  inputs: Record<string, unknown>,
+  sessionId: string,
+  windowMinutes: number,
+  estimatesFile: string,
+  actualsFile: string,
+): string | null {
+  const signature = inputsSignature(inputs);
+  const cutoffMs = Date.now() - windowMinutes * 60_000;
+  const nowMs = Date.now();
+  const estimates = readLines<EstimateRecord>(estimatesFile);
+  const actualIds = new Set(readLines<ActualRecord>(actualsFile).map((a) => a.estimateId));
+
+  const candidates = estimates.filter((e) => {
+    if (actualIds.has(e.id)) return false; // must still be pending
+    if ((canonicalizeToolName(e.tool) ?? e.tool) !== canonicalTool) return false;
+    if (stringField(e.inputs["session_id"]) !== sessionId) return false;
+    if (inputsSignature(e.inputs) !== signature) return false;
+    const estimatedAtMs = Date.parse(e.estimatedAt);
+    if (!Number.isFinite(estimatedAtMs) || estimatedAtMs < cutoffMs) return false;
+    if (e.expiresAt) {
+      const expiresMs = Date.parse(e.expiresAt);
+      if (Number.isFinite(expiresMs) && expiresMs <= nowMs) return false;
+    }
+    return true;
+  });
+
+  if (candidates.length !== 1) return null;
+  const [onlyCandidate] = candidates;
+  return onlyCandidate ? onlyCandidate.id : null;
 }
 
 /** Default minimum matched-pair sample size required before a calibration verdict is reported. */
@@ -93,22 +176,40 @@ export function recordEstimate(
   outputs: Record<string, unknown>,
   source?: string,
 ): string {
+  // Normalize the tool spelling at ingest (camelCase writers, known aliases)
+  // so calibration reads never fragment the same tool across spellings.
+  // Falls back to the raw value when it can't be resolved — recordEstimate
+  // never rejects a write; unresolvable tool names are guarded downstream
+  // at the actual-recording step (see recordActualDetailed).
+  const canonicalTool = canonicalizeToolName(tool) ?? tool;
+  const targetFile = isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
+
+  // Dedup get-or-create (Phase 4, flag-gated): only engages when the caller
+  // supplies session_id AND EPOCH_DEDUP_WINDOW is set. Absent either, this
+  // block is a no-op and behavior is byte-identical to pre-Phase-4.
+  const sessionId = stringField(inputs["session_id"]);
+  const windowMinutes = dedupWindowMinutes();
+  if (sessionId && windowMinutes !== null) {
+    const actualsFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
+    const existingId = findDedupMatch(canonicalTool, inputs, sessionId, windowMinutes, targetFile, actualsFile);
+    if (existingId) {
+      dedupHitCount++;
+      debugLog("feedback.dedup-hit", `reused pending estimate ${existingId} for tool ${canonicalTool}, session ${sessionId}`);
+      return existingId;
+    }
+  }
+
   const id = randomUUID();
   const record: EstimateRecord = {
     id,
-    // Normalize the tool spelling at ingest (camelCase writers, known aliases)
-    // so calibration reads never fragment the same tool across spellings.
-    // Falls back to the raw value when it can't be resolved — recordEstimate
-    // never rejects a write; unresolvable tool names are guarded downstream
-    // at the actual-recording step (see recordActualDetailed).
-    tool: canonicalizeToolName(tool) ?? tool,
+    tool: canonicalTool,
     inputs,
     outputs,
     estimatedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + pendingTtlDays() * 86_400_000).toISOString(),
     ...(source && { source }),
   };
-  appendLine(isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE, record);
+  appendLine(targetFile, record);
   return id;
 }
 
