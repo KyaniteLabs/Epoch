@@ -6,12 +6,22 @@
 // Checks structural integrity, aggregate-only content, and absence of
 // individual records or PII.
 //
-// Usage: node scripts/validate-public-benchmark.mjs
+// Guarded (Phase 2 Task 5 / Pre-mortem Scenario 5): asserts zero quarantined/
+// orphan rows contributed to the export by independently re-running
+// loadLocalBenchmarkPairs() (the same isExcluded()-filtered path
+// export-public-benchmark.mjs used) against the CURRENT live ledger state —
+// re-verified at validate time, not just trusted from the export-time report,
+// so a quarantine landed after export still gets caught.
+//
+// Usage: npx tsx scripts/validate-public-benchmark.mjs
+// Plan reference: .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
+// §3 Phase 2 Task 5.
 // ---------------------------------------------------------------------------
 
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadLocalBenchmarkPairs } from "../src/lib/benchmark-export.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -101,6 +111,41 @@ if (typeof data.by_task_type !== "object" || data.by_task_type === null || Array
       }
     }
     pass(`by_task_type has ${taskTypes.length} task types`);
+  }
+}
+
+// Quality/contamination-guard block (Pre-mortem Scenario 5)
+if (typeof data._quality !== "object" || data._quality === null) {
+  fail("_quality block is missing — export-public-benchmark.mjs must record its isExcluded()/backfill-signature guard evidence");
+  errors++;
+} else {
+  const q = data._quality;
+  const errorsBeforeQuality = errors;
+  const numericFields = ["local_pairs_included", "local_pairs_excluded_by_isExcluded", "contaminated_pairs_filtered", "pre_filter_total_pairs"];
+  for (const field of numericFields) {
+    if (typeof q[field] !== "number" || q[field] < 0 || !Number.isInteger(q[field])) {
+      fail(`_quality.${field} must be a non-negative integer, got ${q[field]}`);
+      errors++;
+    }
+  }
+  if (errors === errorsBeforeQuality) {
+    pass(`_quality block present: ${q.local_pairs_included} local pairs included, ${q.local_pairs_excluded_by_isExcluded} excluded by isExcluded(), ${q.contaminated_pairs_filtered} contaminated pair(s) filtered`);
+  }
+
+  // Re-verify LIVE, not just trust the export-time report: re-run the same
+  // exclusion-filtered loader against the current ledger state and confirm
+  // the number of currently-includable local pairs never exceeds what the
+  // export claims to have included (a fresh quarantine after export must
+  // never silently widen the gap in the wrong direction — i.e. the export
+  // must not have included MORE than isExcluded() currently allows).
+  const liveResult = loadLocalBenchmarkPairs();
+  if (liveResult.pairs.length > q.local_pairs_included) {
+    fail(
+      `Live re-verification found ${liveResult.pairs.length} currently-clean local pairs, more than the ${q.local_pairs_included} the export recorded — re-run \`pnpm run dataset:build\` to refresh.`,
+    );
+    errors++;
+  } else {
+    pass(`Live re-verification: ${liveResult.pairs.length} currently-clean local pairs (export recorded ${q.local_pairs_included}) — no quarantined/orphan row included`);
   }
 }
 

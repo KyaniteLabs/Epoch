@@ -5,7 +5,21 @@
 // Validates JSON files in data/community/ against their declared schema.
 // Each file must have a top-level "_schema" field and a "records" array.
 //
+// Guarded (Phase 2 Task 5 / Pre-mortem Scenario 5): rejects any
+// estimation-record whose (ratio, timestamp) matches the known 2026-05-05
+// exact-match backfill-contamination signature — the earliest possible
+// interception point, before a contributed file is ever aggregated into the
+// public benchmark. EXACT_MATCH_EPSILON/BACKFILL_SIGNATURE_DATE below are
+// KEPT IN SYNC BY HAND with src/lib/exclusion.ts's constants of the same
+// name (NOT imported): this script is CI-gated on plain `node` (see
+// .github/workflows/validate-community-data.yml, Node 22, no TS loader),
+// mirroring the same "kept in sync, not imported, to avoid a runtime TS
+// dependency" tradeoff src/lib/tool-aliases.ts already documents for
+// CANONICAL_TOOL_NAMES.
+//
 // Usage: node scripts/validate-community-data.mjs
+// Plan reference: .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
+// §3 Phase 2 Task 5, Pre-mortem Scenario 5.
 // ---------------------------------------------------------------------------
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -15,6 +29,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const COMMUNITY_DIR = join(ROOT, "data", "community");
 const SCHEMAS_DIR = join(ROOT, "data", "schemas");
+
+// Kept in sync by hand with src/lib/exclusion.ts — see header comment above.
+const EXACT_MATCH_EPSILON = 0.005;
+const BACKFILL_SIGNATURE_DATE = "2026-05-05";
+
+function isBackfillSignatureRecord(record) {
+  const est = record.estimated_hours;
+  const act = record.actual_hours;
+  const ts = record.timestamp;
+  if (typeof est !== "number" || est <= 0 || typeof act !== "number" || typeof ts !== "string") return false;
+  if (ts.slice(0, 10) !== BACKFILL_SIGNATURE_DATE) return false;
+  return Math.abs(act / est - 1) <= EXACT_MATCH_EPSILON;
+}
 
 const VALID_SCHEMAS = [
   "estimation-record",
@@ -221,6 +248,11 @@ for (const file of files) {
 
   for (let i = 0; i < recordCount; i++) {
     const errors = validateRecord(data.records[i], schema);
+    if (isBackfillSignatureRecord(data.records[i])) {
+      errors.push(
+        `matches the known 2026-05-05 exact-match backfill-contamination signature (ratio~1.0, timestamp=${BACKFILL_SIGNATURE_DATE}) — exclude this record before contributing`,
+      );
+    }
     if (errors.length > 0) {
       fileErrors++;
       errorLines.push(`      Record ${i}:`);

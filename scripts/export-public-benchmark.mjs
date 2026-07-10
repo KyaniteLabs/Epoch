@@ -3,11 +3,27 @@
 // Epoch — Export Public Benchmark
 // Reads community data and local calibration data, produces an aggregated
 // anonymized benchmark dataset with NO individual records — only statistics.
+//
+// Guarded (Phase 2 Task 5 / Pre-mortem Scenario 5 — contaminated/quarantined
+// rows must never leak into the PUBLIC benchmark):
+//  - The operator's own live ledger (EPOCH_DATA_DIR / ~/.epoch) is routed
+//    through loadLedgerWithOverlays() + isExcluded() via
+//    src/lib/benchmark-export.ts's loadLocalBenchmarkPairs() before its
+//    pairs are aggregated.
+//  - Community/cocomo-sourced pairs (which carry a ratio + date but no
+//    id/overlay-flags) get a defense-in-depth check reusing the SAME
+//    backfill-signature constants (isBackfillSignaturePair) — not a
+//    reimplemented threshold.
+//
+// Usage: npx tsx scripts/export-public-benchmark.mjs
+// Plan reference: .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
+// §3 Phase 2 Task 5.
 // ---------------------------------------------------------------------------
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { loadLocalBenchmarkPairs, isBackfillSignaturePair } from "../src/lib/benchmark-export.ts";
 
 const DATA_DIR = process.env["EPOCH_DATA_DIR"] ?? join(homedir(), ".epoch");
 const PROJECT_ROOT = new URL("..", import.meta.url).pathname;
@@ -38,6 +54,7 @@ if (existsSync(COMMUNITY_DIR)) {
               estimated_hours: rec.estimated_hours,
               actual_hours: rec.actual_hours,
               ratio: Math.round((rec.actual_hours / rec.estimated_hours) * 10000) / 10000,
+              ...(typeof rec.timestamp === "string" && { date: rec.timestamp.slice(0, 10) }),
             });
             if (rec.contributor_id) contributors.add(rec.contributor_id);
           }
@@ -77,7 +94,38 @@ if (existsSync(COCOMO_FILE)) {
   }
 }
 
-// ---- 3. Aggregate statistics ------------------------------------------------
+// ---- 3. Read the operator's own live ledger (guarded) -----------------------
+//
+// Routed through loadLedgerWithOverlays() + isExcluded() — the ONLY source
+// among the three here with full id/overlay-flag context, so it's the real
+// protection against Pre-mortem Scenario 5 (the live 2026-05-05 backfill
+// rows leaking into the published benchmark).
+
+const localResult = loadLocalBenchmarkPairs();
+for (const p of localResult.pairs) {
+  pairs.push(p);
+}
+console.log(`  READ local ledger (${DATA_DIR}): ${localResult.pairs.length} clean pairs, ${localResult.excludedCount} excluded by isExcluded()`);
+
+// ---- 3b. Defense-in-depth contamination filter ------------------------------
+//
+// Community/cocomo pairs carry only a ratio + optional date (no id/flags),
+// so the full isExcluded() predicate can't run on them — but the same
+// backfill-signature check (exact-match epsilon AND the 2026-05-05 date,
+// BOTH required per Pre-mortem Scenario 1) still applies wherever a date is
+// present. Local pairs are already isExcluded()-filtered; this is a harmless
+// second check for them and the only protection available for the rest.
+
+const preFilterCount = pairs.length;
+const contaminatedPairs = pairs.filter((p) => isBackfillSignaturePair(p.ratio, p.date));
+const cleanPairs = pairs.filter((p) => !isBackfillSignaturePair(p.ratio, p.date));
+pairs.length = 0;
+pairs.push(...cleanPairs);
+if (contaminatedPairs.length > 0) {
+  console.log(`  FILTERED ${contaminatedPairs.length} pair(s) matching the known 2026-05-05 backfill-signature contamination`);
+}
+
+// ---- 4. Aggregate statistics ------------------------------------------------
 
 function median(values) {
   if (values.length === 0) return 0;
@@ -131,16 +179,24 @@ for (const [tool, records] of Object.entries(groupBy(pairs, "tool"))) {
   };
 }
 
-// ---- 4. Write output --------------------------------------------------------
+// ---- 5. Write output --------------------------------------------------------
 
 const benchmark = {
   schema_version: 1,
   generated_at: new Date().toISOString(),
-  source: "community + cocomo calibration",
+  source: "community + cocomo calibration + local ledger",
   total_records: pairs.length,
   unique_contributors: contributors.size || pairs.length,
   by_task_type: byTaskType,
   by_tool: byTool,
+  // Pre-mortem Scenario 5 guard evidence — reconciled by
+  // validate-public-benchmark.mjs against a fresh isExcluded() pass.
+  _quality: {
+    local_pairs_included: localResult.pairs.length,
+    local_pairs_excluded_by_isExcluded: localResult.excludedCount,
+    contaminated_pairs_filtered: contaminatedPairs.length,
+    pre_filter_total_pairs: preFilterCount,
+  },
 };
 
 writeFileSync(OUTPUT_FILE, JSON.stringify(benchmark, null, 2), "utf-8");
