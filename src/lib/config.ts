@@ -20,8 +20,19 @@ export interface EpochConfig {
 		totalRecordsAccepted?: number;
 		totalRecordsDeduplicated?: number;
 		installationId: string;
+		/** Whether the first-run telemetry nudge has already been shown or superseded by an explicit enable/disable. */
+		nudgeShown?: boolean;
 	};
 }
+
+/**
+ * Default public telemetry receiver. Baking this in does NOT enable
+ * telemetry — `enabled` stays `false` by default; endpoint presence alone
+ * sends nothing. Used whenever telemetry is enabled and no endpoint has been
+ * explicitly configured. See docs/TELEMETRY.md and docs/PRIVACY.md.
+ */
+export const DEFAULT_PUBLIC_TELEMETRY_ENDPOINT =
+	"https://telemetry.kyanitelabs.tech/v1/telemetry";
 
 const DEFAULT_CONFIG: EpochConfig = {
 	telemetry: {
@@ -34,6 +45,7 @@ const DEFAULT_CONFIG: EpochConfig = {
 		totalRecordsAccepted: 0,
 		totalRecordsDeduplicated: 0,
 		installationId: "",
+		nudgeShown: false,
 	},
 };
 
@@ -131,4 +143,17 @@ export function isUsableTelemetryEndpoint(endpoint: string): boolean {
 	return (
 		endpoint.trim().length > 0 && !isPlaceholderTelemetryEndpoint(endpoint)
 	);
+}
+
+/**
+ * The effective telemetry endpoint: the configured endpoint if one was set,
+ * otherwise the baked-in public default. An explicit placeholder endpoint
+ * (e.g. "https://example.com") is returned as-is so callers can still reject
+ * it via `isUsableTelemetryEndpoint`/`isPlaceholderTelemetryEndpoint`.
+ * Endpoint resolution alone never sends anything — submission still
+ * requires `isTelemetryEnabled()`.
+ */
+export function resolveTelemetryEndpoint(config: EpochConfig): string {
+	const configured = config.telemetry.endpoint.trim();
+	return configured.length > 0 ? configured : DEFAULT_PUBLIC_TELEMETRY_ENDPOINT;
 }

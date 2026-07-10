@@ -5,6 +5,7 @@ import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/in
 import { recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
+import { setTransport } from "../lib/telemetry-context.js";
 import type { ToolResult } from "../types/index.js";
 import type { z } from "zod";
 import { getVersion } from "../version.js";
@@ -823,6 +824,7 @@ export function startHttpServer(
     ? parseInt(process.env["EPOCH_PORT"] ?? process.env["PORT"] ?? "3000", 10)
     : 3000);
   const resolvedHost = host ?? process.env["EPOCH_HOST"] ?? "127.0.0.1";
+  setTransport("rest");
   const app = createApiApp();
 
   const server = serve({ fetch: app.fetch, port: resolvedPort, hostname: resolvedHost }, () => {

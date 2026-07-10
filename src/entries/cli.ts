@@ -8,6 +8,8 @@ import { dispatch } from "../dispatcher/index.js";
 import { formatJson, formatTable } from "../dispatcher/formatters.js";
 import type { ToolResult } from "../types/index.js";
 import { getVersion } from "../version.js";
+import { setTransport } from "../lib/telemetry-context.js";
+import { loadConfig, saveConfig } from "../lib/config.js";
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -913,25 +915,28 @@ export function createCliProgram(): Command {
 
 	telemetryCmd
 		.command("preview")
-		.description("Preview anonymized data that would be shared")
+		.description(
+			"Print the exact payload that 'epoch telemetry submit' would send next (or 'nothing to send')",
+		)
 		.action(async () => {
-			const { extractAnonymizedRecords } = await import(
+			const { loadConfig } = await import("../lib/config.js");
+			const { extractAnonymizedRecords, buildPayload } = await import(
 				"../lib/telemetry-submit.js"
 			);
-			const records = extractAnonymizedRecords();
-			const summary = {
-				totalRecords: records.length,
-				fields: Object.keys(records[0] ?? {}),
-				strippedFields: [
-					"estimateId",
-					"source",
-					"notes",
-					"teamId",
-					"time-of-day",
-				],
-				sample: records.slice(0, 5),
-			};
-			process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+			const config = loadConfig();
+			const records = extractAnonymizedRecords(
+				config.telemetry.lastSubmissionAt ?? undefined,
+			);
+			if (records.length === 0) {
+				process.stdout.write(
+					JSON.stringify({ message: "nothing to send" }, null, 2) + "\n",
+				);
+				process.exit(0);
+			}
+			// Mirror submitTelemetry(): the first HTTPS request sends at most 100
+			// records; remaining records queue for the next submission/chunk.
+			const payload = buildPayload(records.slice(0, 100));
+			process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
 			process.exit(0);
 		});
 
@@ -1025,6 +1030,7 @@ export function createCliProgram(): Command {
 
 			const config = loadConfig();
 			config.telemetry.enabled = true;
+			config.telemetry.nudgeShown = true;
 			if (endpoint) config.telemetry.endpoint = endpoint;
 			saveConfig(config);
 			process.stdout.write(
@@ -1113,6 +1119,7 @@ export function createCliProgram(): Command {
 			const { saveConfig, loadConfig } = await import("../lib/config.js");
 			const config = loadConfig();
 			config.telemetry.enabled = false;
+			config.telemetry.nudgeShown = true;
 			saveConfig(config);
 			process.stdout.write(
 				JSON.stringify({ ok: true, message: "Telemetry disabled." }) + "\n",
@@ -1243,6 +1250,30 @@ export function createCliProgram(): Command {
 
 // ---- CLI runner -------------------------------------------------------------
 
+/**
+ * One-line, once-ever nudge shown on CLI use when telemetry has never been
+ * explicitly configured. Silent under --quiet and while the user is
+ * actively managing telemetry themselves (`epoch telemetry ...`). Never
+ * repeats once telemetry has been explicitly enabled/disabled (see the
+ * `enable`/`disable` command actions below, which also set `nudgeShown`).
+ */
+export function maybeShowFirstRunTelemetryNudge(args: string[]): void {
+	if (args.includes("--quiet") || args[0] === "telemetry") return;
+
+	const config = loadConfig();
+	if (config.telemetry.nudgeShown) return;
+
+	if (!config.telemetry.enabled) {
+		process.stderr.write(
+			"epoch: anonymous calibration telemetry is OFF; run 'epoch telemetry enable' to contribute -- see docs/TELEMETRY.md\n",
+		);
+	}
+	config.telemetry.nudgeShown = true;
+	saveConfig(config);
+}
+
 export function runCli(): void {
+	setTransport("cli");
+	maybeShowFirstRunTelemetryNudge(process.argv.slice(2));
 	createCliProgram().parse(process.argv);
 }
