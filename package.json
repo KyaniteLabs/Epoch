@@ -5,7 +5,7 @@
   "description": "Time Estimation MCP Server — 24 tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, and schedule risk. Self-improving. MCP + CLI + REST.",
   "type": "module",
   "main": "dist/index.js",
-  "packageManager": "pnpm@10.34.4",
+  "packageManager": "pnpm@10.34.5",
   "bin": {
     "epoch": "dist/native/epoch-rust-launcher.js"
   },
