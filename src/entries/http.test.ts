@@ -576,7 +576,12 @@ describe("HTTP API", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          estimate_id: `http-test-estimate-${Date.now()}`,
+          // "http-fixture-estimate-" (not "http-test-estimate-"): exclusion.ts's
+          // SYNTHETIC_ID_PREFIXES now includes "http-test-estimate-" (verified
+          // 2026-07-10 live-ledger leakage prefix — see
+          // src/lib/migrations/flag-test-fixture-rows.ts), so this
+          // positive-case fixture id must not collide with it.
+          estimate_id: `http-fixture-estimate-${Date.now()}`,
           actual_hours: 8.5,
           notes: "Completed faster than expected",
         }),

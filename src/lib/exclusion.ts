@@ -80,6 +80,16 @@ export const SYNTHETIC_ID_PREFIXES = [
   "example-",
   "sample-",
   "fake-",
+  // Verified 2026-07-10 against a read-only copy of the live ~/.epoch ledger
+  // (loose-ends cleanup): old http-test-harness / feedback-batch-test runs
+  // leaked exactly 472 rows under these two additional prefixes — all as
+  // orphaned feedback.jsonl actuals, none as estimates.jsonl rows. See
+  // src/lib/migrations/flag-test-fixture-rows.ts for the migration that
+  // overlay-flags the leaked rows.
+  "http-test-estimate-",
+  "fb-batch-",
+  "fb-max-",
+  "fb-single-",
 ] as const;
 
 /** Check if a bare id string (estimate id or actual's estimateId) matches a synthetic prefix pattern. */
