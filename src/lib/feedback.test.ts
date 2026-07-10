@@ -457,6 +457,27 @@ describe("getCalibrationData", () => {
     expect(defined(records[0]).calibrationUsage).toBe("correction");
   });
 
+  it("marks auto_wallclock actuals as correction-eligible by default (Wave 2 auto-actuals)", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) return makeEstimate({ id: "wallclock-estimate" }) + "\n";
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({
+          estimateId: "wallclock-estimate",
+          actualHours: 9,
+          reportedAt: "2026-05-02T10:00:00.000Z",
+          calibrationProvenance: "auto_wallclock",
+        }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData();
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("auto_wallclock");
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
   it("keeps backfilled real-session data as baseline-only instead of correction-factor data when all usages are requested", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
@@ -1154,6 +1175,76 @@ describe("getFeedbackHealthReport", () => {
   });
 });
 
+// ---- Wave 2 auto-actuals: byProvenance segmentation (verified vs auto) ----
+
+describe("getFeedbackHealthReport byProvenance", () => {
+  it("reports zero auto and zero verified when there are no matched pairs", () => {
+    mockReadFileSync.mockReturnValue("");
+    const report = getFeedbackHealthReport();
+    expect(report.byProvenance).toEqual({
+      verified: { matchedPairs: 0, mdape: null, cappedMdape: null },
+      auto: { matchedPairs: 0, mdape: null, cappedMdape: null },
+    });
+  });
+
+  it("segments prospective (verified) actuals separately from auto_wallclock actuals", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return [
+          makeEstimate({ id: "e1", outputs: { expected: 5, unit: "hours" } }),
+          makeEstimate({ id: "e2", outputs: { expected: 5, unit: "hours" } }),
+          makeEstimate({ id: "e3", outputs: { expected: 5, unit: "hours" } }),
+        ].join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          // verified (no explicit provenance -> classified "prospective")
+          makeActual({ estimateId: "e1", actualHours: 5 }),
+          makeActual({ estimateId: "e2", actualHours: 6 }),
+          // auto_wallclock
+          JSON.stringify({ estimateId: "e3", actualHours: 4, reportedAt: "2026-05-02T10:00:00.000Z", calibrationProvenance: "auto_wallclock" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.byProvenance.verified.matchedPairs).toBe(2);
+    expect(report.byProvenance.auto.matchedPairs).toBe(1);
+    // n=2 is enough for computeAccuracyMetrics; n=1 stays null (matches byTool/byTaskType's own >=2 gate).
+    expect(report.byProvenance.verified.mdape).not.toBeNull();
+    expect(report.byProvenance.auto.mdape).toBeNull();
+  });
+
+  it("does not blend auto_wallclock records into the verified segment's MdAPE", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return Array.from({ length: 4 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, outputs: { expected: 10, unit: "hours" } })
+        ).join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          // verified: well-calibrated (small error)
+          makeActual({ estimateId: "e0", actualHours: 10 }),
+          makeActual({ estimateId: "e1", actualHours: 11 }),
+          // auto_wallclock: large error (wall-clock noise), must not pollute "verified"
+          JSON.stringify({ estimateId: "e2", actualHours: 3, reportedAt: "2026-05-02T10:00:00.000Z", calibrationProvenance: "auto_wallclock" }),
+          JSON.stringify({ estimateId: "e3", actualHours: 4, reportedAt: "2026-05-02T10:00:00.000Z", calibrationProvenance: "auto_wallclock" }),
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.byProvenance.verified.matchedPairs).toBe(2);
+    expect(report.byProvenance.auto.matchedPairs).toBe(2);
+    expect(defined(report.byProvenance.verified.mdape)).toBeLessThan(defined(report.byProvenance.auto.mdape));
+  });
+});
+
 // ---- matchEstimatesToActuals / extractEstimatedHours ----
 
 describe("matchEstimatesToActuals", () => {
@@ -1712,5 +1803,59 @@ describe("recordActualDetailed unit_suspect flag", () => {
     mockAppendFileSync.mockClear();
     const suspect = recordActualDetailed("est-1", 2, undefined, "weeks");
     expect(suspect).toEqual({ ok: true, flagged: "unit_suspect" });
+  });
+});
+
+// ---- Wave 2 auto-actuals: recordActualDetailed write-time sanity gate ----
+
+describe("recordActualDetailed auto_wallclock sanity gate", () => {
+  it("records an in-bounds auto_wallclock actual with the provenance persisted", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 5 } }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 3, "auto-recorded at session end (wall-clock)", undefined, "auto_wallclock");
+    expect(result).toEqual({ ok: true });
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.calibrationProvenance).toBe("auto_wallclock");
+  });
+
+  it("rejects an auto_wallclock actual below the lower bound and does not write", () => {
+    mockReadFileSync.mockReturnValue("");
+    const result = recordActualDetailed("est-1", 0.01, undefined, undefined, "auto_wallclock");
+    expect(result).toEqual({ ok: false, reason: "auto_wallclock_out_of_bounds" });
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("rejects an auto_wallclock actual above the upper bound and does not write", () => {
+    mockReadFileSync.mockReturnValue("");
+    const result = recordActualDetailed("est-1", 20, undefined, undefined, "auto_wallclock");
+    expect(result).toEqual({ ok: false, reason: "auto_wallclock_out_of_bounds" });
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("rejects an in-bounds auto_wallclock actual whose ratio to the matched estimate is unit-suspect", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 0.5 } }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 10, undefined, undefined, "auto_wallclock"); // 10 / 0.5 = 20x
+    expect(result).toEqual({ ok: false, reason: "auto_wallclock_out_of_bounds" });
+    expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the auto_wallclock gate to actuals without that provenance (existing behavior preserved)", () => {
+    mockReadFileSync.mockReturnValue("");
+    const result = recordActualDetailed("est-1", 20); // would fail the auto_wallclock bounds, but no provenance was given
+    expect(result).toEqual({ ok: true });
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
   });
 });

@@ -74,6 +74,7 @@ export const EXPECTED_CLI_COMMAND_PATHS = [
 	"feedback-health",
 	"cocomo-ground-truth",
 	"estimate-from-context",
+	"auto-actuals",
 	"self-improve",
 	"telemetry",
 	"telemetry status",

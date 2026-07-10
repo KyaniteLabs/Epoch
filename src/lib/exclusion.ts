@@ -26,7 +26,8 @@ export type ExclusionReason =
   | "backfill_signature"
   | "ratio_outlier"
   | "below_calibration_threshold"
-  | "ttl_expired";
+  | "ttl_expired"
+  | "auto_wallclock_sanity_gate";
 
 export interface ExclusionVerdict {
   excluded: boolean;
@@ -106,6 +107,43 @@ export const EXACT_MATCH_EPSILON = 0.005;
 /** UTC calendar-date signature of the known exact-match backfill batch (audit finding). */
 export const BACKFILL_SIGNATURE_DATE = "2026-05-05";
 
+/**
+ * Sanity-gate bounds for `auto_wallclock` actuals (Wave 2 auto-actuals
+ * feature). Wall-clock-derived actuals are an honest proxy for session
+ * duration, not verified focused effort — they're included in correction
+ * training by default, but only within a narrow, dedicated band. Below the
+ * minimum, wall-clock noise (a session that "ended" seconds after the
+ * estimate) dominates; above the maximum, the actual likely spans idle time
+ * (breaks, multi-day sessions) rather than work on the estimated task.
+ */
+export const AUTO_WALLCLOCK_MIN_HOURS = 0.05;
+export const AUTO_WALLCLOCK_MAX_HOURS = 12;
+/**
+ * Ratio threshold (either direction) between an auto_wallclock actual and
+ * its matched estimate above which the pair is excluded as unit-suspect —
+ * mirrors feedback.ts's UNIT_SUSPECT_RATIO. Kept here (not imported from
+ * feedback.ts, which itself imports from this module) so isExcluded() and
+ * feedback.ts's write-time guard share one constant without a cycle.
+ */
+export const AUTO_WALLCLOCK_RATIO_LIMIT = 10;
+
+/**
+ * True when an `auto_wallclock` actual passes the dedicated sanity gate:
+ * within [AUTO_WALLCLOCK_MIN_HOURS, AUTO_WALLCLOCK_MAX_HOURS], and — when a
+ * matched estimate's hours are known — the ratio between actual and
+ * estimated hours (either direction) is below AUTO_WALLCLOCK_RATIO_LIMIT.
+ * Single source of truth reused by the auto-actuals CLI's pre-filter,
+ * feedback.ts's write-time guard, and isExcluded()'s calibration-math gate.
+ */
+export function isAutoWallclockSane(actualHours: number, estimatedHours?: number | null): boolean {
+  if (actualHours < AUTO_WALLCLOCK_MIN_HOURS || actualHours > AUTO_WALLCLOCK_MAX_HOURS) return false;
+  if (estimatedHours != null && estimatedHours > 0) {
+    const ratio = Math.max(actualHours / estimatedHours, estimatedHours / actualHours);
+    if (ratio >= AUTO_WALLCLOCK_RATIO_LIMIT) return false;
+  }
+  return true;
+}
+
 const VALID_PROVENANCE = new Set([
   "prospective",
   "backfilled_real_session",
@@ -113,6 +151,7 @@ const VALID_PROVENANCE = new Set([
   "synthetic",
   "smoke",
   "unknown",
+  "auto_wallclock",
 ]);
 const VALID_USAGE = new Set(["correction", "baseline", "exclude"]);
 
@@ -204,6 +243,10 @@ export function isExcluded(record: ExclusionRecord, now: Date = new Date()): Exc
 
   if (actual.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS) {
     return { excluded: true, reason: "below_calibration_threshold" };
+  }
+
+  if (explicitProvenance === "auto_wallclock" && !isAutoWallclockSane(actual.actualHours, record.estimatedHours)) {
+    return { excluded: true, reason: "auto_wallclock_sanity_gate" };
   }
 
   if (hasSeedNotes(actual.notes)) return { excluded: true, reason: "seed_notes" };

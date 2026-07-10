@@ -205,6 +205,7 @@ describe("CLI tests", () => {
 			"cocomo-ground-truth",
 			"estimate-from-context",
 			"list-tools",
+			"auto-actuals",
 			"self-improve",
 			"telemetry",
 			"share-data",
@@ -237,6 +238,17 @@ describe("CLI tests", () => {
 			expect(tzOption).toBeDefined();
 			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 			expect(tzOption!.defaultValue).toBe("UTC");
+		});
+
+		it("auto-actuals has required --session and optional --dry-run", () => {
+			const program = createCliProgram();
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			const cmd = program.commands.find((c) => c.name() === "auto-actuals")!;
+			const requiredFlags = cmd.options.filter((o) => o.required).map((o) => o.long);
+			expect(requiredFlags).toContain("--session");
+			const dryRunOption = cmd.options.find((o) => o.long === "--dry-run");
+			expect(dryRunOption).toBeDefined();
+			expect(dryRunOption?.required).toBe(false);
 		});
 
 		it("convert-timezone has required --timestamp and --target-tz", () => {

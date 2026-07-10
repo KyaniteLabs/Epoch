@@ -128,9 +128,10 @@ export const calibrationProvenanceEnum = z
     "synthetic",
     "smoke",
     "unknown",
+    "auto_wallclock",
   ])
   .describe(
-    "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math)."
+    "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math). auto_wallclock marks a wall-clock-derived actual auto-recorded at session end (never focused-effort-verified) — included in correction training by default but subject to a dedicated sanity gate and segmented separately in feedback_health."
   );
 
 // ---- Branded helpers ------------------------------------------------------

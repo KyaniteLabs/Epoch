@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { isExcluded, isSyntheticId, SYNTHETIC_ID_PREFIXES, MIN_RATIO, MINIMUM_CALIBRATION_ACTUAL_HOURS, BACKFILL_SIGNATURE_DATE, type ExclusionRecord } from "./exclusion.js";
+import {
+  isExcluded,
+  isSyntheticId,
+  isAutoWallclockSane,
+  SYNTHETIC_ID_PREFIXES,
+  MIN_RATIO,
+  MINIMUM_CALIBRATION_ACTUAL_HOURS,
+  BACKFILL_SIGNATURE_DATE,
+  AUTO_WALLCLOCK_MIN_HOURS,
+  AUTO_WALLCLOCK_MAX_HOURS,
+  AUTO_WALLCLOCK_RATIO_LIMIT,
+  type ExclusionRecord,
+} from "./exclusion.js";
 
 function baseRecord(overrides: Partial<ExclusionRecord> = {}): ExclusionRecord {
   return {
@@ -234,6 +246,88 @@ describe("isExcluded — ratio outlier", () => {
   it("skips the ratio check when estimatedHours is unknown", () => {
     const verdict = isExcluded(baseRecord({ estimatedHours: null, actual: { actualHours: 0.001 + MINIMUM_CALIBRATION_ACTUAL_HOURS, reportedAt: "2026-01-10T00:00:00Z" } }));
     expect(verdict.excluded).toBe(false);
+  });
+});
+
+describe("isAutoWallclockSane", () => {
+  it("is sane at the lower bound", () => {
+    expect(isAutoWallclockSane(AUTO_WALLCLOCK_MIN_HOURS)).toBe(true);
+  });
+
+  it("is not sane below the lower bound", () => {
+    expect(isAutoWallclockSane(AUTO_WALLCLOCK_MIN_HOURS - 0.001)).toBe(false);
+  });
+
+  it("is sane at the upper bound", () => {
+    expect(isAutoWallclockSane(AUTO_WALLCLOCK_MAX_HOURS)).toBe(true);
+  });
+
+  it("is not sane above the upper bound", () => {
+    expect(isAutoWallclockSane(AUTO_WALLCLOCK_MAX_HOURS + 0.001)).toBe(false);
+  });
+
+  it("is sane with no matched estimate (ratio check skipped)", () => {
+    expect(isAutoWallclockSane(3, null)).toBe(true);
+    expect(isAutoWallclockSane(3, undefined)).toBe(true);
+  });
+
+  it("is not sane when the ratio to the matched estimate meets or exceeds AUTO_WALLCLOCK_RATIO_LIMIT", () => {
+    expect(isAutoWallclockSane(1, AUTO_WALLCLOCK_RATIO_LIMIT)).toBe(false);
+    expect(isAutoWallclockSane(AUTO_WALLCLOCK_RATIO_LIMIT, 1)).toBe(false);
+  });
+
+  it("is sane when the ratio to the matched estimate is just below AUTO_WALLCLOCK_RATIO_LIMIT", () => {
+    expect(isAutoWallclockSane(1, AUTO_WALLCLOCK_RATIO_LIMIT - 0.01)).toBe(true);
+  });
+});
+
+describe("isExcluded — auto_wallclock sanity gate", () => {
+  it("does not exclude an in-bounds auto_wallclock actual", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "auto_wallclock" },
+      estimatedHours: 10,
+      actual: { actualHours: 8, reportedAt: "2026-06-02T10:00:00.000Z" },
+    }));
+    expect(verdict).toEqual({ excluded: false });
+  });
+
+  it("excludes an auto_wallclock actual below AUTO_WALLCLOCK_MIN_HOURS", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "auto_wallclock" },
+      estimatedHours: 10,
+      actual: { actualHours: AUTO_WALLCLOCK_MIN_HOURS / 2, reportedAt: "2026-06-02T10:00:00.000Z" },
+    }));
+    expect(verdict).toEqual({ excluded: true, reason: "auto_wallclock_sanity_gate" });
+  });
+
+  it("excludes an auto_wallclock actual above AUTO_WALLCLOCK_MAX_HOURS", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "auto_wallclock" },
+      estimatedHours: 10,
+      actual: { actualHours: AUTO_WALLCLOCK_MAX_HOURS * 2, reportedAt: "2026-06-02T10:00:00.000Z" },
+    }));
+    expect(verdict).toEqual({ excluded: true, reason: "auto_wallclock_sanity_gate" });
+  });
+
+  it("excludes an in-bounds auto_wallclock actual whose ratio to the estimate is unit-suspect", () => {
+    // actualHours=10 is within [0.05h, 12h] on its own, but a 0.5h estimate
+    // makes the ratio 20x — the ratio gate must fire even though the
+    // absolute-hours bounds gate would have passed.
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "auto_wallclock" },
+      estimatedHours: 0.5,
+      actual: { actualHours: 10, reportedAt: "2026-06-02T10:00:00.000Z" },
+    }));
+    expect(verdict).toEqual({ excluded: true, reason: "auto_wallclock_sanity_gate" });
+  });
+
+  it("does not apply the auto_wallclock gate to non-auto_wallclock provenance", () => {
+    // Same out-of-bounds hours, but no auto_wallclock provenance — general ratio_outlier/below-threshold rules apply instead.
+    const verdict = isExcluded(baseRecord({
+      estimatedHours: 10,
+      actual: { actualHours: AUTO_WALLCLOCK_MAX_HOURS * 2, reportedAt: "2026-06-02T10:00:00.000Z" },
+    }));
+    expect(verdict.reason).not.toBe("auto_wallclock_sanity_gate");
   });
 });
 

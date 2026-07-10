@@ -195,7 +195,8 @@ export interface HistoricalRecord {
     | "backfilled_calibration"
     | "synthetic"
     | "smoke"
-    | "unknown";
+    | "unknown"
+    | "auto_wallclock";
   readonly calibrationUsage?: "correction" | "baseline" | "exclude";
 }
 
