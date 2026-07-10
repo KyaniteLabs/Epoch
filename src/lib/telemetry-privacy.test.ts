@@ -25,7 +25,6 @@ const PINNED_RECORD_FIELDS = [
 	"actual_hours",
 	"ratio",
 	"date",
-	"completed_at",
 ].sort();
 
 const PINNED_PAYLOAD_FIELDS_V1 = [
@@ -55,9 +54,11 @@ afterEach(() => {
 });
 
 describe("telemetry privacy field allowlist (pinned)", () => {
-	it("AnonymizedRecord exposes exactly the pinned field set — no more, no less", async () => {
+	it("transmitted (wire) records expose exactly the pinned field set — no more, no less", async () => {
 		const { recordEstimate, recordActual } = await import("./feedback.js");
-		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		const { extractAnonymizedRecords, buildPayload } = await import(
+			"./telemetry-submit.js"
+		);
 
 		const estimateId = recordEstimate(
 			"pert_estimate",
@@ -66,8 +67,11 @@ describe("telemetry privacy field allowlist (pinned)", () => {
 		);
 		recordActual(estimateId, 3);
 
-		const [record] = extractAnonymizedRecords();
-		expect(record).toBeDefined();
+		const extracted = extractAnonymizedRecords();
+		expect(extracted[0]).toBeDefined();
+		// The internal record intentionally carries completed_at as the local
+		// submission cursor; the wire pin below is what privacy guarantees.
+		const [record] = buildPayload(extracted).records;
 		expect(Object.keys(record as object).sort()).toEqual(PINNED_RECORD_FIELDS);
 	});
 
@@ -143,6 +147,32 @@ describe("telemetry privacy field allowlist (pinned)", () => {
 				false,
 			);
 			expect(result.status).toBe(400);
+		}
+	});
+});
+
+describe("time-of-day never leaves the machine (PRIVACY.md promise)", () => {
+	it("buildPayload strips completed_at from every transmitted record", async () => {
+		const { buildPayload } = await import("./telemetry-submit.js");
+		const payload = buildPayload([
+			{
+				task_type: "feature",
+				complexity: 3,
+				tool: "pert_estimate",
+				estimated_hours: 2,
+				actual_hours: 1.5,
+				ratio: 0.75,
+				date: "2026-07-10",
+				completed_at: "2026-07-10T13:37:42.123Z",
+			},
+		]);
+		for (const rec of payload.records) {
+			expect(Object.keys(rec)).not.toContain("completed_at");
+			for (const value of Object.values(rec)) {
+				if (typeof value === "string") {
+					expect(value).not.toMatch(/T\d{2}:\d{2}/);
+				}
+			}
 		}
 	});
 });
