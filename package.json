@@ -7,12 +7,12 @@
   "main": "dist/index.js",
   "packageManager": "pnpm@10.34.5",
   "bin": {
-    "epoch": "dist/native/epoch-rust-launcher.js"
+    "epoch": "dist/index.js"
   },
   "files": [
     "dist",
     "data",
-    "prebuilds"
+    "!dist/**/*.map"
   ],
   "exports": {
     ".": {
@@ -40,26 +40,7 @@
     "canary": "node canary-runner.mjs",
     "dataset:build": "tsx scripts/export-public-benchmark.mjs",
     "dataset:verify": "tsx scripts/validate-public-benchmark.mjs",
-    "contract:inventory": "tsx src/contract/export-public-surface.ts",
-    "contract:rust-readiness": "tsx src/contract/rust-deploy-readiness-cli.ts",
-    "benchmark:rust-promotion": "tsx src/benchmarks/rust-promotion.ts",
-    "benchmark:rust-promotion:smoke": "tsx src/benchmarks/rust-promotion.ts --smoke",
-    "rust:build:release": "cargo build --release --manifest-path rust/Cargo.toml -p epoch-cli -p epoch-mcp -p epoch-http -p xtask",
-    "rust:check": "cargo test --manifest-path rust/Cargo.toml --workspace && cargo run --manifest-path rust/Cargo.toml -p xtask -- check",
-    "rust:stage-prebuilds": "node scripts/stage-rust-prebuilds.mjs",
-    "promotion:rust-parity": "tsx src/contract/rust-parity-cli.ts --report-only",
-    "promotion:rust-parity:gate": "tsx src/contract/rust-parity-cli.ts",
-    "promotion:rust-adversarial": "tsx scripts/rust-adversarial-contract.ts",
-    "promotion:rust-shadow-soak": "tsx scripts/rust-shadow-soak.ts",
-    "promotion:rust-rollback": "tsx scripts/rust-rollback-rehearsal.ts",
-    "promotion:rust-packet": "tsx scripts/rust-promotion-packet.ts",
-    "promotion:rust-soak-ledger": "tsx scripts/rust-soak-ledger.ts",
-    "promotion:rust-soak-runner": "tsx scripts/rust-soak-runner.ts",
-    "promotion:rust-soak-status": "tsx src/contract/rust-soak-status.ts",
-    "promotion:rust-gate": "tsx src/contract/rust-promotion-gate.ts",
-    "promotion:rust-scorecard": "tsx src/contract/rust-replacement-scorecard.ts",
-    "promotion:rust-e2e": "cargo build --release --manifest-path rust/Cargo.toml -p epoch-cli -p epoch-mcp -p epoch-http -p xtask && cargo run --release --manifest-path rust/Cargo.toml -p xtask -- e2e",
-    "verify:rust-milestone0": "pnpm run contract:inventory && pnpm run typecheck && pnpm test && pnpm run rust:check"
+    "contract:inventory": "tsx src/contract/export-public-surface.ts"
   },
   "keywords": [
     "mcp",

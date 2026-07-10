@@ -32,11 +32,6 @@ jobs:
           node-version: "24"
           cache: pnpm
 
-      - name: Set up Rust
-        run: |
-          rustup toolchain install 1.93.1 --profile minimal
-          rustup default 1.93.1
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -51,12 +46,6 @@ jobs:
 
       - name: Build
         run: pnpm run build
-
-      - name: Rust release E2E
-        run: pnpm run promotion:rust-e2e
-
-      - name: Stage Rust npm prebuilds
-        run: pnpm run rust:stage-prebuilds
 
       - name: Verify npm package surface
         run: npm pack --dry-run

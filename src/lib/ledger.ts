@@ -148,7 +148,7 @@ export interface MergedOverlayFlags {
 /**
  * Merge conflict resolution: for a given estimate id, apply overlay records
  * last-write-wins by `recordedAt`, tiebreak on equal timestamps = higher
- * monotonic `seq`. Deterministic and Rust-replicable (§5 row 10).
+ * monotonic `seq`. Deterministic (§5 row 10).
  */
 function resolveOverlayConflicts(records: OverlayRecord[]): Map<string, OverlayRecord[]> {
   const byId = new Map<string, OverlayRecord[]>();
