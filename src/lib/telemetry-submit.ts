@@ -27,15 +27,24 @@ export interface AnonymizedRecord {
 	actual_hours: number;
 	ratio: number;
 	date: string;
+	/**
+	 * Full-precision local timestamp used ONLY as the submission cursor.
+	 * NEVER transmitted: buildPayload() strips it so no time-of-day leaves
+	 * the machine (the wire carries date-only `date`), keeping the
+	 * PRIVACY.md/TELEMETRY.md "no time-of-day" promise.
+	 */
 	completed_at: string;
 }
+
+/** The record shape actually transmitted — completed_at is stripped. */
+export type WireAnonymizedRecord = Omit<AnonymizedRecord, "completed_at">;
 
 /** schema_version 1 payload — still accepted by all receivers. */
 export interface SubmissionPayloadV1 {
 	schema_version: 1;
 	installation_id: string;
 	epoch_version: string;
-	records: AnonymizedRecord[];
+	records: WireAnonymizedRecord[];
 	generated_at: string;
 }
 
@@ -49,7 +58,7 @@ export interface SubmissionPayloadV2 {
 	schema_version: 2;
 	installation_id: string;
 	epoch_version: string;
-	records: AnonymizedRecord[];
+	records: WireAnonymizedRecord[];
 	generated_at: string;
 	client_name: string | null;
 	client_version: string | null;
@@ -108,12 +117,15 @@ export function extractAnonymizedRecords(
 }
 
 export function buildPayload(records: AnonymizedRecord[]): SubmissionPayload {
+	const wireRecords: WireAnonymizedRecord[] = records.map(
+		({ completed_at: _localCursorOnly, ...wire }) => wire,
+	);
 	const clientInfo = getMcpClientInfo();
 	return {
 		schema_version: 2,
 		installation_id: getInstallationId(),
 		epoch_version: getVersion(),
-		records,
+		records: wireRecords,
 		generated_at: new Date().toISOString(),
 		client_name: clientInfo.name,
 		client_version: clientInfo.version,
