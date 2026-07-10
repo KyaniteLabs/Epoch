@@ -496,24 +496,17 @@ export interface DashboardData {
 /**
  * Honest, evidence-based caveats about what this dataset does and does not
  * reflect — surfaced explicitly rather than silently glossed over (this is a
- * decision surface, not a chart dump). Verified by direct inspection: on the
- * live corpus every overlay-flagged quarantine row is ALSO independently
- * caught by isExcluded()'s exact-match + 2026-05-05 date-signature check
- * (that is precisely the rule scripts/quarantine-backfill-2026-05-05.mjs
- * flags against), so Sections 1-3 (sourced from feedback.ts's
- * getFeedbackHealthReport()/getCalibrationData(), which read the ledger
- * directly and never merge the overlay sidecars) currently agree with
- * Section 6's loadLedgerWithOverlays()-based counts in practice — but a
- * quarantine/orphan flag written WITHOUT a matching backfill signature (e.g.
- * a future manual override) would show up in Section 6 without being
- * excluded from Sections 1-3's matched-pair math, because feedback.ts's
- * matchEstimatesToActuals() does not call loadLedgerWithOverlays(). Out of
- * Phase 6 scope to fix (no lib-internals edits) — recorded here so the
- * decision-maker isn't misled by an unstated assumption.
+ * decision surface, not a chart dump). Empty on the current codebase: the
+ * gap previously recorded here (Sections 1-3's matcher not merging the
+ * overlay sidecars) was closed by routing feedback.ts's
+ * matchEstimatesToActuals() through ledger.ts's loadLedgerWithOverlays()-
+ * sourced overlay-flags map (see dashboard-data.test.ts's former
+ * "documents the known gap" test, now "closes the known gap"). Sections 1-3
+ * and Section 6 now agree on manual quarantine/orphan flags in every case,
+ * not just the ones that also happen to match the 2026-05-05 backfill
+ * signature.
  */
-const KNOWN_LIMITATIONS: readonly string[] = [
-  "Sections 1-3 (headline, per-tool, per-task-type) are computed via feedback.ts's getFeedbackHealthReport()/getCalibrationData(), which read the ledger directly and apply isExcluded() WITHOUT merging the estimates.flags.jsonl/estimates.labels.jsonl overlay sidecars. Section 6's quarantine/label/orphan counts, and the Section 4 PERT backtest, are computed via ledger.ts's loadLedgerWithOverlays() and DO merge them. On the current live corpus every quarantine overlay flag is also independently caught by isExcluded()'s exact-match + 2026-05-05 date-signature rule, so the two paths agree in practice today — but a quarantine/orphan flag written without a matching backfill signature (e.g. a future manual override) would be visible in Section 6 without being excluded from Sections 1-3's matched-pair math. This is a real gap in the current codebase, not a dashboard bug; fixing it means wiring feedback.ts's matcher through loadLedgerWithOverlays(), which is a lib-internals change out of Phase 6's surgical scope.",
-];
+const KNOWN_LIMITATIONS: readonly string[] = [];
 
 /**
  * Compute the full calibration-dashboard dataset. STRICTLY read-only —

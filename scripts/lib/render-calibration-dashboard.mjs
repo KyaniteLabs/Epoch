@@ -287,7 +287,7 @@ function renderIntegritySection(data) {
   const i = data.integrity;
   return `
     <section aria-labelledby="section-6" class="panel">
-      ${sectionHeader(6, "Data-integrity audit", "Quarantine, orphans, and labels are visible here via the shared overlay-merge loader — see the known-limitations note for how this differs from Sections 1-3.")}
+      ${sectionHeader(6, "Data-integrity audit", "Quarantine, orphans, and labels are visible here via the shared overlay-merge loader — Sections 1-3 now merge the same overlay flags, so these counts agree.")}
       <div class="stat-grid">
         ${renderStatTile("Quarantined", fmtInt(i.quarantine.count), `${esc(i.quarantine.backfillSignatureDate)} exact-match backfill signature, overlay flag`)}
         ${renderStatTile("Retro-labeled", fmtInt(i.labels.count), "task_label overlay records")}

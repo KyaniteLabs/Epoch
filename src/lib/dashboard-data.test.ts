@@ -196,16 +196,15 @@ describe("computeDashboardData", () => {
     expect(data.integrity.taskTypeOverlay.count).toBe(1);
   });
 
-  it("documents the known gap: a manual-only quarantine flag (no backfill date signature) is NOT honored by Sections 1-3's matched-pair math", () => {
-    // This is a regression guard for a real, currently-live limitation of the
-    // codebase (see KNOWN_LIMITATIONS in dashboard-data.ts): feedback.ts's
-    // matchEstimatesToActuals() reads the ledger directly and never calls
-    // loadLedgerWithOverlays(), so it never sees the overlay-only quarantine
-    // flag below (dated outside the 2026-05-05 backfill signature window, so
-    // isExcluded()'s own date+ratio check doesn't independently catch it
-    // either). If this test starts failing (i.e. matchedPairs drops to 1),
-    // that gap has been closed upstream — update KNOWN_LIMITATIONS and this
-    // test together rather than treating the new failure as a regression.
+  it("closes the known gap: a manual-only quarantine flag (no backfill date signature) IS now honored by Sections 1-3's matched-pair math", () => {
+    // Regression guard proving the overlay-merge gap is closed: feedback.ts's
+    // matchEstimatesToActuals() now routes through ledger.ts's
+    // loadLedgerWithOverlays()-sourced overlay-flags map, so an overlay-only
+    // quarantine flag (dated outside the 2026-05-05 backfill signature
+    // window, so isExcluded()'s own date+ratio check would NOT independently
+    // catch it) is still excluded from matched-pair math. If this test starts
+    // failing (i.e. matchedPairs goes back up to 2), the gap has reopened —
+    // treat that as a regression, not an intentional change.
     writeLedgerFixture({
       estimates: [
         { id: "e1", tool: "pert_estimate", taskType: "feature", outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-01T00:00:00.000Z" },
@@ -221,9 +220,8 @@ describe("computeDashboardData", () => {
     const data = computeDashboardData();
 
     expect(data.integrity.quarantine.count).toBe(1); // Section 6 sees the flag...
-    expect(data.headline.matchedPairs).toBe(2); // ...but Sections 1-3 still count e1 as a matched pair.
-    expect(data.knownLimitations.length).toBeGreaterThan(0);
-    expect(data.knownLimitations[0]).toContain("loadLedgerWithOverlays()");
+    expect(data.headline.matchedPairs).toBe(1); // ...and Sections 1-3 now exclude e1 too — only e2 remains matched.
+    expect(data.knownLimitations).toEqual([]);
   });
 
   it("reports the PERT learned-correction flag state and dedup config from env", () => {

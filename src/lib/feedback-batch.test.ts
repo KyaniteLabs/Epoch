@@ -32,9 +32,13 @@ describe("batchRecordActuals", () => {
   const ts = Date.now();
   it("records all entries successfully", () => {
     const result = batchRecordActuals([
-      { estimateId: `fb-batch-001-${ts}`, actualHours: 4.0, notes: "Quick fix" },
-      { estimateId: `fb-batch-002-${ts}`, actualHours: 12.5, notes: "Took longer" },
-      { estimateId: `fb-batch-003-${ts}`, actualHours: 8.0 },
+      // "fixture-batch-" (not "fb-batch-"): exclusion.ts's SYNTHETIC_ID_PREFIXES
+      // now includes "fb-batch-" (verified 2026-07-10 live-ledger leakage
+      // prefix — see src/lib/migrations/flag-test-fixture-rows.ts), so this
+      // positive-case fixture id must not collide with it.
+      { estimateId: `fixture-batch-001-${ts}`, actualHours: 4.0, notes: "Quick fix" },
+      { estimateId: `fixture-batch-002-${ts}`, actualHours: 12.5, notes: "Took longer" },
+      { estimateId: `fixture-batch-003-${ts}`, actualHours: 8.0 },
     ]);
     expect(result.total).toBe(3);
     expect(result.succeeded).toBe(3);
@@ -44,7 +48,7 @@ describe("batchRecordActuals", () => {
 
   it("handles single entry", () => {
     const result = batchRecordActuals([
-      { estimateId: `fb-single-001-${ts}`, actualHours: 6.0 },
+      { estimateId: `fixture-single-001-${ts}`, actualHours: 6.0 },
     ]);
     expect(result.total).toBe(1);
     expect(result.succeeded).toBe(1);
@@ -52,7 +56,7 @@ describe("batchRecordActuals", () => {
 
   it("respects max 500 entries (caller responsibility)", () => {
     const entries = Array.from({ length: 3 }, (_, i) => ({
-      estimateId: `fb-max-${i}-${ts}`,
+      estimateId: `fixture-max-${i}-${ts}`,
       actualHours: i + 1,
     }));
     const result = batchRecordActuals(entries);
