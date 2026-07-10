@@ -618,10 +618,10 @@ export type RecordActualInput = z.infer<typeof recordActualSchema>;
 
 // ---- Tool: estimateFromContext (Phase 3 registration; logic lands Phase 5) -
 //
-// Registered now so its contract lands before the Rust parity freeze; the
-// handler currently returns a structured "not implemented yet" response.
-// See .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md §3 Phase 3
-// Task 4 and Phase 5.
+// Registered now so its contract is stable ahead of the Phase 5 handler
+// landing; the handler currently returns a structured "not implemented yet"
+// response. See .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
+// §3 Phase 3 Task 4 and Phase 5.
 
 export const estimateFromContextSchema = z.object({
   context: z

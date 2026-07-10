@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Rust port and launcher.** The `rust/` workspace (epoch-cli/epoch-mcp/epoch-http/xtask), the release-time prebuild staging (`prebuilds/`), the `dist/native/epoch-rust-launcher.js` bin shim, and all Rust parity/soak/promotion-gate/scorecard contract tooling under `src/contract/`, `src/benchmarks/`, and `scripts/` have been removed. The Rust replacement effort was cancelled before promotion; the npm `epoch` bin now points directly at the TypeScript CLI bundle (`dist/index.js`), which already implements the same CLI/MCP-stdio/HTTP argument dispatch the launcher forwarded to in its TS-fallback path. CLI commands, MCP stdio mode, HTTP mode, and `epoch telemetry *` are unaffected — this is an internal implementation change, not a behavior change.
+- **Breaking (internal/experimental only)**: `EPOCH_RUST_BIN_DIR` and other `EPOCH_RUST_*` environment variables are no longer honored — they only ever affected the (now-removed) Rust binary resolution path and were not documented as part of the stable public interface.
+- The `rust:*`, `promotion:rust-*`, `contract:rust-readiness`, `benchmark:rust-promotion*`, and `verify:rust-milestone0` npm scripts (19 total) — their target files no longer exist.
+- The unreferenced Rust-based `Dockerfile` (its sole purpose was booting the now-deleted `epoch-mcp` Rust binary; nothing in CI built or published it).
+- Two previously flaky Rust-promotion test suites (`rust-replacement-scorecard.test.ts`, `rust-soak-ledger-cli.test.ts`) are gone along with the code they tested.
+
 ## [0.3.0] - 2026-07-10
 
 ### Added (Phase 3 contract wave — additive, non-breaking)
