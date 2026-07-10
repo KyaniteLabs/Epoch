@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Migration notes
 - If you snapshot or diff `feedback_health` / `accuracy_trend` output for monitoring, treat this release as a hard reset of the historical series for `totalEstimates`, `matchRate`, `readyTypes`, `dataCompletenessScore`, and any `recommendation`/`humanReadable` text you parse — recompute baselines after upgrading rather than comparing against pre-upgrade values.
 - `tool-calls.jsonl` is additive (new file under `~/.epoch/`, or `$EPOCH_DATA_DIR`); no migration of existing data is required, but any external tooling that reads `estimates.jsonl` directly should be updated to expect fewer, purely-estimation rows going forward.
->>>>>>> origin/main
 
 ## [0.2.9] - 2026-06-29
 
