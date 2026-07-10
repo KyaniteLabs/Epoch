@@ -24,6 +24,9 @@ Epoch gives AI agents 24 structured tools for grounded time estimation, calendar
 ## Agent skill
 Invoke `$epoch` in compatible agent hosts when the user needs grounded duration estimates, calendar math, token/model cost comparison, deadline risk, or actuals recording. The skill tells the agent when to use the MCP server, the CLI, or the feedback loop.
 
+## Telemetry (opt-in, agent-aware)
+Epoch can contribute anonymized estimate/actual pairs (7 fields, no code, no paths, no prompts, date-only) to a community calibration dataset at `https://telemetry.kyanitelabs.tech/v1/telemetry`. It is OFF by default. Humans opt in with `epoch telemetry enable`; agent/headless operators opt in by setting `EPOCH_TELEMETRY=1` in the server environment (e.g. the `env` block of the MCP server config). There is deliberately NO MCP tool to enable telemetry — an agent must not self-consent; consent belongs to the operator. `epoch telemetry preview` shows the exact payload before anything is sent. Schema v2 records the client runtime (client_name/client_version/transport) so agent usage is counted as first-class. Full policy: `docs/TELEMETRY.md`, `docs/PRIVACY.md`.
+
 ## MCP Registry
 
 Epoch is listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch) as `io.github.KyaniteLabs/Epoch`. Registry metadata is in `server.json` at the repo root.
