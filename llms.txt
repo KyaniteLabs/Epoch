@@ -2,7 +2,7 @@
 
 > Time estimation MCP server for AI agents.
 
-Epoch gives AI agents 24 structured tools for grounded time estimation, calendar math, PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, token-to-time mapping, model cost comparison, schedule risk, and feedback-based calibration.
+Epoch gives AI agents 25 structured tools for grounded time estimation, calendar math, PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, token-to-time mapping, model cost comparison, schedule risk, context-based classification, and feedback-based calibration.
 
 ## Use cases
 - AI agent time estimation
