@@ -100,12 +100,40 @@ describe("pert_estimate handler — learned correction (feature-flagged)", () =>
     expect((data["developerProfile"] as { correctionFactor: number }).correctionFactor).toBe(profile.correctionFactor);
   });
 
-  it("flag off: output is byte-identical whether or not matching learned data exists", () => {
+  it("flag off: correction-related output is byte-identical whether or not matching learned data exists", () => {
+    // Scoped to the learned-correction-flag-gated fields only. `interval`/
+    // `humanReadable`/`intervalNote` are intentionally NOT flag-gated (Task 2,
+    // interval-first output wiring): they read the same exclusion-filtered
+    // ledger via coverage.ts's empiricalRatioQuantilesForTaskType() regardless
+    // of EPOCH_PERT_LEARNED_CORRECTION, so they legitimately differ once >=5
+    // matched pairs exist for the task_type — that's covered separately below.
     const withoutData = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
     seedMatchedPairs("bugfix", 5, 10, 50);
     const withData = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
 
-    expect(withData).toEqual(withoutData);
+    const omitIntervalFields = (data: Record<string, unknown>): Record<string, unknown> => {
+      const rest = { ...data };
+      delete rest["interval"];
+      delete rest["intervalNote"];
+      delete rest["humanReadable"];
+      return rest;
+    };
+    expect(omitIntervalFields(withData)).toEqual(omitIntervalFields(withoutData));
+  });
+
+  it("interval/humanReadable react to matched historical data independent of the learned-correction flag", () => {
+    // With no matching data (n=0 < MIN_N_FOR_QUANTILES): falls back to the
+    // PERT-variance interval and says so.
+    const withoutData = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
+    expect((withoutData["interval"] as { source: string }).source).toBe("pert_variance");
+    expect(withoutData["intervalNote"]).toContain("Fewer than 5");
+
+    // With >=5 matched pairs (n=5): empirical ratio quantiles are used instead,
+    // even though EPOCH_PERT_LEARNED_CORRECTION is off.
+    seedMatchedPairs("bugfix", 5, 10, 50);
+    const withData = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
+    expect((withData["interval"] as { source: string }).source).toBe("empirical_ratio_quantile");
+    expect(withData["intervalNote"]).toBeUndefined();
   });
 
   it("flag on + n >= MIN_RECORDS_PER_FACTOR: adjustedEstimate uses the learned factor, not multiplied with the profile factor", () => {

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `pert_estimate` and `reference_class_estimate` now lead their `humanReadable` output with a calibrated P80 interval (per-task-type empirical ratio quantiles when >=5 matched pairs exist, else a PERT-variance fallback for `pert_estimate` — both cases say which source was used) before the point estimate, and expose it additively as a new `interval` output field (plus `intervalNote` when a fallback/insufficient-data note applies); `computeToolTaskCorrectionFactors` (`src/lib/calibration-factors.ts`) gained an optional recency-weighting parameter (exponential decay / hard rolling window) for the `(pert_estimate, task_type)` learned correction factor, but the live backtest (`scripts/backtest-pert-correction.mjs`) found no tested scheme that robustly beat the unweighted baseline, so the default stays unweighted — `EPOCH_PERT_LEARNED_CORRECTION` remains off by default either way.
+
 ## [0.3.1] - 2026-07-10
 
 ### Removed
