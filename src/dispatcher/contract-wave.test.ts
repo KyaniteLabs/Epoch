@@ -12,7 +12,10 @@
 //   4. record_actual's unit + calibration_provenance wire through to the
 //      persisted actual record (unit normalizes actual_hours; provenance is
 //      readable by the shared exclusion predicate via classifyCalibrationRecord).
-//   5. estimate_from_context returns the documented not-implemented shape.
+//   5. estimate_from_context delegates to reference-class estimation with
+//      classification provenance (Phase 5 logic landed on the Phase 3
+//      contract) — see src/lib/context-estimate.test.ts for the classifier's
+//      own unit tests.
 //
 // Plan reference: .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
 // §3 Phase 3.
@@ -188,22 +191,54 @@ describe("record_actual — unit + calibration_provenance wiring (Phase 3 contra
 });
 
 // ---------------------------------------------------------------------------
-// 5. estimate_from_context (registered Phase 3; logic lands Phase 5)
+// 5. estimate_from_context — reference-class delegation (Phase 5 logic)
 // ---------------------------------------------------------------------------
 
-describe("estimate_from_context — registered stub (Phase 3 contract wave)", () => {
-  it("returns a structured not-implemented response", async () => {
+describe("estimate_from_context — reference-class delegation (Phase 5 logic; Phase 3 contract)", () => {
+  it("returns a classified estimate with provenance instead of the not-implemented stub", async () => {
     const data = await ok("estimate_from_context", { context: "Fix a null pointer exception in the login flow." });
-    expect(data["implemented"]).toBe(false);
-    expect(data["plannedPhase"]).toBe(5);
+
+    expect(data["implemented"]).toBeUndefined();
+    expect(data["plannedPhase"]).toBeUndefined();
     expect(data["tool"]).toBe("estimate_from_context");
-    expect(typeof data["message"]).toBe("string");
+    expect(typeof data["correctedEstimate"]).toBe("number");
+    expect(typeof data["rawEstimate"]).toBe("number");
+
+    const classification = data["classification"] as Record<string, unknown>;
+    expect(classification["classified_task_type"]).toBe("bugfix");
+    expect(classification["task_type_from_hint"]).toBe(false);
+    expect(classification["complexity_from_hint"]).toBe(false);
+    expect(Array.isArray(classification["signals"])).toBe(true);
   });
 
-  it("does not join the estimates ledger (non-estimation telemetry)", async () => {
-    await ok("estimate_from_context", { context: "Fix a null pointer exception in the login flow." });
-    expect(readJsonl("estimates.jsonl")).toHaveLength(0);
-    expect(readJsonl("tool-calls.jsonl")).toHaveLength(1);
+  it("caller-supplied hints override classification", async () => {
+    const data = await ok("estimate_from_context", {
+      context: "Fix a null pointer exception in the login flow.",
+      task_type: "documentation",
+      complexity: 1,
+    });
+
+    const classification = data["classification"] as Record<string, unknown>;
+    // The heuristic still classified it as bugfix internally...
+    expect(classification["classified_task_type"]).toBe("bugfix");
+    expect(classification["task_type_from_hint"]).toBe(true);
+    expect(classification["complexity_from_hint"]).toBe(true);
+    // ...but the hint won for the actual delegated estimate.
+    expect(data["scopeUsed"]).toBeDefined();
+  });
+
+  it("now joins the estimates ledger and produces a real, actual-pairable time estimate", async () => {
+    const data = await ok("estimate_from_context", { context: "Fix a null pointer exception in the login flow." });
+    expect(readJsonl("estimates.jsonl")).toHaveLength(1);
+    expect(readJsonl("tool-calls.jsonl")).toHaveLength(0);
+    expect(typeof data["feedbackRef"]).toBe("string");
+  });
+
+  it("low-confidence context is surfaced honestly rather than silently guessed", async () => {
+    const data = await ok("estimate_from_context", { context: "asdf qwer zxcv" });
+    const classification = data["classification"] as Record<string, unknown>;
+    expect(classification["confidence"]).toBe("low");
+    expect(typeof data["lowConfidenceNote"]).toBe("string");
   });
 
   it("rejects a missing context at the schema boundary", async () => {

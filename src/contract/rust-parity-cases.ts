@@ -410,6 +410,7 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     cliCommand: "compare-models",
     input: { tokens: 1200, sort_by: "cost" },
     expect: "ok",
+    note: "Phase 5: model list grew by 4 (claude-fable-5, claude-opus-4-8, claude-sonnet-5, claude-haiku-4-5) — the Rust reader's model catalog must add matching entries before this case can value-compare on a live Rust binary; see llmModelEnum's comment in src/schemas/index.ts for the pricing citation.",
   },
   {
     name: "compare_models/by-time",
@@ -459,6 +460,7 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     cliCommand: "feedback-health",
     input: {},
     expect: "ok",
+    note: "Phase 5: adds an additive `intervalCoverage` output key (P50/P80/P90 interval coverage calibration, src/lib/coverage.ts) — breaks sorted-key parity until the Rust reader adds a matching key.",
   },
   {
     name: "record_actual/missing-hours",
@@ -487,12 +489,12 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
 
   // ---- Context-driven estimation (registered Phase 3; logic lands Phase 5) -
   {
-    name: "estimate_from_context/not-implemented",
+    name: "estimate_from_context/bugfix-context",
     tool: "estimate_from_context",
     cliCommand: "estimate-from-context",
     input: { context: "Fix a null pointer exception in the login flow." },
     expect: "ok",
-    note: "Tool registration lands in Phase 3 (contract wave, before the Rust freeze); classification/delegation logic lands in Phase 5. Until the Rust CLI adds a matching stub, this case is expected to diverge on a live Rust binary — it is registered now so both runtimes converge on the same not-implemented contract once the Rust branch rebases onto main (see plan §3 Phase 3 merge order).",
+    note: "Tool registration landed in Phase 3 (contract wave, before the Rust freeze); classification (src/lib/context-estimate.ts, a local deterministic heuristic — no LLM call) and delegation to reference_class_estimate landed in Phase 5. This case now returns a real classified estimate + provenance instead of the earlier not-implemented stub. Until the Rust CLI implements the same heuristic and delegation path byte-identically, this case is expected to diverge on a live Rust binary — see plan §3 Phase 3 merge order for the rebase sequencing.",
   },
 
   // ---- Deferred behavioral parity: exclusion semantics (pendingRust) ------

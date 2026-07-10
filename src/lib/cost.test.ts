@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { tokenCostEstimate, compareModels } from "./cost.js";
+import { resetSupplementaryCache } from "./supplementary-data.js";
 import { defined } from "../test-support.js";
 
 
@@ -220,5 +224,94 @@ describe("compareModels", () => {
     });
     expect(["short", "medium", "long"]).toContain(result.urgency);
     expect(["likely", "optimistic", "pessimistic"]).toContain(result.confidence);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Claude 5 family / current-model catalog snapshot
+// ---------------------------------------------------------------------------
+//
+// Pricing is primary-source verified (see data/supplementary-database.json's
+// `sources.claudeModelPricingPhase5` and src/schemas/index.ts's llmModelEnum
+// comment for the citation). This snapshot pins the exact $/1M-token figures
+// so a future catalog refresh can't silently drift without updating the test.
+
+describe("Phase 5 catalog — Claude 5 family pricing", () => {
+  // Isolated from the developer's real ~/.epoch (or $EPOCH_DATA_DIR): a
+  // machine with a live, self-improving supplementary-database.json there
+  // would otherwise shadow the repo-bundled data/supplementary-database.json
+  // (loadSupplementaryData() checks $EPOCH_DATA_DIR first) and wouldn't yet
+  // contain these newly-added Phase 5 entries. Pointing EPOCH_DATA_DIR at an
+  // empty temp dir forces the fall-through to the repo's bundled file,
+  // matching CI (no ~/.epoch) deterministically.
+  let previousDataDir: string | undefined;
+  let tempDataDir: string;
+
+  beforeEach(() => {
+    previousDataDir = process.env["EPOCH_DATA_DIR"];
+    tempDataDir = mkdtempSync(join(tmpdir(), "epoch-cost-catalog-test-"));
+    process.env["EPOCH_DATA_DIR"] = tempDataDir;
+    resetSupplementaryCache();
+  });
+
+  afterEach(() => {
+    if (previousDataDir === undefined) {
+      delete process.env["EPOCH_DATA_DIR"];
+    } else {
+      process.env["EPOCH_DATA_DIR"] = previousDataDir;
+    }
+    rmSync(tempDataDir, { recursive: true, force: true });
+    resetSupplementaryCache();
+  });
+
+  it("compareModels lists the new Claude models with cost > 0", () => {
+    const result = compareModels({ tokens: 10000, toolCalls: 0, reasoningDepth: "shallow" });
+    const byModel = new Map(result.models.map((m) => [m.model, m]));
+
+    for (const model of ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]) {
+      const entry = defined(byModel.get(model));
+      expect(entry.costAvailable, model).toBe(true);
+      expect(entry.estimatedCost, model).toBeGreaterThan(0);
+    }
+  });
+
+  it("claude-fable-5 (most capable / top-tier) is classified premium and costs the most per token", () => {
+    const result = compareModels({ tokens: 10000, toolCalls: 0, reasoningDepth: "shallow" });
+    const byModel = new Map(result.models.map((m) => [m.model, m]));
+    expect(defined(byModel.get("claude-fable-5")).qualityTier).toBe("premium");
+    expect(defined(byModel.get("claude-opus-4-8")).qualityTier).toBe("premium");
+    expect(defined(byModel.get("claude-haiku-4-5")).qualityTier).toBe("fast");
+  });
+
+  it("pins verified $/1M-token pricing: opus-4-8 $5/$25, sonnet-5 $3/$15, haiku-4-5 $1/$5, fable-5 $10/$50", () => {
+    // 1M tokens at reasoningDepth "shallow" keeps toolCallOverhead at 0 and
+    // isolates input+output cost; use a large enough token count that
+    // rounding doesn't dominate.
+    const tokens = 1_000_000;
+    const expectPerMillionCost = (model: string, costInput: number, costOutput: number) => {
+      const result = tokenCostEstimate({ tokens, model, toolCalls: 0, reasoningDepth: "shallow" });
+      const { promptTokens, completionTokens } = result.timeBreakdown;
+      const expectedCost = Math.round(((promptTokens * costInput + completionTokens * costOutput) / 1_000_000) * 10_000) / 10_000;
+      expect(result.estimatedCost, model).toBeCloseTo(expectedCost, 2);
+    };
+
+    expectPerMillionCost("claude-opus-4-8", 5.0, 25.0);
+    expectPerMillionCost("claude-sonnet-5", 3.0, 15.0);
+    expectPerMillionCost("claude-haiku-4-5", 1.0, 5.0);
+    expectPerMillionCost("claude-fable-5", 10.0, 50.0);
+  });
+
+  it("keeps every pre-Phase-5 model in the comparison (additive, nothing removed)", () => {
+    const result = compareModels({ tokens: 10000, toolCalls: 0, reasoningDepth: "shallow" });
+    const models = new Set(result.models.map((m) => m.model));
+    for (const model of [
+      "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
+      "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022",
+      "gemini-2.0-flash", "gemini-2.5-pro", "llama-3.1-70b", "llama-3.1-405b",
+      "mistral-large", "deepseek-v3",
+    ]) {
+      expect(models.has(model), model).toBe(true);
+    }
+    expect(result.models.length).toBeGreaterThanOrEqual(16); // 12 pre-existing + 4 new
   });
 });

@@ -27,6 +27,17 @@ export const taskTypeEnum = z
   ])
   .describe("Category of work being estimated for reference-class lookup.");
 
+// Model catalog last refreshed 2026-07-09 (Phase 5). Claude 5 family + current
+// models added below (claude-opus-4-8, claude-sonnet-5, claude-haiku-4-5,
+// claude-fable-5) — pricing for these is primary-source verified against the
+// `claude-api` skill's cached Anthropic model/pricing reference (cache date
+// 2026-06-24), cross-checked against shared/models.md in the same skill.
+// See src/lib/analytics.ts's MODEL_CALIBRATIONS and
+// data/supplementary-database.json's `modelCalibration`/`sources` for the
+// paired latency/pricing entries and the full source citation. Older Claude
+// aliases (claude-sonnet-4-20250514, claude-opus-4-20250514,
+// claude-3.5-haiku-20241022) are left in place — additive superset, nothing
+// removed.
 export const llmModelEnum = z
   .enum([
     "gpt-4o",
@@ -35,6 +46,10 @@ export const llmModelEnum = z
     "claude-sonnet-4-20250514",
     "claude-opus-4-20250514",
     "claude-3.5-haiku-20241022",
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+    "claude-haiku-4-5",
     "gemini-2.0-flash",
     "gemini-2.5-pro",
     "llama-3.1-70b",
