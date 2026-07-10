@@ -5,7 +5,7 @@ description: Use Epoch for time estimation, business-day math, PERT/COCOMO/Monte
 
 # Epoch
 
-Use Epoch when a task needs grounded time, cost, schedule, or calibration answers. Epoch is both an MCP server and a CLI, with 24 tools covering temporal math, calendar math, estimation, analytics, cost and risk, and feedback.
+Use Epoch when a task needs grounded time, cost, schedule, or calibration answers. Epoch is both an MCP server and a CLI, with 25 tools covering temporal math, calendar math, estimation (including estimate_from_context for free-text classification), analytics, cost and risk, and feedback. Estimates lead with a calibrated P80 interval when enough matched history exists. At session end, `epoch auto-actuals --session <id>` (or the installed Stop hook) auto-records wall-clock actuals for the session's unfinished estimates, provenance-labeled `auto_wallclock` so they never silently blend with verified actuals.
 
 ## Start Here
 

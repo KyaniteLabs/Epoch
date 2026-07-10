@@ -1,7 +1,7 @@
 # KyaniteLabs Engineering Rules
 
 **Repository**: Epoch
-**Description**: Time Estimation MCP Server — 19 structured tools for PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, token-to-time mapping, cost estimation, schedule risk analysis, and model comparison. Self-improving engine with community data pipeline. Built for LLMs and AI agents. MCP + CLI + REST API.
+**Description**: Time Estimation MCP Server — 25 tools for PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, context-based estimation, token-to-time mapping, cost estimation, schedule risk analysis, and model comparison. Self-improving engine (calibrated P80 intervals, auto-closing actuals loop, opt-in community telemetry). Built for LLMs and AI agents. MCP + CLI + REST API.
 **Tech Stack**: TypeScript/Node
 
 This file is loaded automatically by Claude Code when working in any KyaniteLabs repository. It supplements the global rules in `~/.claude/CLAUDE.md`.
@@ -10,7 +10,7 @@ See KyaniteLabs/.github for org-wide rules. Project-specific rules below:
 
 ## Project-Specific Context
 
-This is the **Epoch** repository. It is Time Estimation MCP Server — 19 structured tools for PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, token-to-time mapping, cost estimation, schedule risk analysis, and model comparison. Self-improving engine with community data pipeline. Built for LLMs and AI agents. MCP + CLI + REST API..
+This is the **Epoch** repository. It is Time Estimation MCP Server — 25 tools for PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, context-based estimation, token-to-time mapping, cost estimation, schedule risk analysis, and model comparison. Self-improving engine (calibrated P80 intervals, auto-closing actuals loop, opt-in community telemetry). Built for LLMs and AI agents. MCP + CLI + REST API..
 
 # KyaniteLabs Engineering Rules
 
