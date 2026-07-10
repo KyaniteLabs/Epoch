@@ -456,7 +456,15 @@ export function matchEstimatesToActuals(
   return records.sort((a, b) => (a.completedAt ?? "").localeCompare(b.completedAt ?? ""));
 }
 
-function extractEstimatedHours(outputs: Record<string, unknown>): number | null {
+/**
+ * Extract a headline estimated-hours value from an estimate's `outputs`
+ * shape, across every estimation tool's output envelope. Exported (Phase 2)
+ * so migration scripts (src/lib/migrations/*.ts, src/lib/migration-stats.ts,
+ * src/lib/benchmark-export.ts) reuse this exact extraction logic instead of
+ * reimplementing it — keeps "estimated hours" derivation a single source of
+ * truth alongside the shared isExcluded() predicate.
+ */
+export function extractEstimatedHours(outputs: Record<string, unknown>): number | null {
   if (typeof outputs["totalHours"] === "number") return outputs["totalHours"];
   if (typeof outputs["estimatedHours"] === "number") return outputs["estimatedHours"];
   if (typeof outputs["estimatedMinutes"] === "number") return outputs["estimatedMinutes"] / 60;
