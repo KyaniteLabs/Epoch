@@ -20,7 +20,7 @@
 
 import { existsSync, mkdirSync, appendFileSync, writeFileSync, renameSync, copyFileSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, appendOverlayRecord, type OverlayRecord } from "../ledger.js";
+import { dataDir, appendOverlayRecord, type OverlayRecord, type OverlayRecordCore } from "../ledger.js";
 
 export type MigrationMode = "dry-run" | "apply";
 
@@ -43,7 +43,7 @@ export function appendLine(filename: string, data: unknown): boolean {
 /** Append an overlay record via ledger.ts's shared appendOverlayRecord (monotonic seq, never rewrites the hot ledger). */
 export function appendOverlay(
   filename: string,
-  record: Omit<OverlayRecord, "seq" | "recordedAt"> & { recordedAt?: string },
+  record: Omit<OverlayRecordCore, "seq" | "recordedAt"> & { recordedAt?: string } & Record<string, unknown>,
 ): OverlayRecord {
   return appendOverlayRecord(filename, record, appendLine);
 }

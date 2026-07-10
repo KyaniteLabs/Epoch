@@ -89,6 +89,20 @@ function summarize(report: ParityReport): string {
       lines.push(`    - ${diff.case} (${diff.tool})`);
     }
   }
+  if (report.pendingRustCases > 0) {
+    lines.push(
+      `  pending-rust (skipped on Rust; TS-pinned):  ${report.pendingRustMatched}/${report.pendingRustCases}`,
+    );
+    for (const skip of report.pendingRustSkips) {
+      lines.push(`    - ${skip.case} (${skip.tool}): ${skip.reason}`);
+    }
+    if (report.pendingRustDiffs.length) {
+      lines.push(`  pending-rust TS assertion failures (${report.pendingRustDiffs.length}):`);
+      for (const diff of report.pendingRustDiffs) {
+        lines.push(`    - [${diff.kind}] ${diff.case} (${diff.tool}): ${diff.detail}`);
+      }
+    }
+  }
   return lines.join("\n");
 }
 
@@ -109,6 +123,16 @@ function operationalFailures(report: ParityReport): string[] {
   if (crashed.length) {
     failures.push(
       `${crashed.length} should-pass case(s) errored: ${crashed
+        .map((d) => d.case)
+        .join(", ")}`,
+    );
+  }
+  // Deferred (pendingRust) cases never gate on Rust — the binary doesn't
+  // implement them yet — but a broken TS-side pin is a real bug (not a
+  // Rust-incompleteness issue) and must still fail the harness.
+  if (report.pendingRustDiffs.length) {
+    failures.push(
+      `${report.pendingRustDiffs.length} pending-rust TS assertion(s) failed: ${report.pendingRustDiffs
         .map((d) => d.case)
         .join(", ")}`,
     );

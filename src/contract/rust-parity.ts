@@ -304,6 +304,18 @@ export interface ParityReport {
   readonly diffs: ParityDiff[];
   /** Cosmetic narrative diffs — reported but do not fail the gate. */
   readonly narrativeDiffs: ParityDiff[];
+  /**
+   * `pendingRust` cases (deferred behavioral parity — the Rust binary
+   * doesn't implement the behavior yet): TS-only, verified via each case's
+   * `assertTs`. Never runs against Rust and never affects
+   * outputCases/errorCases/outputParityPercent/errorCompatibilityPercent —
+   * skipped-with-reason on the Rust side, pinned now on the TS side.
+   */
+  readonly pendingRustCases: number;
+  readonly pendingRustMatched: number;
+  readonly pendingRustSkips: ReadonlyArray<{ readonly case: string; readonly tool: string; readonly reason: string }>;
+  /** assertTs failures for pendingRust cases — informational, never gates promotion. */
+  readonly pendingRustDiffs: ParityDiff[];
 }
 
 export interface RunOptions {
@@ -330,20 +342,63 @@ export function runRustParity(options: RunOptions = {}): ParityReport {
 
   const diffs: ParityDiff[] = [];
   const narrativeDiffs: ParityDiff[] = [];
+  const pendingRustDiffs: ParityDiff[] = [];
+  const pendingRustSkips: Array<{ case: string; tool: string; reason: string }> = [];
   let outputCases = 0;
   let outputMatched = 0;
   let errorCases = 0;
   let errorMatched = 0;
   let narrativeCases = 0;
   let narrativeMatched = 0;
+  let pendingRustCases = 0;
+  let pendingRustMatched = 0;
 
   for (const parityCase of cases) {
-    const ts = runTypeScript(parityCase.tool, parityCase.input);
-    const rust = binary
-      ? runRust(binary, parityCase.cliCommand, parityCase.input)
-      : { ok: false, error: { message: "rust binary unavailable" } };
+    // Fixture-seeded cases get a fresh, case-isolated EPOCH_DATA_DIR for the
+    // duration of this case only — kills order-dependence between them
+    // (each seeds/observes its own rows, never another case's). Restored to
+    // the shared harness-wide dir afterward so non-seeded cases are
+    // unaffected.
+    let restoreDataDir: (() => void) | undefined;
+    if (parityCase.seedFixture) {
+      const previousDataDir = process.env["EPOCH_DATA_DIR"];
+      const caseDataDir = mkdtempSync(join(tmpdir(), "epoch-parity-case-"));
+      process.env["EPOCH_DATA_DIR"] = caseDataDir;
+      parityCase.seedFixture(caseDataDir);
+      restoreDataDir = () => {
+        if (previousDataDir === undefined) delete process.env["EPOCH_DATA_DIR"];
+        else process.env["EPOCH_DATA_DIR"] = previousDataDir;
+      };
+    }
 
-    if (parityCase.expect === "error") {
+    try {
+      if (parityCase.pendingRust) {
+        // Deferred behavioral parity: the Rust binary doesn't implement this
+        // yet. Run the TS side only, pin it via assertTs, and record the
+        // skip — never touches outputCases/errorCases/diffs (the promotion
+        // gate), so existing parity cases and thresholds are unaffected.
+        pendingRustCases++;
+        pendingRustSkips.push({ case: parityCase.name, tool: parityCase.tool, reason: parityCase.pendingRust });
+        const ts = runTypeScript(parityCase.tool, parityCase.input);
+        const detail = parityCase.assertTs
+          ? parityCase.assertTs(ts)
+          : ts.ok
+            ? null
+            : `unexpected ts error: ${ts.error?.message ?? ""}`;
+        if (detail === null) {
+          pendingRustMatched++;
+        } else {
+          pendingRustDiffs.push({ case: parityCase.name, tool: parityCase.tool, kind: "output-mismatch", detail });
+        }
+        continue;
+      }
+
+      const ts = runTypeScript(parityCase.tool, parityCase.input);
+      const rust = binary
+        ? runRust(binary, parityCase.cliCommand, parityCase.input)
+        : { ok: false, error: { message: "rust binary unavailable" } };
+
+      if (parityCase.expect === "error") {
       errorCases++;
       if (!ts.ok && !rust.ok) {
         errorMatched++;
@@ -416,6 +471,9 @@ export function runRustParity(options: RunOptions = {}): ParityReport {
         });
       }
     }
+    } finally {
+      restoreDataDir?.();
+    }
   }
 
   const toolsCovered = [...new Set(cases.map((c) => c.tool))].sort();
@@ -441,5 +499,9 @@ export function runRustParity(options: RunOptions = {}): ParityReport {
     toolsCovered,
     diffs,
     narrativeDiffs,
+    pendingRustCases,
+    pendingRustMatched,
+    pendingRustSkips,
+    pendingRustDiffs,
   };
 }

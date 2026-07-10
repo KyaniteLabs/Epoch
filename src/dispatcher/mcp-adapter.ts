@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TOOL_REGISTRY } from "./tool-registry.js";
 import { dispatch } from "./index.js";
-import { z } from "zod";
+import type { z } from "zod";
 
 const READ_ONLY_ANNOTATIONS = {
   readOnlyHint: true,
@@ -25,16 +25,36 @@ const WRITE_ANNOTATIONS = {
 
 const WRITE_TOOLS = new Set(["record_actual", "batch_record_actuals"]);
 
+/**
+ * Zod v4 dropped the v3 ZodEffects/ZodBranded classes; wrapper kinds
+ * (`.transform()`/`.refine()` -> ZodPipe, `.default()` -> ZodDefault, etc.)
+ * are now discriminated at runtime by `schema.type`, with the wrapped
+ * schema reachable via `schema.def.in` (ZodPipe — the pre-transform side)
+ * or `schema.def.innerType` (every other single-inner-type wrapper:
+ * default/prefault/optional/nullable/nonoptional/readonly/catch/success).
+ * `.brand()` is a type-only marker in v4 (no runtime wrapper), so it needs
+ * no unwrap step. Plain (already-unwrapped) ZodObject schemas have
+ * `schema.type === "object"` immediately, so the loop is a no-op for them.
+ */
+type ZodWrapperDef = { in?: z.ZodTypeAny; innerType?: z.ZodTypeAny };
+
+function unwrapToObjectSchema(schema: z.ZodTypeAny): z.ZodObject<z.ZodRawShape> {
+  let current: z.ZodTypeAny = schema;
+  while (current.type !== "object") {
+    const def = current.def as ZodWrapperDef;
+    const next = current.type === "pipe" ? def.in : def.innerType;
+    if (!next) break;
+    current = next;
+  }
+  return current as z.ZodObject<z.ZodRawShape>;
+}
+
 export function registerAllMcpTools(server: McpServer): void {
   for (const [name, def] of TOOL_REGISTRY) {
     const annotations = WRITE_TOOLS.has(name) ? WRITE_ANNOTATIONS : READ_ONLY_ANNOTATIONS;
 
-    // Extract ZodRawShape — unwrap ZodEffects/ZodBranded to reach the inner ZodObject
-    let schema: z.ZodTypeAny = def.inputSchema as z.ZodTypeAny;
-    while (schema instanceof z.ZodEffects || schema instanceof z.ZodBranded) {
-      schema = schema instanceof z.ZodEffects ? schema.innerType() : schema.unwrap();
-    }
-    const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
+    // Extract ZodRawShape — unwrap wrapper types to reach the inner ZodObject
+    const shape = unwrapToObjectSchema(def.inputSchema as z.ZodTypeAny).shape;
 
     // Bounded cast: MCP SDK validates via Zod before calling handler,
     // so Record<string, unknown> is safe here.
