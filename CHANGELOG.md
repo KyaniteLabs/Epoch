@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-10
+
 ### Removed
 - **Rust port and launcher.** The `rust/` workspace (epoch-cli/epoch-mcp/epoch-http/xtask), the release-time prebuild staging (`prebuilds/`), the `dist/native/epoch-rust-launcher.js` bin shim, and all Rust parity/soak/promotion-gate/scorecard contract tooling under `src/contract/`, `src/benchmarks/`, and `scripts/` have been removed. The Rust replacement effort was cancelled before promotion; the npm `epoch` bin now points directly at the TypeScript CLI bundle (`dist/index.js`), which already implements the same CLI/MCP-stdio/HTTP argument dispatch the launcher forwarded to in its TS-fallback path. CLI commands, MCP stdio mode, HTTP mode, and `epoch telemetry *` are unaffected — this is an internal implementation change, not a behavior change.
 - **Breaking (internal/experimental only)**: `EPOCH_RUST_BIN_DIR` and other `EPOCH_RUST_*` environment variables are no longer honored — they only ever affected the (now-removed) Rust binary resolution path and were not documented as part of the stable public interface.
