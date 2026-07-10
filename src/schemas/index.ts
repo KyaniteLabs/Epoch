@@ -59,6 +59,65 @@ export const reasoningDepthEnum = z
     "How much chain-of-thought reasoning the model is expected to perform. Deep reasoning multiplies estimated time."
   );
 
+// ---- Shared provenance/routing fields (Phase 3 contract wave) -------------
+// Optional on every estimation tool's input schema. Persisted verbatim on the
+// estimate row (recordEstimate() stores the raw dispatch input) — no extra
+// dispatcher plumbing is needed for persistence, only formal schema
+// acceptance/validation and, for task_label, output surfacing (see
+// get_pending_estimates in tool-registry.ts).
+
+/** Reusable complexity scale (1=trivial .. 5=extreme). Bounds match referenceClassEstimateSchema's `complexity`. */
+export const complexityScale = z
+  .number()
+  .min(1)
+  .max(5)
+  .describe("Fine-tuning complexity from 1 (trivial) to 5 (extreme).");
+
+const taskLabelField = z
+  .string()
+  .min(1)
+  .describe(
+    "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+  )
+  .optional();
+
+const projectField = z
+  .string()
+  .min(1)
+  .describe(
+    "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+  )
+  .optional();
+
+const sessionIdField = z
+  .string()
+  .min(1)
+  .describe(
+    "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+  )
+  .optional();
+
+// ---- Shared record_actual/batch_record_actuals fields ----------------------
+
+export const actualUnitEnum = z
+  .enum(["minutes", "hours", "days", "weeks"])
+  .describe(
+    "Unit actual_hours is expressed in. Normalized to hours at ingest (days=8h, weeks=40h workday convention, matching estimation.ts's toHours()). Defaults to hours when omitted."
+  );
+
+export const calibrationProvenanceEnum = z
+  .enum([
+    "prospective",
+    "backfilled_real_session",
+    "backfilled_calibration",
+    "synthetic",
+    "smoke",
+    "unknown",
+  ])
+  .describe(
+    "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math)."
+  );
+
 // ---- Branded helpers ------------------------------------------------------
 
 /** Brand a string to prevent accidental ID interchange. */
@@ -117,6 +176,14 @@ export const pertEstimateSchema = z.object({
     .describe("Optional task type for feedback matching. Enables per-task-type accuracy tracking.")
     .optional(),
   ai_native: aiNativeGradient,
+  complexity: complexityScale
+    .describe(
+      "Optional complexity hint from 1 (trivial) to 5 (extreme). Reserved for future per-complexity correction-factor conditioning; not yet applied to the headline estimate."
+    )
+    .optional(),
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type PertEstimateInput = z.infer<typeof pertEstimateSchema>;
@@ -174,6 +241,9 @@ export const cocomoEstimateSchema = z.object({
     .describe("Optional task type for feedback matching.")
     .optional(),
   ai_native: aiNativeGradient,
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type CocomoEstimateInput = z.infer<typeof cocomoEstimateSchema>;
@@ -209,6 +279,9 @@ export const sprintForecastSchema = z.object({
     .describe("Optional task type for feedback matching.")
     .optional(),
   ai_native: aiNativeGradient,
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type SprintForecastInput = z.infer<typeof sprintForecastSchema>;
@@ -241,6 +314,9 @@ export const criticalPathSchema = z.object({
   task_type: taskTypeEnum
     .describe("Optional task type for feedback matching.")
     .optional(),
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type CriticalPathInput = z.infer<typeof criticalPathSchema>;
@@ -269,6 +345,9 @@ export const referenceClassEstimateSchema = z.object({
     )
     .optional(),
   ai_native: aiNativeGradient,
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type ReferenceClassEstimateInput = z.infer<
@@ -313,6 +392,9 @@ export const monteCarloSchema = z.object({
   task_type: taskTypeEnum
     .describe("Optional task type for feedback matching. Enables per-task-type accuracy tracking.")
     .optional(),
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type MonteCarloInput = z.infer<typeof monteCarloSchema>;
@@ -362,6 +444,9 @@ export const tokenTimeBridgeSchema = z.object({
   task_type: taskTypeEnum
     .describe("Optional task type for feedback matching.")
     .optional(),
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type TokenTimeBridgeInput = z.infer<typeof tokenTimeBridgeSchema>;
@@ -447,6 +532,9 @@ export const scheduleRiskSchema = z.object({
     .describe("Task complexity from 1 (trivial) to 5 (extreme). Higher complexity widens confidence intervals.")
     .optional(),
   ai_native: aiNativeGradient,
+  task_label: taskLabelField,
+  project: projectField,
+  session_id: sessionIdField,
 });
 
 export type ScheduleRiskInput = z.infer<typeof scheduleRiskSchema>;
@@ -482,6 +570,8 @@ export const batchRecordActualsSchema = z.object({
         estimate_id: z.string().describe("ID of the estimate to update."),
         actual_hours: z.number().positive().describe("Actual hours spent."),
         notes: z.string().optional().describe("Optional context."),
+        unit: actualUnitEnum.optional(),
+        calibration_provenance: calibrationProvenanceEnum.optional(),
       }),
     )
     .min(1)
@@ -496,3 +586,44 @@ export type BatchRecordActualsInput = z.infer<typeof batchRecordActualsSchema>;
 export const feedbackHealthSchema = z.object({});
 
 export type FeedbackHealthInput = z.infer<typeof feedbackHealthSchema>;
+
+// ---- Tool: recordActual ----------------------------------------------------
+// Moved here from dispatcher/tool-registry.ts (Phase 3 contract wave) so all
+// tool input schemas live in one place, matching batchRecordActualsSchema.
+
+export const recordActualSchema = z.object({
+  estimate_id: z.string().describe("ID of the estimate to update."),
+  actual_hours: z.number().positive().describe("Actual hours spent."),
+  notes: z.string().optional().describe("Optional context."),
+  unit: actualUnitEnum.optional(),
+  calibration_provenance: calibrationProvenanceEnum.optional(),
+});
+
+export type RecordActualInput = z.infer<typeof recordActualSchema>;
+
+// ---- Tool: estimateFromContext (Phase 3 registration; logic lands Phase 5) -
+//
+// Registered now so its contract lands before the Rust parity freeze; the
+// handler currently returns a structured "not implemented yet" response.
+// See .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md §3 Phase 3
+// Task 4 and Phase 5.
+
+export const estimateFromContextSchema = z.object({
+  context: z
+    .string()
+    .min(1)
+    .describe(
+      "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Will be used to classify task_type and complexity and delegate to reference_class_estimate / PERT correction once classification logic ships (Phase 5)."
+    ),
+  task_type: taskTypeEnum
+    .describe("Optional pre-classified task type hint; used once classification logic ships.")
+    .optional(),
+  complexity: complexityScale
+    .describe("Optional pre-assessed complexity hint (1-5); used once classification logic ships.")
+    .optional(),
+  team_id: brandedString("Team")
+    .describe("Optional team identifier to scope historical data once classification logic ships.")
+    .optional(),
+});
+
+export type EstimateFromContextInput = z.infer<typeof estimateFromContextSchema>;

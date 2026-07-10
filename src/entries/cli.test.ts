@@ -203,6 +203,7 @@ describe("CLI tests", () => {
 			"batch-record-actuals",
 			"feedback-health",
 			"cocomo-ground-truth",
+			"estimate-from-context",
 			"list-tools",
 			"self-improve",
 			"telemetry",

@@ -15,10 +15,10 @@ import {
 } from "./public-surface.js";
 
 describe("rust parity — golden case integrity", () => {
-  it("covers every one of the 24 public tools exactly", () => {
+  it("covers every one of the 25 public tools exactly", () => {
     const tools = new Set(RUST_PARITY_CASES.map((c) => c.tool));
     expect([...tools].sort()).toEqual([...EXPECTED_MCP_TOOL_NAMES].sort());
-    expect(tools.size).toBe(24);
+    expect(tools.size).toBe(25);
   });
 
   it("uses unique, non-empty case names", () => {
@@ -106,10 +106,10 @@ describe("rust parity — TypeScript runtime", () => {
 describe("rust parity — full harness (requires built epoch-cli)", () => {
   const binary = resolveRustBinary();
 
-  it.skipIf(!binary)("runs both runtimes across all 24 tools with compatible errors", () => {
+  it.skipIf(!binary)("runs both runtimes across all 25 tools with compatible errors", () => {
     const report = runRustParity();
     expect(report.rustBinary).toBeTruthy();
-    expect(report.toolsCovered).toHaveLength(24);
+    expect(report.toolsCovered).toHaveLength(25);
     // Every golden case executed end-to-end (no spawn crash / should-pass error).
     expect(report.diffs.some((d) => d.kind === "unexpected-error")).toBe(false);
     // Error handling must be byte-for-behavior compatible across runtimes.

@@ -172,6 +172,7 @@ export function loadPertMatchedRecords(): HistoricalRecord[] {
         notes: rec.actual.notes,
         reportedAt: rec.actual.reportedAt,
         completedAt: rec.actual.completedAt,
+        calibrationProvenance: rec.actual.calibrationProvenance,
       },
       flags: { quarantined: rec.flags.quarantined, orphan: rec.flags.orphan },
       ...(rec.expiresAt && { expiresAt: rec.expiresAt }),
