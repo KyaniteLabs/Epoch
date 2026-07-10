@@ -17,6 +17,7 @@ import {
 	loadPertMatchedRecords,
 	getPertToolTaskCorrection,
 	composePertCorrectionFactor,
+	PERT_CORRECTION_RECENCY_DEFAULT,
 } from "./calibration-factors.js";
 import type { HistoricalRecord } from "../types/index.js";
 
@@ -175,6 +176,77 @@ describe("calibration-factors", () => {
 			expect(factors.pert_estimate).toBeDefined();
 			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 			expect(factors.pert_estimate!.feature).toBeCloseTo(1.2, 1);
+		});
+
+		describe("recency weighting", () => {
+			it("with no recency option, behaves identically to the pre-recency-weighting default", () => {
+				const records = [
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 15, completedAt: "2026-01-01" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-02-01" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-03-01" }),
+				];
+				const withoutRecency = computeToolTaskCorrectionFactors(records);
+				const withNoneScheme = computeToolTaskCorrectionFactors(records, { scheme: { kind: "none" } });
+				expect(withNoneScheme).toEqual(withoutRecency);
+			});
+
+			it("exponential decay weights recent pairs more heavily, shifting the factor toward recent ratios", () => {
+				// Old, low-ratio pairs far in the past; recent, high-ratio pairs near asOf.
+				const asOf = "2026-06-01T00:00:00.000Z";
+				const records = [
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-01" }), // ratio 1.0, ~151d old
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-02" }), // ratio 1.0, ~150d old
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 30, completedAt: "2026-05-31" }), // ratio 3.0, ~1d old
+				];
+				const unweighted = computeToolTaskCorrectionFactors(records);
+				const weighted = computeToolTaskCorrectionFactors(records, { scheme: { kind: "exponential", halfLifeDays: 7 }, asOf });
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+				expect(unweighted.pert_estimate!.feature).toBeCloseTo(1.0, 1); // median of [1,1,3] = 1
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+				expect(weighted.pert_estimate!.feature).toBeGreaterThan(unweighted.pert_estimate!.feature!); // pulled toward the recent ratio-3.0 pair
+			});
+
+			it("hard window excludes pairs older than windowDays", () => {
+				const asOf = "2026-06-01T00:00:00.000Z";
+				const records = [
+					// 3 old pairs (outside a 10-day window), ratio 1.0
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-01" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-02" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-03" }),
+					// 3 recent pairs (inside a 10-day window), ratio 2.0
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-05-30" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-05-31" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-06-01" }),
+				];
+				const windowed = computeToolTaskCorrectionFactors(records, { scheme: { kind: "window", windowDays: 10 }, asOf });
+				// Only the 3 recent (ratio 2.0) pairs are within the window, and 3 >= MIN_RECORDS_PER_FACTOR, so no all-history fallback.
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+				expect(windowed.pert_estimate!.feature).toBeCloseTo(2.0, 1);
+			});
+
+			it("hard window falls back to all-history when the window itself has fewer than MIN_RECORDS_PER_FACTOR pairs", () => {
+				const asOf = "2026-06-01T00:00:00.000Z";
+				const records = [
+					// 3 old pairs (outside a 1-day window), ratio 1.0 — only these exist, so the window will have 0.
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-01" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-02" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 10, completedAt: "2026-01-03" }),
+				];
+				const windowed = computeToolTaskCorrectionFactors(records, { scheme: { kind: "window", windowDays: 1 }, asOf });
+				const unweighted = computeToolTaskCorrectionFactors(records);
+				// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+				expect(windowed.pert_estimate!.feature).toBe(unweighted.pert_estimate!.feature);
+			});
+
+			it("low-n gate is evaluated on the raw pair count regardless of recency scheme", () => {
+				const asOf = "2026-06-01T00:00:00.000Z";
+				const records = [
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-05-31" }),
+					makeRecord({ tool: "pert_estimate", taskType: "feature", estimatedHours: 10, actualHours: 20, completedAt: "2026-05-31" }),
+				]; // only 2 pairs, below MIN_RECORDS_PER_FACTOR (3)
+				const weighted = computeToolTaskCorrectionFactors(records, { scheme: { kind: "exponential", halfLifeDays: 7 }, asOf });
+				expect(weighted.pert_estimate).toEqual({});
+			});
 		});
 	});
 
@@ -404,5 +476,32 @@ describe("loadPertMatchedRecords / getPertToolTaskCorrection (ledger integration
 	it("defaults getPertToolTaskCorrection to factor 1.0 with n=0 for an unknown task type", () => {
 		const correction = getPertToolTaskCorrection("nonexistent-type");
 		expect(correction).toEqual({ factor: 1.0, n: 0 });
+	});
+
+	it("PERT_CORRECTION_RECENCY_DEFAULT is 'none' (unweighted) — the backtest found no recency scheme that robustly beats it", () => {
+		// Locks in the current default so a future change to the constant is a
+		// deliberate, reviewed decision (re-run scripts/backtest-pert-correction.mjs
+		// before changing this), not an accidental drift.
+		expect(PERT_CORRECTION_RECENCY_DEFAULT).toEqual({ scheme: { kind: "none" } });
+	});
+
+	it("getPertToolTaskCorrection with an explicit recency override differs from its default only when the scheme differs", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "pe-1", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-01-01T00:00:00.000Z" },
+			{ id: "pe-2", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-01-01T00:00:00.000Z" },
+			{ id: "pe-3", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: "2026-06-01T00:00:00.000Z" },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "pe-1", actualHours: 10, reportedAt: "2026-01-01T01:00:00.000Z" },
+			{ estimateId: "pe-2", actualHours: 10, reportedAt: "2026-01-01T01:00:00.000Z" },
+			{ estimateId: "pe-3", actualHours: 30, reportedAt: "2026-06-01T01:00:00.000Z" },
+		]);
+
+		const withDefault = getPertToolTaskCorrection("bugfix");
+		const withExplicitNone = getPertToolTaskCorrection("bugfix", { scheme: { kind: "none" } });
+		expect(withDefault).toEqual(withExplicitNone); // default IS "none", so these must match
+
+		const withExponential = getPertToolTaskCorrection("bugfix", { scheme: { kind: "exponential", halfLifeDays: 7 }, asOf: "2026-06-01T00:00:00.000Z" });
+		expect(withExponential.factor).toBeGreaterThan(withDefault.factor); // pulled toward the recent, higher-ratio pair
 	});
 });

@@ -199,6 +199,22 @@ function loadCleanMatchedPairs(): CleanPair[] {
   return pairs;
 }
 
+/**
+ * Empirical actual/estimate ratio quantiles for a single task_type, computed
+ * from the exclusion-filtered, overlay-merged matched-pair corpus across
+ * EVERY tool (not just one). Used by the pert_estimate and
+ * reference_class_estimate tool handlers (tool-registry.ts) to lead their
+ * `humanReadable` output with a calibrated interval instead of a bare point
+ * estimate. Returns null below MIN_N_FOR_QUANTILES — callers must fall back
+ * (e.g. to pertVarianceIntervals for pert_estimate) rather than fabricate.
+ */
+export function empiricalRatioQuantilesForTaskType(taskType: string): RatioQuantiles | null {
+  const ratios = loadCleanMatchedPairs()
+    .filter((pair) => pair.taskType === taskType)
+    .map((pair) => pair.actualHours / pair.estimatedHours);
+  return empiricalRatioQuantiles(ratios);
+}
+
 function predictInterval(pair: CleanPair, quantilesByType: Map<string, RatioQuantiles | null>): PredictedIntervals | null {
   if (pair.tool === "pert_estimate" && pair.expected !== undefined && pair.stdDeviation !== undefined && pair.stdDeviation >= 0) {
     return pertVarianceIntervals(pair.expected, pair.stdDeviation);

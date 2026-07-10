@@ -78,14 +78,19 @@ describe("pert_estimate — provenance-output key-set delta (Phase 3 contract wa
     "feedbackRef",
   ].sort();
 
-  it("the only key-set delta vs the pre-wave shape is {rawEstimate, correctionFactor, n}", async () => {
+  it("the only key-set delta vs the pre-wave shape is {rawEstimate, correctionFactor, n, interval, intervalNote}", async () => {
+    // `interval`/`intervalNote` were added after the original Phase 3 wave
+    // (interval-first humanReadable output, see coverage.ts's
+    // empiricalRatioQuantilesForTaskType()/pertVarianceIntervals() wiring in
+    // tool-registry.ts's pert_estimate handler) — additive-only, same as the
+    // rest of this delta.
     const data = await ok("pert_estimate", { optimistic: 2, most_likely: 4, pessimistic: 12, unit: "hours" });
 
     const keys = Object.keys(data).sort();
     const added = keys.filter((k) => !PRE_WAVE_KEYS.includes(k)).sort();
     const removed = PRE_WAVE_KEYS.filter((k) => !keys.includes(k));
 
-    expect(added).toEqual(["correctionFactor", "n", "rawEstimate"]);
+    expect(added).toEqual(["correctionFactor", "interval", "intervalNote", "n", "rawEstimate"]);
     expect(removed).toEqual([]);
   });
 

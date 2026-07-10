@@ -40,7 +40,8 @@ import { cocomoValidate } from "../lib/cocomo-validate.js";
 import { cocomoValidateGroundTruth } from "../lib/cocomo-ground-truth.js";
 import { getDeveloperProfileGradient } from "../lib/profiles.js";
 import { classifyContext, resolveContextEstimateInputs } from "../lib/context-estimate.js";
-import { computeIntervalCoverage } from "../lib/coverage.js";
+import { computeIntervalCoverage, empiricalRatioQuantilesForTaskType, empiricalIntervals, pertVarianceIntervals } from "../lib/coverage.js";
+import type { PredictedIntervals } from "../lib/coverage.js";
 import {
   timeMathSchema,
   pertEstimateSchema,
@@ -187,7 +188,18 @@ const pertOutput = {
     unit: { type: "string", enum: ["hours", "days", "weeks", "months"] },
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
     riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Estimation risk based on spread between optimistic and pessimistic" },
-    humanReadable: { type: "string", description: "Human-readable summary" },
+    humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval when one could be computed, followed by the point estimate." },
+    interval: {
+      type: "object",
+      description: "P50/P80/P90 calibrated prediction intervals around adjustedEstimate. `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (pert_estimate, task_type) pairs are available, else \"pert_variance\" (derived from this estimate's own optimistic/most_likely/pessimistic spread) — see `intervalNote` when the fallback is used.",
+      properties: {
+        p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+        p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+        p90: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+        source: { type: "string", enum: ["pert_variance", "empirical_ratio_quantile"] },
+      },
+    },
+    intervalNote: { type: "string", description: "Present only when the empirical per-task-type interval was unavailable (n<5) and the PERT-variance fallback was used instead." },
     referenceClassCrossCheck: { type: "object", description: "Reference class estimate for comparison (AI-native only)", properties: { estimate: { type: "number" }, scope: { type: "string" }, baselineSource: { type: "string" }, sampleSize: { type: "number" } } },
     recommendation: { type: "string", description: "When reference class disagrees significantly with PERT, explains which to trust" },
     rawEstimate: { type: "number", description: "Pre-correction expected-based headline (same value as `expected`), exposed for provenance parity with reference_class_estimate." },
@@ -301,6 +313,18 @@ const referenceClassOutput = {
     sampleSize: { type: "number" },
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × correctedEstimate)" },
+    humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval when >=5 exclusion-filtered historical (reference_class_estimate, task_type) pairs are available; otherwise states plainly that there wasn't enough data for a confidence interval." },
+    interval: {
+      type: "object",
+      description: "P50/P80/P90 empirical prediction intervals around adjustedEstimate, from per-task-type actual/estimate ratio quantiles. Present only when >=5 matched pairs were available for this task_type — see `intervalNote` otherwise.",
+      properties: {
+        p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+        p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+        p90: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+        source: { type: "string", enum: ["empirical_ratio_quantile"] },
+      },
+    },
+    intervalNote: { type: "string", description: "Present only when there wasn't enough per-task-type data (n<5) to compute an empirical interval." },
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -367,6 +391,43 @@ const timeMathOutput = {
 } satisfies Record<string, unknown>;
 
 
+
+// ---- Interval-first humanReadable helpers (coverage.ts wiring) -------------
+//
+// pert_estimate and reference_class_estimate both lead their `humanReadable`
+// output with a calibrated P80 range and mention the point estimate second
+// (interval-first). Both prefer per-task-type empirical ratio quantiles
+// (>= MIN_N_FOR_QUANTILES matched pairs, via coverage.ts's shared
+// exclusion-filtered "clean path") and fall back to a PERT-variance interval
+// only for pert_estimate (which has its own optimistic/most_likely/
+// pessimistic spread to derive one from); reference_class_estimate has no
+// analogous variance source, so it states plainly when there isn't enough
+// data for an interval rather than fabricating one.
+
+/** Mirrors calibration-factors.ts's extractPertEstimatedHours unit table, for converting a pert_estimate value to/from hours so empirical (hours-denominated) ratio quantiles can be applied regardless of the caller's chosen `unit`. */
+const HOURS_PER_UNIT: Record<string, number> = { hours: 1, days: 8, weeks: 40, months: 160 };
+
+function toHoursForUnit(value: number, unit: string): number {
+  return value * (HOURS_PER_UNIT[unit] ?? 1);
+}
+
+function fromHoursForUnit(hours: number, unit: string): number {
+  return hours / (HOURS_PER_UNIT[unit] ?? 1);
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Convert an hours-denominated Interval back to the caller's unit, rounding for display. */
+function intervalToUnit(interval: { lower: number; upper: number }, unit: string): { lower: number; upper: number } {
+  return { lower: round2(fromHoursForUnit(interval.lower, unit)), upper: round2(fromHoursForUnit(interval.upper, unit)) };
+}
+
+/** Formats an Interval as "X–Yh" (or the given unit's short label) for humanReadable text. */
+function formatInterval(interval: { lower: number; upper: number }, unitLabel: string): string {
+  return `${interval.lower}–${interval.upper} ${unitLabel}`;
+}
 
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
 
@@ -502,14 +563,40 @@ Use when estimating task duration with uncertain outcomes.`,
         composedFactor = composePertCorrectionFactor(learned, profile.correctionFactor).factor;
       }
 
+      const adjustedEstimate = Math.round(result.data.expected * composedFactor * 100) / 100;
+
       const data: Record<string, unknown> = {
         ...result.data,
         developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
-        adjustedEstimate: Math.round(result.data.expected * composedFactor * 100) / 100,
+        adjustedEstimate,
         rawEstimate: result.data.expected,
         correctionFactor: learnedFactor,
         n: learnedN,
       };
+
+      // Interval-first humanReadable (coverage.ts wiring): prefer per-task-type
+      // empirical ratio quantiles (n >= MIN_N_FOR_QUANTILES); fall back to this
+      // estimate's own PERT-variance interval when unavailable, saying so.
+      const quantiles = p.task_type ? empiricalRatioQuantilesForTaskType(p.task_type) : null;
+      let interval: PredictedIntervals;
+      let intervalNote: string | undefined;
+      if (quantiles) {
+        const hoursIntervals = empiricalIntervals(toHoursForUnit(adjustedEstimate, p.unit), quantiles);
+        interval = {
+          p50: intervalToUnit(hoursIntervals.p50, p.unit),
+          p80: intervalToUnit(hoursIntervals.p80, p.unit),
+          p90: intervalToUnit(hoursIntervals.p90, p.unit),
+          source: "empirical_ratio_quantile",
+        };
+      } else {
+        interval = pertVarianceIntervals(result.data.expected, result.data.stdDeviation);
+        intervalNote = p.task_type
+          ? `Fewer than 5 exclusion-filtered historical "${p.task_type}" pert_estimate pairs are available yet, so this interval is derived from the PERT variance (optimistic/most_likely/pessimistic spread) instead of empirical data.`
+          : "No task_type was supplied, so this interval is derived from the PERT variance (optimistic/most_likely/pessimistic spread) instead of empirical data.";
+      }
+      data.interval = interval;
+      if (intervalNote) data.intervalNote = intervalNote;
+      data.humanReadable = `Expected ${formatInterval(interval.p80, p.unit)} (80% confidence interval); point estimate ${adjustedEstimate} ${p.unit}.${intervalNote ? ` ${intervalNote}` : ""}`;
 
       // Cross-check with reference class for AI-native workflows
       if (p.ai_native >= 0.7 && p.task_type) {
@@ -651,6 +738,24 @@ Prioritize this over algorithmic models when historical data is available.`,
       );
       const result = referenceClassEstimate(records, p.task_type, p.complexity, p.scope, p.ai_native >= 0.7);
       const scopeGuide = getScopeGuide(p.task_type);
+      const adjustedEstimate = Math.round(result.rawEstimate * profile.correctionFactor * 100) / 100;
+
+      // Interval-first humanReadable (coverage.ts wiring): reference_class_estimate
+      // has no PERT-variance spread to fall back on, so when there isn't enough
+      // per-task-type empirical data (n < MIN_N_FOR_QUANTILES) it states that
+      // plainly rather than fabricating an interval.
+      const quantiles = empiricalRatioQuantilesForTaskType(p.task_type);
+      let interval: PredictedIntervals | undefined;
+      let intervalNote: string | undefined;
+      let humanReadable: string;
+      if (quantiles) {
+        interval = empiricalIntervals(adjustedEstimate, quantiles);
+        humanReadable = `Expected ${formatInterval(interval.p80, "hours")} (80% confidence interval); point estimate ${adjustedEstimate} hours.`;
+      } else {
+        intervalNote = `Fewer than 5 exclusion-filtered historical "${p.task_type}" reference_class_estimate pairs are available yet, so no empirical confidence interval could be computed.`;
+        humanReadable = `Expected ~${adjustedEstimate} hours (point estimate). ${intervalNote}`;
+      }
+
       return {
         ok: true as const,
         data: {
@@ -662,10 +767,13 @@ Prioritize this over algorithmic models when historical data is available.`,
             underestimationBias: profile.underestimationBias,
             correctionFactor: profile.correctionFactor,
           },
-          adjustedEstimate: Math.round(result.rawEstimate * profile.correctionFactor * 100) / 100,
+          adjustedEstimate,
           note: records.length >= 5
             ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
             : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
+          humanReadable,
+          ...(interval ? { interval } : {}),
+          ...(intervalNote ? { intervalNote } : {}),
         },
       };
     },
