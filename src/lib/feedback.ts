@@ -1,9 +1,13 @@
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
+import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE } from "./ledger.js";
+import type { EstimateRecord, ActualRecord } from "./ledger.js";
+import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js";
+
+export type { EstimateRecord, ActualRecord };
 
 function biasLabel(bias: number | null): string {
   if (bias === null) return "";
@@ -12,39 +16,6 @@ function biasLabel(bias: number | null): string {
   if (bias > -0.5) return "well-calibrated";
   if (bias > -3) return "mild overestimation";
   return "systematic overestimation";
-}
-
-export interface EstimateRecord {
-  id: string;
-  tool: string;
-  inputs: Record<string, unknown>;
-  outputs: Record<string, unknown>;
-  estimatedAt: string;
-  /** Project or source that generated this estimate (e.g. "epoch", "liminal", "github_pipeline"). */
-  source?: string;
-}
-
-export interface ActualRecord {
-  estimateId: string;
-  actualHours: number;
-  notes?: string;
-  reportedAt: string;
-  completedAt?: string;
-}
-
-const DEFAULT_DATA_DIR = join(homedir(), ".epoch");
-const ESTIMATES_FILE = "estimates.jsonl";
-const ACTUALS_FILE = "feedback.jsonl";
-
-/** Actuals must be positive to be recorded. */
-const MINIMUM_RECORDED_ACTUAL_HOURS = 0;
-/** Actuals below this threshold (~36 seconds) are stored but excluded from calibration math as microtask artifacts. */
-const MINIMUM_CALIBRATION_ACTUAL_HOURS = 0.01;
-/** Ratio threshold — actual/estimate below this indicates synthetic/seed data. */
-const MIN_RATIO = 0.03;
-
-function dataDir(): string {
-  return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;
 }
 
 function ensureDir(): boolean {
@@ -66,23 +37,6 @@ function appendLine(filename: string, data: unknown): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-function readLines<T>(filename: string): T[] {
-  const path = join(dataDir(), filename);
-  if (!existsSync(path)) return [];
-  try {
-    const content = readFileSync(path, "utf-8");
-    return content
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => {
-        try { return JSON.parse(line) as T; } catch { return null; }
-      })
-      .filter((r): r is T => r !== null);
-  } catch {
-    return [];
   }
 }
 
@@ -112,6 +66,9 @@ export type RecordActualResult =
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
 const DRY_RUN_ESTIMATES_FILE = "estimates.dry-run.jsonl";
+
+/** Actuals must be positive to be recorded. */
+const MINIMUM_RECORDED_ACTUAL_HOURS = 0;
 
 function isDryRun(): boolean {
   return process.env["EPOCH_DRY_RUN"] === "1" || process.env["EPOCH_DRY_RUN"] === "true";
@@ -174,50 +131,8 @@ export function getCalibrationData(
   return records.filter((record) => record.calibrationUsage === calibrationUsage);
 }
 
-/** Prefixes that indicate synthetic/test/batch data, not real estimates. */
-const SYNTHETIC_PREFIXES = [
-  "seed-",
-  "test-",
-  "batch-test-",
-  "batch-max-",
-  "batch-single-",
-  "synth-",
-  "demo-",
-  "example-",
-  "sample-",
-  "fake-",
-];
-
-/** Check if a bare ID string matches a synthetic prefix pattern. */
-function isSyntheticId(id: string): boolean {
-  for (const prefix of SYNTHETIC_PREFIXES) {
-    if (id.startsWith(prefix)) return true;
-  }
-  return false;
-}
-
-function isSeedRecord(act: ActualRecord): boolean {
-  const id = act.estimateId ?? "";
-  for (const prefix of SYNTHETIC_PREFIXES) {
-    if (id.startsWith(prefix)) return true;
-  }
-  const notes = (act.notes ?? "").toLowerCase();
-  return notes.includes("seed") || notes.includes("synthetic") || notes.includes("dogfood-seed") || notes.includes("test data");
-}
-
 type CalibrationProvenance = NonNullable<HistoricalRecord["calibrationProvenance"]>;
 type CalibrationUsage = NonNullable<HistoricalRecord["calibrationUsage"]>;
-
-const VALID_PROVENANCE = new Set<CalibrationProvenance>([
-  "prospective",
-  "backfilled_real_session",
-  "backfilled_calibration",
-  "synthetic",
-  "smoke",
-  "unknown",
-]);
-
-const VALID_USAGE = new Set<CalibrationUsage>(["correction", "baseline", "exclude"]);
 
 function stringField(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
@@ -231,22 +146,48 @@ function happenedBefore(a: string | undefined, b: string | undefined): boolean {
   return aTime < bTime - 60_000;
 }
 
-function normalizeProvenance(value: unknown): CalibrationProvenance | undefined {
-  const raw = stringField(value);
-  if (!raw) return undefined;
-  return VALID_PROVENANCE.has(raw as CalibrationProvenance) ? raw as CalibrationProvenance : undefined;
+/** Map an isExcluded() reason to the closest calibration-provenance label, for reporting. */
+function provenanceForExclusionReason(reason: ExclusionReason | undefined): CalibrationProvenance {
+  switch (reason) {
+    case "smoke":
+      return "smoke";
+    case "explicit_exclude":
+    case "industry_calibration_note":
+    case "seed_notes":
+    case "synthetic_id":
+    case "backfill_signature":
+    case "ratio_outlier":
+    case "below_calibration_threshold":
+      return "synthetic";
+    default:
+      return "unknown";
+  }
 }
 
-function normalizeUsage(value: unknown): CalibrationUsage | undefined {
-  const raw = stringField(value);
-  if (!raw) return undefined;
-  return VALID_USAGE.has(raw as CalibrationUsage) ? raw as CalibrationUsage : undefined;
-}
-
+/**
+ * Determine calibration provenance/usage for a matched (estimate, actual) pair.
+ * Hard-exclusion determination (seed/synthetic/smoke/backfill-signature/ratio-outlier/
+ * below-threshold/explicit-exclude) is delegated entirely to the shared
+ * isExcluded() predicate (src/lib/exclusion.ts) — this function only remains
+ * responsible for the baseline-vs-correction split of records that survive it.
+ */
 function classifyCalibrationRecord(
   est: EstimateRecord,
   act: ActualRecord,
+  estimatedHours: number | null,
 ): { calibrationProvenance: CalibrationProvenance; calibrationUsage: CalibrationUsage } {
+  const verdict = isExcluded({
+    id: est.id,
+    tool: est.tool,
+    inputs: est.inputs,
+    estimatedAt: est.estimatedAt,
+    estimatedHours,
+    actual: { actualHours: act.actualHours, notes: act.notes, reportedAt: act.reportedAt, completedAt: act.completedAt },
+  });
+  if (verdict.excluded) {
+    return { calibrationProvenance: provenanceForExclusionReason(verdict.reason), calibrationUsage: "exclude" };
+  }
+
   const inputs = est.inputs as Record<string, unknown>;
   const actual = act as unknown as Record<string, unknown>;
   const explicitProvenance = normalizeProvenance(
@@ -256,19 +197,6 @@ function classifyCalibrationRecord(
     inputs["calibration_usage"] ?? actual["calibrationUsage"] ?? actual["calibration_usage"],
   );
   const notes = (act.notes ?? "").toLowerCase();
-  const tool = est.tool.toLowerCase();
-
-  if (explicitUsage === "exclude" || explicitProvenance === "synthetic" || explicitProvenance === "smoke") {
-    return { calibrationProvenance: explicitProvenance ?? "synthetic", calibrationUsage: "exclude" };
-  }
-
-  if (tool === "receiver_smoke" || notes.includes("receiver smoke") || notes.includes("smoke test")) {
-    return { calibrationProvenance: "smoke", calibrationUsage: "exclude" };
-  }
-
-  if (notes.includes("industry calibration")) {
-    return { calibrationProvenance: "synthetic", calibrationUsage: "exclude" };
-  }
 
   if (notes.includes("ingested from")) {
     return { calibrationProvenance: "backfilled_real_session", calibrationUsage: "baseline" };
@@ -290,6 +218,29 @@ function classifyCalibrationRecord(
   }
 
   return { calibrationProvenance: "prospective", calibrationUsage: explicitUsage ?? "correction" };
+}
+
+const VALID_PROVENANCE = new Set<CalibrationProvenance>([
+  "prospective",
+  "backfilled_real_session",
+  "backfilled_calibration",
+  "synthetic",
+  "smoke",
+  "unknown",
+]);
+
+const VALID_USAGE = new Set<CalibrationUsage>(["correction", "baseline", "exclude"]);
+
+function normalizeProvenance(value: unknown): CalibrationProvenance | undefined {
+  const raw = stringField(value);
+  if (!raw) return undefined;
+  return VALID_PROVENANCE.has(raw as CalibrationProvenance) ? raw as CalibrationProvenance : undefined;
+}
+
+function normalizeUsage(value: unknown): CalibrationUsage | undefined {
+  const raw = stringField(value);
+  if (!raw) return undefined;
+  return VALID_USAGE.has(raw as CalibrationUsage) ? raw as CalibrationUsage : undefined;
 }
 
 export function matchEstimatesToActuals(
@@ -318,19 +269,18 @@ export function matchEstimatesToActuals(
 
     const act = actualsMap.get(est.id);
     if (!act) continue;
-    if (act.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS) continue;
-
-    // Filter seed/synthetic records: explicitly marked or implausibly low ratio
-    if (isSeedRecord(act)) continue;
-
-    const calibration = classifyCalibrationRecord(est, act);
-    if (calibration.calibrationUsage === "exclude") continue;
 
     const estHours = extractEstimatedHours(est.outputs);
-    if (estHours === null) continue;
 
-    // Filter extreme ratio outliers (e.g. 0.02h actual against 4h estimate = synthetic)
-    if (act.actualHours / estHours < MIN_RATIO) continue;
+    // Single exclusion truth: seed/synthetic, smoke, explicit-exclude,
+    // 2026-05-05 exact-match backfill signature, ratio outliers, and
+    // below-threshold microtask artifacts are all determined here.
+    const calibration = classifyCalibrationRecord(est, act, estHours);
+    if (calibration.calibrationUsage === "exclude") continue;
+
+    // Missing/unrecognized output shape is a data-completeness gap, not a
+    // calibration-exclusion reason — kept as a separate check.
+    if (estHours === null) continue;
 
     const type = (est.inputs["task_type"] as string) ?? inferTaskType(est.tool);
 
@@ -482,22 +432,24 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const correctionMatched = allMatched.filter((record) => record.calibrationUsage !== "baseline");
   const baselineRecords = allMatched.length - correctionMatched.length;
 
-  // Count seed records filtered from accuracy computation
-  const actualsMap = new Map<string, ActualRecord>();
-  for (const a of actuals) actualsMap.set(a.estimateId, a);
-  const estSet = new Set(estimates.map(e => e.id));
+  // Count records dropped by the shared exclusion predicate — single source of
+  // truth (previously reimplemented ad hoc here, drifting from matchEstimatesToActuals).
+  const estimatesById = new Map<string, EstimateRecord>();
+  for (const e of estimates) estimatesById.set(e.id, e);
   let seedRecordsFiltered = 0;
   for (const a of actuals) {
-    if (!estSet.has(a.estimateId)) continue;
-    if (a.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS) { seedRecordsFiltered++; continue; }
-    if (isSeedRecord(a)) { seedRecordsFiltered++; continue; }
-  }
-  // Also count extreme ratio records
-  for (const e of estimates) {
-    const act = actualsMap.get(e.id);
-    if (!act || act.actualHours < MINIMUM_CALIBRATION_ACTUAL_HOURS || isSeedRecord(act)) continue;
-    const estHours = extractEstimatedHours(e.outputs);
-    if (estHours !== null && act.actualHours / estHours < MIN_RATIO) seedRecordsFiltered++;
+    const est = estimatesById.get(a.estimateId);
+    if (!est) continue;
+    const estHours = extractEstimatedHours(est.outputs);
+    const verdict = isExcluded({
+      id: est.id,
+      tool: est.tool,
+      inputs: est.inputs,
+      estimatedAt: est.estimatedAt,
+      estimatedHours: estHours,
+      actual: { actualHours: a.actualHours, notes: a.notes, reportedAt: a.reportedAt, completedAt: a.completedAt },
+    });
+    if (verdict.excluded) seedRecordsFiltered++;
   }
 
   // By tool — group the pre-matched records
