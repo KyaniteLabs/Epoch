@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING (behavioral/reported-metric change)**: `feedback_health` and `accuracy_trend` now suppress calibration verdicts (e.g. "Sufficient for calibration", "Good coverage", bias labels like "systematic overestimation") whenever a tool/task-type/overall bucket has fewer than `MIN_N_FOR_VERDICT` (default **20**, overridable via `EPOCH_MIN_N_FOR_VERDICT`) matched estimate-actual pairs. Below the threshold, the `recommendation` / `humanReadable` fields now read `"Insufficient sample (n=X)..."` instead. JSON keys are unchanged — only the string *values* differ. Downstream dashboards, exports, or snapshot tests that pattern-match on the old wording (or that treated any non-empty `recommendation` as a calibration signal) must be recomputed/updated.
+- Non-estimation tool calls (`record_actual`, `batch_record_actuals`, `get_current_time`, `convert_timezone`, `parse_duration`, `time_math`, `add_business_days`, `count_business_days`, `feedback_health`, `get_pending_estimates`, `accuracy_trend`, `calibrate_estimates`, `compare_models`, `token_cost_estimate`, `cocomo_validate`, `cocomo_ground_truth`) no longer append rows to `estimates.jsonl`. They are now recorded separately to a new `tool-calls.jsonl` telemetry stream (via `recordToolCall()`). Only the 8 tools that actually produce a time/effort estimate (`pert_estimate`, `reference_class_estimate`, `cocomo_estimate`, `sprint_forecast`, `monte_carlo_schedule`, `schedule_risk`, `critical_path`, `token_time_bridge`) still join the estimates ledger. **This shifts `totalEstimates`, `matchRate`, `selfImprovement.readyTypes`, and `dataQuality.dataCompletenessScore` in `feedback_health` output** — all previously counted non-estimation tool calls as "estimates". Anyone tracking these numbers over time (dashboards, alerts, exported snapshots) must treat pre/post-upgrade values as non-comparable and recompute baselines from the new `estimates.jsonl` contents.
+- New pending estimates now get a 30-day `expiresAt` (overridable via `EPOCH_PENDING_TTL_DAYS`). `get_pending_estimates` now excludes expired rows, so `count`/`estimates` in its response may shrink for stale, never-actualed estimates versus the previous unbounded-lifetime behavior.
+
+### Migration notes
+- If you snapshot or diff `feedback_health` / `accuracy_trend` output for monitoring, treat this release as a hard reset of the historical series for `totalEstimates`, `matchRate`, `readyTypes`, `dataCompletenessScore`, and any `recommendation`/`humanReadable` text you parse — recompute baselines after upgrading rather than comparing against pre-upgrade values.
+- `tool-calls.jsonl` is additive (new file under `~/.epoch/`, or `$EPOCH_DATA_DIR`); no migration of existing data is required, but any external tooling that reads `estimates.jsonl` directly should be updated to expect fewer, purely-estimation rows going forward.
+
 ## [0.2.9] - 2026-06-29
 
 ### Added

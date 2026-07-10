@@ -18,6 +18,7 @@ vi.mock("node:os", () => ({
 import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import {
   recordEstimate,
+  recordToolCall,
   recordActual,
   getPendingEstimates,
   getCalibrationData,
@@ -83,6 +84,51 @@ describe("recordEstimate", () => {
     mockExistsSync.mockReturnValue(false);
     recordEstimate("tool", {}, {});
     expect(mockMkdirSync).toHaveBeenCalled();
+  });
+
+  it("stamps a default 30-day expiresAt (Phase 1 Task 7)", () => {
+    const before = Date.now();
+    recordEstimate("pert_estimate", { optimistic: 5 }, { expected: 7 });
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.expiresAt).toBeDefined();
+    const expiresAtMs = Date.parse(written.expiresAt);
+    const deltaDays = (expiresAtMs - before) / 86_400_000;
+    expect(deltaDays).toBeGreaterThan(29.9);
+    expect(deltaDays).toBeLessThan(30.1);
+  });
+
+  it("respects EPOCH_PENDING_TTL_DAYS override", () => {
+    const original = process.env["EPOCH_PENDING_TTL_DAYS"];
+    process.env["EPOCH_PENDING_TTL_DAYS"] = "7";
+    try {
+      const before = Date.now();
+      recordEstimate("pert_estimate", { optimistic: 5 }, { expected: 7 });
+      const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+      const deltaDays = (Date.parse(written.expiresAt) - before) / 86_400_000;
+      expect(deltaDays).toBeGreaterThan(6.9);
+      expect(deltaDays).toBeLessThan(7.1);
+    } finally {
+      if (original === undefined) delete process.env["EPOCH_PENDING_TTL_DAYS"];
+      else process.env["EPOCH_PENDING_TTL_DAYS"] = original;
+    }
+  });
+});
+
+// ---- recordToolCall ----
+
+describe("recordToolCall", () => {
+  it("appends a tool-call record to tool-calls.jsonl, separate from estimates.jsonl", () => {
+    const id = recordToolCall("get_current_time", { timezone: "UTC" }, { iso: "2026-01-01T00:00:00Z" });
+    expect(id).toBe("test-uuid-1234");
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const [path, contents] = defined(mockAppendFileSync.mock.calls[0]) as [string, string];
+    expect(path).toContain("tool-calls.jsonl");
+    expect(path).not.toContain("estimates.jsonl");
+    const written = JSON.parse(contents);
+    expect(written.tool).toBe("get_current_time");
+    expect(written.inputs).toEqual({ timezone: "UTC" });
+    expect(written.outputs).toEqual({ iso: "2026-01-01T00:00:00Z" });
+    expect(written.id).toBe("test-uuid-1234");
   });
 });
 
@@ -155,6 +201,48 @@ describe("getPendingEstimates", () => {
 
     const pending = getPendingEstimates(10);
     expect(pending).toHaveLength(10);
+  });
+
+  // ---- Pending TTL (Phase 1 Task 7) ----
+
+  it("excludes expired pending estimates and keeps unexpired ones", () => {
+    const expired = JSON.stringify({
+      id: "e-expired",
+      tool: "pert_estimate",
+      inputs: {},
+      outputs: { totalHours: 5 },
+      estimatedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-02-01T00:00:00.000Z", // in the past relative to "now" below
+    });
+    const unexpired = JSON.stringify({
+      id: "e-unexpired",
+      tool: "pert_estimate",
+      inputs: {},
+      outputs: { totalHours: 5 },
+      estimatedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z", // far in the future
+    });
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) return expired + "\n" + unexpired + "\n";
+      return "";
+    });
+
+    const pending = getPendingEstimates();
+    const ids = pending.map((e) => e.id);
+    expect(ids).not.toContain("e-expired");
+    expect(ids).toContain("e-unexpired");
+  });
+
+  it("keeps pending estimates that have no expiresAt at all", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) return makeEstimate({ id: "e-no-ttl" }) + "\n";
+      return "";
+    });
+
+    const pending = getPendingEstimates();
+    expect(pending.map((e) => e.id)).toContain("e-no-ttl");
   });
 });
 
@@ -580,7 +668,7 @@ describe("getFeedbackHealthReport", () => {
     expect(report.byTaskType["feature"]).toBeDefined();
     expect(defined(report.byTaskType["feature"]).mdape).toBeDefined();
     expect(defined(report.byTaskType["feature"]).matchedPairs).toBe(2);
-    expect(defined(report.byTaskType["feature"]).recommendation).toContain("Only 2 matched pairs");
+    expect(defined(report.byTaskType["feature"]).recommendation).toContain("Insufficient sample (n=2)");
   });
 
   it("returns null mape/mdape with fewer than 2 matches", () => {
@@ -682,11 +770,33 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Only 1 matched pair");
-    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Need 2 more");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Insufficient sample (n=1)");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Need 19 more");
   });
 
-  it("byTool includes recommendation with MdAPE for tools with 3+ pairs", () => {
+  it("byTool includes recommendation with MdAPE for tools at/above MIN_N_FOR_VERDICT pairs", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return Array.from({ length: 20 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, outputs: { expected: 10, unit: "hours" } })
+        ).join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return Array.from({ length: 20 }, (_, i) =>
+          makeActual({ estimateId: `e${i}`, actualHours: 9 + (i % 3) })
+        ).join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    expect(defined(report.byTool["pert_estimate"]).recommendation).not.toContain("Insufficient sample");
+    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("MdAPE:");
+  });
+
+  // ---- MIN_N_FOR_VERDICT gating (Phase 1 Task 1) ----
+
+  it("n=3 (below default MIN_N_FOR_VERDICT=20): byTool recommendation uses insufficient-sample wording, not a calibration claim", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
@@ -694,7 +804,6 @@ describe("getFeedbackHealthReport", () => {
           makeEstimate({ id: "e1", outputs: { expected: 10, unit: "hours" } }),
           makeEstimate({ id: "e2", outputs: { expected: 10, unit: "hours" } }),
           makeEstimate({ id: "e3", outputs: { expected: 10, unit: "hours" } }),
-          makeEstimate({ id: "e4", outputs: { expected: 10, unit: "hours" } }),
         ].join("\n") + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
@@ -707,8 +816,65 @@ describe("getFeedbackHealthReport", () => {
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("Sufficient for calibration");
-    expect(defined(report.byTool["pert_estimate"]).recommendation).toContain("MdAPE:");
+    const rec = defined(report.byTool["pert_estimate"]).recommendation;
+    expect(rec).toContain("Insufficient sample (n=3)");
+    expect(rec).not.toContain("Sufficient for calibration");
+    expect(rec).not.toContain("Good coverage");
+    // Underlying metrics are still computed (shape unchanged) — only the verdict text is gated.
+    expect(defined(report.byTool["pert_estimate"]).matchedPairs).toBe(3);
+    expect(defined(report.byTool["pert_estimate"]).mdape).not.toBeNull();
+  });
+
+  it("n=25 (at/above default MIN_N_FOR_VERDICT=20): byTool recommendation reports a normal calibration verdict", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return Array.from({ length: 25 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, outputs: { expected: 10, unit: "hours" } })
+        ).join("\n") + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return Array.from({ length: 25 }, (_, i) =>
+          makeActual({ estimateId: `e${i}`, actualHours: 9 + (i % 3) })
+        ).join("\n") + "\n";
+      }
+      return "";
+    });
+    const report = getFeedbackHealthReport();
+    const rec = defined(report.byTool["pert_estimate"]).recommendation;
+    expect(rec).not.toContain("Insufficient sample");
+    expect(rec).toContain("Good coverage");
+    expect(defined(report.byTool["pert_estimate"]).matchedPairs).toBe(25);
+  });
+
+  it("respects EPOCH_MIN_N_FOR_VERDICT override", () => {
+    const original = process.env["EPOCH_MIN_N_FOR_VERDICT"];
+    process.env["EPOCH_MIN_N_FOR_VERDICT"] = "2";
+    try {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) {
+          return [
+            makeEstimate({ id: "e1", outputs: { expected: 10, unit: "hours" } }),
+            makeEstimate({ id: "e2", outputs: { expected: 10, unit: "hours" } }),
+            makeEstimate({ id: "e3", outputs: { expected: 10, unit: "hours" } }),
+          ].join("\n") + "\n";
+        }
+        if (p.endsWith("feedback.jsonl")) {
+          return [
+            makeActual({ estimateId: "e1", actualHours: 12 }),
+            makeActual({ estimateId: "e2", actualHours: 8 }),
+            makeActual({ estimateId: "e3", actualHours: 11 }),
+          ].join("\n") + "\n";
+        }
+        return "";
+      });
+      const report = getFeedbackHealthReport();
+      expect(defined(report.byTool["pert_estimate"]).recommendation).not.toContain("Insufficient sample");
+    } finally {
+      if (original === undefined) delete process.env["EPOCH_MIN_N_FOR_VERDICT"];
+      else process.env["EPOCH_MIN_N_FOR_VERDICT"] = original;
+    }
   });
 
   it("byTaskType includes recommendation for types with 0 pairs", () => {
@@ -723,27 +889,23 @@ describe("getFeedbackHealthReport", () => {
     expect(defined(report.byTaskType["migration"]).recommendation).toContain("No matched pairs");
   });
 
-  it("byTaskType includes recommendation with MdAPE for types with 3+ pairs", () => {
+  it("byTaskType includes recommendation with MdAPE for types at/above MIN_N_FOR_VERDICT pairs", () => {
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return [
-          makeEstimate({ id: "e1", inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } }),
-          makeEstimate({ id: "e2", inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } }),
-          makeEstimate({ id: "e3", inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 20 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, inputs: { task_type: "testing" }, outputs: { expected: 10, unit: "hours" } })
+        ).join("\n") + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return [
-          makeActual({ estimateId: "e1", actualHours: 12 }),
-          makeActual({ estimateId: "e2", actualHours: 8 }),
-          makeActual({ estimateId: "e3", actualHours: 11 }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 20 }, (_, i) =>
+          makeActual({ estimateId: `e${i}`, actualHours: 9 + (i % 3) })
+        ).join("\n") + "\n";
       }
       return "";
     });
     const report = getFeedbackHealthReport();
-    expect(defined(report.byTaskType["testing"]).recommendation).toContain("Sufficient for calibration");
+    expect(defined(report.byTaskType["testing"]).recommendation).not.toContain("Insufficient sample");
     expect(defined(report.byTaskType["testing"]).recommendation).toContain("MdAPE:");
   });
 
@@ -1034,21 +1196,20 @@ describe("cappedMdape in feedback health", () => {
   });
 
   it("recommendation includes bias direction for systematic overestimation", () => {
+    // 21 pairs (>= MIN_N_FOR_VERDICT) cycling through 3 heavily-overestimated ratios.
+    const estHours = [20, 15, 10];
+    const actHours = [1, 0.5, 0.3];
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return [
-          makeEstimate({ id: "e1", tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: 20 } }),
-          makeEstimate({ id: "e2", tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: 15 } }),
-          makeEstimate({ id: "e3", tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: 10 } }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 21 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, tool: "pert_estimate", inputs: { task_type: "documentation" }, outputs: { estimatedHours: defined(estHours[i % 3]) } })
+        ).join("\n") + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return [
-          JSON.stringify({ estimateId: "e1", actualHours: 1, reportedAt: "2026-01-10T00:00:00Z" }),
-          JSON.stringify({ estimateId: "e2", actualHours: 0.5, reportedAt: "2026-01-10T00:00:00Z" }),
-          JSON.stringify({ estimateId: "e3", actualHours: 0.3, reportedAt: "2026-01-10T00:00:00Z" }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 21 }, (_, i) =>
+          JSON.stringify({ estimateId: `e${i}`, actualHours: defined(actHours[i % 3]), reportedAt: "2026-01-10T00:00:00Z" })
+        ).join("\n") + "\n";
       }
       return "";
     });
@@ -1059,21 +1220,20 @@ describe("cappedMdape in feedback health", () => {
   });
 
   it("recommendation shows well-calibrated for small bias", () => {
+    // 21 pairs (>= MIN_N_FOR_VERDICT) cycling through 3 well-calibrated ratios.
+    const estHours = [5, 4, 6];
+    const actHours = [5.1, 3.9, 6.2];
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return [
-          makeEstimate({ id: "e1", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 5 } }),
-          makeEstimate({ id: "e2", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 4 } }),
-          makeEstimate({ id: "e3", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: 6 } }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 21 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { estimatedHours: defined(estHours[i % 3]) } })
+        ).join("\n") + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return [
-          JSON.stringify({ estimateId: "e1", actualHours: 5.1, reportedAt: "2026-01-10T00:00:00Z" }),
-          JSON.stringify({ estimateId: "e2", actualHours: 3.9, reportedAt: "2026-01-10T00:00:00Z" }),
-          JSON.stringify({ estimateId: "e3", actualHours: 6.2, reportedAt: "2026-01-10T00:00:00Z" }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 21 }, (_, i) =>
+          JSON.stringify({ estimateId: `e${i}`, actualHours: defined(actHours[i % 3]), reportedAt: "2026-01-10T00:00:00Z" })
+        ).join("\n") + "\n";
       }
       return "";
     });
@@ -1084,21 +1244,20 @@ describe("cappedMdape in feedback health", () => {
   });
 
   it("byTaskType recommendation includes bias direction", () => {
+    // 21 pairs (>= MIN_N_FOR_VERDICT) cycling through 3 systematically-underestimated ratios.
+    const estHours = [5, 3, 4];
+    const actHours = [10, 8, 9];
     mockReadFileSync.mockImplementation((path: unknown) => {
       const p = path as string;
       if (p.endsWith("estimates.jsonl")) {
-        return [
-          makeEstimate({ id: "e1", inputs: { task_type: "migration" }, outputs: { estimatedHours: 5 } }),
-          makeEstimate({ id: "e2", inputs: { task_type: "migration" }, outputs: { estimatedHours: 3 } }),
-          makeEstimate({ id: "e3", inputs: { task_type: "migration" }, outputs: { estimatedHours: 4 } }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 21 }, (_, i) =>
+          makeEstimate({ id: `e${i}`, inputs: { task_type: "migration" }, outputs: { estimatedHours: defined(estHours[i % 3]) } })
+        ).join("\n") + "\n";
       }
       if (p.endsWith("feedback.jsonl")) {
-        return [
-          JSON.stringify({ estimateId: "e1", actualHours: 10, reportedAt: "2026-01-10T00:00:00Z" }),
-          JSON.stringify({ estimateId: "e2", actualHours: 8, reportedAt: "2026-01-10T00:00:00Z" }),
-          JSON.stringify({ estimateId: "e3", actualHours: 9, reportedAt: "2026-01-10T00:00:00Z" }),
-        ].join("\n") + "\n";
+        return Array.from({ length: 21 }, (_, i) =>
+          JSON.stringify({ estimateId: `e${i}`, actualHours: defined(actHours[i % 3]), reportedAt: "2026-01-10T00:00:00Z" })
+        ).join("\n") + "\n";
       }
       return "";
     });

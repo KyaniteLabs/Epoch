@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../lib/feedback.js", () => ({
   recordEstimate: vi.fn(() => "test-estimate-id"),
+  recordToolCall: vi.fn(() => "test-tool-call-id"),
   recordActual: vi.fn(() => true),
   getPendingEstimates: vi.fn(() => []),
   batchRecordActuals: vi.fn(() => ({ total: 0, succeeded: 0, failed: 0, errors: [] })),
@@ -28,7 +29,11 @@ vi.mock("../lib/self-improve.js", () => ({
 }));
 
 import { dispatch, listTools } from "./index.js";
-import { TOOL_REGISTRY } from "./tool-registry.js";
+import { TOOL_REGISTRY, TOOL_NAMES, ESTIMATION_TOOLS, NON_ESTIMATION_TOOLS } from "./tool-registry.js";
+import { recordEstimate, recordToolCall } from "../lib/feedback.js";
+
+const mockRecordEstimate = vi.mocked(recordEstimate);
+const mockRecordToolCall = vi.mocked(recordToolCall);
 
 describe("dispatch", () => {
   it("returns error for unknown tool", async () => {
@@ -91,5 +96,42 @@ describe("dispatch", () => {
       expect(TOOL_REGISTRY.has(tool.name)).toBe(true);
       expect(tool.description.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ---- Estimation vs. telemetry ledger routing (Phase 1 Task 3) --------------
+
+describe("dispatch — estimation vs. telemetry routing", () => {
+  beforeEach(() => {
+    mockRecordEstimate.mockClear();
+    mockRecordToolCall.mockClear();
+  });
+
+  it("non-estimation tool call (get_current_time) adds 0 rows to estimates.jsonl and 1 row to tool-calls.jsonl", async () => {
+    const result = await dispatch("get_current_time", { timezone: "UTC" });
+    expect(result.ok).toBe(true);
+    expect(mockRecordEstimate).not.toHaveBeenCalled();
+    expect(mockRecordToolCall).toHaveBeenCalledOnce();
+    expect(mockRecordToolCall).toHaveBeenCalledWith("get_current_time", { timezone: "UTC" }, expect.any(Object), undefined);
+  });
+
+  it("estimation tool call (pert_estimate) adds 1 row to estimates.jsonl and 0 rows to tool-calls.jsonl", async () => {
+    const result = await dispatch("pert_estimate", {
+      optimistic: 2,
+      most_likely: 5,
+      pessimistic: 10,
+      unit: "hours",
+    });
+    expect(result.ok).toBe(true);
+    expect(mockRecordEstimate).toHaveBeenCalledOnce();
+    expect(mockRecordToolCall).not.toHaveBeenCalled();
+  });
+
+  it("classifies every registered tool as exactly estimation or non-estimation, matching the full registry", () => {
+    for (const name of ESTIMATION_TOOLS) {
+      expect(NON_ESTIMATION_TOOLS.has(name)).toBe(false);
+    }
+    const union = new Set([...ESTIMATION_TOOLS, ...NON_ESTIMATION_TOOLS]);
+    expect(union).toEqual(TOOL_NAMES);
   });
 });

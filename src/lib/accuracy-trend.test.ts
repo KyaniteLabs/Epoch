@@ -3,6 +3,7 @@ import { computeAccuracyTrend } from "./accuracy-trend.js";
 
 vi.mock("./feedback.js", () => ({
   getCalibrationData: vi.fn(),
+  minNForVerdict: vi.fn(() => 20),
 }));
 
 vi.mock("./supplementary-data.js", () => ({
@@ -149,5 +150,26 @@ describe("computeAccuracyTrend", () => {
     const result = computeAccuracyTrend({ windowSize: 50 });
     expect(result.windows.length).toBeGreaterThanOrEqual(1);
     expect(result.overallTrend).toBeDefined();
+  });
+
+  // ---- MIN_N_FOR_VERDICT gating (Phase 1 Task 1) ----
+
+  it("n=3 (below MIN_N_FOR_VERDICT): reports an insufficient-sample verdict, no directional trend claim", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(3, () => 60));
+    const result = computeAccuracyTrend();
+    expect(result.totalWithActuals).toBe(3);
+    expect(result.overallTrend).toBe("stable");
+    expect(result.humanReadable).toContain("Insufficient sample (n=3)");
+    // Existing JSON keys are preserved — only the verdict strings change.
+    expect(result.windows.length).toBeGreaterThanOrEqual(1);
+    expect(typeof result.currentMape).toBe("number");
+  });
+
+  it("n=25 (at/above MIN_N_FOR_VERDICT): reports a normal verdict, no insufficient-sample wording", () => {
+    mockGetCalibrationData.mockReturnValue(makeRecords(25, () => 30));
+    const result = computeAccuracyTrend();
+    expect(result.totalWithActuals).toBe(25);
+    expect(result.humanReadable).not.toContain("Insufficient sample");
+    expect(result.humanReadable).toContain("Accuracy trend is");
   });
 });
