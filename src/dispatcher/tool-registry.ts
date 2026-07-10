@@ -39,6 +39,8 @@ import { scheduleRisk } from "../lib/risk.js";
 import { cocomoValidate } from "../lib/cocomo-validate.js";
 import { cocomoValidateGroundTruth } from "../lib/cocomo-ground-truth.js";
 import { getDeveloperProfileGradient } from "../lib/profiles.js";
+import { classifyContext, resolveContextEstimateInputs } from "../lib/context-estimate.js";
+import { computeIntervalCoverage } from "../lib/coverage.js";
 import {
   timeMathSchema,
   pertEstimateSchema,
@@ -299,6 +301,37 @@ const referenceClassOutput = {
     sampleSize: { type: "number" },
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × correctedEstimate)" },
+    feedbackRef: feedbackRefField,
+  },
+} satisfies Record<string, unknown>;
+
+const estimateFromContextOutput = {
+  type: "object",
+  properties: {
+    tool: { type: "string" },
+    rawEstimate: { type: "number" },
+    correctedEstimate: { type: "number" },
+    correctionFactor: { type: "number" },
+    sampleSize: { type: "number" },
+    baselineSource: { type: "string" },
+    scopeUsed: { type: "string" },
+    scopeInferred: { type: "boolean" },
+    confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
+    estimatedTokenCost: { type: "number" },
+    classification: {
+      type: "object",
+      description: "Provenance of the local heuristic classification (src/lib/context-estimate.ts), before any caller-supplied hint override.",
+      properties: {
+        classified_task_type: { type: "string" },
+        classified_complexity: { type: "number" },
+        confidence: { type: "string", enum: ["high", "medium", "low"] },
+        signals: { type: "array", items: { type: "string" } },
+        task_type_from_hint: { type: "boolean" },
+        complexity_from_hint: { type: "boolean" },
+      },
+    },
+    lowConfidenceNote: { type: "string" },
+    note: { type: "string" },
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -923,9 +956,12 @@ Each entry pairs an estimate ID with the actual hours spent.`,
 Shows total estimates, actuals, match rate, MAPE by tool and task type,
 and self-improvement readiness (which types have enough data for auto-calibration).`,
     feedbackHealthSchema,
-    { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchedPairs: { type: "number" }, seedRecordsFiltered: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" }, dataQuality: { type: "object" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchedPairs: { type: "number" }, seedRecordsFiltered: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" }, dataQuality: { type: "object" }, humanReadable: { type: "string" }, intervalCoverage: { type: "object", description: "P80 prediction-interval coverage calibration (Phase 5, additive). See src/lib/coverage.ts.", properties: { n: { type: "number" }, p80CoverageRate: { type: "number" }, targetP80Coverage: { type: "number" }, byTaskType: { type: "object" }, note: { type: "string" } } } } } satisfies Record<string, unknown>,
     () => {
-      return { ok: true as const, data: getFeedbackHealthReport() };
+      return {
+        ok: true as const,
+        data: { ...getFeedbackHealthReport(), intervalCoverage: computeIntervalCoverage() },
+      };
     },
   ),
 
@@ -933,23 +969,56 @@ and self-improvement readiness (which types have enough data for auto-calibratio
 
   tool(
     "estimate_from_context",
-    `Classify a free-text task description and delegate to the estimation engine.
+    `Classify a free-text task description and delegate to reference-class estimation.
 
-Not yet implemented — registered now so its input contract is stable before
-the Rust parity freeze. Currently returns a structured "not implemented"
-response; classification + delegation logic lands in a future release.`,
+Classifies task_type and complexity from free text (issue body, PR/diff
+description, or task summary) using a LOCAL, deterministic keyword/signal
+heuristic — no LLM call (see src/lib/context-estimate.ts). Caller-supplied
+task_type/complexity hints always override the classification. Delegates the
+resolved inputs to the same reference-class-forecasting path used by
+reference_class_estimate, and returns classification provenance
+(classified_task_type, classified_complexity, confidence, signals) alongside
+the estimate so callers can judge how much to trust it.`,
     estimateFromContextSchema,
-    { type: "object", properties: { implemented: { type: "boolean" }, plannedPhase: { type: "number" }, tool: { type: "string" }, message: { type: "string" } } } satisfies Record<string, unknown>,
+    estimateFromContextOutput,
     (input) => {
       const p = estimateFromContextSchema.parse(input);
+      const classification = classifyContext(p.context);
+      const resolved = resolveContextEstimateInputs(classification, {
+        ...(p.task_type !== undefined && { taskType: p.task_type }),
+        ...(p.complexity !== undefined && { complexity: p.complexity }),
+      });
+
+      const records = getCalibrationData(p.team_id, resolved.taskType, 90, "estimate_from_context");
+      // ai_native=true: Epoch is built for LLM/AI-agent estimation (matches
+      // pertEstimateSchema's ai_native default of 1.0); no ai_native input
+      // exists on this schema, so the AI-native reference-class baselines
+      // are used unconditionally.
+      const result = referenceClassEstimate(records, resolved.taskType, resolved.complexity, undefined, true);
+      const scopeGuide = getScopeGuide(resolved.taskType);
+
+      const lowConfidenceNote = classification.confidence === "low" && !resolved.taskTypeFromHint && !resolved.complexityFromHint
+        ? `Classification confidence is low — no clear task-type keywords or complexity signals were found in the supplied context; defaulted to task_type="${classification.taskType}" and complexity=${classification.complexity}. Supply task_type/complexity hints for a more reliable estimate.`
+        : undefined;
+
       return {
         ok: true as const,
         data: {
-          implemented: false,
-          plannedPhase: 5,
           tool: "estimate_from_context",
-          message: "estimate_from_context is registered but not yet implemented. Classification of free-text context into task_type/complexity and delegation to reference_class_estimate/pert_estimate lands in a future release. Use reference_class_estimate or pert_estimate directly in the meantime.",
-          contextLength: p.context.length,
+          ...result,
+          ...(scopeGuide ? { scopeGuide } : {}),
+          classification: {
+            classified_task_type: classification.taskType,
+            classified_complexity: classification.complexity,
+            confidence: classification.confidence,
+            signals: classification.signals,
+            task_type_from_hint: resolved.taskTypeFromHint,
+            complexity_from_hint: resolved.complexityFromHint,
+          },
+          ...(lowConfidenceNote ? { lowConfidenceNote } : {}),
+          note: records.length >= 5
+            ? `Based on ${records.length} historical records for "${resolved.taskType}" tasks.`
+            : "Using reference database correction factors. Submit actuals via record_actual to improve accuracy.",
         },
       };
     },
@@ -983,6 +1052,10 @@ export const ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
   "schedule_risk",
   "critical_path",
   "token_time_bridge",
+  // Phase 5: estimate_from_context now produces a real reference-class-
+  // delegated hour estimate (correctedEstimate), so it joins the ledger and
+  // is eligible for record_actual pairing, same as reference_class_estimate.
+  "estimate_from_context",
 ]);
 
 export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
@@ -1002,7 +1075,6 @@ export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
   "token_cost_estimate",
   "cocomo_validate",
   "cocomo_ground_truth",
-  "estimate_from_context",
 ]);
 
 export function isEstimationTool(toolName: string): boolean {
