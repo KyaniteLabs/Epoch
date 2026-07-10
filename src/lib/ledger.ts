@@ -73,6 +73,8 @@ export interface ActualRecord {
   notes?: string;
   reportedAt: string;
   completedAt?: string;
+  /** Explicit calibration-provenance classification supplied at record_actual time (Phase 3 contract wave). Read by isExcluded() via ExclusionActual.calibrationProvenance. */
+  calibrationProvenance?: string;
 }
 
 // ---- Overlay records --------------------------------------------------------

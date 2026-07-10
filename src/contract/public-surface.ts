@@ -26,6 +26,7 @@ export const EXPECTED_MCP_TOOL_NAMES = [
 	"get_pending_estimates",
 	"batch_record_actuals",
 	"feedback_health",
+	"estimate_from_context",
 ] as const;
 
 export const EXPECTED_WRITE_TOOL_NAMES = [
@@ -72,6 +73,7 @@ export const EXPECTED_CLI_COMMAND_PATHS = [
 	"batch-record-actuals",
 	"feedback-health",
 	"cocomo-ground-truth",
+	"estimate-from-context",
 	"self-improve",
 	"telemetry",
 	"telemetry status",

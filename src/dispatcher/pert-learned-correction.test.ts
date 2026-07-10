@@ -133,7 +133,16 @@ describe("pert_estimate handler — learned correction (feature-flagged)", () =>
     delete process.env["EPOCH_PERT_LEARNED_CORRECTION"];
     const flagOff = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
 
-    expect(flagOnLowN).toEqual(flagOff);
+    // Functional correction application is unchanged below the threshold
+    // (adjustedEstimate/developerProfile still use the profile factor).
+    expect(flagOnLowN["adjustedEstimate"]).toBe(flagOff["adjustedEstimate"]);
+    expect(flagOnLowN["developerProfile"]).toEqual(flagOff["developerProfile"]);
+    expect(flagOnLowN["correctionFactor"]).toBe(1.0); // learned factor withheld below MIN_RECORDS_PER_FACTOR
+    // Provenance `n` (Phase 3, additive) reports the actual matched-pair cell
+    // size whenever the flag is on and task_type is supplied — even below the
+    // threshold — so it legitimately differs from the flag-off default of 0.
+    expect(flagOnLowN["n"]).toBe(MIN_RECORDS_PER_FACTOR - 1);
+    expect(flagOff["n"]).toBe(0);
   });
 
   it("flag on + no task_type supplied: unchanged current behavior", () => {
