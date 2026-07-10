@@ -110,16 +110,44 @@ describe("extractAnonymizedRecords", () => {
 });
 
 describe("buildPayload", () => {
-	it("includes schema_version, installation_id, epoch_version, records, generated_at", async () => {
+	it("includes schema_version 2 fields: installation_id, epoch_version, records, generated_at, agent qualification", async () => {
 		const { buildPayload } = await import("./telemetry-submit.js");
 		const payload = buildPayload([]);
 
-		expect(payload.schema_version).toBe(1);
+		expect(payload.schema_version).toBe(2);
 		expect(typeof payload.installation_id).toBe("string");
 		expect(payload.installation_id).toHaveLength(36); // UUID format
 		expect(typeof payload.epoch_version).toBe("string");
 		expect(Array.isArray(payload.records)).toBe(true);
 		expect(typeof payload.generated_at).toBe("string");
+		if (payload.schema_version === 2) {
+			// No entrypoint has called setTransport()/setMcpClientInfo() in this
+			// unit test process, so qualification fields default to null/unknown.
+			expect(payload.client_name).toBeNull();
+			expect(payload.client_version).toBeNull();
+			expect(payload.transport).toBeNull();
+			expect(payload.runtime_hint).toBe("unknown");
+		}
+	});
+
+	it("threads MCP clientInfo and transport through from telemetry-context", async () => {
+		const { buildPayload } = await import("./telemetry-submit.js");
+		const { setMcpClientInfo, setTransport, resetTelemetryContextForTests } =
+			await import("./telemetry-context.js");
+
+		setTransport("mcp-stdio");
+		setMcpClientInfo({ name: "claude-code", version: "1.2.3" });
+
+		const payload = buildPayload([]);
+		expect(payload.schema_version).toBe(2);
+		if (payload.schema_version === 2) {
+			expect(payload.client_name).toBe("claude-code");
+			expect(payload.client_version).toBe("1.2.3");
+			expect(payload.transport).toBe("mcp-stdio");
+			expect(payload.runtime_hint).toBe("agent");
+		}
+
+		resetTelemetryContextForTests();
 	});
 });
 
@@ -168,8 +196,16 @@ describe("submitTelemetry", () => {
 		expect(result.error).toContain("not enabled");
 	});
 
-	it("returns error when no endpoint is configured", async () => {
+	it("falls back to the default public endpoint when none is configured", async () => {
 		const { saveConfig } = await import("./config.js");
+		const { DEFAULT_PUBLIC_TELEMETRY_ENDPOINT } = await import("./config.js");
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(estimateId, 3);
 		saveConfig({
 			telemetry: {
 				enabled: true,
@@ -179,10 +215,21 @@ describe("submitTelemetry", () => {
 				installationId: "test-id",
 			},
 		});
+
+		let requestedUrl: string | undefined;
+		globalThis.fetch = (async (
+			input: string | URL | Request,
+		) => {
+			requestedUrl = String(input);
+			return new Response(JSON.stringify({ accepted: 1, deduplicated: 0 }), {
+				status: 200,
+			});
+		}) as typeof fetch;
+
 		const { submitTelemetry } = await import("./telemetry-submit.js");
 		const result = await submitTelemetry();
-		expect(result.ok).toBe(false);
-		expect(result.error).toContain("no endpoint");
+		expect(result.ok).toBe(true);
+		expect(requestedUrl).toBe(DEFAULT_PUBLIC_TELEMETRY_ENDPOINT);
 	});
 
 	it("returns error when endpoint is the example.com placeholder", async () => {

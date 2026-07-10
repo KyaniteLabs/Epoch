@@ -8,8 +8,16 @@ import {
 	loadConfig,
 	saveConfig,
 	getInstallationId,
-	isUsableTelemetryEndpoint,
+	isPlaceholderTelemetryEndpoint,
+	resolveTelemetryEndpoint,
 } from "./config.js";
+import {
+	computeRuntimeHint,
+	getMcpClientInfo,
+	getTransport,
+	type RuntimeHint,
+	type Transport,
+} from "./telemetry-context.js";
 
 export interface AnonymizedRecord {
 	task_type: string;
@@ -22,13 +30,34 @@ export interface AnonymizedRecord {
 	completed_at: string;
 }
 
-export interface SubmissionPayload {
+/** schema_version 1 payload — still accepted by all receivers. */
+export interface SubmissionPayloadV1 {
 	schema_version: 1;
 	installation_id: string;
 	epoch_version: string;
 	records: AnonymizedRecord[];
 	generated_at: string;
 }
+
+/**
+ * schema_version 2 payload — adds agent-qualification fields at the payload
+ * level (per-record fields are unchanged; see docs/TELEMETRY.md). All new
+ * fields are nullable: null for CLI/HTTP callers or when the client did not
+ * report an MCP `clientInfo`.
+ */
+export interface SubmissionPayloadV2 {
+	schema_version: 2;
+	installation_id: string;
+	epoch_version: string;
+	records: AnonymizedRecord[];
+	generated_at: string;
+	client_name: string | null;
+	client_version: string | null;
+	transport: Transport | null;
+	runtime_hint: RuntimeHint;
+}
+
+export type SubmissionPayload = SubmissionPayloadV1 | SubmissionPayloadV2;
 
 function getVersion(): string {
 	try {
@@ -79,12 +108,17 @@ export function extractAnonymizedRecords(
 }
 
 export function buildPayload(records: AnonymizedRecord[]): SubmissionPayload {
+	const clientInfo = getMcpClientInfo();
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		installation_id: getInstallationId(),
 		epoch_version: getVersion(),
 		records,
 		generated_at: new Date().toISOString(),
+		client_name: clientInfo.name,
+		client_version: clientInfo.version,
+		transport: getTransport(),
+		runtime_hint: computeRuntimeHint(),
 	};
 }
 
@@ -141,17 +175,14 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 		return { ok: false, recordCount: 0, error: "telemetry not enabled" };
 	}
 
-	if (!config.telemetry.endpoint) {
-		return { ok: false, recordCount: 0, error: "no endpoint configured" };
-	}
-
-	if (!isUsableTelemetryEndpoint(config.telemetry.endpoint)) {
+	if (isPlaceholderTelemetryEndpoint(config.telemetry.endpoint)) {
 		return {
 			ok: false,
 			recordCount: 0,
 			error: "placeholder endpoint configured",
 		};
 	}
+	const endpoint = resolveTelemetryEndpoint(config);
 
 	const lastSub = config.telemetry.lastSubmissionAt;
 	if (isTelemetrySubmitRateLimited(lastSub)) {
@@ -177,7 +208,7 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 			const chunkCursor = chunk.at(-1)?.completed_at;
 			const payload = buildPayload(chunk);
 			const signature = signPayload(payload, payload.installation_id);
-			const response = await fetch(config.telemetry.endpoint, {
+			const response = await fetch(endpoint, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -246,7 +277,7 @@ export function maybeSubmitTelemetry(): void {
 	const config = loadConfig();
 	if (
 		!isTelemetryEnabled() ||
-		!isUsableTelemetryEndpoint(config.telemetry.endpoint)
+		isPlaceholderTelemetryEndpoint(config.telemetry.endpoint)
 	)
 		return;
 

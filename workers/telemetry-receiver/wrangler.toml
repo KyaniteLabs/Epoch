@@ -1,0 +1,17 @@
+name = "epoch-telemetry"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+account_id = "2936a63a800a637b48be6ba1623064f2"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "epoch-telemetry-staging"
+database_id = "91c34102-9349-40f6-8ad0-2db9e3c6b875"
+
+[triggers]
+# Daily retention sweep: delete staging rows older than 365 days.
+crons = ["17 3 * * *"]
+
+[[routes]]
+pattern = "telemetry.kyanitelabs.tech"
+custom_domain = true

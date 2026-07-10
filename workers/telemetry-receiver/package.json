@@ -1,0 +1,20 @@
+{
+	"name": "epoch-telemetry-receiver",
+	"private": true,
+	"version": "1.0.0",
+	"type": "module",
+	"description": "Cloudflare Worker: public receiver for Epoch anonymized telemetry (staging-only, D1-backed).",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit",
+		"db:migrate": "wrangler d1 execute epoch-telemetry-staging --remote --file=./schema.sql"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20260101.0",
+		"typescript": "^6.0.0",
+		"vitest": "^4.1.8",
+		"wrangler": "^4.100.0"
+	}
+}

@@ -18,7 +18,7 @@ import { Command } from "commander";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createCliProgram } from "./cli.js";
+import { createCliProgram, maybeShowFirstRunTelemetryNudge } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
 
 // ---- Sentinel error for process.exit mock -----------------------------------
@@ -716,6 +716,115 @@ describe("CLI tests", () => {
 
 			expect(capture.exitCode).toBe(0);
 			expect(output.enabled).toBe(false);
+		});
+
+		it("preview reports 'nothing to send' when no records are queued", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, ["telemetry", "preview"]);
+			const output = JSON.parse(capture.stdout.join("")) as {
+				message?: string;
+			};
+
+			expect(capture.exitCode).toBe(0);
+			expect(output.message).toBe("nothing to send");
+		});
+
+		it("preview prints the exact schema_version 2 payload that submit would send", async () => {
+			const { recordEstimate, recordActual } = await import(
+				"../lib/feedback.js"
+			);
+			const estimateId = recordEstimate(
+				"pert_estimate",
+				{ task_type: "feature", complexity: 3 },
+				{ expected: 2, unit: "hours" },
+			);
+			recordActual(estimateId, 3);
+
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, ["telemetry", "preview"]);
+			const output = JSON.parse(capture.stdout.join("")) as {
+				schema_version: number;
+				installation_id: string;
+				records: unknown[];
+				client_name: string | null;
+				transport: string | null;
+				runtime_hint: string;
+			};
+
+			expect(capture.exitCode).toBe(0);
+			expect(output.schema_version).toBe(2);
+			expect(output.records).toHaveLength(1);
+			expect(typeof output.installation_id).toBe("string");
+			expect(output.client_name).toBeNull();
+			expect(["cli", null]).toContain(output.transport);
+		});
+	});
+
+	describe("maybeShowFirstRunTelemetryNudge", () => {
+		beforeEach(() => {
+			mkdirSync(TEST_DIR, { recursive: true });
+			process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+		});
+
+		afterEach(() => {
+			delete process.env["EPOCH_DATA_DIR"];
+			rmSync(TEST_DIR, { recursive: true, force: true });
+		});
+
+		it("prints the nudge once, then never again", async () => {
+			const capture1 = await runWithCapture(
+				{ parse: () => maybeShowFirstRunTelemetryNudge([]) } as unknown as Command,
+				[],
+			);
+			expect(capture1.stderr.join("")).toContain("telemetry is OFF");
+
+			const capture2 = await runWithCapture(
+				{ parse: () => maybeShowFirstRunTelemetryNudge([]) } as unknown as Command,
+				[],
+			);
+			expect(capture2.stderr.join("")).toBe("");
+		});
+
+		it("stays silent under --quiet", async () => {
+			const capture = await runWithCapture(
+				{
+					parse: () => maybeShowFirstRunTelemetryNudge(["--quiet"]),
+				} as unknown as Command,
+				[],
+			);
+			expect(capture.stderr.join("")).toBe("");
+		});
+
+		it("stays silent while managing telemetry explicitly", async () => {
+			const capture = await runWithCapture(
+				{
+					parse: () => maybeShowFirstRunTelemetryNudge(["telemetry", "status"]),
+				} as unknown as Command,
+				[],
+			);
+			expect(capture.stderr.join("")).toBe("");
+		});
+
+		it("stays silent once telemetry has been explicitly enabled", async () => {
+			const { saveConfig } = await import("../lib/config.js");
+			saveConfig({
+				telemetry: {
+					enabled: true,
+					endpoint: "",
+					lastSubmissionAt: null,
+					lastSubmissionRecordCount: 0,
+					installationId: "test-id",
+				},
+			});
+
+			const capture = await runWithCapture(
+				{ parse: () => maybeShowFirstRunTelemetryNudge([]) } as unknown as Command,
+				[],
+			);
+			expect(capture.stderr.join("")).toBe("");
+
+			const { loadConfig } = await import("../lib/config.js");
+			expect(loadConfig().telemetry.nudgeShown).toBe(true);
 		});
 	});
 });

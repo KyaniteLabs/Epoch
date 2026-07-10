@@ -16,8 +16,8 @@ afterEach(() => {
   try { rmSync(TEST_DIR, { recursive: true, force: true }); } catch { /* ok */ }
 });
 
-function signedPayload(): { rawBody: string; signature: string } {
-  const payload = {
+function signedPayload(overrides: Record<string, unknown> = {}): { rawBody: string; signature: string } {
+  const payload: Record<string, unknown> = {
     schema_version: 1,
     installation_id: "test-installation",
     epoch_version: "0.2.2-test",
@@ -33,9 +33,10 @@ function signedPayload(): { rawBody: string; signature: string } {
       },
     ],
     generated_at: "2026-05-07T00:00:00.000Z",
+    ...overrides,
   };
   const rawBody = JSON.stringify(payload);
-  const signature = createHmac("sha256", payload.installation_id).update(rawBody).digest("hex");
+  const signature = createHmac("sha256", payload["installation_id"] as string).update(rawBody).digest("hex");
   return { rawBody, signature };
 }
 
@@ -102,5 +103,82 @@ describe("receiveTelemetry", () => {
     expect(result.ok).toBe(false);
     expect(result.status).toBe(401);
     expect(result.error).toContain("signature");
+  });
+
+  it("accepts a schema_version 2 payload and stores agent-qualification fields", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload({
+      schema_version: 2,
+      client_name: "claude-code",
+      client_version: "1.2.3",
+      transport: "mcp-stdio",
+      runtime_hint: "agent",
+    });
+
+    const result = receiveTelemetry(rawBody, signature);
+    expect(result).toEqual({ ok: true, status: 200, accepted: 1, deduplicated: 0 });
+
+    const stored = JSON.parse(
+      readFileSync(join(TEST_DIR, "telemetry-records.jsonl"), "utf-8").trim(),
+    ) as Record<string, unknown>;
+    expect(stored).toMatchObject({
+      client_name: "claude-code",
+      client_version: "1.2.3",
+      transport: "mcp-stdio",
+      runtime_hint: "agent",
+    });
+  });
+
+  it("rejects a v1 payload carrying v2-only fields (schema pinning)", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload({ client_name: "claude-code" });
+
+    const result = receiveTelemetry(rawBody, signature);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(400);
+    expect(result.error).toMatch(/disallowed fields/);
+  });
+
+  it("rejects an unknown top-level field regardless of schema version", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload({
+      schema_version: 2,
+      unexpected_field: "leak",
+    });
+
+    const result = receiveTelemetry(rawBody, signature);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/disallowed fields/);
+  });
+
+  it("rejects an unknown record-level field (privacy allowlist)", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload({
+      records: [
+        {
+          task_type: "feature",
+          complexity: 3,
+          tool: "reference_class_estimate",
+          estimated_hours: 4,
+          actual_hours: 5,
+          ratio: 1.25,
+          date: "2026-05-07",
+          hostname: "leak.local",
+        },
+      ],
+    });
+
+    const result = receiveTelemetry(rawBody, signature);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/invalid anonymized/);
+  });
+
+  it("rejects an unsupported schema_version", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload({ schema_version: 3 });
+
+    const result = receiveTelemetry(rawBody, signature);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/schema_version/);
   });
 });
