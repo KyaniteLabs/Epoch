@@ -1,9 +1,32 @@
 import type { AccuracyTrend, AccuracyWindow } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
-import { getCalibrationData } from "./feedback.js";
+import { getCalibrationData, minNForVerdict } from "./feedback.js";
 import { getEstimationResearch } from "./supplementary-data.js";
 
+/**
+ * Compute the accuracy trend, gated on MIN_N_FOR_VERDICT (Phase 1 Task 1):
+ * below the threshold, no directional trend claim (improving/degrading) is
+ * made — overallTrend is forced to "stable" and humanReadable reports an
+ * insufficient-sample verdict instead. Windows/currentMape/etc. are still
+ * returned as raw informational data (shape unchanged).
+ */
 export function computeAccuracyTrend(params?: {
+  windowSize?: number;
+  teamId?: string;
+}): AccuracyTrend {
+  const result = computeAccuracyTrendRaw(params);
+  const minN = minNForVerdict();
+  if (result.totalWithActuals < minN) {
+    return {
+      ...result,
+      overallTrend: "stable",
+      humanReadable: `Insufficient sample (n=${result.totalWithActuals}). Need at least ${minN} matched estimate-actual pairs before an accuracy-trend verdict (improving/degrading/stable) can be reported. Raw MAPE so far: ${result.currentMape}%.`,
+    };
+  }
+  return result;
+}
+
+function computeAccuracyTrendRaw(params?: {
   windowSize?: number;
   teamId?: string;
 }): AccuracyTrend {

@@ -9,6 +9,52 @@ import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js"
 
 export type { EstimateRecord, ActualRecord };
 
+/** Default pending-estimate TTL, in days. Overridable via EPOCH_PENDING_TTL_DAYS. */
+const DEFAULT_PENDING_TTL_DAYS = 30;
+
+/** Resolve the pending-estimate TTL (days) from env, falling back to the default. */
+function pendingTtlDays(): number {
+  const raw = process.env["EPOCH_PENDING_TTL_DAYS"];
+  const n = raw !== undefined ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_PENDING_TTL_DAYS;
+}
+
+/** Default minimum matched-pair sample size required before a calibration verdict is reported. */
+const DEFAULT_MIN_N_FOR_VERDICT = 20;
+
+/** Resolve MIN_N_FOR_VERDICT from env (EPOCH_MIN_N_FOR_VERDICT), falling back to the default. */
+export function minNForVerdict(): number {
+  const raw = process.env["EPOCH_MIN_N_FOR_VERDICT"];
+  const n = raw !== undefined ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MIN_N_FOR_VERDICT;
+}
+
+/**
+ * Build the calibration verdict/recommendation string for a byTool/byTaskType
+ * bucket, gated on MIN_N_FOR_VERDICT (Phase 1 Task 1). Below the threshold,
+ * no directional claim ("Sufficient for calibration", "systematic
+ * overestimation", etc.) is made — only an "insufficient sample" statement.
+ */
+function calibrationRecommendation(
+  pairs: number,
+  metrics: { cappedMdape: number; bias: number } | null,
+  minN: number,
+  zeroMessage: string,
+): string {
+  if (pairs === 0) {
+    return `Insufficient sample (n=0). ${zeroMessage}`;
+  }
+  if (pairs < minN) {
+    const needed = minN - pairs;
+    return `Insufficient sample (n=${pairs}). Need ${needed} more matched pair${needed === 1 ? "" : "s"} before a calibration verdict is reported (minimum ${minN}).`;
+  }
+  const bl = biasLabel(metrics?.bias ?? null);
+  if (pairs < 10) {
+    return `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}). Collect more to improve reliability.`;
+  }
+  return `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
+}
+
 function biasLabel(bias: number | null): string {
   if (bias === null) return "";
   if (bias > 2) return "systematic underestimation";
@@ -53,9 +99,48 @@ export function recordEstimate(
     inputs,
     outputs,
     estimatedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + pendingTtlDays() * 86_400_000).toISOString(),
     ...(source && { source }),
   };
   appendLine(isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE, record);
+  return id;
+}
+
+/** Non-estimation tool-call telemetry (Phase 1 Task 3): never joins the estimates ledger. */
+export interface ToolCallRecord {
+  id: string;
+  tool: string;
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  calledAt: string;
+  source?: string;
+}
+
+/** File used for non-estimation tool-call telemetry — kept separate from ESTIMATES_FILE. */
+const TOOL_CALLS_FILE = "tool-calls.jsonl";
+const DRY_RUN_TOOL_CALLS_FILE = "tool-calls.dry-run.jsonl";
+
+/**
+ * Record a non-estimation tool call (e.g. get_current_time, feedback_health,
+ * record_actual) as telemetry, separate from the estimates ledger. These
+ * calls must never be counted as estimates in totalEstimates/matchRate.
+ */
+export function recordToolCall(
+  tool: string,
+  inputs: Record<string, unknown>,
+  outputs: Record<string, unknown>,
+  source?: string,
+): string {
+  const id = randomUUID();
+  const record: ToolCallRecord = {
+    id,
+    tool,
+    inputs,
+    outputs,
+    calledAt: new Date().toISOString(),
+    ...(source && { source }),
+  };
+  appendLine(isDryRun() ? DRY_RUN_TOOL_CALLS_FILE : TOOL_CALLS_FILE, record);
   return id;
 }
 
@@ -112,6 +197,13 @@ export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasAct
   return estimates
     .map((e) => ({ ...e, hasActual: actualIds.has(e.id) }))
     .filter((e) => !e.hasActual)
+    .filter((e) => {
+      // Pending-TTL expiry (Phase 1 Task 7): route through the shared
+      // isExcluded() predicate so this stays coordinated with exclusion.ts's
+      // ttl_expired semantics — only exclude on that specific reason.
+      const verdict = isExcluded({ id: e.id, tool: e.tool, estimatedAt: e.estimatedAt, expiresAt: e.expiresAt });
+      return !(verdict.excluded && verdict.reason === "ttl_expired");
+    })
     .slice(-limit);
 }
 
@@ -469,22 +561,14 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     toolRecords.set(toolKey, records);
   }
 
+  const minN = minNForVerdict();
+
   const byTool: FeedbackHealthReport["byTool"] = {};
   for (const [tool, count] of toolEstimates) {
     const matched = toolRecords.get(tool) ?? [];
     const metrics = matched.length >= 2 ? computeAccuracyMetrics(matched) : null;
     const pairs = matched.length;
-    let recommendation: string;
-    const bl = biasLabel(metrics?.bias ?? null);
-    if (pairs === 0) {
-      recommendation = "No matched pairs. Record actuals to start calibration.";
-    } else if (pairs < 3) {
-      recommendation = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
-    } else if (pairs < 10) {
-      recommendation = `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}). Collect more to improve reliability.`;
-    } else {
-      recommendation = `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${bl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
-    }
+    const recommendation = calibrationRecommendation(pairs, metrics, minN, "No matched pairs. Record actuals to start calibration.");
     byTool[tool] = { estimates: count, actuals: toolActuals.get(tool) ?? 0, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, cappedMdape: metrics?.cappedMdape ?? null, bias: metrics?.bias ?? null, trend: metrics?.trend ?? null, recommendation };
   }
 
@@ -507,17 +591,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     const records = typeGroups.get(type) ?? [];
     const metrics = records.length >= 2 ? computeAccuracyMetrics(records) : null;
     const pairs = records.length;
-    let typeRec: string;
-    const tbl = biasLabel(metrics?.bias ?? null);
-    if (pairs === 0) {
-      typeRec = "No matched pairs. Use this task type in estimates and record actuals.";
-    } else if (pairs < 3) {
-      typeRec = `Only ${pairs} matched pair${pairs === 1 ? "" : "s"}. Need ${3 - pairs} more for MdAPE computation.`;
-    } else if (pairs < 10) {
-      typeRec = `Sufficient for calibration (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${tbl}). Collect more to improve reliability.`;
-    } else {
-      typeRec = `Good coverage (${pairs} pairs, capped MdAPE: ${metrics?.cappedMdape?.toFixed(1) ?? "N/A"}%, ${tbl}).${metrics && metrics.cappedMdape > 50 ? " Review outliers." : ""}`;
-    }
+    const typeRec = calibrationRecommendation(pairs, metrics, minN, "No matched pairs. Use this task type in estimates and record actuals.");
     byTaskType[type] = { estimates: count, actuals: records.length, matchedPairs: pairs, mape: metrics?.mape ?? null, mdape: metrics?.mdape ?? null, cappedMdape: metrics?.cappedMdape ?? null, bias: metrics?.bias ?? null, trend: metrics?.trend ?? null, recommendation: typeRec };
   }
 
