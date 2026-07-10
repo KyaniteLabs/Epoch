@@ -120,3 +120,26 @@ describe("rust parity — full harness (requires built epoch-cli)", () => {
     expect(report.matchedCases).toBeLessThanOrEqual(report.totalCases);
   });
 });
+
+describe("rust parity — deferred behavioral parity (pendingRust)", () => {
+  // pendingRust cases never touch Rust — force it unavailable so this suite
+  // is deterministic regardless of whether epoch-cli happens to be built.
+  it("pins every pendingRust case's TS-only assertion (exclusion + overlay-merge semantics)", () => {
+    const report = runRustParity({ binary: null });
+    expect(report.pendingRustCases).toBeGreaterThan(0);
+    expect(report.pendingRustDiffs).toEqual([]);
+    expect(report.pendingRustMatched).toBe(report.pendingRustCases);
+  });
+
+  it("keeps pendingRust cases out of the ts-vs-rust gate denominators", () => {
+    const report = runRustParity({ binary: null });
+    expect(report.outputCases + report.errorCases + report.pendingRustCases).toBe(report.totalCases);
+  });
+
+  it("isolates each fixture-seeded case in its own EPOCH_DATA_DIR (order-independent)", () => {
+    const forward = runRustParity({ binary: null }).pendingRustDiffs;
+    const reversed = runRustParity({ binary: null, cases: [...RUST_PARITY_CASES].reverse() }).pendingRustDiffs;
+    expect(forward).toEqual([]);
+    expect(reversed).toEqual([]);
+  });
+});
