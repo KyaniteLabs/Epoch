@@ -43,13 +43,13 @@ Claude (using Epoch):
   gemini-2.0-flash:  $0.02 -- fast, budget-friendly
   gpt-4o-mini:       $0.02 -- fast, budget-friendly
   gemini-2.5-pro:    $0.37 -- standard, high quality
-  claude-sonnet-4:    $0.57 -- standard, high quality
-  Recommendation: gemini-2.0-flash for cost, claude-sonnet-4 for quality
+  claude-sonnet-5:    $0.57 -- standard, high quality
+  Recommendation: gemini-2.0-flash for cost, claude-sonnet-5 for quality
 ```
 
 ## Why Epoch?
 
-Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 24 tools any AI can call -- so your assistant stops guessing and starts calculating.
+Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 25 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
 **Works out of the box.** Epoch ships with a bundled reference database built from 126,223 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
 
@@ -65,7 +65,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 claude mcp add epoch -- npx @kyanitelabs/epoch
 ```
 
-That's it. Your AI assistant now has 24 time estimation tools.
+That's it. Your AI assistant now has 25 time estimation tools.
 
 Or add it to your project's `.mcp.json`:
 
@@ -103,14 +103,14 @@ Everything below is for developers who want to understand the internals, use the
 
 ## Architecture
 
-Six-layer design with 24 tools for time estimation, scheduling, cost analysis, and feedback:
+Six-layer design with 25 tools for time estimation, scheduling, cost analysis, and feedback:
 
 | Layer | Purpose | Tools |
 |-------|---------|-------|
 | **1. Core Temporal** | Time, timezones, duration, date math | `get_current_time`, `convert_timezone`, `parse_duration`, `time_math` |
 | **2. Calendar Math** | Business days, holidays (US/UK/FR/DE/JP) | `add_business_days`, `count_business_days` |
 | **3. Estimation** | PERT, COCOMO II, sprint, CPM, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
-| **4. Analytics** | Reference class, calibration, token-time bridge | `reference_class_estimate`, `calibrate_estimates`, `token_time_bridge` |
+| **4. Analytics** | Reference class, context classification, calibration, token-time bridge | `reference_class_estimate`, `estimate_from_context`, `calibrate_estimates`, `token_time_bridge` |
 | **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate` |
 | **6. Feedback** | Record actuals, track pending estimates, batch operations, health checks | `record_actual`, `get_pending_estimates`, `batch_record_actuals`, `feedback_health` |
 
@@ -332,6 +332,35 @@ Output: {
 
 Valid `task_type` values: `feature`, `bugfix`, `refactor`, `migration`, `infrastructure`, `documentation`, `testing`, `design`.
 
+**`estimate_from_context`** -- Classify a free-text task description and delegate to reference class estimation
+
+```
+Input:  {
+  context: "Add OAuth2 login support to the API, including refresh token rotation and a new /auth/callback endpoint"
+}
+Output: {
+  tool: "estimate_from_context",
+  rawEstimate: 2,
+  correctedEstimate: 2,
+  correctionFactor: 1,
+  sampleSize: 0,
+  baselineSource: "inferred_scope_medium_real_tasks",
+  scopeUsed: "medium",
+  scopeGuide: "For feature tasks: small=~2.3h, medium=~6h, large=~10.6h, xl=~17h",
+  classification: {
+    classified_task_type: "feature",
+    classified_complexity: 3,
+    confidence: "medium",
+    signals: ["task_type_matched:feature"],
+    task_type_from_hint: false,
+    complexity_from_hint: false
+  },
+  note: "Using reference database correction factors. Submit actuals via record_actual to improve accuracy."
+}
+```
+
+Classifies `task_type` and `complexity` from free text (an issue body, PR/diff description, or task summary) using a local, deterministic keyword/signal heuristic -- no LLM call is made. Caller-supplied `task_type`/`complexity` hints always override the classification. The resolved inputs are then delegated to the same reference-class-forecasting path used by `reference_class_estimate`, so the response carries the same estimate fields plus a `classification` provenance block explaining how the tool read the context. When classification confidence is low, an additional `lowConfidenceNote` field is returned rather than silently guessing.
+
 **`calibrate_estimates`** -- Team-specific accuracy calibration from historical estimated vs actual data
 
 ```
@@ -379,13 +408,13 @@ Output: {
 ```
 Input:  {
   tokens: 50000,
-  model: "claude-sonnet-4-6"
+  model: "claude-sonnet-5"
 }
 Output: {
   tokens: 50000,
-  model: "claude-sonnet-4-6",
-  estimatedSeconds: 36,
-  estimatedMinutes: 0.6,
+  model: "claude-sonnet-5",
+  estimatedSeconds: 695,
+  estimatedMinutes: 11.6,
   estimatedCost: 0.57,
   costBreakdown: { inputCost: 0.045, outputCost: 0.525, toolCallOverheadCost: 0 },
   confidence: "likely"
@@ -403,8 +432,8 @@ Output: {
   tokens: 50000,
   models: [
     { model: "gemini-2.0-flash", estimatedCost: 0.0155, qualityTier: "fast", tokensPerSecond: 230 },
-    { model: "deepseek-v3", estimatedCost: 0.0189, qualityTier: "fast", tokensPerSecond: 150 },
-    { model: "claude-sonnet-4-6", estimatedCost: 0.57, qualityTier: "fast", tokensPerSecond: 140 }
+    { model: "deepseek-v3", estimatedCost: 0.0189, qualityTier: "standard", tokensPerSecond: 97 },
+    { model: "gpt-4o-mini", estimatedCost: 0.0233, qualityTier: "fast", tokensPerSecond: 180 }
   ],
   sortBy: "cost"
 }
@@ -498,6 +527,18 @@ The engine detects systematic biases (chronic under-estimation, accuracy degrada
 
 **You do not need to share data with anyone for this to work.** Self-improvement runs entirely locally using your own `~/.epoch/` data.
 
+### The correction loop, measured
+
+The self-improvement claim above isn't marketing copy -- it's backed by a runnable receipt. `scripts/backtest-pert-correction.mjs` makes a read-only temp copy of your `~/.epoch` ledger, chronologically splits matched `pert_estimate` (estimate, actual) pairs 80/20, trains the learned per-(tool, task_type) correction factor on the training split only, and reports MdAPE on the held-out test split it never trained on:
+
+```bash
+npx tsx scripts/backtest-pert-correction.mjs
+```
+
+Measured on the maintainers' production ledger (697 held-out matched pairs at time of writing): MdAPE improved from 105.2% (uncorrected) to 80.5% (learned correction) on data the correction factor never saw during training. This is the mechanism `EPOCH_PERT_LEARNED_CORRECTION` gates behind before it's recommended on by default -- the script also checks that the corrected median actual/predicted ratio lands in [0.7, 1.3], and reports `HOLD` (not recommended yet) when that second guard hasn't cleared, so the flag doesn't ship as "on" until both hold. Run the script against your own ledger for your own numbers; they move as more actuals get recorded, which is the point.
+
+`reference_class_estimate`'s correction factors are the same learned mechanism applied to a different tool. Track its current calibration with `epoch data status` or `feedback_health` (per-tool MAPE/MdAPE, bias, and trend), or generate a full calibration decision-surface report with `node scripts/build-calibration-dashboard.mjs` -- also strictly read-only against your ledger.
+
 ## Data Pipeline
 
 Epoch uses a three-layer data strategy so it's accurate from the start and gets better over time:
@@ -523,7 +564,7 @@ This is completely optional. Epoch works great without it.
 
 ## Surfaces
 
-Epoch exposes the same 24 tools through three interfaces:
+Epoch exposes the same 25 tools through three interfaces:
 
 | Surface | Transport | Use Case |
 |---------|-----------|----------|
@@ -577,9 +618,17 @@ curl http://localhost:3099/health
 curl http://localhost:3099/openapi.json
 ```
 
-## For AI Agents
+## Agent-First
 
-Epoch provides built-in discoverability endpoints so AI agents can find and use the API without prior configuration:
+Epoch is built for agents as first-class callers, not humans typing in a terminal as an afterthought.
+
+**Why agents need time-sense.** An LLM has no grounded sense of duration or cost -- it will say "quick fix" for a two-day migration and "big project" for a two-hour config change with equal confidence, because it has no feedback loop telling it otherwise. That's fine for a chat answer; it breaks down the moment an agent is planning multi-step work, sequencing a sprint, or deciding whether a deadline is realistic. Epoch gives the agent a calculator instead of a guess: PERT/COCOMO/Monte Carlo math, a reference-class baseline built from real task data, and a feedback loop that corrects itself as the agent (or its operator) records actuals.
+
+**`EPOCH_TELEMETRY=1` for headless/agent operators.** Telemetry is off by default and requires informed consent. For a human at a terminal, that consent is `epoch telemetry enable`, which shows the data and asks for confirmation. An agent should never be the one clicking "yes" to that prompt on its own behalf -- there is deliberately no MCP tool that enables telemetry, so an agent cannot self-consent. For headless or agent-operated deployments, the operator opts in out-of-band by setting `EPOCH_TELEMETRY=1` in the server's environment (for example, the `env` block of the MCP server config) before the agent ever starts. Consent stays with the human who configures the deployment, not the agent that runs inside it.
+
+**MCP client qualification.** Epoch's telemetry schema (v2) records `client_name`/`client_version` from the MCP `clientInfo` your host reports at connection time, plus `transport` (`stdio`/`http`). This is agent *qualification*, not agent *identification*: it lets aggregate accuracy stats count "5.7h median across N agent-driven feature estimates" as first-class agent data rather than lumping it in with anonymous CLI usage, without adding any new per-user identifying signal. MCP clients that report `clientInfo` (Claude Code, Cursor, and most current hosts do) get this for free; clients that don't are still fully functional, they just show up as `client_name: null`.
+
+Epoch also provides built-in discoverability endpoints so agents can find and use the HTTP API without prior configuration:
 
 | Endpoint | Description |
 |----------|-------------|
@@ -636,6 +685,8 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 ## Telemetry & Privacy
 
 Epoch can share **anonymized** estimate/actual pairs to improve accuracy for all users. This is **off by default** and requires explicit opt-in.
+
+**Agent-operator consent model:** there is deliberately no MCP tool that enables telemetry -- an agent must not be able to self-consent on a human's behalf. Humans opt in interactively with `epoch telemetry enable`. Agent/headless operators opt in out-of-band by setting `EPOCH_TELEMETRY=1` in the server's environment before the agent starts (see [Agent-First](#agent-first)). Either way, consent belongs to the person who configures the deployment.
 
 ```bash
 epoch telemetry enable     # Opt in (shows exactly what will be shared)
