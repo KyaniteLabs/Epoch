@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
-import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE } from "./ledger.js";
-import type { EstimateRecord, ActualRecord } from "./ledger.js";
+import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays } from "./ledger.js";
+import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
@@ -370,6 +370,7 @@ export function getCalibrationData(
     readLines<EstimateRecord>(ESTIMATES_FILE),
     readLines<ActualRecord>(ACTUALS_FILE),
     { teamId, taskType, windowDays, tool },
+    overlayFlagsById(),
   );
   if (calibrationUsage === "all") return records;
   return records.filter((record) => record.calibrationUsage === calibrationUsage);
@@ -419,6 +420,7 @@ function classifyCalibrationRecord(
   est: EstimateRecord,
   act: ActualRecord,
   estimatedHours: number | null,
+  overlayFlags?: MergedOverlayFlags,
 ): { calibrationProvenance: CalibrationProvenance; calibrationUsage: CalibrationUsage } {
   const verdict = isExcluded({
     id: est.id,
@@ -427,6 +429,7 @@ function classifyCalibrationRecord(
     estimatedAt: est.estimatedAt,
     estimatedHours,
     actual: { actualHours: act.actualHours, notes: act.notes, reportedAt: act.reportedAt, completedAt: act.completedAt, calibrationProvenance: act.calibrationProvenance },
+    ...(overlayFlags && { flags: { quarantined: overlayFlags.quarantined, orphan: overlayFlags.orphan } }),
   });
   if (verdict.excluded) {
     return { calibrationProvenance: provenanceForExclusionReason(verdict.reason), calibrationUsage: "exclude" };
@@ -487,6 +490,26 @@ function normalizeUsage(value: unknown): CalibrationUsage | undefined {
   return VALID_USAGE.has(raw as CalibrationUsage) ? raw as CalibrationUsage : undefined;
 }
 
+/**
+ * Build an id -> merged-overlay-flags map from the shared ledger loader
+ * (src/lib/ledger.ts's loadLedgerWithOverlays()), so matchEstimatesToActuals()
+ * can route manual quarantine/orphan overlay flags into isExcluded() even
+ * when they aren't independently caught by isExcluded()'s own date/ratio
+ * heuristics (the KNOWN_LIMITATIONS gap — see dashboard-data.ts). Only the
+ * live-ledger callers below (getCalibrationData / getFeedbackHealthReport)
+ * pass this in; matchEstimatesToActuals() itself stays disk-agnostic so
+ * callers matching arbitrary in-memory record sets (e.g.
+ * reference-db-recalculation.ts's community-import path, or unit tests)
+ * are unaffected.
+ */
+function overlayFlagsById(): Map<string, MergedOverlayFlags> {
+  const map = new Map<string, MergedOverlayFlags>();
+  for (const rec of loadLedgerWithOverlays()) {
+    map.set(rec.id, rec.flags);
+  }
+  return map;
+}
+
 export function matchEstimatesToActuals(
   estimates: EstimateRecord[],
   actuals: ActualRecord[],
@@ -496,6 +519,7 @@ export function matchEstimatesToActuals(
     windowDays?: number;
     tool?: string;
   },
+  overlayFlags?: Map<string, MergedOverlayFlags>,
 ): HistoricalRecord[] {
   const actualsMap = new Map<string, ActualRecord>();
   for (const a of actuals) {
@@ -523,9 +547,11 @@ export function matchEstimatesToActuals(
     const canonicalTool = canonicalizeToolName(est.tool) ?? est.tool;
 
     // Single exclusion truth: seed/synthetic, smoke, explicit-exclude,
-    // 2026-05-05 exact-match backfill signature, ratio outliers, and
-    // below-threshold microtask artifacts are all determined here.
-    const calibration = classifyCalibrationRecord(est, act, estHours);
+    // 2026-05-05 exact-match backfill signature, ratio outliers,
+    // below-threshold microtask artifacts, and (when overlayFlags is
+    // supplied) manual quarantine/orphan overlay flags are all determined
+    // here.
+    const calibration = classifyCalibrationRecord(est, act, estHours, overlayFlags?.get(est.id));
     if (calibration.calibrationUsage === "exclude") continue;
 
     // Missing/unrecognized output shape is a data-completeness gap, not a
@@ -687,8 +713,13 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     ? Math.round((matchedEstimateCount / totalEstimates) * 1000) / 10
     : 0;
 
+  // Load the merged overlay-flags map once (Pre-mortem Scenario 6 gap-close)
+  // and reuse it for both the matcher below and the seedRecordsFiltered
+  // recount, so the two stay in agreement rather than drifting.
+  const overlayFlags = overlayFlagsById();
+
   // Compute all matched records once (no re-reads)
-  const allMatched = matchEstimatesToActuals(estimates, actuals);
+  const allMatched = matchEstimatesToActuals(estimates, actuals, undefined, overlayFlags);
   const correctionMatched = allMatched.filter((record) => record.calibrationUsage !== "baseline");
   const baselineRecords = allMatched.length - correctionMatched.length;
 
@@ -708,6 +739,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
       estimatedAt: est.estimatedAt,
       estimatedHours: estHours,
       actual: { actualHours: a.actualHours, notes: a.notes, reportedAt: a.reportedAt, completedAt: a.completedAt, calibrationProvenance: a.calibrationProvenance },
+      flags: { quarantined: overlayFlags.get(est.id)?.quarantined, orphan: overlayFlags.get(est.id)?.orphan },
     });
     if (verdict.excluded) seedRecordsFiltered++;
   }
