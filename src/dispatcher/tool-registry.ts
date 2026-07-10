@@ -55,8 +55,10 @@ import {
   scheduleRiskSchema,
   cocomoValidateSchema,
   cocomoGroundTruthSchema,
+  recordActualSchema,
   batchRecordActualsSchema,
   feedbackHealthSchema,
+  estimateFromContextSchema,
 } from "../schemas/index.js";
 
 // ---- Tool Definition --------------------------------------------------------
@@ -131,12 +133,6 @@ const countBusinessDaysSchema = z.object({
     .default("US"),
 });
 
-const recordActualSchema = z.object({
-  estimate_id: z.string().describe("ID of the estimate to update."),
-  actual_hours: z.number().positive().describe("Actual hours spent."),
-  notes: z.string().optional().describe("Optional context."),
-});
-
 const getPendingEstimatesSchema = z.object({
   limit: z.number().int().positive().max(100).default(20).describe("Max estimates to return."),
 });
@@ -192,6 +188,9 @@ const pertOutput = {
     humanReadable: { type: "string", description: "Human-readable summary" },
     referenceClassCrossCheck: { type: "object", description: "Reference class estimate for comparison (AI-native only)", properties: { estimate: { type: "number" }, scope: { type: "string" }, baselineSource: { type: "string" }, sampleSize: { type: "number" } } },
     recommendation: { type: "string", description: "When reference class disagrees significantly with PERT, explains which to trust" },
+    rawEstimate: { type: "number", description: "Pre-correction expected-based headline (same value as `expected`), exposed for provenance parity with reference_class_estimate." },
+    correctionFactor: { type: "number", description: "Learned (pert_estimate, task_type) correction factor from computeToolTaskCorrectionFactors, independent of the ai_native developerProfile factor. 1.0 when EPOCH_PERT_LEARNED_CORRECTION is off or the cell has fewer than MIN_RECORDS_PER_FACTOR matched pairs." },
+    n: { type: "number", description: "Matched-pair sample size for the (pert_estimate, task_type) correction cell. 0 when the learned-correction flag is off or no task_type was supplied." },
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -449,16 +448,34 @@ Use when estimating task duration with uncertain outcomes.`,
       // (pert_estimate, task_type) factor IFF that cell has n >= MIN_RECORDS_PER_FACTOR.
       // Never multiplies the two factors together. See calibration-factors.ts
       // composePertCorrectionFactor() for the composition rule.
-      let correctionFactor = profile.correctionFactor;
+      //
+      // Provenance outputs (rawEstimate, correctionFactor, n — Phase 3 contract
+      // wave, additive): correctionFactor/n here report the RAW learned-factor
+      // lookup (getPertToolTaskCorrection), not the composed value used for
+      // adjustedEstimate — they default to {factor: 1.0, n: 0} when the flag is
+      // off or no task_type is supplied, and to {factor: 1.0, n: <actual n>}
+      // when the flag is on but the cell hasn't reached MIN_RECORDS_PER_FACTOR
+      // (computeToolTaskCorrectionFactors itself withholds a factor below that
+      // threshold). This mirrors reference_class_estimate's rawEstimate/
+      // correctionFactor fields, which also report the data-driven correction
+      // independent of the ai_native developerProfile heuristic.
+      let composedFactor = profile.correctionFactor;
+      let learnedFactor = 1.0;
+      let learnedN = 0;
       if (isPertLearnedCorrectionEnabled() && p.task_type) {
         const learned = getPertToolTaskCorrection(p.task_type);
-        correctionFactor = composePertCorrectionFactor(learned, profile.correctionFactor).factor;
+        learnedFactor = learned.factor;
+        learnedN = learned.n;
+        composedFactor = composePertCorrectionFactor(learned, profile.correctionFactor).factor;
       }
 
       const data: Record<string, unknown> = {
         ...result.data,
         developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
-        adjustedEstimate: Math.round(result.data.expected * correctionFactor * 100) / 100,
+        adjustedEstimate: Math.round(result.data.expected * composedFactor * 100) / 100,
+        rawEstimate: result.data.expected,
+        correctionFactor: learnedFactor,
+        n: learnedN,
       };
 
       // Cross-check with reference class for AI-native workflows
@@ -814,7 +831,7 @@ update automatically to reduce estimation bias.`,
     { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
       const p = recordActualSchema.parse(input);
-      const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes);
+      const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes, p.unit, p.calibration_provenance);
       if (!result.ok) {
         const messages: Record<string, string> = {
           below_threshold: `Actual hours (${p.actual_hours}) must be positive.`,
@@ -845,7 +862,7 @@ update automatically to reduce estimation bias.`,
 Returns estimates awaiting actuals so you can submit feedback via record_actual.
 Use this to close the estimation feedback loop and improve accuracy over time.`,
     getPendingEstimatesSchema,
-    { type: "object", properties: { count: { type: "number" }, estimates: { type: "array" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { count: { type: "number" }, estimates: { type: "array", items: { type: "object", properties: { id: { type: "string" }, tool: { type: "string" }, inputs: { type: "object" }, estimatedAt: { type: "string" }, task_label: { type: "string", description: "Optional task_label carried on the estimate's inputs, if supplied at estimate time." } } } } } } satisfies Record<string, unknown>,
     (input) => {
       const p = getPendingEstimatesSchema.parse(input);
       const pending = getPendingEstimates(p.limit);
@@ -857,12 +874,16 @@ Use this to close the estimation feedback loop and improve accuracy over time.`,
         data: {
           count: pending.length,
           summary,
-          estimates: pending.slice(-10).map((e) => ({
-            id: e.id,
-            tool: e.tool,
-            inputs: e.inputs,
-            estimatedAt: e.estimatedAt,
-          })),
+          estimates: pending.slice(-10).map((e) => {
+            const taskLabel = e.inputs["task_label"];
+            return {
+              id: e.id,
+              tool: e.tool,
+              inputs: e.inputs,
+              estimatedAt: e.estimatedAt,
+              ...(typeof taskLabel === "string" && taskLabel.length > 0 && { task_label: taskLabel }),
+            };
+          }),
         },
       };
     },
@@ -882,6 +903,8 @@ Each entry pairs an estimate ID with the actual hours spent.`,
         estimateId: e.estimate_id,
         actualHours: e.actual_hours,
         notes: e.notes,
+        unit: e.unit,
+        calibrationProvenance: e.calibration_provenance,
       })));
       if (result.succeeded === 0 && result.failed > 0) {
         return {
@@ -903,6 +926,32 @@ and self-improvement readiness (which types have enough data for auto-calibratio
     { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchedPairs: { type: "number" }, seedRecordsFiltered: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" }, dataQuality: { type: "object" }, humanReadable: { type: "string" } } } satisfies Record<string, unknown>,
     () => {
       return { ok: true as const, data: getFeedbackHealthReport() };
+    },
+  ),
+
+  // -- Context-driven estimation (registered Phase 3; logic lands Phase 5) --
+
+  tool(
+    "estimate_from_context",
+    `Classify a free-text task description and delegate to the estimation engine.
+
+Not yet implemented — registered now so its input contract is stable before
+the Rust parity freeze. Currently returns a structured "not implemented"
+response; classification + delegation logic lands in a future release.`,
+    estimateFromContextSchema,
+    { type: "object", properties: { implemented: { type: "boolean" }, plannedPhase: { type: "number" }, tool: { type: "string" }, message: { type: "string" } } } satisfies Record<string, unknown>,
+    (input) => {
+      const p = estimateFromContextSchema.parse(input);
+      return {
+        ok: true as const,
+        data: {
+          implemented: false,
+          plannedPhase: 5,
+          tool: "estimate_from_context",
+          message: "estimate_from_context is registered but not yet implemented. Classification of free-text context into task_type/complexity and delegation to reference_class_estimate/pert_estimate lands in a future release. Use reference_class_estimate or pert_estimate directly in the meantime.",
+          contextLength: p.context.length,
+        },
+      };
     },
   ),
 ]);
@@ -953,6 +1002,7 @@ export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
   "token_cost_estimate",
   "cocomo_validate",
   "cocomo_ground_truth",
+  "estimate_from_context",
 ]);
 
 export function isEstimationTool(toolName: string): boolean {

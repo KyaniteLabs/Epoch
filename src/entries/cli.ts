@@ -771,6 +771,33 @@ export function createCliProgram(): Command {
 		});
 
 	program
+		.command("estimate-from-context")
+		.description(
+			"Classify a free-text task description and delegate to the estimation engine (registered stub — not yet implemented).",
+		)
+		.requiredOption(
+			"--context <text>",
+			"Free-text task description (issue body, diff, or PR description)",
+		)
+		.option("--task-type <type>", "Optional pre-classified task type hint")
+		.option(
+			"--complexity <n>",
+			"Optional pre-assessed complexity hint (1-5)",
+			safeFloat("complexity"),
+		)
+		.option("--team-id <id>", "Optional team identifier")
+		.action(async (opts, cmd) => {
+			const rootOpts = getRootOpts(cmd);
+			const format = resolveFormat(rootOpts);
+			const quiet = isQuiet(rootOpts);
+			const input: Record<string, unknown> = { context: opts.context };
+			if (opts.taskType !== undefined) input.task_type = opts.taskType;
+			if (opts.complexity !== undefined) input.complexity = opts.complexity;
+			if (opts.teamId !== undefined) input.team_id = opts.teamId;
+			await runAndExit("estimate_from_context", input, format, quiet);
+		});
+
+	program
 		.command("self-improve")
 		.description(
 			"Trigger self-improvement: recompute correction factors from feedback data.",

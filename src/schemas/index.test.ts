@@ -14,6 +14,9 @@ import {
   accuracyTrendSchema,
   scheduleRiskSchema,
   cocomoValidateSchema,
+  recordActualSchema,
+  batchRecordActualsSchema,
+  estimateFromContextSchema,
   timeUnitEnum,
   taskTypeEnum,
   llmModelEnum,
@@ -427,5 +430,148 @@ describe("cocomoValidateSchema", () => {
 
   it("rejects non-array dataset_filter", () => {
     expect(cocomoValidateSchema.safeParse({ dataset_filter: "COCOMO81" }).success).toBe(false);
+  });
+});
+
+// ---- Phase 3 contract wave: task_label/project/session_id round-trip ------
+// All 8 estimation tool schemas accept the same three optional routing
+// fields, absent by default, validated (not merely passed through) when
+// present. Plan reference: §3 Phase 3 Task 1.
+
+describe("Phase 3 contract wave — task_label/project/session_id on estimation schemas", () => {
+  const cases: Array<{ name: string; schema: { safeParse: (v: unknown) => { success: boolean } }; valid: Record<string, unknown> }> = [
+    { name: "pertEstimateSchema", schema: pertEstimateSchema, valid: { optimistic: 2, most_likely: 5, pessimistic: 10 } },
+    { name: "referenceClassEstimateSchema", schema: referenceClassEstimateSchema, valid: { task_type: "feature" } },
+    { name: "cocomoEstimateSchema", schema: cocomoEstimateSchema, valid: { kloc: 10 } },
+    { name: "sprintForecastSchema", schema: sprintForecastSchema, valid: { backlog_points: 40, velocity_history: [10] } },
+    { name: "monteCarloSchema", schema: monteCarloSchema, valid: { tasks: [{ name: "A", optimistic: 2, most_likely: 5, pessimistic: 10 }] } },
+    { name: "scheduleRiskSchema", schema: scheduleRiskSchema, valid: { estimated_hours: 40 } },
+    { name: "criticalPathSchema", schema: criticalPathSchema, valid: { tasks: [{ name: "A", duration: 2, predecessors: [] }] } },
+    { name: "tokenTimeBridgeSchema", schema: tokenTimeBridgeSchema, valid: { tokens: 1000, model: "gpt-4o-mini" } },
+  ];
+
+  for (const { name, schema, valid } of cases) {
+    it(`${name}: absent by default`, () => {
+      const r = schema.safeParse(valid) as { success: true; data: Record<string, unknown> } | { success: false };
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data["task_label"]).toBeUndefined();
+        expect(r.data["project"]).toBeUndefined();
+        expect(r.data["session_id"]).toBeUndefined();
+      }
+    });
+
+    it(`${name}: accepts and preserves task_label/project/session_id when present`, () => {
+      const r = schema.safeParse({
+        ...valid,
+        task_label: "EPOCH-142",
+        project: "epoch",
+        session_id: "sess-abc123",
+      }) as { success: true; data: Record<string, unknown> } | { success: false };
+      expect(r.success).toBe(true);
+      if (r.success) {
+        expect(r.data["task_label"]).toBe("EPOCH-142");
+        expect(r.data["project"]).toBe("epoch");
+        expect(r.data["session_id"]).toBe("sess-abc123");
+      }
+    });
+
+    it(`${name}: rejects a non-string task_label`, () => {
+      expect(schema.safeParse({ ...valid, task_label: 12345 }).success).toBe(false);
+    });
+  }
+});
+
+describe("pertEstimateSchema — optional complexity (Phase 3 contract wave)", () => {
+  const valid = { optimistic: 2, most_likely: 5, pessimistic: 10 };
+
+  it("complexity is absent by default", () => {
+    const r = pertEstimateSchema.safeParse(valid);
+    expect(r.success && r.data.complexity).toBeUndefined();
+  });
+
+  it("accepts complexity within [1,5]", () => {
+    expect(pertEstimateSchema.safeParse({ ...valid, complexity: 4 }).success).toBe(true);
+  });
+
+  it("rejects complexity outside [1,5]", () => {
+    expect(pertEstimateSchema.safeParse({ ...valid, complexity: 0 }).success).toBe(false);
+    expect(pertEstimateSchema.safeParse({ ...valid, complexity: 6 }).success).toBe(false);
+  });
+});
+
+// ---- recordActualSchema / batchRecordActualsSchema: unit + calibration_provenance
+
+describe("recordActualSchema — unit + calibration_provenance (Phase 3 contract wave)", () => {
+  const valid = { estimate_id: "est-1", actual_hours: 4 };
+
+  it("accepts valid input without unit/calibration_provenance", () => {
+    const r = recordActualSchema.safeParse(valid);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.unit).toBeUndefined();
+      expect(r.data.calibration_provenance).toBeUndefined();
+    }
+  });
+
+  it("accepts a valid unit", () => {
+    expect(recordActualSchema.safeParse({ ...valid, unit: "days" }).success).toBe(true);
+  });
+
+  it("rejects an invalid unit", () => {
+    expect(recordActualSchema.safeParse({ ...valid, unit: "fortnights" }).success).toBe(false);
+  });
+
+  it("accepts a valid calibration_provenance", () => {
+    expect(recordActualSchema.safeParse({ ...valid, calibration_provenance: "backfilled_calibration" }).success).toBe(true);
+  });
+
+  it("rejects an invalid calibration_provenance", () => {
+    expect(recordActualSchema.safeParse({ ...valid, calibration_provenance: "made-up" }).success).toBe(false);
+  });
+});
+
+describe("batchRecordActualsSchema — per-entry unit + calibration_provenance (Phase 3 contract wave)", () => {
+  it("accepts entries with unit and calibration_provenance", () => {
+    const r = batchRecordActualsSchema.safeParse({
+      entries: [{ estimate_id: "est-1", actual_hours: 4, unit: "minutes", calibration_provenance: "prospective" }],
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects an entry with an invalid unit", () => {
+    const r = batchRecordActualsSchema.safeParse({
+      entries: [{ estimate_id: "est-1", actual_hours: 4, unit: "centuries" }],
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+// ---- estimateFromContextSchema ---------------------------------------------
+
+describe("estimateFromContextSchema (Phase 3 registration; logic lands Phase 5)", () => {
+  it("accepts a minimal valid input (context only)", () => {
+    expect(estimateFromContextSchema.safeParse({ context: "Fix the login bug." }).success).toBe(true);
+  });
+
+  it("rejects an empty context string", () => {
+    expect(estimateFromContextSchema.safeParse({ context: "" }).success).toBe(false);
+  });
+
+  it("rejects a missing context", () => {
+    expect(estimateFromContextSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("accepts optional task_type/complexity/team_id hints", () => {
+    expect(estimateFromContextSchema.safeParse({
+      context: "Fix the login bug.",
+      task_type: "bugfix",
+      complexity: 3,
+      team_id: "team-a",
+    }).success).toBe(true);
+  });
+
+  it("rejects an invalid task_type hint", () => {
+    expect(estimateFromContextSchema.safeParse({ context: "x", task_type: "not-a-type" }).success).toBe(false);
   });
 });

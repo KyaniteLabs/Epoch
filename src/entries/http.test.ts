@@ -56,7 +56,7 @@ describe("HTTP API", () => {
       const body = await res.json() as Record<string, unknown>;
       expect(body.ok).toBe(true);
       const tools = body.tools as Array<{ name: string; description: string }>;
-      expect(tools).toHaveLength(24);
+      expect(tools).toHaveLength(25);
       for (const t of tools) {
         expect(t.name).toBeTruthy();
         expect(t.description).toBeTruthy();
@@ -402,7 +402,7 @@ describe("HTTP API", () => {
       expect(info.version).toBeTruthy();
     });
 
-    it("includes paths for all 24 tools", async () => {
+    it("includes paths for all 25 tools", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;
 
@@ -410,7 +410,7 @@ describe("HTTP API", () => {
       const pathKeys = Object.keys(paths).filter((path) => path.startsWith("/v1/tools/"));
 
       // Each tool has its own path: /v1/tools/{toolName}
-      expect(pathKeys).toHaveLength(24);
+      expect(pathKeys).toHaveLength(25);
 
       // Every path should start with /v1/tools/
       for (const key of pathKeys) {

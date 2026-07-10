@@ -183,8 +183,8 @@ function isDryRun(): boolean {
   return process.env["EPOCH_DRY_RUN"] === "1" || process.env["EPOCH_DRY_RUN"] === "true";
 }
 
-export function recordActual(estimateId: string, actualHours: number, notes?: string, unit?: ActualUnit): boolean {
-  const result = recordActualDetailed(estimateId, actualHours, notes, unit);
+export function recordActual(estimateId: string, actualHours: number, notes?: string, unit?: ActualUnit, calibrationProvenance?: string): boolean {
+  const result = recordActualDetailed(estimateId, actualHours, notes, unit, calibrationProvenance);
   return result.ok;
 }
 
@@ -193,6 +193,7 @@ export function recordActualDetailed(
   actualHours: number,
   notes?: string,
   unit?: ActualUnit,
+  calibrationProvenance?: string,
 ): RecordActualResult {
   const normalizedHours = normalizeActualHours(actualHours, unit);
   if (normalizedHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
@@ -229,6 +230,7 @@ export function recordActualDetailed(
     actualHours: normalizedHours,
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
+    ...(calibrationProvenance && { calibrationProvenance }),
   };
 
   // Dry-run mode: write to separate file so tests never touch production data
@@ -323,7 +325,7 @@ function classifyCalibrationRecord(
     inputs: est.inputs,
     estimatedAt: est.estimatedAt,
     estimatedHours,
-    actual: { actualHours: act.actualHours, notes: act.notes, reportedAt: act.reportedAt, completedAt: act.completedAt },
+    actual: { actualHours: act.actualHours, notes: act.notes, reportedAt: act.reportedAt, completedAt: act.completedAt, calibrationProvenance: act.calibrationProvenance },
   });
   if (verdict.excluded) {
     return { calibrationProvenance: provenanceForExclusionReason(verdict.reason), calibrationUsage: "exclude" };
@@ -516,6 +518,8 @@ export interface BatchActualEntry {
   estimateId: string;
   actualHours: number;
   notes?: string;
+  unit?: ActualUnit;
+  calibrationProvenance?: string;
 }
 
 export interface BatchResult {
@@ -530,7 +534,7 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
   let succeeded = 0;
 
   for (const entry of entries) {
-    const ok = recordActual(entry.estimateId, entry.actualHours, entry.notes);
+    const ok = recordActual(entry.estimateId, entry.actualHours, entry.notes, entry.unit, entry.calibrationProvenance);
     if (ok) {
       succeeded++;
     } else {
@@ -602,7 +606,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
       inputs: est.inputs,
       estimatedAt: est.estimatedAt,
       estimatedHours: estHours,
-      actual: { actualHours: a.actualHours, notes: a.notes, reportedAt: a.reportedAt, completedAt: a.completedAt },
+      actual: { actualHours: a.actualHours, notes: a.notes, reportedAt: a.reportedAt, completedAt: a.completedAt, calibrationProvenance: a.calibrationProvenance },
     });
     if (verdict.excluded) seedRecordsFiltered++;
   }

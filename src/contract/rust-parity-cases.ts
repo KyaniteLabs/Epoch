@@ -387,11 +387,29 @@ export const RUST_PARITY_CASES: readonly ParityCase[] = [
     note: "Missing required actual_hours — both runtimes reject before any write.",
   },
   {
+    name: "record_actual/synthetic-id-rejected",
+    tool: "record_actual",
+    cliCommand: "record-actual",
+    input: { estimate_id: "seed-parity-001", actual_hours: 4 },
+    expect: "error",
+    note: "Exclusion semantics (Phase 3): synthetic/seed-prefixed estimate ids are rejected before any ledger write — pins the isSyntheticId() class of the shared exclusion predicate (src/lib/exclusion.ts) that both runtimes must replicate byte-identically. Stateless/non-mutating by design so it is safe to run repeatedly within the shared-directory golden-case harness.",
+  },
+  {
     name: "batch_record_actuals/missing-entries",
     tool: "batch_record_actuals",
     cliCommand: "batch-record-actuals",
     input: {},
     expect: "error",
     note: "Missing entries array — both runtimes reject before any write.",
+  },
+
+  // ---- Context-driven estimation (registered Phase 3; logic lands Phase 5) -
+  {
+    name: "estimate_from_context/not-implemented",
+    tool: "estimate_from_context",
+    cliCommand: "estimate-from-context",
+    input: { context: "Fix a null pointer exception in the login flow." },
+    expect: "ok",
+    note: "Tool registration lands in Phase 3 (contract wave, before the Rust freeze); classification/delegation logic lands in Phase 5. Until the Rust CLI adds a matching stub, this case is expected to diverge on a live Rust binary — it is registered now so both runtimes converge on the same not-implemented contract once the Rust branch rebases onto main (see plan §3 Phase 3 merge order).",
   },
 ] as const;
