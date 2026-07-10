@@ -523,6 +523,10 @@ If you record your actuals, Epoch personalizes further:
 Your estimates + your actuals -> Your correction factors -> Better estimates -> Repeat
 ```
 
+**The loop can close itself.** Recording actuals is the step everyone forgets, so Epoch can do it for you: `epoch auto-actuals --session <id>` records wall-clock-derived actuals for a session's unfinished estimates (agent hosts can wire it into a session-end hook). Auto-recorded actuals are sanity-bounded (0.05–12h, <10x the estimate), provenance-labeled `auto_wallclock`, never overwrite a real actual, and `feedback_health` reports them separately (`byProvenance`) so automated data can't silently skew your calibration.
+
+**Estimates lead with honest ranges.** When at least 5 matched pairs exist for a task type, `pert_estimate` and `reference_class_estimate` open with a calibrated 80% interval ("Expected 1.6–4.2 hours (80% confidence interval); point estimate 2.5 hours") derived from your own historical estimate-vs-actual ratios — and say plainly when there isn't enough data yet.
+
 The engine detects systematic biases (chronic under-estimation, accuracy degradation) and surfaces actionable recommendations.
 
 **You do not need to share data with anyone for this to work.** Self-improvement runs entirely locally using your own `~/.epoch/` data.
