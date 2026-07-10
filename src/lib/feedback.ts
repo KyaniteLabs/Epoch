@@ -5,7 +5,7 @@ import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
 import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
-import { isExcluded, isSyntheticId, type ExclusionReason } from "./exclusion.js";
+import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
 
@@ -253,7 +253,7 @@ export function recordToolCall(
 
 export type RecordActualResult =
   | { ok: true; flagged?: "unit_suspect" }
-  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" };
+  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds" };
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
@@ -314,16 +314,26 @@ export function recordActualDetailed(
   // are left to the existing join-time handling elsewhere and are not rejected here.
   const matchedEstimate = readLines<EstimateRecord>(ESTIMATES_FILE).find((e) => e.id === estimateId);
   let flagged: "unit_suspect" | undefined;
+  let matchedEstimatedHours: number | null = null;
   if (matchedEstimate) {
     if (canonicalizeToolName(matchedEstimate.tool) === null) {
       return { ok: false, reason: "unknown_tool" };
     }
 
-    const estimatedHours = extractEstimatedHours(matchedEstimate.outputs);
-    if (estimatedHours !== null && estimatedHours > 0 && normalizedHours > 0) {
-      const ratio = Math.max(normalizedHours / estimatedHours, estimatedHours / normalizedHours);
+    matchedEstimatedHours = extractEstimatedHours(matchedEstimate.outputs);
+    if (matchedEstimatedHours !== null && matchedEstimatedHours > 0 && normalizedHours > 0) {
+      const ratio = Math.max(normalizedHours / matchedEstimatedHours, matchedEstimatedHours / normalizedHours);
       if (ratio > UNIT_SUSPECT_RATIO) flagged = "unit_suspect";
     }
+  }
+
+  // Wave 2 auto-actuals write-time guard: never persist an auto_wallclock
+  // actual outside the dedicated sanity gate, regardless of caller. Defense
+  // in depth alongside the auto-actuals CLI's own pre-filter and
+  // isExcluded()'s calibration-math gate (src/lib/exclusion.ts) — all three
+  // share isAutoWallclockSane() as the single source of truth.
+  if (calibrationProvenance === "auto_wallclock" && !isAutoWallclockSane(normalizedHours, matchedEstimatedHours)) {
+    return { ok: false, reason: "auto_wallclock_out_of_bounds" };
   }
 
   const record: ActualRecord = {
@@ -458,9 +468,16 @@ function classifyCalibrationRecord(
   }
 
   if (explicitProvenance) {
+    // "prospective" (an ordinary matched actual) and "auto_wallclock" (Wave 2
+    // auto-actuals — included in correction training by default per plan,
+    // subject only to isExcluded()'s dedicated sanity gate) both default to
+    // "correction" usage when no explicit usage is supplied. Every other
+    // explicit provenance (backfilled_*, synthetic, smoke, unknown) defaults
+    // to "baseline" — held out of correction-factor computation.
+    const defaultUsage = explicitProvenance === "prospective" || explicitProvenance === "auto_wallclock" ? "correction" : "baseline";
     return {
       calibrationProvenance: explicitProvenance,
-      calibrationUsage: explicitUsage ?? (explicitProvenance === "prospective" ? "correction" : "baseline"),
+      calibrationUsage: explicitUsage ?? defaultUsage,
     };
   }
 
@@ -474,6 +491,7 @@ const VALID_PROVENANCE = new Set<CalibrationProvenance>([
   "synthetic",
   "smoke",
   "unknown",
+  "auto_wallclock",
 ]);
 
 const VALID_USAGE = new Set<CalibrationUsage>(["correction", "baseline", "exclude"]);
@@ -687,6 +705,18 @@ export interface FeedbackHealthReport {
   matchRate: number;
   byTool: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; cappedMdape: number | null; bias: number | null; trend: string | null; recommendation: string }>;
   byTaskType: Record<string, { estimates: number; actuals: number; matchedPairs: number; mape: number | null; mdape: number | null; cappedMdape: number | null; bias: number | null; trend: string | null; recommendation: string }>;
+  /**
+   * Matched pairs segmented by calibration provenance (Wave 2 auto-actuals):
+   * "verified" = every non-auto_wallclock provenance (prospective,
+   * backfilled_*, unknown, etc — actuals a human/agent explicitly recorded);
+   * "auto" = auto_wallclock actuals recorded automatically at session end.
+   * Kept separate so calibration drift introduced by wall-clock noise is
+   * visible rather than silently blended into the headline metrics.
+   */
+  byProvenance: {
+    verified: { matchedPairs: number; mdape: number | null; cappedMdape: number | null };
+    auto: { matchedPairs: number; mdape: number | null; cappedMdape: number | null };
+  };
   selfImprovement: {
     readyTypes: string[];
     callsUntilUpdate: number;
@@ -853,6 +883,18 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   const seedLabel = seedRecordsFiltered > 0 ? ` (${seedRecordsFiltered} seed records filtered)` : "";
 
+  // byProvenance (Wave 2 auto-actuals): split the same correctionMatched
+  // population used by byTool/byTaskType into verified vs auto_wallclock so
+  // drift between the two is visible without waiting for a manual audit.
+  const autoMatched = correctionMatched.filter((r) => r.calibrationProvenance === "auto_wallclock");
+  const verifiedMatched = correctionMatched.filter((r) => r.calibrationProvenance !== "auto_wallclock");
+  const autoMetrics = autoMatched.length >= 2 ? computeAccuracyMetrics(autoMatched) : null;
+  const verifiedMetrics = verifiedMatched.length >= 2 ? computeAccuracyMetrics(verifiedMatched) : null;
+  const byProvenance: FeedbackHealthReport["byProvenance"] = {
+    verified: { matchedPairs: verifiedMatched.length, mdape: verifiedMetrics?.mdape ?? null, cappedMdape: verifiedMetrics?.cappedMdape ?? null },
+    auto: { matchedPairs: autoMatched.length, mdape: autoMetrics?.mdape ?? null, cappedMdape: autoMetrics?.cappedMdape ?? null },
+  };
+
   return {
     totalEstimates,
     totalActuals,
@@ -862,6 +904,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     matchRate,
     byTool,
     byTaskType,
+    byProvenance,
     selfImprovement: { readyTypes, callsUntilUpdate },
     dataQuality: { overallMdape, overallCappedMdape, outlierRatio, recommendation, dataCompletenessScore },
     humanReadable: `${correctionMatched.length} correction-eligible matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}; ${baselineRecords} baseline-only records held out). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,

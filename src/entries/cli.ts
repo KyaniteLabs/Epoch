@@ -800,6 +800,21 @@ export function createCliProgram(): Command {
 		});
 
 	program
+		.command("auto-actuals")
+		.description(
+			"Auto-record wall-clock-derived actuals (provenance: auto_wallclock) for a session's pending estimates.",
+		)
+		.requiredOption("--session <id>", "Session identifier to match pending estimates against")
+		.option("--dry-run", "Preview what would be recorded without writing", false)
+		.action(async (opts) => {
+			const { runAutoActuals } = await import("../lib/auto-actuals.js");
+			const result = runAutoActuals(opts.session, opts.dryRun === true);
+			process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+			process.stdout.write(result.summary + "\n");
+			process.exit(0);
+		});
+
+	program
 		.command("self-improve")
 		.description(
 			"Trigger self-improvement: recompute correction factors from feedback data.",

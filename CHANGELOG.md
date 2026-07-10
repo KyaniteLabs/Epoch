@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- New `calibration_provenance` value `auto_wallclock` and CLI subcommand `epoch auto-actuals --session <id> [--dry-run]`, which auto-records wall-clock-derived actuals (never overwriting a verified actual) for a session's un-actualed pending estimates, gated by a dedicated sanity bound ([0.05h, 12h], <10x ratio vs. estimate) shared across the CLI pre-filter, `recordActualDetailed()`'s write-time guard, and `isExcluded()`'s calibration-math guard; `feedback_health` now reports a `byProvenance` block (verified vs. auto matched-pair counts and MdAPE) so any drift introduced by auto-recorded actuals stays visible instead of silently blending into the headline metrics.
+
 ### Changed
 - Docs refresh: README/llms.txt/server.json now reflect the shipped `estimate_from_context` tool (24→25 tools), the current Claude 5 model catalog, and an evidence-backed self-improvement section (`scripts/backtest-pert-correction.mjs` receipt).
 
