@@ -1,21 +1,27 @@
-# Epoch -- Time Estimation MCP Server
+# Epoch
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-gre
+Time estimation MCP server for AI agents: PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, cost estimation, and schedule risk.
+
+**Who it is for:** agents and operators who need calibrated duration/cost answers instead of vibe guesses.
+
+**What you get:** an MCP server (and CLI surfaces) for three-point estimates, schedule risk, and token/time bridges.
 
 ## Try it
 
 ```bash
 claude mcp add epoch -- npx @kyanitelabs/epoch
+# or: npx @kyanitelabs/epoch --help
 ```
+
+Docs: [kyanitelabs.github.io/Epoch](https://kyanitelabs.github.io/Epoch/)
 
 ## Docs
 
-- [![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)
-- [`skills/epoch/SKILL.md`](skills/epoch/SKILL.md)
-- [CONTRIBUTING-data.md](./CONTRIBUTING-data.md)
-- [Privacy Policy](docs/PRIVACY.md)
-- [Telemetry Documentation](docs/TELEMETRY.md)
+- [Skill](skills/epoch/SKILL.md)
+- [Privacy](docs/PRIVACY.md)
+- [Telemetry](docs/TELEMETRY.md)
+- [Contributing data](CONTRIBUTING-data.md)
 
 ## License
 
-See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
