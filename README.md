@@ -4,6 +4,10 @@
 
 # Epoch -- Time Estimation MCP Server
 
+> Epoch is a time estimation MCP server that helps engineering leads, agents, and planners who need calibrated duration estimates produce PERT/reference-class estimates and record actuals.
+
+**TL;DR:** Epoch — time estimation MCP server. Best for engineering leads, agents, and planners who need calibrated duration estimates.
+
 [![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
 
 **Epoch helps AI agents understand time.**
@@ -744,3 +748,64 @@ More from [KyaniteLabs](https://kyanitelabs.tech). Related projects:
 - **[checkyourself](https://github.com/KyaniteLabs/checkyourself)** — local-first production-readiness checks for AI-built code
 
 → More at **[kyanitelabs.tech](https://kyanitelabs.tech)**
+
+<!-- s-plus-geo:start -->
+
+## What is Epoch?
+
+**Epoch** is a **time estimation MCP server** that helps **engineering leads, agents, and planners who need calibrated duration estimates** **produce PERT/reference-class estimates and record actuals**.
+
+| | |
+| --- | --- |
+| **Product** | Epoch |
+| **Category** | time estimation MCP server |
+| **Best for** | engineering leads, agents, and planners who need calibrated duration estimates |
+| **Not** | a calendar or project tracker |
+| **Source** | [GitHub](https://github.com/KyaniteLabs/Epoch) · [Forgejo](https://git.kyanitelabs.tech/KyaniteLabs/Epoch) |
+| **Keywords** | time estimation MCP, PERT, reference class forecasting |
+
+## Who it's for
+
+- Primary: engineering leads, agents, and planners who need calibrated duration estimates
+- Use when you need to produce PERT/reference-class estimates and record actuals
+- Skip if you need a calendar or project tracker
+
+## FAQ
+
+### What is Epoch?
+
+Epoch is a time estimation MCP server. It helps engineering leads, agents, and planners who need calibrated duration estimates produce PERT/reference-class estimates and record actuals.
+
+### Who should use Epoch?
+
+engineering leads, agents, and planners who need calibrated duration estimates.
+
+### How is Epoch different?
+
+Unlike vibes-based hour guesses, Epoch forces structured estimate + actual feedback.
+
+### Is Epoch production software?
+
+Treat the README status and release tags as source of truth for maturity. Validate against your own requirements before production use.
+
+## Status
+
+- Maintained as of 2026 on the default branch
+- Prefer release tags when pinning dependencies
+- Report issues on the canonical remote listed above
+
+## Agent surface
+
+- Coding agents: read this README first, then repo docs/`AGENTS.md` if present
+- Prefer machine-readable briefs (`llms.txt`) when the repo ships one
+- MCP or skill entrypoints are documented in-repo when applicable
+
+## Contributing
+
+Issues and PRs welcome on the canonical remote. Keep public docs free of secrets and machine-local paths.
+
+## License
+
+See [LICENSE](LICENSE) in this repository (or package metadata if license is package-only).
+
+<!-- s-plus-geo:end -->
