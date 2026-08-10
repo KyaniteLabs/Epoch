@@ -447,9 +447,8 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
 
   tool(
     "convert_timezone",
-    "Converts an ISO-8601 timestamp to a target IANA timezone. " +
-      "The input timestamp must include timezone information or be in UTC. " +
-      "Returns the localised time, UTC offset, and human-readable format.",
+    "Converts an ISO-8601 timestamp to a target IANA timezone. The input timestamp must include timezone information or be in UTC. " +
+      "Returns the localised time, UTC offset, and human-readable format. Use when you need to display or compare a moment in another region's local time.",
     convertTimezoneSchema,
     temporalOutput,
     (input) => {
@@ -462,7 +461,8 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "parse_duration",
     "Parses a human-readable duration string into structured seconds. " +
       "Supports combinations of y (years), mo (months), w (weeks), d (days), h (hours), " +
-      "m (minutes), s (seconds). Examples: '2h30m', '1d6h', '1w3d', '45m'.",
+      "m (minutes), s (seconds). Examples: '2h30m', '1d6h', '1w3d', '45m'. " +
+      "Returns the total seconds for the duration. Use when normalising a free-text duration for arithmetic or comparison.",
     parseDurationSchema,
     durationOutput,
     (input) => {
@@ -497,7 +497,8 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
   tool(
     "add_business_days",
     "Adds N business (working) days to a start date, skipping weekends and " +
-      "country-specific public holidays. Supports US, UK, FR, DE, and JP holidays.",
+      "country-specific public holidays. Supports US, UK, FR, DE, and JP holidays. " +
+      "Returns the resulting date. Use when computing a deadline that excludes non-working days.",
     addBusinessDaysSchema,
     businessDayOutput,
     (input) => {
@@ -510,7 +511,8 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     "count_business_days",
     "Counts the number of business (working) days between two dates, " +
       "excluding weekends and country-specific public holidays. " +
-      "The count is exclusive of the start date and inclusive of the end date.",
+      "The count is exclusive of the start date and inclusive of the end date. " +
+      "Returns the integer day count. Use when measuring working-time span between two dates.",
     countBusinessDaysSchema,
     businessDayOutput,
     (input) => {
@@ -627,7 +629,7 @@ Use when estimating task duration with uncertain outcomes.`,
 
 Replaces traditional 17 human-labor cost drivers with 5 LLM-specific factors:
 reasoning complexity, context completeness, transformation impact, iterative cycles,
-and human oversight. Returns both nominal and LLM-adjusted person-months.`,
+and human oversight. Returns both nominal and LLM-adjusted person-months. Use when estimating effort for a codebase you can size in KLOC.`,
     cocomoEstimateSchema,
     cocomoOutput,
     (input) => {
@@ -659,7 +661,7 @@ and human oversight. Returns both nominal and LLM-adjusted person-months.`,
     `Forecast sprint completion date from backlog size and historical velocity.
 
 Computes average velocity from sprint history, converts story points to hours,
-and returns required sprints with pessimistic estimate based on velocity variance.`,
+and returns required sprints with pessimistic estimate based on velocity variance. Use when planning a sprint completion date from backlog size and velocity history.`,
     sprintForecastSchema,
     sprintOutput,
     (input) => {
@@ -687,7 +689,7 @@ and returns required sprints with pessimistic estimate based on velocity varianc
     `Compute critical path with merge-bias adjustment for project schedules.
 
 Performs forward/backward pass to identify critical tasks and slack.
-Applies merge bias: tasks with >2 predecessors get 5% duration increase per extra predecessor.`,
+Applies merge bias: tasks with >2 predecessors get 5% duration increase per extra predecessor. Returns the critical path, task slack, and project duration. Use when sequencing dependent tasks to find the longest path and available slack.`,
     criticalPathSchema,
     criticalPathOutput,
     (input) => {
@@ -785,7 +787,7 @@ Prioritize this over algorithmic models when historical data is available.`,
 
 Compares estimated vs actual hours to compute a correction multiplier.
 Requires PM system integration for best results. Returns recommendations
-for improving estimation accuracy.`,
+for improving estimation accuracy. Use when you have accumulated actuals and want to refresh team calibration factors.`,
     calibrateEstimatesSchema,
     calibrateOutput,
     (input) => {
@@ -1035,7 +1037,7 @@ Use this to close the estimation feedback loop and improve accuracy over time.`,
     `Record actual hours for multiple estimates in a single call.
 
 Efficient for bulk feedback submission — accepts 1 to 500 entries at once.
-Each entry pairs an estimate ID with the actual hours spent.`,
+Each entry pairs an estimate ID with the actual hours spent. Returns total/succeeded/failed counts. Use when closing the feedback loop for many estimates at once; pass estimate_id values from get_pending_estimates.`,
     batchRecordActualsSchema,
     { type: "object", properties: { total: { type: "number" }, succeeded: { type: "number" }, failed: { type: "number" }, errors: { type: "array" } } } satisfies Record<string, unknown>,
     (input) => {
@@ -1062,7 +1064,7 @@ Each entry pairs an estimate ID with the actual hours spent.`,
     `Get a health report on the estimation feedback loop.
 
 Shows total estimates, actuals, match rate, MAPE by tool and task type,
-and self-improvement readiness (which types have enough data for auto-calibration).`,
+and self-improvement readiness (which types have enough data for auto-calibration). Use when checking whether you have enough recorded actuals for calibration to kick in.`,
     feedbackHealthSchema,
     { type: "object", properties: { totalEstimates: { type: "number" }, totalActuals: { type: "number" }, matchedPairs: { type: "number" }, seedRecordsFiltered: { type: "number" }, matchRate: { type: "number" }, byTool: { type: "object" }, byTaskType: { type: "object" }, selfImprovement: { type: "object" }, dataQuality: { type: "object" }, humanReadable: { type: "string" }, intervalCoverage: { type: "object", description: "P80 prediction-interval coverage calibration (Phase 5, additive). See src/lib/coverage.ts.", properties: { n: { type: "number" }, p80CoverageRate: { type: "number" }, targetP80Coverage: { type: "number" }, byTaskType: { type: "object" }, note: { type: "string" } } } } } satisfies Record<string, unknown>,
     () => {
