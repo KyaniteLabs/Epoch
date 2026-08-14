@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recalculateReferenceDatabase } from "./reference-db-recalculation.js";
+import { recalculateReferenceDatabase, computeTelemetryBenchmarks } from "./reference-db-recalculation.js";
 import type { ToolCallRecord } from "./telemetry.js";
 
 describe("recalculateReferenceDatabase", () => {
@@ -140,6 +140,39 @@ describe("recalculateReferenceDatabase", () => {
       mean_ms: 3,
       sampleCount: 3,
     });
+  });
+
+  it("uses ceil-rank percentiles: p95 of an n=20 sample is the 19th value, not the max (W2 fix)", () => {
+    const telemetryEvents: ToolCallRecord[] = Array.from({ length: 20 }, (_, i) => ({
+      timestamp: `2026-05-09T00:00:${String(i).padStart(2, "0")}.000Z`,
+      tool: "pert_estimate",
+      inputHash: `h${i}`,
+      outputOk: true,
+      elapsedMs: i + 1, // 1..20
+    }));
+
+    const benchmarks = computeTelemetryBenchmarks(telemetryEvents);
+    // Old floor-rank index returned floor(0.95*20) = 19 -> the max (20).
+    // Ceil-rank: ceil(0.95*20)-1 = 18 -> the 19th order statistic.
+    expect(benchmarks.pert_estimate?.p95_ms).toBe(19);
+    expect(benchmarks.pert_estimate?.max_ms).toBe(20);
+    // Median at n=20: ceil(10)-1 = index 9 -> 10th order statistic.
+    expect(benchmarks.pert_estimate?.p50_ms).toBe(10);
+  });
+
+  it("median rank is correct at n=1000 under ceil-rank", () => {
+    const telemetryEvents: ToolCallRecord[] = Array.from({ length: 1000 }, (_, i) => ({
+      timestamp: "2026-05-09T00:00:00.000Z",
+      tool: "pert_estimate",
+      inputHash: `h${i}`,
+      outputOk: true,
+      elapsedMs: i + 1, // 1..1000
+    }));
+
+    const benchmarks = computeTelemetryBenchmarks(telemetryEvents);
+    // ceil(0.5*1000)-1 = 499 -> the 500th order statistic.
+    expect(benchmarks.pert_estimate?.p50_ms).toBe(500);
+    expect(benchmarks.pert_estimate?.p95_ms).toBe(950);
   });
 
   it("deduplicates receiver backfills that already exist in source feedback", () => {

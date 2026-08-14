@@ -7,6 +7,7 @@ import {
   MIN_RECORDS_FOR_DATABASE_UPDATE,
 } from "./calibration-factors.js";
 import { matchEstimatesToActuals, type ActualRecord, type EstimateRecord } from "./feedback.js";
+import { percentileIndex } from "./estimation.js";
 import type { HistoricalRecord } from "../types/index.js";
 import type { ToolCallRecord } from "./telemetry.js";
 
@@ -221,7 +222,10 @@ function sampleCounts(records: HistoricalRecord[]): Pick<
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
-  const idx = Math.min(Math.floor(sorted.length * p), sorted.length - 1);
+  // Ceil-rank (nearest-rank) index, shared with monteCarloSim's quantiles:
+  // the previous floor-rank index was biased one rank high (floor(p*n) can
+  // equal n for p<1, so p95 of an n=20 sample returned the maximum).
+  const idx = percentileIndex(sorted.length, p);
   return Math.round((sorted[idx] ?? 0) * 100) / 100;
 }
 

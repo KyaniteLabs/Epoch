@@ -5,6 +5,7 @@ import {
   cocomoEstimate,
   criticalPath,
   monteCarloSim,
+  percentileIndex,
 } from "./estimation.js";
 import { defined } from "../test-support.js";
 
@@ -627,12 +628,88 @@ describe("monteCarloSim", () => {
     expect(result.riskEvents[0]).toHaveProperty("impactDays");
   });
 
-  it("criticalPathProbability is between 0 and 1", () => {
+  it("criticalPathProbability is null when no target_hours deadline is supplied", () => {
+    // W2 fix: the field previously always read ~0.80 because the "target" was
+    // the simulation's own p80 — a tautology carrying no information.
     const result = monteCarloSim([
       { name: "T1", optimistic: 1, mostLikely: 3, pessimistic: 8 },
     ], 1000, 7);
-    expect(result.criticalPathProbability).toBeGreaterThanOrEqual(0);
-    expect(result.criticalPathProbability).toBeLessThanOrEqual(1);
+    expect(result.criticalPathProbability).toBeNull();
+    expect(result.targetHours).toBeUndefined();
+    expect(result.humanReadable).not.toContain("Probability of completing within");
+  });
+
+  it("criticalPathProbability reflects a supplied deadline: near 0 for an impossible target", () => {
+    const result = monteCarloSim([
+      { name: "A", optimistic: 2, mostLikely: 5, pessimistic: 12 },
+      { name: "B", optimistic: 3, mostLikely: 6, pessimistic: 15 },
+    ], 5000, 99, 8); // 8h = one day; two tasks need >= 5 days
+    expect(result.criticalPathProbability).not.toBeNull();
+    expect(result.criticalPathProbability as number).toBeLessThanOrEqual(0.01);
+    expect(result.targetHours).toBe(8);
+  });
+
+  it("criticalPathProbability reflects a supplied deadline: high for a loose target", () => {
+    const result = monteCarloSim([
+      { name: "A", optimistic: 2, mostLikely: 5, pessimistic: 12 },
+      { name: "B", optimistic: 3, mostLikely: 6, pessimistic: 15 },
+    ], 5000, 99, 28 * 8); // 28 working days for ~11 days of median work
+    expect(result.criticalPathProbability).not.toBeNull();
+    expect(result.criticalPathProbability as number).toBeGreaterThanOrEqual(0.95);
+    expect(result.humanReadable).toContain("Probability of completing within 224 hours");
+  });
+
+  it("criticalPathProbability stays between 0 and 1 for a mid target", () => {
+    const result = monteCarloSim([
+      { name: "T1", optimistic: 1, mostLikely: 3, pessimistic: 8 },
+    ], 1000, 7, 24);
+    expect(result.criticalPathProbability).not.toBeNull();
+    expect(result.criticalPathProbability as number).toBeGreaterThanOrEqual(0);
+    expect(result.criticalPathProbability as number).toBeLessThanOrEqual(1);
+  });
+
+  it("rejects a non-positive target_hours with an error result", () => {
+    const result = monteCarloSim([
+      { name: "T1", optimistic: 1, mostLikely: 3, pessimistic: 8 },
+    ], 1000, 7, 0);
+    expect(defined(result.riskEvents[0]).description).toContain("target_hours");
+  });
+
+  it("per-task impactDays differ across tasks (no project p95-p50 copied onto every row)", () => {
+    // Wide-spread task overruns 1.5x its PERT expected often and by a lot;
+    // narrow task rarely and barely. Their impactDays must differ.
+    const result = monteCarloSim([
+      { name: "Explosive", optimistic: 1, mostLikely: 2, pessimistic: 40 },
+      { name: "Tight", optimistic: 9, mostLikely: 10, pessimistic: 11 },
+    ], 20000, 42);
+    const impacts = new Map(result.riskEvents.map((e) => {
+      const match = /Task "(.+?)"/.exec(e.description);
+      return [match?.[1] ?? "?", e.impactDays];
+    }));
+    const explosive = impacts.get("Explosive");
+    const tight = impacts.get("Tight");
+    expect(explosive).toBeDefined();
+    // The tight task (10 +/- 1) can exceed 1.5*expected=15.83 never — 11 < 15.83 —
+    // so it must not appear as a risk event at all, let alone with the
+    // project-level p95-p50 spread the old code copied onto every row.
+    expect(tight).toBeUndefined();
+    expect(defined(explosive)).toBeGreaterThan(0);
+    expect(defined(explosive)).toBeLessThan(40); // mean excess, not the pessimistic tail
+  });
+
+  it("percentileIndex uses ceil-rank: p95 of n=20 is the 19th value, not the max", () => {
+    expect(percentileIndex(20, 0.95)).toBe(18); // 19th order statistic, index 18 < max index 19
+    expect(percentileIndex(20, 0.95)).toBeLessThan(19);
+  });
+
+  it("percentileIndex median rank is correct at n=1000", () => {
+    expect(percentileIndex(1000, 0.5)).toBe(499); // 500th order statistic
+  });
+
+  it("percentileIndex clamps at the boundaries", () => {
+    expect(percentileIndex(100, 0)).toBe(0);
+    expect(percentileIndex(100, 1)).toBe(99);
+    expect(percentileIndex(0, 0.5)).toBe(0);
   });
 
   it("returns error result for invalid task ordering (optimistic > mostLikely)", () => {

@@ -80,16 +80,29 @@ export interface RecencyOptions {
   readonly minRecords?: number;
 }
 
-/** Weighted median (50th percentile by cumulative weight) over (value, weight) pairs. Reduces to the standard upper-median rule when all weights are equal. */
-function weightedMedian(items: ReadonlyArray<{ value: number; weight: number }>, fallback: number): number {
+/**
+ * Weighted median (50th percentile by cumulative weight) over (value, weight)
+ * pairs. A tie that lands exactly on the half-weight boundary splits the
+ * difference between the two straddling values, so equal weights reduce
+ * exactly to the unweighted `median()` above — e.g. weightedMedian([1,3]) is
+ * 2, not the lower median 1 the previous >= comparison produced.
+ */
+export function weightedMedian(items: ReadonlyArray<{ value: number; weight: number }>, fallback: number): number {
   const valid = items.filter((item) => item.weight > 0);
   if (valid.length === 0) return fallback;
   const sorted = [...valid].sort((a, b) => a.value - b.value);
   const total = sorted.reduce((sum, item) => sum + item.weight, 0);
+  const half = total / 2;
   let cumulative = 0;
-  for (const item of sorted) {
+  for (let i = 0; i < sorted.length; i++) {
+    const item = sorted[i];
+    if (!item) continue;
     cumulative += item.weight;
-    if (cumulative >= total / 2) return item.value;
+    if (cumulative > half) return item.value;
+    if (cumulative === half && i + 1 < sorted.length) {
+      // Exact half-weight tie between this item and the next: average them.
+      return (item.value + (sorted[i + 1]?.value ?? item.value)) / 2;
+    }
   }
   return sorted[sorted.length - 1]?.value ?? fallback;
 }

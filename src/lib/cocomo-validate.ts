@@ -111,8 +111,13 @@ export function cocomoValidate(params?: {
     const typeMape = entry.errors.reduce((s, e) => s + e, 0) / entry.errors.length;
     const typeBias = entry.biases.reduce((s, b) => s + b, 0) / entry.biases.length;
 
+    // Bias sign convention: positive bias = predicted > actual = systematic
+    // OVERprediction. The adjustment must therefore SHRINK the coefficient
+    // when bias is positive and grow it when negative, i.e. multiply by
+    // (1 - typeBias/100). The previous `1 + typeBias/100` moved every
+    // recommendation in the bias-AMPLIFYING direction.
     if (type === "organic" && typeMape > 30) {
-      const adjustedA = coeffs.a * (1 + typeBias / 100);
+      const adjustedA = coeffs.a * (1 - typeBias / 100);
       recommendedAdjustments.push({
         parameter: `${type}.a`,
         currentValue: coeffs.a,
@@ -122,7 +127,13 @@ export function cocomoValidate(params?: {
     }
 
     if (type === "embedded" && typeMape > 30) {
-      const adjustedB = coeffs.b * (1 + typeBias / 200);
+      // B enters as effort = A·KLOC^B, so a relative change δB shifts effort
+      // by roughly δB·ln(KLOC). Kept (sign-corrected, not removed) at a
+      // deliberately conservative half-strength magnitude — bias/200 fully
+      // corrects only at KLOC ≈ e² ≈ 7.4 — because exponent corrections
+      // compound at large KLOC and per-type biases are noisy; rotating B at
+      // full strength would routinely overshoot.
+      const adjustedB = coeffs.b * (1 - typeBias / 200);
       recommendedAdjustments.push({
         parameter: `${type}.b`,
         currentValue: coeffs.b,
