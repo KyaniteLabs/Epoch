@@ -1,62 +1,35 @@
-# Epoch — Time Estimation MCP Server
+# Epoch agent contract
 
-## Identity
-`@kyanitelabs/epoch` — Structured external time representations for LLMs. 24 tools across 6 layers (temporal, estimation, analytics, cost, risk, feedback).
+Epoch is a TypeScript MCP server for structured time estimation, temporal
+math, analytics, cost, risk, and estimate-vs-actual feedback.
 
-## Stack
-TypeScript | vitest | tsup | zod | MCP SDK
+## Commands and public skill
 
-## Commands
 - `pnpm run build` — tsup bundle
-- `pnpm test` — vitest run
-- `pnpm run typecheck` — tsc --noEmit
-- `node canary-runner.mjs` — cross-model function-calling canary
-
-## Public Agent Skill
-- `skills/epoch/SKILL.md` is the public skill for this repo.
-- Invoke `$epoch` in compatible agent hosts when a task needs time estimates, business-day math, model-cost comparison, schedule risk, or estimate-vs-actual feedback.
-- Keep the skill aligned with the MCP tool list, CLI commands, and feedback-token workflow when those surfaces change.
+- `pnpm test` — Vitest
+- `pnpm run typecheck` — TypeScript check
+- `node canary-runner.mjs` — function-calling canary
+- `skills/epoch/SKILL.md` is the public agent skill; keep it aligned with the
+  MCP tool list, CLI commands, and feedback-token workflow.
 
 ## Architecture
-```
-src/index.ts          — MCP server entry (stdio transport)
-src/dispatcher/       — Tool registry + routing
-  tool-registry.ts    — 24 tool definitions, schema bindings
-  formatters.ts       — Output formatting helpers
-src/schemas/
-  index.ts            — Zod schemas for all tools
-src/lib/              — Core business logic (layer implementations)
-  estimation.ts       — Layer 1: PERT, Delphi, COCOMO
-  temporal.ts         — Layer 2: business hours, calendar math
-  analytics.ts        — Layer 3: reference class, calibration, token-time bridge
-  accuracy-trend.ts   — Accuracy tracking over time
-  cost.ts             — Model cost estimation, comparisons
-  risk.ts             — Schedule risk, Monte Carlo
-  profiles.ts         — Team/profile management
-  calendar.ts         — Holiday-aware calendar
-  feedback.ts         — Estimate-vs-actual feedback loop
-  self-improve.ts     — Self-tuning from calibration data
-  supplementary-data.ts — Reference data enrichment
-  telemetry.ts        — Usage telemetry
-src/tools/            — MCP tool registration (wires lib → MCP schemas)
-src/data/             — Reference databases (JSON)
-src/entries/          — Entry point variants
-src/types/            — Shared TypeScript types
-```
 
-## Hot Paths
-- `src/schemas/index.ts` — All tool schemas, touched by every tool change
-- `src/dispatcher/tool-registry.ts` — Tool routing, 19 tool registrations
-- `canary-runner.mjs` — Function-calling canary for cross-model compatibility
+- `src/index.ts` — stdio MCP entry point
+- `src/dispatcher/` — tool registry and routing
+- `src/schemas/` — centralized Zod schemas
+- `src/lib/` — pure business logic for estimation, temporal, analytics, cost,
+  risk, profiles, calendar, feedback, self-improvement, and telemetry
+- `src/tools/` — MCP registration
+- `src/data/` — reference databases
 
-## Patterns
-- Tools: registered via `server.tool(name, description, zodSchema, handler)` in `src/tools/`
-- Lib functions: pure logic in `src/lib/`, no MCP dependency
-- Tests: co-located `*.test.ts` files, vitest
-- Schemas: centralized in `src/schemas/index.ts`, imported by tool registrations
+Schemas and tool registrations are shared hot paths. Register tools through the
+existing server pattern; keep library code independent of MCP concerns. Use
+co-located Vitest tests and preserve the estimate-vs-actual feedback contract.
 
-## Current State
-Active development. Recent focus: LLM-friendly response enrichment, function-calling canary, stress testing.
+Do not put current tool counts, provider endpoints, quotas, release state, or
+task status in this file. Preserve dirty work, verify current branch/remote/CI
+and runtime state, and run focused checks before claims. Stop before external,
+credentialed, public, financial, or destructive actions without approval.
 
 <!-- EMPOWER_ORCHESTRATOR:START -->
 ## Empower the Orchestrator

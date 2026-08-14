@@ -1,26 +1,28 @@
+name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
+
 jobs:
   test:
+    name: Typecheck, lint, and test
     runs-on: docker
     steps:
       - uses: actions/checkout@v4
-      - name: Debug info
-        run: echo "CI started" && pwd && ls -la
+
+      - name: Set up pnpm
+        run: corepack enable pnpm
+
       - name: Install dependencies
-        run: |
-          if [ -f package.json ]; then
-            npm ci || npm install
-          fi
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
       - name: Lint
-        run: |
-          if [ -f package.json ]; then
-            npx --no eslint . || true
-          fi
+        run: pnpm run lint
+
       - name: Test
-        run: |
-          if [ -f package.json ]; then
-            npm test || true
-          fi
+        run: pnpm test

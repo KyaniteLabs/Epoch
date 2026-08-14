@@ -23,6 +23,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
+      - name: Verify mirror is reconciled with canonical main
+        # This workflow triggers after the tag already exists on the mirror, so
+        # the only place to block a diverged publish is here, before npm. The
+        # tagged commit must be contained in canonical main (Forgejo); a tag
+        # that never landed canonically means the mirror is diverged and must
+        # not ship.
+        env:
+          CANONICAL_REMOTE: https://git.kyanitelabs.tech/KyaniteLabs/Epoch.git
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+            git fetch --quiet --unshallow origin
+          fi
+          git fetch --quiet --no-tags "$CANONICAL_REMOTE" +refs/heads/main:refs/remotes/canonical/main
+          tagged="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          canonical="$(git rev-parse refs/remotes/canonical/main)"
+          echo "Tagged commit:   $tagged"
+          echo "Canonical main:  $canonical"
+          if git merge-base --is-ancestor "$tagged" "$canonical"; then
+            echo "OK: tag ${GITHUB_REF_NAME} is contained in canonical main; mirror is reconciled."
+          else
+            echo "::error::Mirror diverged from canonical main: tag ${GITHUB_REF_NAME} ($tagged) is not contained in canonical main ($canonical). Publish blocked."
+            exit 1
+          fi
+
       - name: Set up pnpm
         uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6
 

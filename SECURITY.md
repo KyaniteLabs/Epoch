@@ -2,10 +2,10 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest  | :white_check_mark: |
-| < 1.0   | :x:                |
+| Version      | Supported          |
+| ------------ | ------------------ |
+| 0.4.x (latest) | :white_check_mark: |
+| < 0.4.0      | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -22,7 +22,7 @@ To report a vulnerability:
 ## Security Controls
 
 - **Supply chain**: All GitHub Actions pinned by SHA. Dependencies audited in CI via `pnpm audit`. Dependabot enabled for npm and GitHub Actions.
-- **Secret scanning**: [gitleaks](https://gitleaks.io/) runs on every push and pull request.
+- **Secret scanning**: [TruffleHog OSS](https://github.com/trufflesecurity/trufflehog) runs in CI on pushes to `main` and pull requests targeting `main` (verified findings only).
 - **Input validation**: All tool inputs validated via Zod schemas. HTTP requests limited to 1 MB.
 - **Telemetry**: Fully opt-in (disabled by default). Data is anonymized. HMAC-signed payloads.
 - **HTTP server**: Binds to `127.0.0.1` by default. Rate-limited (100 req/min, configurable). CORS enabled.
