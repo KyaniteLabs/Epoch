@@ -1,8 +1,12 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
+import { TOOL_COUNT } from "../lib/tool-aliases.js";
 import { recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import type { BatchActualEntry } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
 import { setTransport } from "../lib/telemetry-context.js";
@@ -14,6 +18,114 @@ import { getVersion } from "../version.js";
 
 const VERSION = getVersion();
 
+// ---- HTTP hardening limits (ticket 20) --------------------------------------
+//
+// Shared numeric limits for the HTTP seam. Kept as named constants (not
+// inline magic numbers) because several of them are mirrored in route error
+// messages, the OpenAPI document, and tests.
+
+/** Maximum accepted request body (declared OR actually received): 1 MiB. */
+const MAX_BODY_BYTES = 1_048_576;
+
+/** Default per-key rate limit (requests per minute). */
+const DEFAULT_RATE_LIMIT = 100;
+
+/** Rate-limit window in milliseconds. */
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+/** Default for GET /v1/feedback/pending's `limit` query parameter. */
+const DEFAULT_PENDING_LIMIT = 50;
+
+/** Upper bound for GET /v1/feedback/pending's `limit` query parameter. */
+const MAX_PENDING_LIMIT = 200;
+
+/**
+ * Maximum entries per /v1/feedback/batch-record-actuals payload.
+ * Mirrors batchRecordActualsSchema's `.max(500)` (src/schemas/index.ts) —
+ * the HTTP route and the MCP tool must reject at the same cap.
+ */
+const BATCH_MAX_ENTRIES = 500;
+
+/** Cache-Control value for immutable discoverability documents. */
+const DOC_CACHE_CONTROL = "public, max-age=3600";
+
+/** 413 envelope shared by every body-limit rejection path. */
+const BODY_TOO_LARGE = {
+  ok: false,
+  error: {
+    isError: true,
+    message: "Request body too large (max 1 MB).",
+    retryHint: "Reduce the number of tasks or use smaller payloads.",
+  },
+} as const;
+
+/**
+ * Resolve the per-minute rate-limit maximum from EPOCH_RATE_LIMIT.
+ * Unset/empty → default; `0` → limiting disabled; invalid or negative values
+ * (including partial numerics like "10abc", which parseInt used to accept)
+ * fall back to the default with a warning. Always returns a non-negative
+ * integer.
+ */
+function resolveRateLimitMax(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_RATE_LIMIT;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    console.warn(
+      `[epoch] Invalid EPOCH_RATE_LIMIT value ${JSON.stringify(raw)} — falling back to the default of ${DEFAULT_RATE_LIMIT} requests/minute. Use a non-negative integer, or 0 to disable rate limiting.`,
+    );
+    return DEFAULT_RATE_LIMIT;
+  }
+  return Math.floor(parsed);
+}
+
+/**
+ * Resolve the rate-limit bucket key for a request: the connection's remote
+ * address, with forwarded headers (X-Forwarded-For / X-Real-IP) honored only
+ * when EPOCH_TRUST_PROXY=1 (they are client-spoofable). Requests without
+ * connection info (app.request() in tests, non-Node adapters) share the
+ * single "unknown" bucket.
+ */
+function resolveRateLimitKey(c: Context, trustProxy: boolean): string {
+  if (trustProxy) {
+    const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+    if (forwarded) return `proxy:${forwarded}`;
+    const realIp = c.req.header("x-real-ip")?.trim();
+    if (realIp) return `proxy:${realIp}`;
+  }
+  try {
+    const connInfo = getConnInfo(c as Parameters<typeof getConnInfo>[0]);
+    if (connInfo.remote?.address) return connInfo.remote.address;
+  } catch {
+    // No connection info available — fall through to the shared bucket.
+  }
+  return "unknown";
+}
+
+/**
+ * Validated request-body text, stashed per request by the body-limit
+ * middleware (keyed on the per-request Context object). Route handlers call
+ * {@link requestBodyText} instead of c.req.json()/c.req.text().
+ */
+const requestBodyTextByContext = new WeakMap<object, string>();
+
+/** The size-validated request body text stashed by the body-limit middleware. */
+function requestBodyText(c: Context): string {
+  const text = requestBodyTextByContext.get(c);
+  if (text === undefined) {
+    // Only reachable if a POST /v1/* route were registered ahead of the
+    // body-limit middleware; it stashes every POST body before handlers run.
+    throw new Error("request body was not read through the body-limit middleware");
+  }
+  return text;
+}
+
+/** Parse the (already size-validated) request body as JSON. */
+function requestBodyJson(c: Context): unknown {
+  return JSON.parse(requestBodyText(c));
+}
+
+
+
 const AI_PLUGIN_MANIFEST = {
   schema_version: "v1",
   name_for_human: "Epoch",
@@ -21,7 +133,7 @@ const AI_PLUGIN_MANIFEST = {
   description_for_human:
     "Time estimation tools for accurate scheduling and planning.",
   description_for_model:
-    "Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. 24 tools across 6 layers. Works with Claude Code, Cursor, Codex CLI, Cline, Zed, and any MCP client.",
+    `Structured time estimation tools including PERT, COCOMO II, Monte Carlo simulation, sprint forecasting, and token-to-time mapping. ${TOOL_COUNT} tools across 6 layers. Works with Claude Code, Cursor, Codex CLI, Cline, Zed, and any MCP client.`,
   api: { type: "openapi", url: "/openapi.json" },
   auth: { type: "none" },
   legal_info_url:
@@ -32,7 +144,7 @@ const LLMSTXT = `# Epoch
 > Time Estimation MCP Server — structured temporal reasoning for AI agents
 
 ## Overview
-Epoch provides 24 tools across 6 layers for accurate time estimation.
+Epoch provides ${TOOL_COUNT} tools across 6 layers for accurate time estimation.
 All tools are accessed via POST /v1/tools/{tool_name} with JSON request bodies.
 All responses follow: {"ok": true, "data": {...}} or {"ok": false, "error": {"isError": true, "message": "...", "retryHint": "..."}}
 
@@ -327,6 +439,8 @@ const feedbackBatchPath = {
                 type: "array",
                 minItems: 1,
                 maxItems: 500,
+                description:
+                  "Array of actual-hour records (1–500 entries; over-limit batches are rejected with 400 naming the cap). Entries failing validation are reported per-entry in the response errors instead of being dropped.",
                 items: {
                   type: "object",
                   required: ["estimate_id", "actual_hours"],
@@ -343,8 +457,9 @@ const feedbackBatchPath = {
       },
     },
     responses: {
-      "200": { description: "Batch feedback result." },
-      "400": { description: "Invalid batch payload." },
+      "200": { description: "Batch feedback result with per-entry errors for any entries that failed validation or recording." },
+      "400": { description: "Invalid batch payload, or more than 500 entries (the cap is named in the message)." },
+      "422": { description: "Every entry failed — per-entry errors are attached to the error envelope." },
     },
   },
 } satisfies Record<string, unknown>;
@@ -438,7 +553,7 @@ function buildOpenApiSpec(): Record<string, unknown> {
       title: "Epoch Time Estimation API",
       version: VERSION,
       description:
-        "Structured time estimation for LLMs and AI agents. 24 tools across 6 layers.",
+        `Structured time estimation for LLMs and AI agents. ${TOOL_COUNT} tools across 6 layers.`,
     },
     servers: [
       { url: "http://localhost:3000", description: "Local development" },
@@ -450,7 +565,24 @@ function buildOpenApiSpec(): Record<string, unknown> {
 export function createApiApp(): Hono {
   const app = new Hono();
 
-  app.use("*", cors());
+  // ---- CORS (ticket 20) ------------------------------------------------------
+  // Default: NO CORS headers. The HTTP entry is a loopback service for local
+  // agents and CLI clients (curl/MCP clients are not subject to CORS); the
+  // previous blanket `cors()` reflected a wildcard origin on every route,
+  // which let any website read responses from a locally running server.
+  // Cross-origin browser access now requires an explicit allowlist via
+  // EPOCH_CORS_ORIGINS (comma-separated origins; "*" restores allow-any for
+  // operators who deliberately want it). Preflight OPTIONS requests are
+  // always answered (204) — allowed origins get the CORS headers, everything
+  // else fails cleanly in the browser without reaching route handlers.
+  const corsOrigins = (process.env["EPOCH_CORS_ORIGINS"] ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  app.use(
+    "*",
+    cors(corsOrigins.includes("*") ? { origin: "*" } : { origin: corsOrigins, maxAge: 3600 }),
+  );
 
   // ---- Security headers ----------------------------------------------------
   app.use("*", async (_c, next) => {
@@ -475,45 +607,127 @@ export function createApiApp(): Hono {
     }
   });
 
-  // ---- Rate limiter (in-memory sliding window) ------------------------------
-  const rateLimitWindowMs = 60_000;
-  const rateLimitMax = Number.isFinite(parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10))
-    ? parseInt(process.env["EPOCH_RATE_LIMIT"] ?? "100", 10)
-    : 100;
-  const requestCounts = new Map<string, { count: number; resetAt: number }>();
+  // ---- Rate limiter (in-memory fixed window, ticket 20) ----------------------
+  //
+  // Keyed on the connection's remote address so distinct clients get distinct
+  // buckets. The X-Forwarded-For / X-Real-IP headers are only honored when
+  // EPOCH_TRUST_PROXY=1 — those headers are client-spoofable, so trusting
+  // them by default would let one caller cycle buckets at will. 429 responses
+  // carry a Retry-After header (seconds until the window resets).
+  // EPOCH_RATE_LIMIT=0 disables limiting entirely; invalid or negative values
+  // fall back to the default with a warning.
 
+  const rateLimitMax = resolveRateLimitMax(process.env["EPOCH_RATE_LIMIT"]);
   const trustProxy = process.env["EPOCH_TRUST_PROXY"] === "1";
 
-  app.use("/v1/*", async (c, next) => {
-    const ip = trustProxy
-      ? (c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
-        ?? c.req.header("x-real-ip")
-        ?? "unknown")
-      : "unknown";
-    const now = Date.now();
+  if (rateLimitMax !== 0) {
+    const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
-    if (requestCounts.size > 10_000) {
-      for (const [key, val] of requestCounts) {
-        if (now > val.resetAt) requestCounts.delete(key);
+    app.use("/v1/*", async (c, next) => {
+      const key = resolveRateLimitKey(c, trustProxy);
+      const now = Date.now();
+
+      if (requestCounts.size > 10_000) {
+        for (const [mapKey, val] of requestCounts) {
+          if (now > val.resetAt) requestCounts.delete(mapKey);
+        }
+      } else if (requestCounts.size > 0 && Math.random() < 0.01) {
+        for (const [mapKey, val] of requestCounts) {
+          if (now > val.resetAt) requestCounts.delete(mapKey);
+        }
       }
-    } else if (requestCounts.size > 0 && Math.random() < 0.01) {
-      for (const [key, val] of requestCounts) {
-        if (now > val.resetAt) requestCounts.delete(key);
+
+      const entry = requestCounts.get(key);
+      if (!entry || now > entry.resetAt) {
+        requestCounts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        return next();
+      }
+      entry.count++;
+      if (entry.count > rateLimitMax) {
+        const retryAfterSeconds = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+        c.header("Retry-After", String(retryAfterSeconds));
+        return c.json(
+          {
+            ok: false,
+            error: {
+              isError: true,
+              message: "Rate limit exceeded.",
+              retryHint: `Max ${rateLimitMax} requests per minute. Retry after ${retryAfterSeconds}s.`,
+            },
+          },
+          429,
+        );
+      }
+      return next();
+    });
+  }
+
+  // ---- Body size limit (ticket 20) -------------------------------------------
+  //
+  // The client-declared Content-Length header is a fast-reject hint only: a
+  // chunked request (or a lying/absent header) previously carried no cap at
+  // all, and the feedback endpoints had none even on paper. Every POST body
+  // under /v1/* is read through this middleware, which counts the bytes
+  // actually received and aborts the stream once the cap is exceeded.
+  // Handlers read the validated body text via requestBodyText() — c.req.json()
+  // / c.req.text() would re-read the already-consumed raw stream.
+
+  app.use("/v1/*", async (c, next) => {
+    if (c.req.method !== "POST") return next();
+
+    const declared = c.req.header("content-length");
+    if (declared !== undefined) {
+      const declaredBytes = Number(declared.trim());
+      if (Number.isFinite(declaredBytes) && declaredBytes > MAX_BODY_BYTES) {
+        return c.json(BODY_TOO_LARGE, 413);
       }
     }
 
-    const entry = requestCounts.get(ip);
-    if (!entry || now > entry.resetAt) {
-      requestCounts.set(ip, { count: 1, resetAt: now + rateLimitWindowMs });
+    const stream = c.req.raw.body;
+    if (!stream) {
+      requestBodyTextByContext.set(c, "");
       return next();
     }
-    entry.count++;
-    if (entry.count > rateLimitMax) {
+
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > MAX_BODY_BYTES) {
+          // Abort the transfer: stop draining the client's stream so an
+          // oversized upload does not keep arriving after rejection.
+          await reader.cancel().catch(() => {});
+          return c.json(BODY_TOO_LARGE, 413);
+        }
+        chunks.push(value);
+      }
+    } catch {
       return c.json(
-        { ok: false, error: { isError: true, message: "Rate limit exceeded.", retryHint: `Max ${rateLimitMax} requests per minute. Retry after ${Math.ceil((entry.resetAt - now) / 1000)}s.` } },
-        429,
+        {
+          ok: false,
+          error: {
+            isError: true,
+            message: "Invalid request body.",
+            retryHint: "The request body could not be read (aborted or malformed transfer).",
+          },
+        },
+        400,
       );
     }
+
+    let total = 0;
+    for (const chunk of chunks) total += chunk.byteLength;
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    requestBodyTextByContext.set(c, new TextDecoder().decode(bytes));
     return next();
   });
 
@@ -533,24 +747,12 @@ export function createApiApp(): Hono {
   app.post("/v1/tools/:toolName", async (c) => {
     const toolName = c.req.param("toolName");
 
-    const contentLength = c.req.header("content-length");
-    if (contentLength && Number.parseInt(contentLength, 10) > 1_048_576) {
-      return c.json(
-        {
-          ok: false,
-          error: {
-            isError: true,
-            message: "Request body too large (max 1 MB).",
-            retryHint: "Reduce the number of tasks or use smaller payloads.",
-          },
-        },
-        413,
-      );
-    }
-
+    // Body-size cap and the JSON read both happen in the /v1/* body-limit
+    // middleware (ticket 20): the previous client-declared content-length
+    // check lived here and chunked requests bypassed it entirely.
     let body: Record<string, unknown>;
     try {
-      body = await c.req.json();
+      body = requestBodyJson(c) as Record<string, unknown>;
     } catch {
       return c.json(
         {
@@ -609,12 +811,10 @@ export function createApiApp(): Hono {
   });
 
   app.post("/v1/telemetry", async (c) => {
-    const contentLength = c.req.header("content-length");
-    if (contentLength && Number.parseInt(contentLength, 10) > 1_048_576) {
-      return c.json({ accepted: 0, deduplicated: 0, error: "payload too large" }, 400);
-    }
-
-    const rawBody = await c.req.text().catch(() => "");
+    // Size-validated by the body-limit middleware (ticket 20): the previous
+    // client-declared content-length check returned a 400 envelope and chunked
+    // requests bypassed it; oversize bodies now get the uniform 413.
+    const rawBody = requestBodyText(c);
     const result = receiveTelemetry(rawBody, c.req.header("x-epoch-signature"));
     if (!result.ok) {
       return c.json(
@@ -623,35 +823,48 @@ export function createApiApp(): Hono {
       );
     }
 
-    return c.json({ accepted: result.accepted, deduplicated: result.deduplicated });
+    return c.json({ accepted: result.accepted, deduplicated: result.deduplicated, quarantined: result.quarantined });
   });
 
   app.get("/.well-known/ai-plugin.json", (c) => {
+    // Ticket 20: these discoverability documents are static per process —
+    // cacheable by intermediaries for an hour.
+    c.header("Cache-Control", DOC_CACHE_CONTROL);
     return c.json(AI_PLUGIN_MANIFEST);
   });
 
   app.get("/llms.txt", (c) => {
-    return c.text(LLMSTXT, 200, { "Content-Type": "text/plain; charset=utf-8" });
+    return c.text(LLMSTXT, 200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": DOC_CACHE_CONTROL,
+    });
   });
 
   let cachedSpec: Record<string, unknown> | undefined;
   app.get("/openapi.json", (c) => {
     if (!cachedSpec) cachedSpec = buildOpenApiSpec();
+    c.header("Cache-Control", DOC_CACHE_CONTROL);
     return c.json(cachedSpec);
   });
 
   // ---- Feedback endpoints ----------------------------------------------------
 
   app.post("/v1/feedback/record-actual", async (c) => {
-    let body: Record<string, unknown>;
+    // Size-validated by the body-limit middleware (ticket 20): this endpoint
+    // previously had no body cap at all.
+    let body: unknown;
     try {
-      body = await c.req.json();
+      body = requestBodyJson(c);
     } catch {
       return c.json({ ok: false, error: { isError: true, message: "Invalid JSON body.", retryHint: "Send a valid JSON body with estimate_id and actual_hours." } }, 400);
     }
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ ok: false, error: { isError: true, message: "Invalid JSON body.", retryHint: "Send a JSON object with estimate_id and actual_hours." } }, 400);
+    }
 
-    const estimateId = body["estimate_id"] as string | undefined;
-    const actualHours = body["actual_hours"] as number | undefined;
+    const record = body as Record<string, unknown>;
+    const estimateId = record["estimate_id"] as string | undefined;
+    const actualHours = record["actual_hours"] as number | undefined;
 
     if (!estimateId || actualHours === undefined || !Number.isFinite(actualHours) || actualHours <= 0) {
       return c.json({
@@ -664,7 +877,7 @@ export function createApiApp(): Hono {
       }, 400);
     }
 
-    const notes = body["notes"] as string | undefined;
+    const notes = record["notes"] as string | undefined;
     const result = recordActualDetailed(estimateId, actualHours, notes);
     if (!result.ok) {
       const status = result.reason === "duplicate"
@@ -703,38 +916,119 @@ export function createApiApp(): Hono {
   });
 
   app.get("/v1/feedback/pending", (c) => {
-    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? "50"), 1), 200);
+    // Ticket 20 (NaN limit): a non-numeric `limit` previously produced NaN,
+    // which slipped through the clamp and made .slice(-NaN) return the entire
+    // ledger. Non-numeric/empty values now fall back to the default.
+    const raw = c.req.query("limit");
+    let limit = DEFAULT_PENDING_LIMIT;
+    if (raw !== undefined && raw !== "") {
+      const parsed = Number(raw);
+      limit = Number.isFinite(parsed)
+        ? Math.min(Math.max(Math.trunc(parsed), 1), MAX_PENDING_LIMIT)
+        : DEFAULT_PENDING_LIMIT;
+    }
     const pending = getPendingEstimates(limit);
     return c.json({ ok: true, data: pending });
   });
 
   app.post("/v1/feedback/batch-record-actuals", async (c) => {
-    const body = await c.req.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || typeof body !== "object" || !Array.isArray(body["entries"]) || (body["entries"] as unknown[]).length === 0) {
+    // Size-validated by the body-limit middleware (ticket 20): this endpoint
+    // previously had no body cap at all.
+    let body: unknown;
+    try {
+      body = requestBodyJson(c);
+    } catch {
       return c.json({
         ok: false,
-        error: { isError: true, message: "Requires entries array (1–500 items) with estimate_id (string) and actual_hours (positive number) per entry.", retryHint: "POST {entries: [{estimate_id: '...', actual_hours: 8.5}]}" },
+        error: { isError: true, message: "Invalid JSON body.", retryHint: "Send a JSON body with an entries array." },
+      }, 400);
+    }
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({
+        ok: false,
+        error: { isError: true, message: "Invalid JSON body.", retryHint: "Send a JSON object with an entries array." },
       }, 400);
     }
 
-    const rawEntries = (body["entries"] as Array<Record<string, unknown>>).slice(0, 500);
-    const entries = rawEntries
-      .filter((e) => typeof e["estimate_id"] === "string" && e["estimate_id"] !== "" && typeof e["actual_hours"] === "number" && Number.isFinite(e["actual_hours"] as number) && (e["actual_hours"] as number) > 0)
-      .map((e) => ({
-        estimateId: e["estimate_id"] as string,
-        actualHours: e["actual_hours"] as number,
-        notes: e["notes"] as string | undefined,
-      }));
-
-    if (entries.length === 0) {
+    const entries = (body as Record<string, unknown>)["entries"];
+    if (!Array.isArray(entries) || entries.length === 0) {
       return c.json({
         ok: false,
-        error: { isError: true, message: "No valid entries after filtering. Each entry needs estimate_id (non-empty string) and actual_hours (positive number).", retryHint: "Check that estimate_id is a non-empty string and actual_hours is a positive number." },
+        error: { isError: true, message: `Requires entries array (1–${BATCH_MAX_ENTRIES} items) with estimate_id (string) and actual_hours (positive number) per entry.`, retryHint: "POST {entries: [{estimate_id: '...', actual_hours: 8.5}]}" },
       }, 400);
     }
 
-    const result = batchRecordActuals(entries);
-    return c.json({ ok: true, data: result });
+    // Ticket 20 (batch parity): over-limit batches are rejected explicitly,
+    // naming the cap, instead of being silently truncated to the first 500.
+    // The cap mirrors batchRecordActualsSchema's `.max(500)` so the HTTP
+    // route and the MCP tool reject at the same boundary.
+    if (entries.length > BATCH_MAX_ENTRIES) {
+      return c.json({
+        ok: false,
+        error: {
+          isError: true,
+          message: `entries array exceeds the maximum of ${BATCH_MAX_ENTRIES} entries per batch (got ${entries.length}).`,
+          retryHint: `Split feedback into batches of at most ${BATCH_MAX_ENTRIES} entries.`,
+        },
+      }, 400);
+    }
+
+    // Ticket 20 (batch parity): invalid entries are reported per-entry with
+    // their index instead of being silently filtered out. Only entries that
+    // clear validation reach the ledger; everything else comes back in
+    // `errors` so the caller can self-correct.
+    const valid: BatchActualEntry[] = [];
+    const validationErrors: string[] = [];
+    entries.forEach((entry, index) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        validationErrors.push(`Entry ${index}: must be an object with estimate_id (non-empty string) and actual_hours (positive number).`);
+        return;
+      }
+      const record = entry as Record<string, unknown>;
+      const estimateId = record["estimate_id"];
+      const actualHours = record["actual_hours"];
+      const idOk = typeof estimateId === "string" && estimateId !== "";
+      const hoursOk = typeof actualHours === "number" && Number.isFinite(actualHours) && actualHours > 0;
+      if (idOk && hoursOk) {
+        const notes = record["notes"];
+        valid.push({
+          estimateId,
+          actualHours,
+          ...(typeof notes === "string" && notes !== "" ? { notes } : {}),
+        });
+        return;
+      }
+      const problems: string[] = [];
+      if (!idOk) problems.push("estimate_id must be a non-empty string");
+      if (!hoursOk) problems.push("actual_hours must be a positive number");
+      validationErrors.push(
+        `Entry ${index}${idOk && typeof estimateId === "string" ? ` (estimate_id "${estimateId}")` : ""}: ${problems.join("; ")}.`,
+      );
+    });
+
+    const recorded = valid.length > 0
+      ? batchRecordActuals(valid)
+      : { total: 0, succeeded: 0, failed: 0, errors: [] as string[] };
+    const errors = [...validationErrors, ...recorded.errors];
+    const total = entries.length;
+    const succeeded = recorded.succeeded;
+
+    if (succeeded === 0 && errors.length > 0) {
+      // Mirror the dispatcher's all-failed envelope for batch_record_actuals,
+      // but keep every per-entry error attached (ticket 04 + ticket 20) so
+      // nothing is silently dropped.
+      return c.json({
+        ok: false,
+        error: {
+          isError: true,
+          message: `All ${total} entries failed to record. First failure: ${errors[0] ?? "no per-entry error reported"}`,
+          retryHint: "Each entry needs a non-empty estimate_id (from get_pending_estimates) and a positive actual_hours value.",
+          errors,
+        },
+      }, 422);
+    }
+
+    return c.json({ ok: true, data: { total, succeeded, failed: errors.length, errors } });
   });
 
   app.get("/v1/feedback/health", (c) => {

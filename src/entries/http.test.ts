@@ -3,12 +3,13 @@
 // Covers rate limiter, tool dispatch, health, OpenAPI, feedback, error handling.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createHmac } from "node:crypto";
-import { appendFileSync, mkdirSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { serve } from "@hono/node-server";
 import { createApiApp } from "./http.js";
 import { TOOL_REGISTRY, TOOL_NAMES } from "../dispatcher/index.js";
 import type { ToolDefinition } from "../dispatcher/tool-registry.js";
@@ -252,8 +253,18 @@ describe("HTTP API", () => {
 
       expect(res.status).toBe(200);
       const body = await res.json() as Record<string, unknown>;
-      expect(body.accepted).toBe(1);
+      // Ticket 19 (concurrent telemetry lane): the receiver quarantines every
+      // admitted record instead of merging it, so `accepted` is 0 by design
+      // and the record lands in telemetry-quarantine.jsonl. The 200 plus the
+      // quarantine row also prove the ticket-20 body middleware hands the
+      // route byte-exact body text (the HMAC still verifies end to end).
+      expect(body.accepted).toBe(0);
       expect(body.deduplicated).toBe(0);
+      const quarantine = readFileSync(join(telemetryDir, "telemetry-quarantine.jsonl"), "utf-8").trim();
+      // The quarantine row carries the record fields (installation_id stays
+      // at the payload level) — assert on the record's identifying values.
+      expect(quarantine).toContain('"tool":"test"');
+      expect(quarantine).toContain('"ratio":1.25');
     });
 
     it("rejects telemetry with invalid signatures", async () => {
@@ -331,6 +342,25 @@ describe("HTTP API", () => {
       expect(error.retryHint).toContain("Retry after");
     });
 
+    it("carries a Retry-After header on 429 responses (ticket 20)", async () => {
+      const toolPayload = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optimistic: 1, most_likely: 2, pessimistic: 3, unit: "hours" }),
+      };
+
+      await limitedApp.request("/v1/tools/pert_estimate", toolPayload);
+      await limitedApp.request("/v1/tools/pert_estimate", toolPayload);
+      await limitedApp.request("/v1/tools/pert_estimate", toolPayload);
+
+      const res = await limitedApp.request("/v1/tools/pert_estimate", toolPayload);
+      expect(res.status).toBe(429);
+      const retryAfter = res.headers.get("Retry-After");
+      expect(retryAfter).not.toBeNull();
+      expect(retryAfter).toMatch(/^\d+$/);
+      expect(Number(retryAfter)).toBeGreaterThanOrEqual(1);
+    });
+
     it("rate limit does not apply to non-/v1/* routes", async () => {
       const toolPayload = {
         method: "POST",
@@ -406,6 +436,412 @@ describe("HTTP API", () => {
       };
       const res2 = await proxyApp.request("/v1/tools/pert_estimate", differentIpPayload);
       expect(res2.status).toBe(200);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Rate limiter configuration (ticket 20)
+  // ---------------------------------------------------------------------------
+
+  describe("Rate limiter configuration (ticket 20)", () => {
+    const originalRateLimit = process.env["EPOCH_RATE_LIMIT"];
+    const originalTrustProxy = process.env["EPOCH_TRUST_PROXY"];
+    const toolPayload = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optimistic: 1, most_likely: 2, pessimistic: 3, unit: "hours" }),
+    };
+
+    afterEach(() => {
+      if (originalRateLimit !== undefined) {
+        process.env["EPOCH_RATE_LIMIT"] = originalRateLimit;
+      } else {
+        delete process.env["EPOCH_RATE_LIMIT"];
+      }
+      if (originalTrustProxy !== undefined) {
+        process.env["EPOCH_TRUST_PROXY"] = originalTrustProxy;
+      } else {
+        delete process.env["EPOCH_TRUST_PROXY"];
+      }
+    });
+
+    it("EPOCH_RATE_LIMIT=0 disables limiting entirely (previously it blocked everything)", async () => {
+      process.env["EPOCH_RATE_LIMIT"] = "0";
+      const unlimitedApp = createApiApp();
+
+      for (let i = 0; i < 8; i++) {
+        const res = await unlimitedApp.request("/v1/tools/pert_estimate", toolPayload);
+        expect(res.status, `request ${i}`).toBe(200);
+      }
+    });
+
+    it("invalid values fall back to the default with a warning", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        process.env["EPOCH_RATE_LIMIT"] = "banana";
+        const fallbackApp = createApiApp();
+
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(String(warnSpy.mock.calls[0]?.[0])).toContain("EPOCH_RATE_LIMIT");
+        // The limiter still runs with the default of 100 — no 429s below it.
+        const res = await fallbackApp.request("/v1/tools/pert_estimate", toolPayload);
+        expect(res.status).toBe(200);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("negative values fall back to the default with a warning", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        process.env["EPOCH_RATE_LIMIT"] = "-5";
+        const fallbackApp = createApiApp();
+
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(String(warnSpy.mock.calls[0]?.[0])).toContain("EPOCH_RATE_LIMIT");
+        const res = await fallbackApp.request("/v1/tools/pert_estimate", toolPayload);
+        expect(res.status).toBe(200);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("ignores X-Forwarded-For unless EPOCH_TRUST_PROXY is set", async () => {
+      delete process.env["EPOCH_TRUST_PROXY"];
+      process.env["EPOCH_RATE_LIMIT"] = "2";
+      const strictApp = createApiApp();
+
+      const withSpoofedXff = (ip: string) => ({
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-forwarded-for": ip },
+        body: toolPayload.body,
+      });
+
+      // Without trust-proxy config the forwarded header is not a bucket key:
+      // every request lands in the same connection-address bucket.
+      expect((await strictApp.request("/v1/tools/pert_estimate", withSpoofedXff("1.1.1.1"))).status).toBe(200);
+      expect((await strictApp.request("/v1/tools/pert_estimate", withSpoofedXff("2.2.2.2"))).status).toBe(200);
+      const third = await strictApp.request("/v1/tools/pert_estimate", withSpoofedXff("3.3.3.3"));
+      expect(third.status).toBe(429);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Rate limiter conninfo keying through the real node server (ticket 20)
+  // ---------------------------------------------------------------------------
+
+  describe("Rate limiter conninfo keying (real node server, ticket 20)", () => {
+    const originalRateLimit = process.env["EPOCH_RATE_LIMIT"];
+
+    afterEach(() => {
+      if (originalRateLimit !== undefined) {
+        process.env["EPOCH_RATE_LIMIT"] = originalRateLimit;
+      } else {
+        delete process.env["EPOCH_RATE_LIMIT"];
+      }
+    });
+
+    it("keys the bucket on the socket remote address and sends Retry-After", async () => {
+      process.env["EPOCH_RATE_LIMIT"] = "2";
+      const serverApp = createApiApp();
+      const server = serve({ fetch: serverApp.fetch, port: 0, hostname: "127.0.0.1" });
+      try {
+        const address = await new Promise<{ port: number }>((resolve) => {
+          server.on("listening", () => resolve(server.address() as { port: number }));
+        });
+        const base = `http://127.0.0.1:${address.port}`;
+        const toolPayload = {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ optimistic: 1, most_likely: 2, pessimistic: 3, unit: "hours" }),
+        };
+
+        // No X-Forwarded-For and no trust-proxy config: the bucket key must
+        // come from getConnInfo()'s socket remote address (or degrade
+        // gracefully) — the request must never 500.
+        const first = await fetch(`${base}/v1/tools/pert_estimate`, toolPayload);
+        const second = await fetch(`${base}/v1/tools/pert_estimate`, toolPayload);
+        expect(first.status).toBe(200);
+        expect(second.status).toBe(200);
+
+        const third = await fetch(`${base}/v1/tools/pert_estimate`, toolPayload);
+        expect(third.status).toBe(429);
+        const retryAfter = third.headers.get("Retry-After");
+        expect(retryAfter).toMatch(/^\d+$/);
+        expect(Number(retryAfter)).toBeGreaterThanOrEqual(1);
+      } finally {
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+          // Drop idle keep-alive sockets so close() resolves promptly.
+          // (ServerType unions the Http2 variant, which lacks this method.)
+          (server as { closeAllConnections?: () => void }).closeAllConnections?.();
+        });
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Body size limit (ticket 20)
+  // ---------------------------------------------------------------------------
+
+  describe("Body size limit (ticket 20)", () => {
+    const pertBody = JSON.stringify({ optimistic: 1, most_likely: 2, pessimistic: 3, unit: "hours" });
+
+    /** A stream body: undici cannot precompute Content-Length, so requests arrive with no declared length (chunked-equivalent). */
+    function streamBodyOf(text: string): ReadableStream<Uint8Array> {
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(text));
+          controller.close();
+        },
+      });
+    }
+
+    it("rejects an oversize chunked body (no content-length) with 413", async () => {
+      const oversize = `{"pad":"${"x".repeat(1_048_576)}"}`;
+      const res = await app.request("/v1/tools/pert_estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: streamBodyOf(oversize),
+        duplex: "half",
+      });
+
+      expect(res.status).toBe(413);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(error.message).toContain("too large");
+      // The rejection envelope must not echo any of the oversized payload.
+      expect(JSON.stringify(body)).not.toContain('"pad"');
+    });
+
+    it("accepts an under-limit chunked body (no content-length)", async () => {
+      const res = await app.request("/v1/tools/pert_estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: streamBodyOf(pertBody),
+        duplex: "half",
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(true);
+    });
+
+    it("enforces the 1 MB cap on /v1/feedback/record-actual (previously unchecked)", async () => {
+      const res = await app.request("/v1/feedback/record-actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: "x".repeat(1_048_600), actual_hours: 1 }),
+      });
+
+      expect(res.status).toBe(413);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+    });
+
+    it("enforces the 1 MB cap on /v1/feedback/batch-record-actuals (previously unchecked)", async () => {
+      const res = await app.request("/v1/feedback/batch-record-actuals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: [{ estimate_id: "y".repeat(1_048_600), actual_hours: 1 }],
+        }),
+      });
+
+      expect(res.status).toBe(413);
+    });
+
+    it("enforces the 1 MB cap on /v1/telemetry chunked bodies (no declared length)", async () => {
+      const oversize = JSON.stringify({
+        schema_version: 1,
+        installation_id: "http-test-installation",
+        epoch_version: "0.2.2-test",
+        records: [],
+        generated_at: "2026-05-07T00:00:00.000Z",
+        pad: "z".repeat(1_048_600),
+      });
+      const res = await app.request("/v1/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: streamBodyOf(oversize),
+        duplex: "half",
+      });
+
+      expect(res.status).toBe(413);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // GET /v1/feedback/pending — NaN limit guard (ticket 20)
+  // ---------------------------------------------------------------------------
+
+  describe("GET /v1/feedback/pending limit parsing (ticket 20)", () => {
+    /** Seed `count` pending estimates (no matching actuals) into the test ledger. */
+    function seedPendingEstimates(count: number): void {
+      const now = new Date().toISOString();
+      const lines = Array.from({ length: count }, (_, i) => JSON.stringify({
+        // "pending-fixture-" deliberately avoids every SYNTHETIC_ID_PREFIX
+        // (src/lib/exclusion.ts) — those would be filtered as test data.
+        id: `pending-fixture-${Date.now()}-${i}`,
+        tool: "pert_estimate",
+        inputs: {},
+        outputs: { totalHours: 5 },
+        estimatedAt: now,
+      })).join("\n") + "\n";
+      appendFileSync(join(TEST_DIR, "estimates.jsonl"), lines, "utf-8");
+    }
+
+    it("falls back to the default 50 for a non-numeric limit (previously NaN returned the whole ledger)", async () => {
+      seedPendingEstimates(60);
+      const res = await app.request("/v1/feedback/pending?limit=abc");
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(true);
+      const data = body.data as unknown[];
+      expect(data).toHaveLength(50);
+    });
+
+    it("treats an empty limit parameter as the default", async () => {
+      seedPendingEstimates(60);
+      const res = await app.request("/v1/feedback/pending?limit=");
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.data).toHaveLength(50);
+    });
+
+    it("clamps numeric limits into [1, 200]", async () => {
+      seedPendingEstimates(60);
+
+      const high = await app.request("/v1/feedback/pending?limit=99999");
+      const highBody = await high.json() as Record<string, unknown>;
+      expect((highBody.data as unknown[])).toHaveLength(60);
+
+      const low = await app.request("/v1/feedback/pending?limit=-5");
+      const lowBody = await low.json() as Record<string, unknown>;
+      expect((lowBody.data as unknown[]).length).toBeLessThanOrEqual(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // POST /v1/feedback/batch-record-actuals — parity (ticket 20)
+  // ---------------------------------------------------------------------------
+
+  describe("POST /v1/feedback/batch-record-actuals (ticket 20 parity)", () => {
+    it("returns per-entry validation errors instead of silently filtering", async () => {
+      const res = await app.request("/v1/feedback/batch-record-actuals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: [
+            { estimate_id: `batch-fixture-ok-${Date.now()}`, actual_hours: 2.5 },
+            { estimate_id: "", actual_hours: 3 },
+            { actual_hours: -1 },
+          ],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(true);
+      const data = body.data as { total: number; succeeded: number; failed: number; errors: string[] };
+      expect(data.total).toBe(3);
+      expect(data.succeeded).toBe(1);
+      expect(data.failed).toBe(2);
+      expect(data.errors).toHaveLength(2);
+      const joined = data.errors.join("\n");
+      expect(joined).toContain("Entry 1");
+      expect(joined).toContain("Entry 2");
+      expect(joined).toContain("estimate_id");
+      expect(joined).toContain("actual_hours");
+    });
+
+    it("records a fully valid batch", async () => {
+      const stamp = Date.now();
+      const res = await app.request("/v1/feedback/batch-record-actuals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: [
+            { estimate_id: `batch-fixture-a-${stamp}`, actual_hours: 1.5 },
+            { estimate_id: `batch-fixture-b-${stamp}`, actual_hours: 2.5, notes: "optional" },
+          ],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      const data = body.data as { succeeded: number; failed: number; errors: string[] };
+      expect(data.succeeded).toBe(2);
+      expect(data.failed).toBe(0);
+      expect(data.errors).toHaveLength(0);
+    });
+
+    it("rejects over-limit batches with an explicit error naming the cap (no silent truncation)", async () => {
+      const entries = Array.from({ length: 501 }, (_, i) => ({
+        estimate_id: `batch-fixture-${i}`,
+        actual_hours: 1,
+      }));
+      const res = await app.request("/v1/feedback/batch-record-actuals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(String(error.message)).toContain("500");
+      expect(String(error.message)).toContain("501");
+    });
+
+    it("returns 422 with every per-entry error when all entries fail", async () => {
+      const res = await app.request("/v1/feedback/batch-record-actuals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: [
+            { estimate_id: "some-id", actual_hours: 0 },
+            "not-an-object",
+          ],
+        }),
+      });
+
+      expect(res.status).toBe(422);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as { message: string; errors?: string[] };
+      expect(error.message).toContain("All 2 entries failed");
+      expect(error.errors).toHaveLength(2);
+      expect(error.errors?.join("\n")).toContain("Entry 0");
+      expect(error.errors?.join("\n")).toContain("Entry 1");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cache headers on discoverability documents (ticket 20)
+  // ---------------------------------------------------------------------------
+
+  describe("Cache headers on discoverability documents (ticket 20)", () => {
+    it("/llms.txt carries Cache-Control: public, max-age=3600", async () => {
+      const res = await app.request("/llms.txt");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Cache-Control")).toBe("public, max-age=3600");
+    });
+
+    it("/openapi.json carries Cache-Control: public, max-age=3600", async () => {
+      const res = await app.request("/openapi.json");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Cache-Control")).toBe("public, max-age=3600");
+    });
+
+    it("/.well-known/ai-plugin.json carries Cache-Control: public, max-age=3600", async () => {
+      const res = await app.request("/.well-known/ai-plugin.json");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Cache-Control")).toBe("public, max-age=3600");
     });
   });
 
@@ -852,15 +1288,99 @@ describe("HTTP API", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // CORS
+  // CORS (ticket 20: allowlist — no wildcard by default)
   // ---------------------------------------------------------------------------
 
-  describe("CORS", () => {
-    it("includes CORS headers on responses", async () => {
-      const res = await app.request("/health");
-      // Hono's cors middleware sets access-control-allow-origin by default
-      const allowOrigin = res.headers.get("Access-Control-Allow-Origin");
-      expect(allowOrigin).toBeTruthy();
+  describe("CORS (ticket 20)", () => {
+    const originalCorsEnv = process.env["EPOCH_CORS_ORIGINS"];
+
+    afterEach(() => {
+      if (originalCorsEnv !== undefined) {
+        process.env["EPOCH_CORS_ORIGINS"] = originalCorsEnv;
+      } else {
+        delete process.env["EPOCH_CORS_ORIGINS"];
+      }
+    });
+
+    it("emits no Access-Control-Allow-Origin by default (no wildcard reflection)", async () => {
+      // The old blanket cors() reflected a wildcard origin on every route,
+      // letting any website read responses from a locally running server.
+      const res = await app.request("/health", {
+        headers: { Origin: "https://evil.example" },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    });
+
+    it("emits no Access-Control-Allow-Origin on /v1 routes by default either", async () => {
+      const res = await app.request("/v1/tools", {
+        headers: { Origin: "https://evil.example" },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    });
+
+    it("still answers preflight OPTIONS when no origins are allowed", async () => {
+      const res = await app.request("/v1/tools/pert_estimate", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://evil.example",
+          "Access-Control-Request-Method": "POST",
+        },
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    });
+
+    it("reflects allowlisted origins and omits the header for others", async () => {
+      process.env["EPOCH_CORS_ORIGINS"] = "https://app.example.com, http://localhost:5173";
+      const allowlistedApp = createApiApp();
+
+      const allowed = await allowlistedApp.request("/health", {
+        headers: { Origin: "https://app.example.com" },
+      });
+      expect(allowed.status).toBe(200);
+      expect(allowed.headers.get("Access-Control-Allow-Origin")).toBe("https://app.example.com");
+
+      const localhostAllowed = await allowlistedApp.request("/health", {
+        headers: { Origin: "http://localhost:5173" },
+      });
+      expect(localhostAllowed.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:5173");
+
+      const disallowed = await allowlistedApp.request("/health", {
+        headers: { Origin: "https://evil.example" },
+      });
+      expect(disallowed.status).toBe(200);
+      expect(disallowed.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    });
+
+    it("serves preflight CORS headers for allowlisted origins", async () => {
+      process.env["EPOCH_CORS_ORIGINS"] = "https://app.example.com";
+      const allowlistedApp = createApiApp();
+
+      const res = await allowlistedApp.request("/v1/tools/pert_estimate", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://app.example.com",
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers": "content-type",
+        },
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://app.example.com");
+      expect(res.headers.get("Access-Control-Allow-Methods")).toContain("POST");
+      expect(res.headers.get("Access-Control-Allow-Headers")).toContain("content-type");
+    });
+
+    it("supports EPOCH_CORS_ORIGINS=* to restore allow-any for operators who opt in", async () => {
+      process.env["EPOCH_CORS_ORIGINS"] = "*";
+      const wildcardApp = createApiApp();
+
+      const res = await wildcardApp.request("/health", {
+        headers: { Origin: "https://anything.example" },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
     });
   });
 

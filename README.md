@@ -703,7 +703,9 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_HOST` | `127.0.0.1` | HTTP server bind address |
 | `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |
 | `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
-| `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per IP (HTTP only) |
+| `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per client (HTTP only). `0` disables limiting; invalid or negative values fall back to `100` with a warning. 429 responses carry a `Retry-After` header. |
+| `EPOCH_TRUST_PROXY` | `0` | Set to `1` only when running behind a trusted reverse proxy: rate limiting then keys on `X-Forwarded-For`/`X-Real-IP` instead of the connection address (those headers are client-spoofable, so they are ignored by default). |
+| `EPOCH_CORS_ORIGINS` | _(none)_ | Comma-separated origins allowed by the HTTP API's CORS handling (e.g. `https://app.example.com,http://localhost:5173`), or `*` to allow any origin. Default: no CORS headers at all — same-origin tools, curl, and MCP clients are unaffected; cross-origin browser requests fail. Preflight `OPTIONS` requests are always answered. |
 | `EPOCH_SOURCE` | _(none)_ | Project/source tag attached to estimate records |
 | `EPOCH_TELEMETRY` | `0` | Set to `1` to enable anonymous telemetry. See [Telemetry & Privacy](#telemetry--privacy). |
 | `EPOCH_TELEMETRY_ENDPOINT` | _(none)_ | Override the configured telemetry receiver endpoint for status/submission. |
