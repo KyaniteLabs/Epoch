@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Tool Registry
-// Maps all 24 tool names to handler functions and Zod input schemas.
+// Maps all 25 tool names (TOOL_COUNT, derived from src/lib/tool-aliases.ts —
+// the authoritative tool surface) to handler functions and Zod input schemas.
 // Translates between snake_case schema fields and camelCase lib params.
 // ---------------------------------------------------------------------------
 
@@ -51,6 +52,8 @@ import {
   monteCarloSchema,
   referenceClassEstimateSchema,
   calibrateEstimatesSchema,
+  businessDaysOffset,
+  MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT,
   tokenTimeBridgeSchema,
   tokenCostEstimateSchema,
   compareModelsSchema,
@@ -63,6 +66,11 @@ import {
   feedbackHealthSchema,
   estimateFromContextSchema,
 } from "../schemas/index.js";
+import {
+  CANONICAL_TOOL_NAMES,
+  ESTIMATION_TOOL_NAMES,
+  NON_ESTIMATION_TOOL_NAMES,
+} from "../lib/tool-aliases.js";
 
 // ---- Tool Definition --------------------------------------------------------
 
@@ -114,9 +122,10 @@ const addBusinessDaysSchema = z.object({
   start_date: z
     .string()
     .describe("ISO date string for the start date."),
-  days: z
-    .coerce.number()
-    .describe("Number of business days to add (negative to subtract)."),
+  // Input safety bound (W1): the business-day walk is day-by-day, so an
+  // uncapped days (e.g. 1e9) hangs the event loop. Bounded field from
+  // schemas/index.ts (businessDaysOffset).
+  days: businessDaysOffset,
   country: z
     .string()
     .describe("ISO-3166-1-alpha-2 country code for holiday calendar.")
@@ -168,6 +177,7 @@ const businessDayOutput = {
     endDate: { type: "string", description: "End date (ISO)" },
     businessDays: { type: "number", description: "Number of business days" },
     countryCode: { type: "string", description: "ISO-3166 country code" },
+    calendarVersion: { type: "string", description: "Holiday-table version stamp (CALENDAR_VERSION) used for the computation" },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
 } satisfies Record<string, unknown>;
@@ -261,7 +271,11 @@ const monteCarloOutput = {
     p50: { type: "string", description: "50th percentile (median)" },
     p80: { type: "string", description: "80th percentile" },
     p95: { type: "string", description: "95th percentile (conservative)" },
-    criticalPathProbability: { type: "number" },
+    criticalPathProbability: {
+      type: ["number", "null"],
+      description: "P(total <= target_hours) when a target_hours deadline was supplied; null otherwise (never a fabricated probability)",
+    },
+    targetHours: { type: "number", description: "The caller-supplied deadline in hours the probability was computed against, when supplied" },
     converged: { type: "boolean", description: "Whether p50 converged between iteration halves" },
     riskEvents: {
       type: "array",
@@ -430,6 +444,20 @@ function formatInterval(interval: { lower: number; upper: number }, unitLabel: s
 }
 
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
+
+// monte_carlo_schedule: optional deadline input for the P(total <= target)
+// metric (W2). The base schema lives in schemas/index.ts (owned by the
+// numeric-bounds lane); the optional target is extended here so it stays
+// registry-local.
+const monteCarloTargetSchema = monteCarloSchema.extend({
+  target_hours: z
+    .coerce.number()
+    .positive()
+    .optional()
+    .describe(
+      "Optional deadline in working hours (task durations are in 8-hour days). When supplied, criticalPathProbability reports P(total <= target_hours); when omitted it is null instead of a fabricated value.",
+    ),
+});
 
 const handlers: Record<string, ToolDefinition> = Object.fromEntries([
   // -- Temporal tools (6) ----------------------------------------------------
@@ -627,14 +655,26 @@ Use when estimating task duration with uncertain outcomes.`,
 
 Replaces traditional 17 human-labor cost drivers with 5 LLM-specific factors:
 reasoning complexity, context completeness, transformation impact, iterative cycles,
-and human oversight. Returns both nominal and LLM-adjusted person-months.`,
+and human oversight. Returns both nominal and LLM-adjusted person-months.
+iterative_cycles: values <= 2.0 are literal multipliers (0.5 = one-shot,
+1.0 = typical debug loop, 2.0 = heavy back-and-forth); values above 2.0 are
+literal cycle counts, each additional cycle adding 0.1 of multiplier anchored
+at 2.0 (2.0 -> 2.0x, 3 -> 2.1x, 10 -> 2.8x) — monotonic with no cliff at 2.0.`,
     cocomoEstimateSchema,
     cocomoOutput,
     (input) => {
       const p = cocomoEstimateSchema.parse(input);
       const profile = getDeveloperProfileGradient(p.ai_native);
       const rawCycles = p.iterative_cycles;
-      const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
+      // Continuous cycle normalization (W2 math fix): values <= 2.0 are literal
+      // multipliers, unchanged. Above 2.0 the input is a literal cycle count
+      // and each additional cycle adds a fixed 0.1 of multiplier, anchored at
+      // the literal-region endpoint (2.0) so the mapping is monotonic
+      // non-decreasing over [0.5, 10] with no cliff at 2.0 — the previous
+      // `1 + min(c,10)*0.1` rule made 2.0 -> 2.0x but 2.01 -> 1.201x.
+      const iterativeCycles = rawCycles <= 2.0
+        ? rawCycles
+        : 2.0 + 0.1 * (Math.min(rawCycles, 10.0) - 2.0);
       const result = cocomoEstimate({
         kloc: p.kloc,
         reasoningComplexity: p.reasoning_complexity,
@@ -696,23 +736,45 @@ Applies merge bias: tasks with >2 predecessors get 5% duration increase per extr
     },
   ),
 
+  // monte_carlo_schedule uses monteCarloTargetSchema (declared above the
+  // handlers map): optional target_hours for P(total <= target).
+
   tool(
     "monte_carlo_schedule",
     `Run Monte Carlo simulation for probabilistic schedule risk analysis.
 
 Samples task durations from triangular distributions and returns P10/P50/P80/P95
-completion estimates with identified risk events. Use seed for reproducible results.`,
-    monteCarloSchema,
+completion estimates with identified risk events. Use seed for reproducible results.
+Supply target_hours (working hours; durations are 8-hour days) to get
+criticalPathProbability = P(total <= target_hours); without it that field is null.`,
+    monteCarloTargetSchema,
     monteCarloOutput,
     (input) => {
-      const p = monteCarloSchema.parse(input);
+      const p = monteCarloTargetSchema.parse(input);
+      // Input safety bound (W1): the schema caps each factor independently
+      // (<=500 tasks, <=100,000 iterations), but 500 × 100,000 sampled task-
+      // durations would still monopolize the event loop in a single call —
+      // cap the product too, rejecting with an actionable message.
+      const taskCount = p.tasks.length;
+      const product = taskCount * p.iterations;
+      if (product > MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT) {
+        const maxIterations = Math.max(1, Math.floor(MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT / taskCount));
+        return {
+          ok: false as const,
+          error: {
+            isError: true as const,
+            message: `iterations × tasks = ${product.toLocaleString("en-US")} exceeds the ${MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT.toLocaleString("en-US")} cap (${p.iterations.toLocaleString("en-US")} iterations × ${taskCount} tasks).`,
+            retryHint: `Lower iterations to at most ${maxIterations.toLocaleString("en-US")} for ${taskCount} tasks, or split the schedule into smaller task lists.`,
+          },
+        };
+      }
       const tasks = p.tasks.map((t) => ({
         name: t.name,
         optimistic: t.optimistic,
         mostLikely: t.most_likely,
         pessimistic: t.pessimistic,
       }));
-      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed) };
+      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed, p.target_hours) };
     },
   ),
 
@@ -974,14 +1036,27 @@ update automatically to reduce estimation bias.`,
       const p = recordActualSchema.parse(input);
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes, p.unit, p.calibration_provenance);
       if (!result.ok) {
+        // Ticket 04 (feedback contract): EVERY recordActualDetailed failure
+        // reason maps to a distinct, actionable message. The reason union is
+        // closed (src/lib/feedback.ts RecordActualResult); the exhaustive map
+        // below plus the honest fallback means "Unknown error." is unreachable
+        // for these failures. Pinned by
+        // src/dispatcher/record-actual-errors.test.ts.
         const messages: Record<string, string> = {
           below_threshold: `Actual hours (${p.actual_hours}) must be positive.`,
           duplicate: `An actual for estimate ${p.estimate_id} already exists. Each estimate can only have one actual.`,
           write_failed: "Failed to write to feedback storage — ensure ~/.epoch/ directory is writable.",
+          synthetic_id: `Estimate ID "${p.estimate_id}" looks like test/synthetic data (reserved prefix), so it cannot receive actuals. Use the feedbackRef returned by a fresh estimation-tool call.`,
+          unknown_tool: `Estimate ${p.estimate_id} was recorded under an unrecognized tool name, so its actual cannot join calibration. Re-run the estimation tool and record against the new feedbackRef it returns.`,
+          auto_wallclock_out_of_bounds: `Auto wall-clock actual for estimate ${p.estimate_id} failed the sanity gate (outside 0.05–12h or ≥10x the estimate). Record a verified actual manually via record_actual instead.`,
         };
         return {
           ok: false as const,
-          error: { isError: true, message: messages[result.reason] ?? "Unknown error.", retryHint: "Check estimate_id and actual_hours values." },
+          error: {
+            isError: true,
+            message: messages[result.reason] ?? `Failed to record actual for estimate ${p.estimate_id} (unrecognized reason: ${String(result.reason)}).`,
+            retryHint: "Use the feedbackRef from a recent estimation tool call with a positive actual_hours value.",
+          },
         };
       }
       return {
@@ -1048,9 +1123,13 @@ Each entry pairs an estimate ID with the actual hours spent.`,
         calibrationProvenance: e.calibration_provenance,
       })));
       if (result.succeeded === 0 && result.failed > 0) {
+        // Ticket 04: the all-failed envelope must not swallow the per-entry
+        // reasons — surface the first one (they carry "(reason: ...)" from
+        // batchRecordActuals) so the caller can self-correct.
+        const firstError = result.errors[0] ?? "no per-entry error reported";
         return {
           ok: false as const,
-          error: { isError: true, message: `All ${result.total} entries failed to record.`, retryHint: "Ensure ~/.epoch/ directory is writable." },
+          error: { isError: true, message: `All ${result.total} entries failed to record. First failure: ${firstError}`, retryHint: "Each entry needs the feedbackRef from a recent estimation tool call and a positive actual_hours value." },
         };
       }
       return { ok: true as const, data: result };
@@ -1139,7 +1218,16 @@ export const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map(
   Object.entries(handlers),
 );
 
-export const TOOL_NAMES: Set<string> = new Set(Object.keys(handlers));
+// Ticket 03 (authoritative tool surface): TOOL_NAMES / ESTIMATION_TOOLS /
+// NON_ESTIMATION_TOOLS are DERIVED from src/lib/tool-aliases.ts — the single
+// source of truth — not hand-copied here. The sync suite
+// (src/dispatcher/tool-surface-sync.test.ts) pins the actual registration
+// keys in TOOL_REGISTRY to CANONICAL_TOOL_NAMES, so registering a tool
+// without updating lib (or vice versa) fails CI instead of silently drifting
+// (the historical 24-vs-25 drift that broke estimate_from_context's feedback
+// loop must never come back).
+
+export const TOOL_NAMES: ReadonlySet<string> = CANONICAL_TOOL_NAMES;
 
 // ---- Estimation vs. telemetry classification (Phase 1 Task 3) --------------
 //
@@ -1149,41 +1237,12 @@ export const TOOL_NAMES: Set<string> = new Set(Object.keys(handlers));
 // plumbing, comparison/validation reports) is non-estimation telemetry and
 // must be routed to recordToolCall() / tool-calls.jsonl instead — see
 // dispatch() in src/dispatcher/index.ts, the sole recordEstimate() call site.
-// Every tool name registered above must appear in exactly one of these sets.
+// The partition itself is owned by src/lib/tool-aliases.ts and only
+// re-exported here.
 
-export const ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
-  "pert_estimate",
-  "reference_class_estimate",
-  "cocomo_estimate",
-  "sprint_forecast",
-  "monte_carlo_schedule",
-  "schedule_risk",
-  "critical_path",
-  "token_time_bridge",
-  // Phase 5: estimate_from_context now produces a real reference-class-
-  // delegated hour estimate (correctedEstimate), so it joins the ledger and
-  // is eligible for record_actual pairing, same as reference_class_estimate.
-  "estimate_from_context",
-]);
+export const ESTIMATION_TOOLS: ReadonlySet<string> = ESTIMATION_TOOL_NAMES;
 
-export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
-  "record_actual",
-  "batch_record_actuals",
-  "get_current_time",
-  "convert_timezone",
-  "parse_duration",
-  "time_math",
-  "add_business_days",
-  "count_business_days",
-  "feedback_health",
-  "get_pending_estimates",
-  "accuracy_trend",
-  "calibrate_estimates",
-  "compare_models",
-  "token_cost_estimate",
-  "cocomo_validate",
-  "cocomo_ground_truth",
-]);
+export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = NON_ESTIMATION_TOOL_NAMES;
 
 export function isEstimationTool(toolName: string): boolean {
   return ESTIMATION_TOOLS.has(toolName);

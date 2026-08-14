@@ -78,6 +78,18 @@ describe("batchRecordActuals", () => {
       expect(err).toContain("Failed to record");
     }
   });
+
+  it("per-entry errors carry the failure reason string (ticket 04 batch contract)", () => {
+    const result = batchRecordActuals([
+      { estimateId: `seed-reason-${ts}`, actualHours: 4.0 },
+      { estimateId: `test-reason-${ts}`, actualHours: 8.0 },
+    ]);
+    expect(result.succeeded).toBe(0);
+    expect(result.errors).toHaveLength(2);
+    for (const err of result.errors) {
+      expect(err).toContain("(reason: synthetic_id)");
+    }
+  });
 });
 
 describe("getFeedbackHealthReport", () => {

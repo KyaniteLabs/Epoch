@@ -6,7 +6,7 @@ import { computeAccuracyMetrics } from "./analytics.js";
 import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
-import { canonicalizeToolName } from "./tool-aliases.js";
+import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
 
 export type { EstimateRecord, ActualRecord };
@@ -274,6 +274,20 @@ const ACTUAL_UNIT_TO_HOURS: Record<ActualUnit, number> = {
 
 /** Ratio (in either direction) between normalized actual hours and the matched estimate's hours above which a unit mistake (e.g. person-months entered as hours) is likely. Recorded, not silently ingested — flagged "unit_suspect". */
 const UNIT_SUSPECT_RATIO = 10;
+
+/**
+ * Hours-per-unit conversion for estimate outputs recorded with a `unit` field
+ * (PERT `expected`/`stdDeviation` and friends). Same 8h-day / 40h-week /
+ * 160h-month work-period convention as estimation.ts's toHours(). Shared so
+ * read-side consumers (coverage.ts interval scoring) convert with the exact
+ * table used at ingest instead of duplicating it.
+ */
+export const ESTIMATE_UNIT_TO_HOURS: Record<string, number> = {
+  hours: 1,
+  days: 8,
+  weeks: 40,
+  months: 160,
+};
 
 function normalizeActualHours(value: number, unit?: ActualUnit): number {
   if (!unit) return value;
@@ -617,13 +631,10 @@ export function extractEstimatedHours(outputs: Record<string, unknown>): number 
   if (typeof outputs["estimatedMinutes"] === "number") return outputs["estimatedMinutes"] / 60;
   if (typeof outputs["estimatedSeconds"] === "number") return outputs["estimatedSeconds"] / 3600;
   if (typeof outputs["expected"] === "number") {
-    const unit = outputs["unit"] as string;
-    if (unit === "hours") return outputs["expected"];
-    if (unit === "days") return outputs["expected"] * 8;
-    if (unit === "weeks") return outputs["expected"] * 40;
-    if (unit === "months") return outputs["expected"] * 160;
-    if (!unit) return outputs["expected"]; // no unit field — assume hours
-    return null; // unrecognized unit — skip to avoid corrupting calibration
+    const unit = outputs["unit"];
+    if (unit === undefined) return outputs["expected"]; // no unit field — assume hours
+    const factor = ESTIMATE_UNIT_TO_HOURS[unit as string];
+    return factor === undefined ? null : outputs["expected"] * factor; // unrecognized unit — skip to avoid corrupting calibration
   }
   if (typeof outputs["personMonthsLlmAdjusted"] === "number") {
     return outputs["personMonthsLlmAdjusted"] * 160;
@@ -679,11 +690,16 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
   let succeeded = 0;
 
   for (const entry of entries) {
-    const ok = recordActual(entry.estimateId, entry.actualHours, entry.notes, entry.unit, entry.calibrationProvenance);
-    if (ok) {
+    // Ticket 04 (feedback contract): route through recordActualDetailed so
+    // each per-entry error string carries the failure REASON (e.g.
+    // "(reason: duplicate)") instead of a bare "Failed to record" — callers
+    // (MCP batch_record_actuals, HTTP batch endpoint) surface these strings
+    // verbatim, so the reason must survive the batch path.
+    const result = recordActualDetailed(entry.estimateId, entry.actualHours, entry.notes, entry.unit, entry.calibrationProvenance);
+    if (result.ok) {
       succeeded++;
     } else {
-      errors.push(`Failed to record actual for estimate ${entry.estimateId}`);
+      errors.push(`Failed to record actual for estimate ${entry.estimateId} (reason: ${result.reason})`);
     }
   }
 
@@ -730,6 +746,17 @@ export interface FeedbackHealthReport {
   };
   humanReadable: string;
 }
+
+/**
+ * Denominator list for feedback-health's data-completeness tool-coverage
+ * score: the estimation tools that count as "calibrated" once they accrue
+ * 3+ matched pairs. DERIVED from the authoritative estimation partition
+ * (src/lib/tool-aliases.ts ESTIMATION_TOOL_NAMES), never hand-copied — the
+ * historical hand-copy here was missing estimate_from_context (8 of 9),
+ * silently capping the completeness score. Exported so the dispatcher sync
+ * suite (src/dispatcher/tool-surface-sync.test.ts) can pin the derivation.
+ */
+export const FEEDBACK_HEALTH_CALIBRATION_TOOLS: readonly string[] = [...ESTIMATION_TOOL_NAMES];
 
 export function getFeedbackHealthReport(): FeedbackHealthReport {
   const estimates = readLines<EstimateRecord>(ESTIMATES_FILE);
@@ -869,7 +896,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const cappedLabel = overallCappedMdape !== null ? `${Math.round(overallCappedMdape)}%` : "N/A";
 
   // Data completeness score (0-100): tool coverage (40) + type coverage (30) + pair count (30)
-  const estimationTools = ["pert_estimate", "cocomo_estimate", "sprint_forecast", "critical_path", "monte_carlo_schedule", "token_time_bridge", "schedule_risk", "reference_class_estimate"];
+  const estimationTools = FEEDBACK_HEALTH_CALIBRATION_TOOLS;
   const toolsCalibrated = estimationTools.filter(t => (byTool[t]?.matchedPairs ?? 0) >= 3).length;
   const toolScore = Math.round((toolsCalibrated / estimationTools.length) * 40);
 
