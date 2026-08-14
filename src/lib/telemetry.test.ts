@@ -274,6 +274,91 @@ describe("getStats", () => {
     expect(defined(stats[0]).callCount).toBe(1);
     expect(defined(stats[0]).p50Ms).toBe(50);
   });
+
+  // -------------------------------------------------------------------------
+  // Ticket 21 (per-tool watermarks): getStats(undefined, window, sinceByTool)
+  // aggregates ONLY records strictly newer than each tool's watermark and
+  // attaches newestTimestamp so self-improvement can advance the watermark
+  // without a second read. Tools with no new records are omitted entirely.
+  // -------------------------------------------------------------------------
+
+  it("aggregates only records strictly newer than the per-tool watermark and attaches newestTimestamp", () => {
+    const records = [
+      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: "2026-06-01T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: "2026-06-02T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 300, timestamp: "2026-06-10T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-b", elapsedMs: 50, timestamp: "2026-06-02T00:00:00.000Z" }),
+    ];
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    // tool-a watermark equals its second-newest record: T1, T2 are excluded
+    // (<= watermark), only T3 is a delta. tool-b watermark predates its only
+    // record, so that record is a delta.
+    const stats = store.getStats(undefined, 90, {
+      "tool-a": "2026-06-02T00:00:00.000Z",
+      "tool-b": "2026-06-01T00:00:00.000Z",
+    });
+
+    expect(stats).toHaveLength(2);
+    const a = defined(stats.find((s) => s.tool === "tool-a"));
+    expect(a.callCount).toBe(1);
+    expect(a.p50Ms).toBe(300);
+    expect(a.newestTimestamp).toBe("2026-06-10T00:00:00.000Z");
+    const b = defined(stats.find((s) => s.tool === "tool-b"));
+    expect(b.callCount).toBe(1);
+    expect(b.newestTimestamp).toBe("2026-06-02T00:00:00.000Z");
+  });
+
+  it("omits tools whose records are all at or before their watermark (zero delta)", () => {
+    const records = [
+      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: "2026-06-01T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: "2026-06-02T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-b", elapsedMs: 50, timestamp: "2026-06-05T00:00:00.000Z" }),
+    ];
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    // tool-a is fully watermarked (newest record == watermark); tool-b is not.
+    const stats = store.getStats(undefined, 90, {
+      "tool-a": "2026-06-02T00:00:00.000Z",
+      "tool-b": "2026-06-01T00:00:00.000Z",
+    });
+
+    expect(stats).toHaveLength(1);
+    expect(stats[0]?.tool).toBe("tool-b");
+  });
+
+  it("treats tools absent from sinceByTool as unwatermarked (full window)", () => {
+    const records = [
+      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: "2026-06-01T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: "2026-06-02T00:00:00.000Z" }),
+    ];
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    // Only tool-b is watermarked; tool-a has no entry and keeps all records.
+    const stats = store.getStats(undefined, 90, { "tool-b": "2026-06-02T00:00:00.000Z" });
+
+    expect(stats).toHaveLength(1);
+    expect(defined(stats[0]).tool).toBe("tool-a");
+    expect(defined(stats[0]).callCount).toBe(2);
+    expect(defined(stats[0]).newestTimestamp).toBe("2026-06-02T00:00:00.000Z");
+  });
+
+  it("does not attach newestTimestamp or change output when sinceByTool is absent", () => {
+    const records = [
+      makeRecord({ tool: "tool-a", elapsedMs: 100 }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200 }),
+    ];
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    const stats = store.getStats();
+    expect(stats).toHaveLength(1);
+    expect(defined(stats[0]).callCount).toBe(2);
+    expect(Object.hasOwn(defined(stats[0]), "newestTimestamp")).toBe(false);
+  });
 });
 
 // ---- getModelStats() ----
@@ -391,6 +476,67 @@ describe("getModelStats", () => {
     const store2 = getTelemetry();
     expect(store2.getModelStats("gpt-4o")).not.toBeNull();
     expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Ticket 21: additive sinceTimestamp capability — only records strictly
+  // newer than the timestamp count, and the TTL cache keys on it so a new
+  // watermark is a new cache entry, never a stale aggregate.
+  // -------------------------------------------------------------------------
+
+  it("counts only records strictly newer than sinceTimestamp", () => {
+    const records = Array.from({ length: 20 }, (_, i) =>
+      makeRecord({
+        model: "gpt-4o",
+        tokens: 1000,
+        elapsedMs: 100,
+        timestamp: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    // 20 records dated 06-01..06-20; since 06-10 keeps 06-11..06-20 (10).
+    const stats = store.getModelStats("gpt-4o", undefined, "2026-06-10T00:00:00.000Z");
+    expect(stats).not.toBeNull();
+    expect(defined(stats).sampleCount).toBe(10);
+  });
+
+  it("returns null when the since filter leaves fewer than 10 samples", () => {
+    const records = Array.from({ length: 12 }, (_, i) =>
+      makeRecord({
+        model: "gpt-4o",
+        tokens: 1000,
+        elapsedMs: 100,
+        timestamp: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    // 12 records, since 06-08 keeps 4 (06-09..06-12) — below the 10 minimum.
+    expect(store.getModelStats("gpt-4o", undefined, "2026-06-08T00:00:00.000Z")).toBeNull();
+  });
+
+  it("caches per (model, window, since): a different sinceTimestamp is a new cache entry", () => {
+    const records = Array.from({ length: 20 }, (_, i) =>
+      makeRecord({
+        model: "gpt-4o",
+        tokens: 1000,
+        elapsedMs: 100,
+        timestamp: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    expect(store.getModelStats("gpt-4o", undefined, "2026-06-10T00:00:00.000Z")).not.toBeNull();
+    expect(store.getModelStats("gpt-4o", undefined, "2026-06-10T00:00:00.000Z")).not.toBeNull();
+    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+
+    // Same model/window, different watermark -> re-read, not a stale hit.
+    expect(store.getModelStats("gpt-4o", undefined, "2026-06-05T00:00:00.000Z")).not.toBeNull();
+    expect(mockReadFileSync).toHaveBeenCalledTimes(2);
   });
 });
 

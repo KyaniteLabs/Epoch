@@ -22,6 +22,12 @@ export interface ToolStats {
   p95Ms: number;
   meanMs: number;
   windowDays: number;
+  /**
+   * Ticket 21: ISO timestamp of the newest record behind this row. Only
+   * attached when getStats() is called with sinceByTool (the self-improvement
+   * watermark path); default callers get the exact shape they had before.
+   */
+  newestTimestamp?: string;
 }
 
 export interface ModelStatsResult {
@@ -135,7 +141,7 @@ class TelemetryStore {
     }
   }
 
-  getStats(toolName?: string, windowDays?: number): ToolStats[] {
+  getStats(toolName?: string, windowDays?: number, sinceByTool?: Record<string, string>): ToolStats[] {
     this.flush();
 
     if (!this.enabled || !existsSync(this.filePath)) return [];
@@ -160,6 +166,33 @@ class TelemetryStore {
       })
       .filter((r): r is ToolCallRecord => r !== null && r.timestamp >= cutoff);
 
+    // Ticket 21 (per-tool watermarks): when sinceByTool is provided, each
+    // tool's row aggregates ONLY records strictly newer than its watermark
+    // (an ISO timestamp string compare — both sides are UTC ISO). Tools with
+    // no new records are omitted entirely so the self-improvement merge loop
+    // treats them as "nothing to merge, watermark untouched". Each returned
+    // row carries newestTimestamp (the delta's max) so the caller can
+    // advance the watermark without re-reading. Without sinceByTool the
+    // behavior is byte-identical to before (full window, no extra field).
+    if (sinceByTool) {
+      const deltaGrouped = new Map<string, ToolCallRecord[]>();
+      for (const r of records) {
+        if (toolName && r.tool !== toolName) continue;
+        const since = sinceByTool[r.tool];
+        if (since !== undefined && r.timestamp <= since) continue;
+        const arr = deltaGrouped.get(r.tool) ?? [];
+        arr.push(r);
+        deltaGrouped.set(r.tool, arr);
+      }
+      return [...deltaGrouped.entries()]
+        .map(([tool, recs]) => ({
+          ...aggregate(recs, windowDays ?? 90),
+          tool,
+          newestTimestamp: recs.reduce((max, r) => (r.timestamp > max ? r.timestamp : max), recs[0]?.timestamp ?? ""),
+        }))
+        .sort((a, b) => b.callCount - a.callCount);
+    }
+
     if (toolName) {
       const filtered = records.filter((r) => r.tool === toolName);
       return filtered.length > 0 ? [aggregate(filtered, windowDays ?? 90)] : [];
@@ -177,24 +210,24 @@ class TelemetryStore {
       .sort((a, b) => b.callCount - a.callCount);
   }
 
-  getModelStats(model: string, windowDays?: number): ModelStatsResult | null {
+  getModelStats(model: string, windowDays?: number, sinceTimestamp?: string): ModelStatsResult | null {
     // TTL cache: analytics resolves one calibration per token-tool call and
     // compare_models walks all 16 catalog models — without this, each call
     // re-reads and re-parses the entire telemetry file per model. Staleness is
     // bounded by MODEL_STATS_CACHE_TTL_MS (60s); resetTelemetry() drops it
     // with the instance.
-    const cacheKey = `${model}\u0000${windowDays ?? "all"}`;
+    const cacheKey = `${model}\u0000${windowDays ?? "all"}\u0000${sinceTimestamp ?? ""}`;
     const cached = this.modelStatsCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value;
     }
 
-    const value = this.computeModelStats(model, windowDays);
+    const value = this.computeModelStats(model, windowDays, sinceTimestamp);
     this.modelStatsCache.set(cacheKey, { value, expiresAt: Date.now() + MODEL_STATS_CACHE_TTL_MS });
     return value;
   }
 
-  private computeModelStats(model: string, windowDays?: number): ModelStatsResult | null {
+  private computeModelStats(model: string, windowDays?: number, sinceTimestamp?: string): ModelStatsResult | null {
     this.flush();
 
     if (!this.enabled || !existsSync(this.filePath)) return null;
@@ -217,7 +250,9 @@ class TelemetryStore {
       .map((line) => {
         try { return JSON.parse(line) as ToolCallRecord; } catch { return null; }
       })
-      .filter((r): r is ToolCallRecord => r !== null && r.timestamp >= cutoff && r.model === model && typeof r.tokens === "number" && r.tokens > 0 && r.elapsedMs > 0);
+      .filter((r): r is ToolCallRecord => r !== null && r.timestamp >= cutoff
+        && (sinceTimestamp === undefined || r.timestamp > sinceTimestamp)
+        && r.model === model && typeof r.tokens === "number" && r.tokens > 0 && r.elapsedMs > 0);
 
     if (records.length < 10) return null;
 

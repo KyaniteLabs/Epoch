@@ -5,16 +5,24 @@
 // Validates src/data/reference-database.json for structural integrity.
 // Ensures the bundled reference database is loadable and has sensible values.
 //
-// Usage: node scripts/verify-reference-db.mjs
+// Usage: node scripts/verify-reference-db.mjs [--fix]
+//
+// --fix: one-shot correction (ticket 21) — when sampleSize does not equal the
+//   sum of toolExecutionBenchmarks sampleCounts (the phantom-sample state the
+//   pre-watermark self-improvement loop produced by re-adding the whole 90-day
+//   window to the counter on every daily run), recompute it from the
+//   benchmarks and write the DB back. Formatting (2-space indent, no trailing
+//   newline) is preserved so the diff shows only the sampleSize change.
 // ---------------------------------------------------------------------------
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const DB_FILE = join(ROOT, "src", "data", "reference-database.json");
+const FIX = process.argv.includes("--fix");
 
 let exitCode = 0;
 
@@ -65,11 +73,38 @@ for (const field of requiredFields) {
 
 // Validate sample size
 if (typeof data.sampleSize === "number") {
-	if (data.sampleSize < 0) {
-		fail(`sampleSize must be non-negative, got ${data.sampleSize}`);
-	} else {
-		pass(`sampleSize: ${data.sampleSize.toLocaleString()}`);
-	}
+  if (data.sampleSize < 0) {
+    fail(`sampleSize must be non-negative, got ${data.sampleSize}`);
+  } else {
+    pass(`sampleSize: ${data.sampleSize.toLocaleString()}`);
+  }
+}
+
+// Ticket 21: sampleSize must reconcile with the benchmark counts it claims
+// to describe. The pre-watermark self-improvement loop added the whole
+// 90-day telemetry window to the counter on every daily run, so the shipped
+// artifact carried phantom samples (126,223 vs a real 117,791).
+if (typeof data.sampleSize === "number" && typeof data.toolExecutionBenchmarks === "object") {
+  const benchmarkTotal = Object.values(data.toolExecutionBenchmarks).reduce(
+    (sum, bench) => sum + (typeof bench?.sampleCount === "number" ? bench.sampleCount : 0),
+    0,
+  );
+  if (data.sampleSize !== benchmarkTotal) {
+    if (FIX) {
+      const before = data.sampleSize;
+      data.sampleSize = benchmarkTotal;
+      writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf-8");
+      pass(
+        `sampleSize reconciled with benchmark counts: ${before.toLocaleString()} -> ${benchmarkTotal.toLocaleString()} (removed ${(before - benchmarkTotal).toLocaleString()} phantom samples)`,
+      );
+    } else {
+      fail(
+        `sampleSize ${data.sampleSize.toLocaleString()} != sum of toolExecutionBenchmarks sampleCounts ${benchmarkTotal.toLocaleString()} (${(data.sampleSize - benchmarkTotal).toLocaleString()} phantom samples; re-run with --fix to reconcile)`,
+      );
+    }
+  } else {
+    pass(`sampleSize reconciles with benchmark counts: ${benchmarkTotal.toLocaleString()}`);
+  }
 }
 
 // Validate global correction factor

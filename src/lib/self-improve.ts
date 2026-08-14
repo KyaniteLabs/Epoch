@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
 import { isRatioConsistent } from "./telemetry-receiver.js";
+import { debugLog } from "./internal/logging.js";
 import {
 	receiverToHistorical,
 	type ReceiverTelemetryRecord,
@@ -62,6 +63,15 @@ interface ReferenceDatabase {
 	sampleSize: number;
 	description: string;
 	toolExecutionBenchmarks: Record<string, ToolBenchmark>;
+	/**
+	 * Ticket 21 (additive, optional): per-tool watermark — the ISO timestamp
+	 * of the newest telemetry record already merged into that tool's
+	 * benchmark. Only records strictly newer than the watermark are merged on
+	 * subsequent updates, so an unchanged 90-day window re-merges nothing.
+	 * DBs written before this field existed simply omit it; the first fixed
+	 * run bootstraps each tool's watermark from db.generatedAt.
+	 */
+	mergeWatermarks?: Record<string, string>;
 	modelLatencyProfiles: Record<string, ModelProfile>;
 	estimationAccuracy?: {
 		taskTypes: Record<string, { correctionFactor: number }>;
@@ -129,13 +139,24 @@ export function notifyToolCall(): void {
 		callCounter = 0;
 		lastUpdateAt = Date.now();
 		isUpdating = true;
-		updateReferenceDatabase()
-			.catch(() => {
-				// self-improvement is non-critical
-			})
-			.finally(() => {
-				isUpdating = false;
-			});
+		// Ticket 21: updateReferenceDatabase is a synchronous file read/parse
+		// + write burst. Scheduling it via setImmediate lets the dispatch that
+		// hit the threshold return its response first (setImmediate, not a
+		// microtask, so the transport's response write is not queued behind
+		// the update). The 100th dispatch therefore never pays the
+		// self-improvement cost inline.
+		setImmediate(() => {
+			updateReferenceDatabase()
+				.catch((err: unknown) => {
+					// Self-improvement is non-critical, but a silently
+					// swallowed failure hides a broken learning loop forever —
+					// log it with context (EPOCH_DEBUG=1) instead of throwing.
+					debugLog("self-improve.update", err);
+				})
+				.finally(() => {
+					isUpdating = false;
+				});
+		});
 	}
 }
 
@@ -143,10 +164,43 @@ export async function updateReferenceDatabase(): Promise<void> {
 	const db = loadReferenceDb();
 	if (!db) return;
 
+	// Ticket 21: per-tool watermarks. A tool's effective cutoff is its
+	// mergeWatermarks entry; on the first fixed-code run over a DB written by
+	// the old window-merge logic (no watermarks) the cutoff bootstraps to
+	// db.generatedAt — every record at or before that timestamp was already
+	// merged into the shipped benchmarks, so only strictly newer records are
+	// deltas and the historical double-count can never recur. Tools absent
+	// from the DB have no history to double-count and merge their full window.
+	const watermarks: Record<string, string> = { ...(db.mergeWatermarks ?? {}) };
+	const generatedAt =
+		typeof db.generatedAt === "string" && db.generatedAt.length > 0
+			? db.generatedAt
+			: undefined;
+	const sinceByTool: Record<string, string> = {};
+	const knownTools = new Set([
+		...Object.keys(db.toolExecutionBenchmarks ?? {}),
+		...Object.keys(db.mergeWatermarks ?? {}),
+	]);
+	for (const tool of knownTools) {
+		sinceByTool[tool] = db.mergeWatermarks?.[tool] ?? generatedAt ?? "";
+	}
+
 	const telemetry = getTelemetry();
-	const allStats = telemetry.getStats(undefined, 90);
+	const allStats =
+		Object.keys(sinceByTool).length > 0
+			? telemetry.getStats(undefined, 90, sinceByTool)
+			: telemetry.getStats(undefined, 90);
 
 	for (const stat of allStats) {
+		const since = sinceByTool[stat.tool] ?? "";
+		// The watermark only ever advances: max(previous cutoff, newest merged
+		// record). Rows without newestTimestamp (legacy stats providers) keep
+		// the previous cutoff instead of guessing a timestamp.
+		const candidate = stat.newestTimestamp ?? since;
+		if (candidate > (watermarks[stat.tool] ?? "")) {
+			watermarks[stat.tool] = candidate;
+		}
+
 		const existing = db.toolExecutionBenchmarks[stat.tool];
 		if (existing) {
 			const merged = mergeBenchmark(existing, stat);
@@ -161,6 +215,15 @@ export async function updateReferenceDatabase(): Promise<void> {
 				max_ms: stat.p95Ms,
 				sampleCount: stat.callCount,
 			};
+		}
+	}
+
+	// Materialize bootstrap watermarks for known tools that had no new
+	// records this run, so the cutoff survives even while the tool is idle.
+	for (const tool of knownTools) {
+		if (watermarks[tool] === undefined) {
+			const bootstrap = sinceByTool[tool];
+			if (bootstrap) watermarks[tool] = bootstrap;
 		}
 	}
 
@@ -179,10 +242,15 @@ export async function updateReferenceDatabase(): Promise<void> {
 		db.globalCorrectionFactor = computeGlobalCorrection(calibrationRecords);
 	}
 
-	const feedbackSize = feedbackRecords.length;
-	const receivedTelemetrySize = receivedTelemetryRecords.length;
-	const telemetrySize = allStats.reduce((s, t) => s + t.callCount, 0);
-	db.sampleSize += telemetrySize + feedbackSize + receivedTelemetrySize;
+	// Ticket 21: sampleSize is RECOMPUTED from the merged benchmark counts —
+	// never `+=`. The shipped artifact carried 8,432 phantom samples because
+	// every daily run added the whole 90-day window to a counter that nothing
+	// reconciled against the benchmarks it claims to describe.
+	db.sampleSize = Object.values(db.toolExecutionBenchmarks).reduce(
+		(sum, bench) => sum + (bench?.sampleCount ?? 0),
+		0,
+	);
+	db.mergeWatermarks = watermarks;
 	db.generatedAt = new Date().toISOString();
 	db.source = "self-improvement";
 

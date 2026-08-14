@@ -1,4 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { resetTelemetry } from "./telemetry.js";
+
+let stressTempDataDir = "";
+let stressPreviousDataDir: string | undefined;
 import {
   getCurrentTime,
   convertTimezone,
@@ -1030,6 +1037,27 @@ describe("estimation — monteCarloSim stress", () => {
 // ===========================================================================
 
 describe("analytics — tokenTimeBridge stress", () => {
+  // Confidence reflects provenance (ticket 15): without isolation this reads
+  // the developer's real telemetry, where a heavily-used model can have
+  // enough locally-measured samples to legitimately report "likely" instead
+  // of the curated table's "optimistic". Pin provenance with a temp data dir.
+  beforeAll(() => {
+    stressTempDataDir = mkdtempSync(join(tmpdir(), "epoch-stress-analytics-"));
+    stressPreviousDataDir = process.env["EPOCH_DATA_DIR"];
+    process.env["EPOCH_DATA_DIR"] = stressTempDataDir;
+    resetTelemetry();
+  });
+
+  afterAll(() => {
+    resetTelemetry();
+    rmSync(stressTempDataDir, { recursive: true, force: true });
+    if (stressPreviousDataDir === undefined) {
+      delete process.env["EPOCH_DATA_DIR"];
+    } else {
+      process.env["EPOCH_DATA_DIR"] = stressPreviousDataDir;
+    }
+  });
+
   const knownModels = [
     "claude-sonnet-4-20250514",
     "gpt-4o",
