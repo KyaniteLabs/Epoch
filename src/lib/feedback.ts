@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
-import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
+import { readLines, dataDir, joinActualsEarliestReported, countDuplicateActuals, getLedgerCorruptLines, withLedgerWriteLock, LedgerLockTimeoutError, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
@@ -177,35 +177,19 @@ function appendLine(filename: string, data: unknown): boolean {
   }
 }
 
-export function recordEstimate(
-  tool: string,
+/**
+ * Append a new estimate row and return its id — or null when the append
+ * failed (ticket 18, write-failure propagation): callers must NEVER receive a
+ * usable id for a record that never persisted (no phantom feedbackRefs).
+ * Mirrors recordActualDetailed's write_failed honesty on the estimate side.
+ */
+function appendNewEstimate(
+  canonicalTool: string,
   inputs: Record<string, unknown>,
   outputs: Record<string, unknown>,
-  source?: string,
-): string {
-  // Normalize the tool spelling at ingest (camelCase writers, known aliases)
-  // so calibration reads never fragment the same tool across spellings.
-  // Falls back to the raw value when it can't be resolved — recordEstimate
-  // never rejects a write; unresolvable tool names are guarded downstream
-  // at the actual-recording step (see recordActualDetailed).
-  const canonicalTool = canonicalizeToolName(tool) ?? tool;
-  const targetFile = isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
-
-  // Dedup get-or-create (Phase 4, flag-gated): only engages when the caller
-  // supplies session_id AND EPOCH_DEDUP_WINDOW is set. Absent either, this
-  // block is a no-op and behavior is byte-identical to pre-Phase-4.
-  const sessionId = stringField(inputs["session_id"]);
-  const windowMinutes = dedupWindowMinutes();
-  if (sessionId && windowMinutes !== null) {
-    const actualsFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
-    const existingId = findDedupMatch(canonicalTool, inputs, sessionId, windowMinutes, targetFile, actualsFile);
-    if (existingId) {
-      dedupHitCount++;
-      debugLog("feedback.dedup-hit", `reused pending estimate ${existingId} for tool ${canonicalTool}, session ${sessionId}`);
-      return existingId;
-    }
-  }
-
+  source: string | undefined,
+  targetFile: string,
+): string | null {
   const id = randomUUID();
   const record: EstimateRecord = {
     id,
@@ -221,12 +205,63 @@ export function recordEstimate(
     // the ledger RECORDS (PERT: raw `expected`; reference-class:
     // `correctedEstimate`). Legacy rows (no stamp) are implicitly v1 — the
     // era in which tools displayed an adjustedEstimate the ledger never
-    // recorded — and ratio populations stay split by this era (coverage.ts),
+    // recorded — and ratio populations stay split by that era (coverage.ts),
     // with no automatic aging-out.
     basisVersion: CURRENT_BASIS_VERSION,
   };
-  appendLine(targetFile, record);
-  return id;
+  const written = appendLine(targetFile, record);
+  return written ? id : null;
+}
+
+export function recordEstimate(
+  tool: string,
+  inputs: Record<string, unknown>,
+  outputs: Record<string, unknown>,
+  source?: string,
+): string | null {
+  // Normalize the tool spelling at ingest (camelCase writers, known aliases)
+  // so calibration reads never fragment the same tool across spellings.
+  // Falls back to the raw value when it can't be resolved — recordEstimate
+  // never rejects a write; unresolvable tool names are guarded downstream
+  // at the actual-recording step (see recordActualDetailed).
+  const canonicalTool = canonicalizeToolName(tool) ?? tool;
+  const targetFile = isDryRun() ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
+
+  // Dedup get-or-create (Phase 4, flag-gated): only engages when the caller
+  // supplies session_id AND EPOCH_DEDUP_WINDOW is set. Absent either, this
+  // block is a no-op and behavior is byte-identical to pre-Phase-4.
+  //
+  // Ticket 18: the find-match → append sequence is a check-then-act region,
+  // so it runs under the ledger write lock — two concurrent identical calls
+  // can no longer both observe zero candidates and append duplicate pending
+  // rows. Lock-infrastructure failures surface as null (no phantom id).
+  const sessionId = stringField(inputs["session_id"]);
+  const windowMinutes = dedupWindowMinutes();
+  if (sessionId && windowMinutes !== null) {
+    const actualsFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
+    try {
+      return withLedgerWriteLock(
+        targetFile,
+        () => {
+          const existingId = findDedupMatch(canonicalTool, inputs, sessionId, windowMinutes, targetFile, actualsFile);
+          if (existingId) {
+            dedupHitCount++;
+            debugLog("feedback.dedup-hit", `reused pending estimate ${existingId} for tool ${canonicalTool}, session ${sessionId}`);
+            return existingId;
+          }
+          return appendNewEstimate(canonicalTool, inputs, outputs, source, targetFile);
+        },
+        "recordEstimate-dedup",
+      );
+    } catch (err) {
+      if (err instanceof LedgerLockTimeoutError) {
+        debugLog("feedback.lock-timeout", `dedup get-or-create for tool ${canonicalTool} abandoned: ${err.message}`);
+      }
+      return null;
+    }
+  }
+
+  return appendNewEstimate(canonicalTool, inputs, outputs, source, targetFile);
 }
 
 /** Non-estimation tool-call telemetry (Phase 1 Task 3): never joins the estimates ledger. */
@@ -367,67 +402,91 @@ export function recordActualDetailed(
   const actualsSource = dryRun ? DRY_RUN_FILE : ACTUALS_FILE;
   const estimatesSource = dryRun ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
 
-  // Reject duplicates — last-write-wins silently corrupts calibration
-  const existing = readLines<ActualRecord>(actualsSource);
-  if (existing.some((a) => a.estimateId === estimateId)) {
-    return { ok: false, reason: "duplicate" };
-  }
+  // Ticket 18 (D3 concurrency): the duplicate check → append sequence below is
+  // a TOCTOU window — two processes recording the same estimateId could both
+  // observe "no actual yet" and both append. The whole check-then-append
+  // region therefore runs under the ledger write lock (exclusive-create
+  // lockfile, ms-scale scope, released in a finally). A live holder that
+  // outlasts the contention timeout fails the write as write_failed (with a
+  // hint) — never a silent unlocked append.
+  try {
+    return withLedgerWriteLock(
+      actualsSource,
+      (): RecordActualResult => {
+        // Reject duplicates — last-write-wins silently corrupts calibration
+        const existing = readLines<ActualRecord>(actualsSource);
+        if (existing.some((a) => a.estimateId === estimateId)) {
+          return { ok: false, reason: "duplicate" };
+        }
 
-  // Guard against actuals joining an estimate whose tool name is unknown/unmapped
-  // or a raw id (a garbled `tool` field) — such joins would silently corrupt
-  // by-tool calibration math. Orphan actuals (no matching estimate on file)
-  // are left to the existing join-time handling elsewhere and are not rejected here.
-  const matchedEstimate = readLines<EstimateRecord>(estimatesSource).find((e) => e.id === estimateId);
-  let flagged: "unit_suspect" | undefined;
-  let matchedEstimatedHours: number | null = null;
-  if (matchedEstimate) {
-    if (canonicalizeToolName(matchedEstimate.tool) === null) {
-      // Ticket 16 (unknown-tool policy): the rejection stands (ticket 04's
-      // pinned semantics), but it is never silent — log once per process and
-      // carry an actionable hint naming the canonical estimation-tool set.
-      if (!unknownToolRejectionLogged) {
-        unknownToolRejectionLogged = true;
-        debugLog(
-          "feedback.unknown-tool",
-          `rejecting actual for estimate ${estimateId}: tool "${matchedEstimate.tool}" is not in the canonical estimation set {${[...ESTIMATION_TOOL_NAMES].join(", ")}}`,
-        );
-      }
-      return { ok: false, reason: "unknown_tool", hint: UNKNOWN_TOOL_HINT };
+        // Guard against actuals joining an estimate whose tool name is unknown/unmapped
+        // or a raw id (a garbled `tool` field) — such joins would silently corrupt
+        // by-tool calibration math. Orphan actuals (no matching estimate on file)
+        // are left to the existing join-time handling elsewhere and are not rejected here.
+        const matchedEstimate = readLines<EstimateRecord>(estimatesSource).find((e) => e.id === estimateId);
+        let flagged: "unit_suspect" | undefined;
+        let matchedEstimatedHours: number | null = null;
+        if (matchedEstimate) {
+          if (canonicalizeToolName(matchedEstimate.tool) === null) {
+            // Ticket 16 (unknown-tool policy): the rejection stands (ticket 04's
+            // pinned semantics), but it is never silent — log once per process and
+            // carry an actionable hint naming the canonical estimation-tool set.
+            if (!unknownToolRejectionLogged) {
+              unknownToolRejectionLogged = true;
+              debugLog(
+                "feedback.unknown-tool",
+                `rejecting actual for estimate ${estimateId}: tool "${matchedEstimate.tool}" is not in the canonical estimation set {${[...ESTIMATION_TOOL_NAMES].join(", ")}}`,
+              );
+            }
+            return { ok: false, reason: "unknown_tool", hint: UNKNOWN_TOOL_HINT };
+          }
+
+          matchedEstimatedHours = extractEstimatedHours(matchedEstimate.outputs);
+          if (matchedEstimatedHours !== null && matchedEstimatedHours > 0 && normalizedHours > 0) {
+            const ratio = Math.max(normalizedHours / matchedEstimatedHours, matchedEstimatedHours / normalizedHours);
+            if (ratio > UNIT_SUSPECT_RATIO) flagged = "unit_suspect";
+          }
+        }
+
+        // Wave 2 auto-actuals write-time guard: never persist an auto_wallclock
+        // actual outside the dedicated sanity gate, regardless of caller. Defense
+        // in depth alongside the auto-actuals CLI's own pre-filter and
+        // isExcluded()'s calibration-math gate (src/lib/exclusion.ts) — all three
+        // share isAutoWallclockSane() as the single source of truth.
+        if (calibrationProvenance === "auto_wallclock" && !isAutoWallclockSane(normalizedHours, matchedEstimatedHours)) {
+          return { ok: false, reason: "auto_wallclock_out_of_bounds" };
+        }
+
+        const record: RecordedActualRecord = {
+          estimateId,
+          actualHours: normalizedHours,
+          ...(notes && { notes }),
+          reportedAt: new Date().toISOString(),
+          ...(calibrationProvenance && { calibrationProvenance }),
+          // Persist the unit-suspect verdict on the record itself (ticket 16) so
+          // the flag survives as an audit artifact even though read-side exclusion
+          // always recomputes the ratio (exclusion.ts's MAX_RATIO gate).
+          ...(flagged === "unit_suspect" && { unitSuspect: true }),
+        };
+
+        // Dry-run mode: write to separate file so tests never touch production data
+        const written = appendLine(actualsSource, record);
+        if (!written) return { ok: false, reason: "write_failed" };
+        return flagged ? { ok: true, flagged } : { ok: true };
+      },
+      "recordActual",
+    );
+  } catch (err) {
+    if (err instanceof LedgerLockTimeoutError) {
+      debugLog("feedback.lock-timeout", `record_actual for ${estimateId} abandoned: ${err.message}`);
+      return {
+        ok: false,
+        reason: "write_failed",
+        hint: `Another process held the feedback ledger write lock past the timeout (${err.lockPath}). Retry shortly; a stale lock is removed automatically once its owner PID is gone or it exceeds the staleness window.`,
+      };
     }
-
-    matchedEstimatedHours = extractEstimatedHours(matchedEstimate.outputs);
-    if (matchedEstimatedHours !== null && matchedEstimatedHours > 0 && normalizedHours > 0) {
-      const ratio = Math.max(normalizedHours / matchedEstimatedHours, matchedEstimatedHours / normalizedHours);
-      if (ratio > UNIT_SUSPECT_RATIO) flagged = "unit_suspect";
-    }
+    throw err;
   }
-
-  // Wave 2 auto-actuals write-time guard: never persist an auto_wallclock
-  // actual outside the dedicated sanity gate, regardless of caller. Defense
-  // in depth alongside the auto-actuals CLI's own pre-filter and
-  // isExcluded()'s calibration-math gate (src/lib/exclusion.ts) — all three
-  // share isAutoWallclockSane() as the single source of truth.
-  if (calibrationProvenance === "auto_wallclock" && !isAutoWallclockSane(normalizedHours, matchedEstimatedHours)) {
-    return { ok: false, reason: "auto_wallclock_out_of_bounds" };
-  }
-
-  const record: RecordedActualRecord = {
-    estimateId,
-    actualHours: normalizedHours,
-    ...(notes && { notes }),
-    reportedAt: new Date().toISOString(),
-    ...(calibrationProvenance && { calibrationProvenance }),
-    // Persist the unit-suspect verdict on the record itself (ticket 16) so
-    // the flag survives as an audit artifact even though read-side exclusion
-    // always recomputes the ratio (exclusion.ts's MAX_RATIO gate).
-    ...(flagged === "unit_suspect" && { unitSuspect: true }),
-  };
-
-  // Dry-run mode: write to separate file so tests never touch production data
-  const targetFile = dryRun ? DRY_RUN_FILE : ACTUALS_FILE;
-  const written = appendLine(targetFile, record);
-  if (!written) return { ok: false, reason: "write_failed" };
-  return flagged ? { ok: true, flagged } : { ok: true };
 }
 
 export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasActual: boolean }> {
@@ -647,10 +706,10 @@ export function matchEstimatesToActuals(
   },
   overlayFlags?: Map<string, MergedOverlayFlags>,
 ): HistoricalRecord[] {
-  const actualsMap = new Map<string, ActualRecord>();
-  for (const a of actuals) {
-    actualsMap.set(a.estimateId, a);
-  }
+  // Deterministic join (ticket 18, D3): earliest-reportedAt wins, tie =
+  // earliest file order. Mirrors loadLedgerWithOverlays() so the matcher and
+  // the merged view can never disagree about which duplicate actual joined.
+  const actualsMap = joinActualsEarliestReported(actuals);
 
   const cutoff = filters?.windowDays
     ? new Date(Date.now() - filters.windowDays * 86_400_000).toISOString()
@@ -807,6 +866,19 @@ export interface FeedbackHealthReport {
   totalActuals: number;
   matchedPairs: number;
   seedRecordsFiltered: number;
+  /**
+   * Ticket 18 (D3): count of estimateIds carrying more than one actual row.
+   * Zero is the write lock's invariant; non-zero means duplicates exist on
+   * disk (pre-lock history or a non-cooperating writer) and are being
+   * resolved deterministically (earliest-reportedAt wins).
+   */
+  duplicateActuals: number;
+  /**
+   * Ticket 18: non-empty ledger lines (estimates + actuals) that failed
+   * JSON.parse as of this report's reads — previously skipped silently, now
+   * counted (torn writes / corruption made visible).
+   */
+  corruptLines: number;
   provenance: {
     correctionRecords: number;
     baselineRecords: number;
@@ -856,6 +928,15 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const estimates = readLines<EstimateRecord>(ESTIMATES_FILE);
   const actuals = readLines<ActualRecord>(ACTUALS_FILE);
   const actualIds = new Set(actuals.map((a) => a.estimateId));
+
+  // Ticket 18 counters: duplicate actuals (join-side) and corrupt lines
+  // (read-side, populated by the readLines calls above — skipped lines were
+  // always dropped silently; now the drop count is visible).
+  const duplicateActuals = countDuplicateActuals(actuals);
+  const corruptLineCounts = getLedgerCorruptLines();
+  const corruptLines =
+    (corruptLineCounts.get(join(dataDir(), ESTIMATES_FILE)) ?? 0) +
+    (corruptLineCounts.get(join(dataDir(), ACTUALS_FILE)) ?? 0);
 
   const totalEstimates = estimates.length;
   const totalActuals = actuals.length;
@@ -1027,11 +1108,20 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     auto: { matchedPairs: autoMatched.length, mdape: autoMetrics?.mdape ?? null, cappedMdape: autoMetrics?.cappedMdape ?? null },
   };
 
+  // Ticket 18: integrity visibility appended only when non-zero, so the
+  // base humanReadable stays byte-identical for healthy ledgers.
+  const integrityLabel =
+    duplicateActuals > 0 || corruptLines > 0
+      ? ` Data integrity: ${duplicateActuals} estimate id${duplicateActuals === 1 ? "" : "s"} with duplicate actuals (earliest-reported wins the join), ${corruptLines} corrupt ledger line${corruptLines === 1 ? "" : "s"} skipped.`
+      : "";
+
   return {
     totalEstimates,
     totalActuals,
     matchedPairs: correctionMatched.length,
     seedRecordsFiltered,
+    duplicateActuals,
+    corruptLines,
     provenance: { correctionRecords: correctionMatched.length, baselineRecords, excludedRecords: seedRecordsFiltered },
     matchRate,
     byTool,
@@ -1039,6 +1129,6 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     byProvenance,
     selfImprovement: { readyTypes, callsUntilUpdate },
     dataQuality: { overallMdape, overallCappedMdape, outlierRatio, recommendation, dataCompletenessScore },
-    humanReadable: `${correctionMatched.length} correction-eligible matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}; ${baselineRecords} baseline-only records held out). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
+    humanReadable: `${correctionMatched.length} correction-eligible matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}; ${baselineRecords} baseline-only records held out). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}${integrityLabel}`,
   };
 }

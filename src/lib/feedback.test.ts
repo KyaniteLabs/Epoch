@@ -88,8 +88,15 @@ describe("recordEstimate", () => {
     expect(mockMkdirSync).toHaveBeenCalled();
   });
 
-  it("stamps a default 30-day expiresAt (Phase 1 Task 7)", () => {
-    const before = Date.now();
+  it("returns null when the append fails — no phantom id for a record that never persisted (ticket 18)", () => {
+    mockAppendFileSync.mockImplementation(() => {
+      throw Object.assign(new Error("EACCES: permission denied, open 'estimates.jsonl'"), { code: "EACCES" });
+    });
+    expect(recordEstimate("pert_estimate", { optimistic: 5 }, { expected: 7 })).toBeNull();
+    mockAppendFileSync.mockReset(); // clearAllMocks only clears calls — drop the throwing implementation
+  });
+
+  it("stamps a default 30-day expiresAt (Phase 1 Task 7)", () => {    const before = Date.now();
     recordEstimate("pert_estimate", { optimistic: 5 }, { expected: 7 });
     const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
     expect(written.expiresAt).toBeDefined();
@@ -337,6 +344,14 @@ describe("recordActual", () => {
     expect(recordActual("est-zero", 0)).toBe(false);
     expect(recordActual("est-negative", -0.1)).toBe(false);
     expect(mockAppendFileSync).not.toHaveBeenCalled();
+  });
+
+  it("surfaces write_failed when the append throws (ticket 18)", () => {
+    mockAppendFileSync.mockImplementation(() => {
+      throw Object.assign(new Error("EACCES: permission denied, open 'feedback.jsonl'"), { code: "EACCES" });
+    });
+    expect(recordActualDetailed("est-1", 5)).toEqual({ ok: false, reason: "write_failed" });
+    mockAppendFileSync.mockReset(); // clearAllMocks only clears calls — drop the throwing implementation
   });
 });
 
@@ -905,6 +920,32 @@ describe("getFeedbackHealthReport", () => {
     expect(report.matchedPairs).toBe(1);
   });
 
+  it("surfaces duplicateActuals and corruptLines counters, and the earliest-reported actual joins (ticket 18)", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        // One valid row + one torn/corrupt line (skip semantics unchanged, now counted).
+        return makeEstimate({ id: "e1" }) + "\n" + '{"id":"e2","tool":"trunc';
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return [
+          makeActual({ estimateId: "e1", actualHours: 9, reportedAt: "2026-05-03T10:00:00.000Z" }), // later-reported, first in file
+          makeActual({ estimateId: "e1", actualHours: 5, reportedAt: "2026-05-02T10:00:00.000Z" }), // earliest-reported wins
+        ].join("\n") + "\n";
+      }
+      return "";
+    });
+
+    const report = getFeedbackHealthReport();
+    expect(report.duplicateActuals).toBe(1);
+    expect(report.corruptLines).toBe(1);
+    expect(report.matchedPairs).toBe(1);
+    // The joined pair used the earliest-reported actual (5h), not the file-order-last one.
+    expect(defined(report.byTool["pert_estimate"]).matchedPairs).toBe(1);
+    expect(report.humanReadable).toContain("duplicate actuals");
+    expect(report.humanReadable).toContain("corrupt ledger line");
+  });
+
   it("dataQuality has recommendation when data is insufficient", () => {
     mockReadFileSync.mockReturnValue("");
     const report = getFeedbackHealthReport();
@@ -1254,6 +1295,31 @@ describe("matchEstimatesToActuals", () => {
     const result = matchFixtureRecords(estimates, actuals);
     expect(result).toHaveLength(1);
     expect(defined(result[0]).estimatedHours).toBe(100);
+  });
+
+  // ---- Ticket 18 (D3): deterministic join under duplicate actuals ----
+
+  it("joins the EARLIEST-reported actual when duplicates exist, regardless of file order (ticket 18)", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { totalHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [
+      // Later-reported row appears FIRST in file order — last-write-wins would pick it.
+      { estimateId: "e1", actualHours: 80, reportedAt: "2026-01-10T00:00:00Z" },
+      { estimateId: "e1", actualHours: 20, reportedAt: "2026-01-05T00:00:00Z" },
+    ];
+    const result = matchFixtureRecords(estimates, actuals);
+    expect(result).toHaveLength(1);
+    expect(defined(result[0]).actualHours).toBe(20);
+  });
+
+  it("on equal reportedAt the FIRST row in file order wins (deterministic tiebreak, ticket 18)", () => {
+    const estimates = [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: { totalHours: 10 }, estimatedAt: "2026-01-01T00:00:00Z" }];
+    const actuals = [
+      { estimateId: "e1", actualHours: 20, reportedAt: "2026-01-05T00:00:00Z" },
+      { estimateId: "e1", actualHours: 80, reportedAt: "2026-01-05T00:00:00Z" },
+    ];
+    const result = matchFixtureRecords(estimates, actuals);
+    expect(result).toHaveLength(1);
+    expect(defined(result[0]).actualHours).toBe(20);
   });
 
   it("extracts hours from estimatedHours", () => {

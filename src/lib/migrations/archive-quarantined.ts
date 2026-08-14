@@ -37,7 +37,7 @@ import {
   type EstimateRecord,
   type OverlayRecord,
 } from "../ledger.js";
-import { acquireQuiesceLock, releaseQuiesceLock, atomicWriteJsonl, backupFile, migrationStamp, type MigrationMode } from "./shared.js";
+import { acquireQuiesceLock, releaseQuiesceLock, rewriteJsonlWithTailMerge, backupFile, migrationStamp, type MigrationMode } from "./shared.js";
 
 export interface ArchiveOptions {
   mode: MigrationMode;
@@ -61,6 +61,8 @@ export interface ArchiveReport {
   before: LedgerCounts;
   after: LedgerCounts;
   written: number;
+  /** Lines appended concurrently during the rewrites that were re-merged and survived (ticket 18). */
+  tailMerged: number;
   backupPaths: string[];
 }
 
@@ -84,6 +86,7 @@ export function runArchiveQuarantined(options: ArchiveOptions): ArchiveReport {
   let written = 0;
   let flagsGced = 0;
   let labelsGced = 0;
+  let tailMerged = 0;
   const backupPaths: string[] = [];
 
   if (options.mode === "apply" && toArchive.length > 0) {
@@ -95,27 +98,63 @@ export function runArchiveQuarantined(options: ArchiveOptions): ArchiveReport {
         if (b) backupPaths.push(b);
       }
 
-      // Re-read fresh under the lock so a concurrent appender's rows aren't lost.
-      const freshEstimates = readLines<EstimateRecord>(ESTIMATES_FILE);
-      const freshArchived = readLines<EstimateRecord>(QUARANTINE_ARCHIVE_FILE);
-      const remainingHot = freshEstimates.filter((e) => !toArchiveIds.has(e.id));
-      const movedRows = freshEstimates.filter((e) => toArchiveIds.has(e.id));
+      // Ticket 18: each rewrite runs under the per-file ledger write lock with
+      // a tail re-merge (fresh read under lock, transform, re-read immediately
+      // before rename, re-append anything appended in between) — rows appended
+      // by the live server mid-migration survive instead of being lost to the
+      // rename. Unparseable lines are dropped, matching the readLines-based
+      // rewrites this replaces.
+
+      // Hot ledger: move archived-id rows out (collecting them for the archive).
+      const movedRows: string[] = [];
+      tailMerged += rewriteJsonlWithTailMerge(ESTIMATES_FILE, (rawLines) =>
+        rawLines.flatMap((line) => {
+          let rec: EstimateRecord | null;
+          try {
+            rec = JSON.parse(line) as EstimateRecord;
+          } catch {
+            return [];
+          }
+          if (rec === null || typeof rec !== "object") return [];
+          if (toArchiveIds.has(rec.id)) {
+            movedRows.push(line);
+            return [];
+          }
+          return [line];
+        }),
+      ).tailMerged;
       written = movedRows.length;
 
-      atomicWriteJsonl(ESTIMATES_FILE, remainingHot);
-      atomicWriteJsonl(QUARANTINE_ARCHIVE_FILE, [...freshArchived, ...movedRows]);
+      // Archive: append the moved rows to whatever the archive already holds.
+      tailMerged += rewriteJsonlWithTailMerge(QUARANTINE_ARCHIVE_FILE, (rawLines) => [...rawLines, ...movedRows]).tailMerged;
 
       // Flag-GC: drop overlay records for now-archived ids from the live
       // sidecars — archived membership already carries the quarantine
       // provenance, so a surviving flag/label record for that id would dangle.
-      const freshFlags = readLines<OverlayRecord>(FLAGS_FILE);
-      const freshLabels = readLines<OverlayRecord>(LABELS_FILE);
-      const remainingFlags = freshFlags.filter((r) => !toArchiveIds.has(r.id));
-      const remainingLabels = freshLabels.filter((r) => !toArchiveIds.has(r.id));
-      flagsGced = freshFlags.length - remainingFlags.length;
-      labelsGced = freshLabels.length - remainingLabels.length;
-      atomicWriteJsonl(FLAGS_FILE, remainingFlags);
-      atomicWriteJsonl(LABELS_FILE, remainingLabels);
+      const gcedOverlay = (filename: string, counter: { count: number }) =>
+        rewriteJsonlWithTailMerge(filename, (rawLines) =>
+          rawLines.flatMap((line) => {
+            let rec: OverlayRecord | null;
+            try {
+              rec = JSON.parse(line) as OverlayRecord;
+            } catch {
+              return [];
+            }
+            if (rec === null || typeof rec !== "object") return [];
+            if (toArchiveIds.has(rec.id)) {
+              counter.count++;
+              return [];
+            }
+            return [line];
+          }),
+        ).tailMerged;
+
+      const flagsCounter = { count: 0 };
+      const labelsCounter = { count: 0 };
+      tailMerged += gcedOverlay(FLAGS_FILE, flagsCounter);
+      tailMerged += gcedOverlay(LABELS_FILE, labelsCounter);
+      flagsGced = flagsCounter.count;
+      labelsGced = labelsCounter.count;
     } finally {
       releaseQuiesceLock();
     }
@@ -140,6 +179,7 @@ export function runArchiveQuarantined(options: ArchiveOptions): ArchiveReport {
     before,
     after,
     written,
+    tailMerged,
     backupPaths,
   };
 }

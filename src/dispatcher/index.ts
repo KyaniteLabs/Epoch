@@ -51,6 +51,22 @@ export async function dispatch(
         // stream so it never inflates totalEstimates/matchRate.
         if (isEstimationTool(toolName)) {
           const estimateId = recordEstimate(toolName, rawInput, d, resolveSource());
+          // Ticket 18 (write-failure propagation): recordEstimate returns null
+          // when the ledger append failed — the estimate never persisted, so
+          // NO feedbackRef may be issued (no phantom tokens) and the tool call
+          // fails instead of reporting success. Mirrors record_actual's
+          // write_failed mapping on the estimate side.
+          if (estimateId === null) {
+            notifyToolCall();
+            return {
+              ok: false as const,
+              error: {
+                isError: true,
+                message: `Failed to write estimate to feedback storage — ensure the Epoch data directory is writable. The ${toolName} result was computed but NOT recorded.`,
+                retryHint: "Fix permissions/disk on the Epoch data directory and re-run the estimation tool; no feedbackRef was issued.",
+              },
+            };
+          }
           if (hasHourEstimate(d)) {
             d.feedbackRef = estimateId;
           }
