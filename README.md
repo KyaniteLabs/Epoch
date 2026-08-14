@@ -55,7 +55,7 @@ Claude (using Epoch):
 
 Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 25 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
-**Works out of the box.** Epoch ships with a bundled reference database built from 126,223 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
+**Works out of the box.** Epoch ships with a bundled reference database built from 117,791 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
 
 ## What is MCP?
 
@@ -325,12 +325,12 @@ Output: {
   rawEstimate: 6.7,
   correctedEstimate: 11.1,
   correctionFactor: 1.67,
-  sampleSize: 126223,
+  sampleSize: 117791,
   baselineSource: "self-improvement",
   confidence: "pessimistic",
   developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1.45 },
   adjustedEstimate: 9.7,
-  note: "Correction factors from bundled reference database (126,223 samples). Record actuals to personalize further."
+  note: "Correction factors from bundled reference database (117,791 samples). Record actuals to personalize further."
 }
 ```
 
@@ -377,7 +377,7 @@ Output: {
   accuracyTrend: "stable",
   velocityTrend: "stable",
   recommendations: [
-    "Using reference database correction factor (1.45x) — personalized from 126,223 samples.",
+    "Using reference database correction factor (1.45x) — personalized from 117,791 samples.",
     "Record actuals via POST /v1/feedback/record-actual to refine for your team's patterns."
   ]
 }
@@ -468,7 +468,7 @@ Output: {
   estimatedHours: 40,
   riskLevel: "low",
   confidenceIntervals: { p50: 40, p80: 45.1, p95: 49.9 },
-  historicalAccuracy: { mape: 15, sampleSize: 126223 },
+  historicalAccuracy: { mape: 15, sampleSize: 117791 },
   recommendation: "Low risk. Estimate is within normal variance.",
   humanReadable: "Schedule risk: low. MAPE: 15% (based on 0 historical records). Confidence intervals: p50=40h, p80=45.1h, p95=49.9h."
 }
@@ -520,7 +520,7 @@ When `ai_native=false`, tools apply human developer baselines:
 | Parameter | Human Baseline | AI-Native Baseline |
 |-----------|---------------|-------------------|
 | Feature development | 14 calendar days (industry data) | 5.7h median (126K+ real tasks) |
-| Bug fix turnaround | 72 hours (industry data) | 6.2h median (139 matched estimate-actual pairs) |
+| Bug fix turnaround | 72 hours (industry data) | 6.2h median (139 matched estimate-actual pairs; source: `src/lib/supplementary-data.ts`) |
 | Sprint velocity | 35 story points (industry data) | 80 story points |
 | Estimation accuracy (MAPE) | 25% (Jorgensen 2004) | 15% (from AI-native profiles) |
 | Correction factor | 1.8x (industry standard) | 1.07-1.45x (from reference DB) |
@@ -531,7 +531,7 @@ Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_fore
 
 ## Self-Improvement Engine
 
-Epoch learns your patterns the more you use it. The bundled reference database already contains 126,223 data points with correction factors tuned from real estimate-vs-actual pairs across 8 task types — **it works accurately on day one.**
+Epoch learns your patterns the more you use it. The bundled reference database already contains 117,791 data points with correction factors tuned from real estimate-vs-actual pairs across 8 task types — **it works accurately on day one.**
 
 If you record your actuals, Epoch personalizes further:
 
@@ -570,7 +570,7 @@ Measured on the maintainers' production ledger (697 held-out matched pairs at ti
 Epoch uses a three-layer data strategy so it's accurate from the start and gets better over time:
 
 **1. Bundled reference database (works immediately, no setup):**
-Epoch ships with a pre-built reference database containing 126,223 data points across 8 task types and 5 complexity levels. Correction factors are computed from real estimate-vs-actual pairs. You get accurate estimates the moment you install it.
+Epoch ships with a pre-built reference database containing 117,791 data points across 8 task types and 5 complexity levels. Correction factors are computed from real estimate-vs-actual pairs. You get accurate estimates the moment you install it.
 
 **2. Local self-improvement (automatic, private):**
 As you use Epoch and record actuals, the self-improvement engine recalibrates correction factors from *your* data. This runs entirely locally in `~/.epoch/` — nothing leaves your machine. The engine triggers automatically every 100 tool calls or 24 hours.
@@ -751,7 +751,7 @@ epoch share-data --description "Anonymized Epoch usage export" --validate
 
 ## Machine Labels
 
-`windows-receiver` is a historical label. The current receiver host is `ubuntu-receiver` at `100.113.174.74`. See [docs/ops/machines.md](docs/ops/machines.md) for the full inventory.
+Fleet host inventories are not published in this repository. [docs/ops/machines.md](docs/ops/machines.md) documents the schema used to track machines internally; actual hostnames, addresses, and SSH users are supplied at runtime via environment variables (see `scripts/` and `docs/ops/epoch-fleet-audit.md`). `windows-receiver` is a historical label only.
 
 ## License
 

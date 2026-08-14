@@ -7,6 +7,12 @@ WATCHDOG_TARGET="${EPOCH_RECEIVER_WATCHDOG_PATH:-/srv/apps/epoch/bin/epoch-recei
 SERVICE_PATH="/etc/systemd/system/epoch-receiver-watchdog.service"
 TIMER_PATH="/etc/systemd/system/epoch-receiver-watchdog.timer"
 
+# Fleet tailnet hostnames and container names are not stored in this public
+# repo; they are baked into the systemd unit from the environment at install time.
+: "${EPOCH_RECEIVER_TAILNET_HOST:?EPOCH_RECEIVER_TAILNET_HOST must be set (receiver tailnet hostname)}"
+EPOCH_RECEIVER_COMPOSE_DIR="${EPOCH_RECEIVER_COMPOSE_DIR:-/srv/containers/epoch}"
+EPOCH_RECEIVER_CONTAINER="${EPOCH_RECEIVER_CONTAINER:-epoch-http}"
+
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "install-epoch-receiver-watchdog: must run as root" >&2
   exit 1
@@ -29,11 +35,11 @@ After=network-online.target tailscaled.service docker.service
 [Service]
 Type=oneshot
 Environment=EPOCH_RECEIVER_PORT=3099
-Environment=EPOCH_RECEIVER_TAILNET_HOST=nucbox.tail599928.ts.net
+Environment=EPOCH_RECEIVER_TAILNET_HOST=${EPOCH_RECEIVER_TAILNET_HOST}
 Environment=EPOCH_RECEIVER_DATA_DIR=/srv/data/epoch
-Environment=EPOCH_RECEIVER_COMPOSE_DIR=/srv/containers/nucbox/epoch
+Environment=EPOCH_RECEIVER_COMPOSE_DIR=${EPOCH_RECEIVER_COMPOSE_DIR}
 Environment=EPOCH_RECEIVER_COMPOSE_SERVICE=epoch
-Environment=EPOCH_RECEIVER_CONTAINER=nucbox-epoch
+Environment=EPOCH_RECEIVER_CONTAINER=${EPOCH_RECEIVER_CONTAINER}
 Environment=EPOCH_RECEIVER_CLI_PATH=/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js
 Environment=EPOCH_RECEIVER_INTEGRATE=0
 ExecStart=$WATCHDOG_TARGET

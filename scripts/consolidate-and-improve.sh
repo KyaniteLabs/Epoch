@@ -10,19 +10,20 @@
 #   bash scripts/consolidate-and-improve.sh
 #
 # Environment:
-#   EPOCH_MAC_MINI_HOST    - Tailscale IP or hostname (default: 100.115.175.18)
+#   EPOCH_MAC_MINI_HOST    - Tailscale IP or hostname (required; fleet
+#                            addresses are not stored in this public repo)
 #   EPOCH_MAC_MINI_USER    - SSH user for Mac mini (default: current user)
-#   EPOCH_NUC_HOST         - Tailscale IP or hostname (default: 100.113.174.74)
-#   EPOCH_NUC_USER         - SSH user for NuC (default: simon)
+#   EPOCH_NUC_HOST         - Tailscale IP or hostname (required)
+#   EPOCH_NUC_USER         - SSH user for NuC (default: current user)
 #   EPOCH_NUC_DATA_DIR     - Data dir on NuC (default: /srv/data/epoch)
 #   EPOCH_REPO_DIR         - Local Epoch repo (default: script's parent dir)
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-MAC_HOST="${EPOCH_MAC_MINI_HOST:-100.115.175.18}"
+MAC_HOST="${EPOCH_MAC_MINI_HOST:?EPOCH_MAC_MINI_HOST must be set (Tailscale IP or hostname)}"
 MAC_USER="${EPOCH_MAC_MINI_USER:-}"
-NUC_HOST="${EPOCH_NUC_HOST:-100.113.174.74}"
-NUC_USER="${EPOCH_NUC_USER:-simon}"
+NUC_HOST="${EPOCH_NUC_HOST:?EPOCH_NUC_HOST must be set (Tailscale IP or hostname)}"
+NUC_USER="${EPOCH_NUC_USER:-}"
 NUC_DATA_DIR="${EPOCH_NUC_DATA_DIR:-/srv/data/epoch}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="${EPOCH_REPO_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"

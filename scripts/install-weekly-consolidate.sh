@@ -13,6 +13,11 @@ SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/weekly-consolidate.sh"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$HOME/.epoch"
 
+# Fleet SSH targets and addresses are not stored in this public repo.
+# They are baked into the launchd job from the environment at install time.
+: "${EPOCH_NUC_HOST:?EPOCH_NUC_HOST must be set (user@host for the receiver)}"
+: "${EPOCH_LAPTOP_HOST:?EPOCH_LAPTOP_HOST must be set (Tailscale IP or hostname)}"
+
 echo "Installing $PLIST_NAME..."
 echo "  Script: $SCRIPT_PATH"
 echo "  Repo:   $REPO_DIR"
@@ -35,7 +40,7 @@ cat > "$PLIST_PATH" <<PLIST
 	<array>
 		<string>/bin/zsh</string>
 		<string>-lc</string>
-		<string>EPOCH_REPO_DIR="${REPO_DIR}" EPOCH_NUC_HOST="${EPOCH_NUC_HOST:-root@100.113.174.74}" EPOCH_LAPTOP_HOST="${EPOCH_LAPTOP_HOST:-100.123.79.5}" bash "${SCRIPT_PATH}" &gt;&gt; "${LOG_DIR}/consolidate.log" 2&gt;&amp;1 || true</string>
+		<string>EPOCH_REPO_DIR="${REPO_DIR}" EPOCH_NUC_HOST="${EPOCH_NUC_HOST}" EPOCH_LAPTOP_HOST="${EPOCH_LAPTOP_HOST}" bash "${SCRIPT_PATH}" &gt;&gt; "${LOG_DIR}/consolidate.log" 2&gt;&amp;1 || true</string>
 	</array>
 	<key>StartCalendarInterval</key>
 	<dict>

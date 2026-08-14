@@ -1,5 +1,0 @@
- .github/workflows/ci.yml         |   1 -
- scripts/weekly-consolidate.sh    |  70 ++++++++++++----
- src/data/reference-database.json | 173 ++++++++++++++++++++-------------------
- src/index.test.ts                |   2 +-
- 4 files changed, 142 insertions(+), 104 deletions(-)

@@ -8,13 +8,14 @@ set -euo pipefail
 export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 PORT="${EPOCH_RECEIVER_PORT:-3099}"
-TAILNET_HOST="${EPOCH_RECEIVER_TAILNET_HOST:-nucbox.tail599928.ts.net}"
+# Fleet tailnet hostnames are not stored in this public repo.
+TAILNET_HOST="${EPOCH_RECEIVER_TAILNET_HOST:?EPOCH_RECEIVER_TAILNET_HOST must be set (receiver tailnet hostname)}"
 LOCAL_HEALTH="${EPOCH_RECEIVER_LOCAL_HEALTH:-http://127.0.0.1:${PORT}/health}"
 TAILNET_HEALTH="${EPOCH_RECEIVER_TAILNET_HEALTH:-https://${TAILNET_HOST}:${PORT}/health}"
 DATA_DIR="${EPOCH_RECEIVER_DATA_DIR:-/srv/data/epoch}"
-COMPOSE_DIR="${EPOCH_RECEIVER_COMPOSE_DIR:-/srv/containers/nucbox/epoch}"
+COMPOSE_DIR="${EPOCH_RECEIVER_COMPOSE_DIR:-/srv/containers/epoch}"
 COMPOSE_SERVICE="${EPOCH_RECEIVER_COMPOSE_SERVICE:-epoch}"
-CONTAINER_NAME="${EPOCH_RECEIVER_CONTAINER:-nucbox-epoch}"
+CONTAINER_NAME="${EPOCH_RECEIVER_CONTAINER:-epoch-http}"
 CLI_PATH="${EPOCH_RECEIVER_CLI_PATH:-/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js}"
 STATUS_PATH="${EPOCH_RECEIVER_STATUS_PATH:-${DATA_DIR}/receiver-watchdog-status.json}"
 STATE_PATH="${EPOCH_RECEIVER_STATE_PATH:-${DATA_DIR}/receiver-watchdog-state.json}"

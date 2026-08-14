@@ -16,3 +16,9 @@ coverage/
 .claude/
 .omx/
 canary-report.json
+
+# Private/generated artifacts — never commit to the public repo
+rescue/
+*.generated.md
+docs/ops/audits/*
+!docs/ops/audits/.gitkeep

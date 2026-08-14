@@ -1,8 +1,0 @@
- .cursorrules                     |   2 +-
- .github/copilot-instructions.md  |   2 +-
- .windsurfrules                   |   2 +-
- scripts/data-gather.mjs          |   2 +-
- src/data/reference-database.json | 329 ++++++++++++++++++++++-----------------
- src/entries/cli.test.ts          |  15 ++
- src/entries/cli.ts               |  14 +-
- 7 files changed, 215 insertions(+), 151 deletions(-)

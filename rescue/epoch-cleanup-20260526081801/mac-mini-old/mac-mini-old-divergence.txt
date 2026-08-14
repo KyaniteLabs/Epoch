@@ -1,3 +1,0 @@
-< ba73d7d fix: address code review — CI lint blocking + consolidation branch safety (#75)
-< 793ffdb fix: weekly consolidation pushes via PR (#74)
-> 84c5b40 chore: update bundled reference database (2026-05-25 consolidation)

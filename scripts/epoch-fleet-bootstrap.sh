@@ -13,7 +13,8 @@
 #   bash scripts/epoch-fleet-bootstrap.sh receiver
 #
 # Environment:
-#   EPOCH_TELEMETRY_ENDPOINT  default: https://nucbox.tail599928.ts.net:3099/v1/telemetry
+#   EPOCH_TELEMETRY_ENDPOINT  required (telemetry receiver URL; fleet
+#                             endpoints are not stored in this public repo)
 #   EPOCH_RECEIVER_PORT       default: 3099
 #   EPOCH_PACKAGE_VERSION     default: 0.2.7
 # ---------------------------------------------------------------------------
@@ -21,7 +22,8 @@ set -euo pipefail
 
 ROLE="${1:-sender}"
 VERSION="${EPOCH_PACKAGE_VERSION:-0.2.7}"
-ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:-https://nucbox.tail599928.ts.net:3099/v1/telemetry}"
+# Fleet endpoints are not stored in this public repo.
+ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:?EPOCH_TELEMETRY_ENDPOINT must be set (telemetry receiver URL)}"
 PORT="${EPOCH_RECEIVER_PORT:-3099}"
 OS="$(uname -s)"
 
@@ -142,7 +144,11 @@ install_receiver_container() {
     log "FAIL: docker not found"
     exit 1
   }
-  mkdir -p /srv/apps/epoch /srv/containers/nucbox/epoch /srv/data/epoch
+  # Container paths/names are env-configurable; internal hostnames are not
+  # stored in this public repo (defaults use a neutral prefix).
+  local compose_dir="${EPOCH_RECEIVER_COMPOSE_DIR:-/srv/containers/epoch}"
+  local container_name="${EPOCH_RECEIVER_CONTAINER:-epoch-http}"
+  mkdir -p /srv/apps/epoch "$compose_dir" /srv/data/epoch
   cat >/srv/apps/epoch/Dockerfile <<DOCKER
 FROM node:22-bookworm-slim
 RUN npm install -g @kyanitelabs/epoch@$VERSION
@@ -153,15 +159,15 @@ ENV EPOCH_TRANSPORT=http \\
 USER node
 CMD ["node", "/usr/local/lib/node_modules/@kyanitelabs/epoch/dist/index.js"]
 DOCKER
-  cat >/srv/containers/nucbox/epoch/docker-compose.yml <<YAML
-name: nucbox-epoch
+  cat >"$compose_dir/docker-compose.yml" <<YAML
+name: $container_name
 services:
   epoch:
     build:
       context: /srv/apps/epoch
       dockerfile: Dockerfile
-    image: nucbox/epoch-http:$VERSION
-    container_name: nucbox-epoch
+    image: epoch-http:$VERSION
+    container_name: $container_name
     restart: unless-stopped
     environment:
       EPOCH_TRANSPORT: http
@@ -174,7 +180,7 @@ services:
     volumes:
       - /srv/data/epoch:/home/node/.epoch
 YAML
-  (cd /srv/containers/nucbox/epoch && docker compose up -d --build)
+  (cd "$compose_dir" && docker compose up -d --build)
   curl -fsS "http://127.0.0.1:$PORT/health"
   printf '\n'
   local script_dir

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:-http://100.66.225.85:3099/v1/telemetry}"
+# Receiver endpoints are not stored in this public repo.
+# Set EPOCH_TELEMETRY_ENDPOINT (e.g. https://your-receiver.example/v1/telemetry) before running.
+ENDPOINT="${EPOCH_TELEMETRY_ENDPOINT:?EPOCH_TELEMETRY_ENDPOINT must be set (telemetry receiver URL)}"
 INTERVAL_SECONDS="${EPOCH_TELEMETRY_INTERVAL_SECONDS:-3600}"
 LABEL="${EPOCH_TELEMETRY_LAUNCHD_LABEL:-com.kyanitelabs.epoch.telemetry-submit}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

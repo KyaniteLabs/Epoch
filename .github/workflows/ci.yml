@@ -81,3 +81,15 @@ jobs:
         uses: trufflesecurity/trufflehog@d411fff7b8879a62509f3fa98c07f247ac089a51 # v3.95.5
         with:
           extra_args: --only-verified
+
+  fleet-ip-gate:
+    name: Fleet IP hygiene gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Check for fleet IPs in public surface
+        run: node scripts/check-no-fleet-ips.mjs

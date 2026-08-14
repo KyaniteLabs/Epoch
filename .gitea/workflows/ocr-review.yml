@@ -21,7 +21,7 @@ jobs:
           cat > ~/.opencodereview/config.json <<'CFG'
           {
             "llm": {
-              "url": "http://100.113.174.74:11434/v1/chat/completions",
+              "url": "${OCR_LLM_URL:?set OCR_LLM_URL to the internal Ollama endpoint (not stored in this public repo)}/v1/chat/completions",
               "auth_token": "ollama",
               "model": "gemma4:12b",
               "use_anthropic": false

@@ -1,1 +1,0 @@
-46c4ef7 fix: update MCP registry metadata for v0.2.8

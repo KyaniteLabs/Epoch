@@ -1,8 +1,0 @@
-M	.pi-lens/cache/knip.json
-M	.pi-lens/cache/knip.meta.json
-M	.pi-lens/cache/review-graph.json
-M	.pi-lens/cache/turn-end-findings-last.json
-M	.pi-lens/cache/turn-end-findings-last.meta.json
-M	.pi-lens/cache/turn-end-findings.meta.json
-M	.pi-lens/metrics-history.json
-M	.pi-lens/turn-state.json

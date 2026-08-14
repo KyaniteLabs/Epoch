@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MAC_HOST="${EPOCH_MAC_MINI_HOST:-100.115.175.18}"
-UBUNTU_HOST="${EPOCH_UBUNTU_RECEIVER_HOST:-100.113.174.74}"
+# Fleet addresses are not stored in this public repo.
+# Set EPOCH_MAC_MINI_HOST / EPOCH_UBUNTU_RECEIVER_HOST (Tailscale IP or hostname) before running.
+MAC_HOST="${EPOCH_MAC_MINI_HOST:?EPOCH_MAC_MINI_HOST must be set (Tailscale IP or hostname)}"
+UBUNTU_HOST="${EPOCH_UBUNTU_RECEIVER_HOST:?EPOCH_UBUNTU_RECEIVER_HOST must be set (Tailscale IP or hostname)}"
 SSH_USER="${EPOCH_SSH_USER:-}"
 SSH_PREFIX=""
 if [[ -n "$SSH_USER" ]]; then

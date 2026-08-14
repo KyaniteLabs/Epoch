@@ -1,6 +1,0 @@
-## main...origin/main [ahead 1, behind 2]
-UU .cursorrules
-UU .github/copilot-instructions.md
-UU .windsurfrules
-M  src/data/reference-database.json
-UU src/entries/cli.test.ts
