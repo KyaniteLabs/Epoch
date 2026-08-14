@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
-import { existsSync, readFileSync, rmSync, mkdirSync } from "node:fs";
+import { createHash, createHmac } from "node:crypto";
+import { appendFileSync, existsSync, readFileSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -388,6 +388,68 @@ describe("receiveTelemetry", () => {
       tool: "receiver_smoke",
       quarantine_reason: "smoke_provenance",
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Ticket 22 — in-memory dedup + admissions (stat-validated memos; the files
+  // stay the source of truth).
+  // -------------------------------------------------------------------------
+
+  it("deduplicates a repeated POST from memory — the key file is never re-parsed", async () => {
+    const { receiveTelemetry, getReceiverRecordKeyParseCounts } = await import("./telemetry-receiver.js");
+    const keyPath = join(TEST_DIR, "telemetry-record-keys.jsonl");
+    const { rawBody, signature } = signedPayload({ installation_id: "memo-install" });
+
+    expect(receiveTelemetry(rawBody, signature)).toMatchObject({ ok: true, quarantined: 1, deduplicated: 0 });
+    // The admit CREATED the key file — a missing file is not a parse, and the
+    // memo now carries the set + its stat.
+    const parsesAfterFirst = getReceiverRecordKeyParseCounts().get(keyPath) ?? 0;
+    expect(parsesAfterFirst).toBe(0);
+
+    expect(receiveTelemetry(rawBody, signature)).toMatchObject({ ok: true, quarantined: 0, deduplicated: 1 });
+    // Second POST served from the in-memory set: zero additional key-file parses.
+    expect(getReceiverRecordKeyParseCounts().get(keyPath) ?? 0).toBe(parsesAfterFirst);
+  });
+
+  it("two rapid (concurrent) POSTs of the same record → exactly one admitted", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload({ installation_id: "concurrent-install" });
+
+    // Both calls issued back-to-back in the same tick. receiveTelemetry is
+    // synchronous end to end (no await between the dedup check and the key
+    // append), so the single-threaded event loop serializes them: the first
+    // fully returns — key in the in-memory set AND in the file — before the
+    // second starts. There is no interleaving point where both could admit.
+    const results = [receiveTelemetry(rawBody, signature), receiveTelemetry(rawBody, signature)];
+
+    expect(results.filter((r) => r.quarantined === 1)).toHaveLength(1);
+    expect(results.filter((r) => r.deduplicated === 1 && r.quarantined === 0)).toHaveLength(1);
+    // Exactly one key line and one quarantine row on disk — no double-admit.
+    expect(readFileSync(join(TEST_DIR, "telemetry-record-keys.jsonl"), "utf-8").trim().split("\n")).toHaveLength(1);
+    expect(readQuarantine()).toHaveLength(1);
+  });
+
+  it("the key file stays the source of truth: external appends dedupe, external deletions re-admit (stat revalidation)", async () => {
+    const { receiveTelemetry, getReceiverRecordKeyParseCounts } = await import("./telemetry-receiver.js");
+    const keyPath = join(TEST_DIR, "telemetry-record-keys.jsonl");
+    const externalRecord = record({ date: "2026-06-01" });
+    const external = signedPayload({ installation_id: "external-writer-install", records: [externalRecord] });
+
+    // An "external writer" (another receiver process) appends the record's key
+    // directly. Our memo sees the stat change, re-parses once, and the POST
+    // deduplicates against the FILE's contents — not stale memory.
+    const externalKey = createHash("sha256")
+      .update(JSON.stringify({ installationId: "external-writer-install", record: externalRecord }))
+      .digest("hex");
+    appendFileSync(keyPath, `${externalKey}\n`, "utf-8");
+    expect(receiveTelemetry(external.rawBody, external.signature)).toMatchObject({ ok: true, quarantined: 0, deduplicated: 1 });
+    expect(getReceiverRecordKeyParseCounts().get(keyPath) ?? 0).toBe(1); // exactly one forced re-parse
+
+    // An external deletion (crash + operator clearing the file): the memo
+    // revalidates, finds nothing, and the record is admitted again — memory
+    // never serves stale dedup after the file changed.
+    rmSync(keyPath);
+    expect(receiveTelemetry(external.rawBody, external.signature)).toMatchObject({ ok: true, quarantined: 1, deduplicated: 0 });
   });
 });
 

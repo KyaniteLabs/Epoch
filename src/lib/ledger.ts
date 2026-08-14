@@ -648,6 +648,7 @@ export function acquireExclusiveFileLock(lockPath: string, owner: string, option
   for (;;) {
     try {
       writeFileSync(lockPath, payload, { flag: "wx" });
+      ledgerLockAcquisitions.set(lockPath, (ledgerLockAcquisitions.get(lockPath) ?? 0) + 1);
       return { ok: true, lockPath, token, recoveredStale };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException | null)?.code;
@@ -725,6 +726,21 @@ let ledgerStaleRecoveries = 0;
 /** How many stale lockfiles this process has recovered (surfaced in data_status). */
 export function getLedgerStaleRecoveryCount(): number {
   return ledgerStaleRecoveries;
+}
+
+/**
+ * Cumulative count of SUCCESSFUL lock acquisitions per absolute lock path
+ * (ticket 22 test instrumentation): lets tests assert that a k-entry
+ * batch_record_actuals acquired the ledger write lock once, not per-entry —
+ * mirroring ledgerParseCounts for reads. Process-lifetime, never reset
+ * (tests snapshot before/after deltas). Failed acquisitions (contention /
+ * unavailable infrastructure) are not counted.
+ */
+const ledgerLockAcquisitions = new Map<string, number>();
+
+/** How many times this process successfully acquired each ledger write lock (ticket 22). */
+export function getLedgerLockAcquisitionCounts(): ReadonlyMap<string, number> {
+  return new Map(ledgerLockAcquisitions);
 }
 
 /** Inspect a ledger file's write lock for data_status: presence, owner, age, staleness, recovery path. */

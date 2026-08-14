@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -236,9 +236,112 @@ interface Admissions {
   byInstallation: Map<string, number>;
 }
 
+// ---------------------------------------------------------------------------
+// Ticket 22 — receiver dedup/admissions served from memory.
+//
+// The receiver used to re-parse telemetry-record-keys.jsonl AND
+// telemetry-receipts.jsonl on EVERY POST — O(history) work per request and a
+// memory-amplification vector (each request allocated a fresh copy of the
+// whole key set). Both are now process memos validated by a stat on every
+// receive, the exact shape of ledger.ts's read cache:
+//
+//   key = (size, mtimeMs, ino)
+//
+// so our own appends (size changes), another process's writes, a rename-based
+// rewrite (inode/mtime), or a deletion are always picked up on the next
+// receive. THE FILES REMAIN THE SOURCE OF TRUTH — the memo is a per-receive
+// validation, never a TTL cache. Crash safety: every admitted key (and every
+// receipt) is appended to its file IMMEDIATELY on admit; after a crash the
+// memo is simply empty and reloads from the files, so nothing admitted is
+// ever forgotten and nothing rejected is ever remembered.
+//
+// Within one process, receiveTelemetry is synchronous end to end (no await
+// between the dedup check and the append), so the single-threaded event loop
+// makes check-and-add atomic per tick: two concurrent POSTs of the same
+// record can never both admit — the second call cannot start until the first
+// returns, by which point the key is in the set and in the file.
+// ---------------------------------------------------------------------------
+
+/** Stat facts used to validate a memo entry against the file it summarizes. */
+interface StatFacts {
+  size: number;
+  mtimeMs: number;
+  ino: string;
+}
+
+function statFacts(path: string): StatFacts | null {
+  try {
+    const s = statSync(path);
+    return { size: s.size, mtimeMs: s.mtimeMs, ino: String(s.ino) };
+  } catch {
+    return null;
+  }
+}
+
+function statMatches(a: StatFacts, b: StatFacts): boolean {
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
+}
+
+/** Memoized dedup key set, keyed by absolute key-file path (tests switch EPOCH_DATA_DIR per suite). */
+const knownRecordKeysByPath = new Map<string, { stat: StatFacts; keys: Set<string> }>();
+/** Memoized admission accounting, keyed by absolute receipts path. */
+const admissionsByPath = new Map<string, { stat: StatFacts; admissions: Admissions }>();
+/**
+ * Cumulative count of full read+parse executions of the dedup key file per
+ * absolute path (ticket 22 test instrumentation): proves a POST deduplicates
+ * from memory (0 parses) instead of re-parsing the whole key file. A missing
+ * file is not a parse. Never reset — tests snapshot deltas.
+ */
+const recordKeyParsesByPath = new Map<string, number>();
+
+/** Parse-count snapshot for tests/observability (mirrors ledger.ts's getLedgerCacheStatus pattern). */
+export function getReceiverRecordKeyParseCounts(): ReadonlyMap<string, number> {
+  return new Map(recordKeyParsesByPath);
+}
+
+/** Read + parse the dedup key file. Missing file yields an empty set without counting a parse. */
+function parseRecordKeys(path: string): Set<string> {
+  if (!existsSync(path)) return new Set();
+  recordKeyParsesByPath.set(path, (recordKeyParsesByPath.get(path) ?? 0) + 1);
+  return new Set(readFileSync(path, "utf-8").split("\n").map((line) => line.trim()).filter(Boolean));
+}
+
+/**
+ * The dedup key set for the current key file, from memory when the file is
+ * unchanged since the last load/refresh (a stat, not a parse). The returned
+ * Set is the memoized instance — callers mutate it on admit and then pass it
+ * back to refreshRecordKeysMemo(), which re-attaches/updates the memo's stat
+ * to match the file they just appended. (When the load ran while the file was
+ * MISSING, no memo exists yet — the refresh then INSTALLS the mutated set,
+ * so even the very first admit on a fresh receiver is followed by
+ * parse-free receives.)
+ */
+function loadRecordKeys(): Set<string> {
+  const path = recordKeysPath();
+  const stat = statFacts(path);
+  const memo = knownRecordKeysByPath.get(path);
+  if (stat !== null && memo !== undefined && statMatches(memo.stat, stat)) return memo.keys;
+  const keys = parseRecordKeys(path);
+  if (stat !== null) knownRecordKeysByPath.set(path, { stat, keys });
+  else knownRecordKeysByPath.delete(path);
+  return keys;
+}
+
+/** Re-sync the key memo after this process appended keys: update the stat, or install the set when no memo exists yet. */
+function refreshRecordKeysMemo(keys: Set<string>): void {
+  const path = recordKeysPath();
+  const stat = statFacts(path);
+  if (stat === null) {
+    knownRecordKeysByPath.delete(path);
+    return;
+  }
+  const memo = knownRecordKeysByPath.get(path);
+  if (memo !== undefined) memo.stat = stat;
+  else knownRecordKeysByPath.set(path, { stat, keys });
+}
+
 /** Sum admitted (accepted + quarantined) records per installation from the receipt log. */
-function loadAdmissions(): Admissions {
-  const path = receiptPath();
+function parseAdmissions(path: string): Admissions {
   const byInstallation = new Map<string, number>();
   if (!existsSync(path)) return { total: 0, byInstallation };
   let total = 0;
@@ -260,6 +363,38 @@ function loadAdmissions(): Admissions {
     byInstallation.set(installationId, (byInstallation.get(installationId) ?? 0) + admitted);
   }
   return { total, byInstallation };
+}
+
+/**
+ * Admission accounting for the current receipts file, from memory when the
+ * file is unchanged (a stat, not a parse). Caps (ticket 19) are computed from
+ * this — same numbers the receipts re-parse produced, now without the
+ * per-POST full-file read. The returned object is the memoized instance:
+ * callers mutate it after appending a receipt, then pass it back to
+ * refreshAdmissionsMemo().
+ */
+function loadAdmissions(): Admissions {
+  const path = receiptPath();
+  const stat = statFacts(path);
+  const memo = admissionsByPath.get(path);
+  if (stat !== null && memo !== undefined && statMatches(memo.stat, stat)) return memo.admissions;
+  const admissions = parseAdmissions(path);
+  if (stat !== null) admissionsByPath.set(path, { stat, admissions });
+  else admissionsByPath.delete(path);
+  return admissions;
+}
+
+/** Re-sync the admissions memo after this process appended a receipt (installs the memo on a previously missing file). */
+function refreshAdmissionsMemo(admissions: Admissions): void {
+  const path = receiptPath();
+  const stat = statFacts(path);
+  if (stat === null) {
+    admissionsByPath.delete(path);
+    return;
+  }
+  const memo = admissionsByPath.get(path);
+  if (memo !== undefined) memo.stat = stat;
+  else admissionsByPath.set(path, { stat, admissions });
 }
 
 function maxRecordsPerInstallation(): number {
@@ -289,12 +424,6 @@ export function getQuarantineStatus(): TelemetryQuarantineStatus {
     if (line.trim()) quarantinedRecords += 1;
   }
   return { path, quarantinedRecords };
-}
-
-function loadRecordKeys(): Set<string> {
-  const path = recordKeysPath();
-  if (!existsSync(path)) return new Set();
-  return new Set(readFileSync(path, "utf-8").split("\n").map((line) => line.trim()).filter(Boolean));
 }
 
 function recordKey(installationId: string, record: AnonymizedRecord): string {
@@ -392,6 +521,9 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   // Admission caps (Ticket 19): bound per-installation and total volume. The
   // conservative estimate (records.length new admissions) is used so a payload
   // that would exceed a cap is rejected whole rather than partially stored.
+  // Ticket 22: admissions come from the stat-validated in-memory accounting
+  // (loadAdmissions above) — same numbers the per-POST receipts re-parse
+  // produced, updated on admit at the bottom of this function.
   const admissions = loadAdmissions();
   const perInstallationCap = maxRecordsPerInstallation();
   const alreadyAdmitted = admissions.byInstallation.get(installationId) ?? 0;
@@ -410,6 +542,9 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   const dir = dataDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const receivedAt = new Date().toISOString();
+  // Ticket 22: the in-memory (stat-validated) key set — O(1) set lookups per
+  // record instead of a full-file re-parse per POST. Mutated on admit below;
+  // refreshRecordKeysMemo() re-syncs the stat afterwards.
   const knownKeys = loadRecordKeys();
   // Always 0 while every receive path is untrusted — the merge store
   // (telemetry-records.jsonl) receives nothing until a trusted source
@@ -469,6 +604,21 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
     quarantined,
   };
   appendFileSync(receiptPath(), `${JSON.stringify(receipt)}\n`, "utf-8");
+
+  // Ticket 22: keep the in-memory accounting consistent with the files this
+  // receive just appended — the caps on the NEXT receive are computed from
+  // this same object, so they stay exactly as tight as the receipts re-parse
+  // made them (conservative whole-payload rejection included).
+  const admittedThisReceive = accepted + quarantined;
+  if (admittedThisReceive > 0) {
+    admissions.total += admittedThisReceive;
+    admissions.byInstallation.set(
+      installationId,
+      (admissions.byInstallation.get(installationId) ?? 0) + admittedThisReceive,
+    );
+  }
+  refreshRecordKeysMemo(knownKeys);
+  refreshAdmissionsMemo(admissions);
 
   return { ok: true, status: 200, accepted, deduplicated, quarantined };
 }
