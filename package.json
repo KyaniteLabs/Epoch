@@ -38,6 +38,7 @@
     "ops:check": "bash -n scripts/epoch-fleet-bootstrap.sh scripts/epoch-receiver-watchdog.sh scripts/install-epoch-receiver-watchdog.sh",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
     "canary": "node canary-runner.mjs",
+    "stamp:versions": "node scripts/stamp-release-versions.mjs",
     "dataset:build": "tsx scripts/export-public-benchmark.mjs",
     "dataset:verify": "tsx scripts/validate-public-benchmark.mjs",
     "contract:inventory": "tsx src/contract/export-public-surface.ts"

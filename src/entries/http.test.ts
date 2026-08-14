@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -747,6 +747,70 @@ describe("HTTP API", () => {
       const error = body.error as Record<string, unknown>;
       expect(error.message).toContain("duplicate");
     });
+
+    // ---- Ticket 16: unit_suspect surfaced; unknown_tool hint appended ----
+
+    it("surfaces flagged=unit_suspect with an actionable hint on a >10x overrun (ticket 16)", async () => {
+      const estimateId = `http-unit-suspect-${Date.now()}`;
+      appendFileSync(join(TEST_DIR, "estimates.jsonl"), JSON.stringify({
+        id: estimateId,
+        tool: "pert_estimate",
+        inputs: { task_type: "feature" },
+        outputs: { totalHours: 5 },
+        estimatedAt: new Date().toISOString(),
+      }) + "\n", "utf-8");
+
+      const res = await app.request("/v1/feedback/record-actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: estimateId, actual_hours: 300 }), // 60x
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(true);
+      const data = body.data as Record<string, unknown>;
+      expect(data.recorded).toBe(true);
+      expect(data.flagged).toBe("unit_suspect");
+      expect(String(data.flagHint)).toContain("unit mismatch");
+    });
+
+    it("an unflagged record carries no flagged field in the response", async () => {
+      const res = await app.request("/v1/feedback/record-actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: `http-plain-${Date.now()}`, actual_hours: 8 }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      const data = body.data as Record<string, unknown>;
+      expect(data.flagged).toBeUndefined();
+    });
+
+    it("appends the canonical-tool-set hint to an unknown_tool rejection (ticket 16)", async () => {
+      const estimateId = `http-unknown-tool-${Date.now()}`;
+      appendFileSync(join(TEST_DIR, "estimates.jsonl"), JSON.stringify({
+        id: estimateId,
+        tool: "bogus_external_tool",
+        inputs: {},
+        outputs: { totalHours: 5 },
+        estimatedAt: new Date().toISOString(),
+      }) + "\n", "utf-8");
+
+      const res = await app.request("/v1/feedback/record-actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estimate_id: estimateId, actual_hours: 4 }),
+      });
+
+      expect(res.status).toBe(500); // unknown_tool keeps its existing status mapping
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(String(error.message)).toContain("unknown_tool");
+      expect(String(error.message)).toContain("pert_estimate"); // the canonical-set hint
+    });
   });
 
   describe("GET /v1/feedback/pending", () => {
@@ -820,6 +884,91 @@ describe("HTTP API", () => {
       expect(body.ok).toBe(false);
       const error = body.error as Record<string, unknown>;
       expect(error.isError).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 422/500 split at the tool-dispatch seam (ticket 06)
+  // ---------------------------------------------------------------------------
+
+  describe("validation vs internal error split (ticket 06)", () => {
+    it("maps validation failures to 422 with the formatted readable message", async () => {
+      // The canary's zero-tokens failure-mode case: the message must be an
+      // actionable sentence (matches /positive|greater|must be/i), not a zod
+      // JSON blob, and the status must be the caller-error class.
+      const res = await app.request("/v1/tools/token_time_bridge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tokens: 0, model: "claude-sonnet-4-20250514", reasoning_depth: "shallow" }),
+      });
+
+      expect(res.status).toBe(422);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.ok).toBe(false);
+      const error = body.error as Record<string, unknown>;
+      expect(error.isError).toBe(true);
+      expect(error.errorKind).toBe("validation");
+      expect(String(error.message)).toMatch(/positive|greater|must be/i);
+      expect(String(error.message)).toContain("tokens");
+      expect(String(error.message)).not.toContain('"code"'); // no raw zod blob
+    });
+
+    it("keeps handler-produced actionable errors at 422", async () => {
+      // pert ordering violations are returned (not thrown) by the handler with
+      // an actionable message — they stay 422 with the message surfaced.
+      const res = await app.request("/v1/tools/pert_estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optimistic: 20, most_likely: 5, pessimistic: 2, unit: "hours" }),
+      });
+
+      expect(res.status).toBe(422);
+      const body = await res.json() as Record<string, unknown>;
+      const error = body.error as Record<string, unknown>;
+      expect(String(error.message)).toContain("optimistic");
+      expect(error.errorKind).toBeUndefined(); // not tagged internal
+    });
+
+    it("maps internal thrown errors to 500 with a generic-safe message (no path/stack leakage)", async () => {
+      // Fixture tool whose handler throws a non-validation error carrying a
+      // machine-local path — exactly what the 500 envelope must not leak.
+      // Registered in both TOOL_REGISTRY (dispatch's lookup) and TOOL_NAMES
+      // (the route's routing gate) so the request reaches dispatch().
+      const fixtureName = "fixture_http_throwing_tool";
+      TOOL_REGISTRY.set(fixtureName, {
+        name: fixtureName,
+        description: "Test fixture: handler that throws an internal error with a path in the message.",
+        inputSchema: z.object({}),
+        outputSchema: { type: "object" },
+        handler: () => {
+          throw new Error("EACCES: permission denied, /Users/secret/.epoch/estimates.jsonl");
+        },
+      } satisfies ToolDefinition);
+      (TOOL_NAMES as Set<string>).add(fixtureName);
+
+      try {
+        const res = await app.request(`/v1/tools/${fixtureName}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+
+        expect(res.status).toBe(500);
+        const body = await res.json() as Record<string, unknown>;
+        expect(body.ok).toBe(false);
+        const error = body.error as Record<string, unknown>;
+        expect(error.isError).toBe(true);
+        expect(error.errorKind).toBe("internal");
+        // Generic-safe: no filesystem path, no errno detail, no thrown text.
+        const message = String(error.message);
+        expect(message).not.toContain("/Users");
+        expect(message).not.toContain("EACCES");
+        expect(message).toContain(fixtureName);
+        expect(error.retryHint).toBeTruthy();
+      } finally {
+        TOOL_REGISTRY.delete(fixtureName);
+        (TOOL_NAMES as Set<string>).delete(fixtureName);
+      }
     });
   });
 

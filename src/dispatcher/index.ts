@@ -4,11 +4,13 @@
 // Records telemetry and triggers self-improvement.
 // ---------------------------------------------------------------------------
 
+import { ZodError } from "zod";
 import type { ToolResult } from "../types/index.js";
 import { TOOL_REGISTRY, TOOL_NAMES, isEstimationTool } from "./tool-registry.js";
 import { getTelemetry } from "../lib/telemetry.js";
 import { recordEstimate, recordToolCall } from "../lib/feedback.js";
 import { notifyToolCall } from "../lib/self-improve.js";
+import { formatZodIssues, makeInternalError, makeValidationError } from "../lib/internal/error-helpers.js";
 
 // ---- Dispatch ---------------------------------------------------------------
 
@@ -66,15 +68,34 @@ export async function dispatch(
     getTelemetry().record(toolName, elapsedMs, false, rawInput);
     notifyToolCall();
 
+    // Ticket 06 (agent-readable errors): a ZodError from the tool's input
+    // schema is a caller-fixable validation failure, not an internal crash.
+    // Render one `path: message` line per issue instead of zod's raw JSON
+    // issues blob, tag the error "validation" so the HTTP seam maps it to
+    // 422, and keep the offending values (from rawInput) in the text.
+    if (err instanceof ZodError) {
+      return {
+        ok: false,
+        error: makeValidationError(
+          `Invalid input for ${toolName}:\n${formatZodIssues(err, rawInput)}`,
+          "Fix the listed input fields and retry.",
+        ),
+      };
+    }
+
+    // Any other thrown error is internal: the caller cannot fix it by editing
+    // inputs. Error.message is preserved for stdio/MCP consumers (agents need
+    // the real reason), but the errorKind: "internal" tag lets the HTTP seam
+    // replace it with a generic-safe message (no path/stack leakage) and a
+    // 500 status.
     const message =
       err instanceof Error ? err.message : "Unexpected handler error.";
     return {
       ok: false,
-      error: {
-        isError: true,
+      error: makeInternalError(
         message,
-        retryHint: `Tool "${toolName}" encountered an internal error. Check inputs and try again.`,
-      },
+        `Tool "${toolName}" encountered an internal error. Check inputs and try again.`,
+      ),
     };
   }
 }

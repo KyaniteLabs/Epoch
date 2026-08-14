@@ -33,9 +33,11 @@ Use Epoch when a task needs grounded time, cost, schedule, or calibration answer
 ```bash
 epoch pert-estimate --optimistic 1 --most-likely 2 --pessimistic 5 --unit hours --format json
 epoch count-business-days --start-date 2026-06-01 --end-date 2026-07-15 --country US
-epoch compare-models --input-tokens 50000 --output-tokens 5000 --format table
+epoch compare-models --tokens 50000 --format table
 epoch record-actual --estimate-id <feedback-token> --actual-hours 3.25 --notes "Completed with build and verification"
 ```
+
+`--format`/`--quiet` are root options: they work directly after `epoch` (e.g. `epoch --format table compare-models --tokens 50000`) and, with this commander version, after the subcommand's own options as shown above. Every example above was executed verbatim against the built CLI (`node dist/index.js <command>`) and exits 0 when given valid inputs; `compare-models` takes a single `--tokens <n>` budget (plus optional `--tool-calls`, `--reasoning-depth`, `--sort-by`) — there are no separate input/output token flags.
 
 ## MCP Setup
 

@@ -8,7 +8,7 @@
 
 **TL;DR:** Epoch — time estimation MCP server. Best for engineering leads, agents, and planners who need calibrated duration estimates.
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
 
 **Epoch helps AI agents understand time.**
 
@@ -94,7 +94,7 @@ Epoch also ships a public agent skill at [`skills/epoch/SKILL.md`](skills/epoch/
 |---|---|---|
 | "How long will this take?" | Gives you a realistic estimate with best/worst case ranges | Estimates |
 | "Can we hit this deadline?" | Tells you if your timeline is realistic or risky | Schedule risk |
-| "How much will the AI calls cost?" | Calculates token costs across 12 AI models side-by-side | Cost comparison |
+| "How much will the AI calls cost?" | Calculates token costs across 16 AI models side-by-side | Cost comparison |
 | "How many business days between now and launch?" | Counts days excluding weekends and holidays (5 countries) | Calendar math |
 | "Are our estimates getting better?" | Tracks your accuracy over time and auto-corrects | Self-improving |
 | "What model should we use?" | Compares speed, cost, and quality across all major AI models | Model comparison |
@@ -115,7 +115,7 @@ Six-layer design with 25 tools for time estimation, scheduling, cost analysis, a
 | **2. Calendar Math** | Business days, holidays (US/UK/FR/DE/JP) | `add_business_days`, `count_business_days` |
 | **3. Estimation** | PERT, COCOMO II, sprint, CPM, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
 | **4. Analytics** | Reference class, context classification, calibration, token-time bridge | `reference_class_estimate`, `estimate_from_context`, `calibrate_estimates`, `token_time_bridge` |
-| **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate` |
+| **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate`, `cocomo_ground_truth` |
 | **6. Feedback** | Record actuals, track pending estimates, batch operations, health checks | `record_actual`, `get_pending_estimates`, `batch_record_actuals`, `feedback_health` |
 
 ## Tool Reference
@@ -383,7 +383,7 @@ Output: {
 }
 ```
 
-**`token_time_bridge`** -- Map LLM token budgets to wall-clock time for 12 model families
+**`token_time_bridge`** -- Map LLM token budgets to wall-clock time for 16 model families
 
 ```
 Input:  {
@@ -491,6 +491,24 @@ Output: {
 }
 ```
 
+**`cocomo_ground_truth`** -- Benchmark all COCOMO variants (Basic, COCOMO II nominal, AI 12x speedup, AI + developer-profile gradients) against the same real historical projects, with per-dataset and per-type breakdowns
+
+```
+Input:  {}
+Output: {
+  projectsEvaluated: 182,
+  models: [
+    { name: "COCOMO Basic", mape: 85.55, mmre: 0.856, pred25: 0.313, pred50: 0.544, bias: 53.5, count: 182 },
+    ...
+  ],
+  byDataset: { ... },
+  byType: { ... },
+  winner: "AI + Profile (human)",
+  conclusion: "Best model: AI + Profile (human) (MAPE=79.66%). ...",
+  humanReadable: "..."
+}
+```
+
 ## ai_native Mode
 
 Epoch tools support dual estimation modes to account for the fundamentally different velocity of AI-assisted vs human-only development.
@@ -502,7 +520,7 @@ When `ai_native=false`, tools apply human developer baselines:
 | Parameter | Human Baseline | AI-Native Baseline |
 |-----------|---------------|-------------------|
 | Feature development | 14 calendar days (industry data) | 5.7h median (126K+ real tasks) |
-| Bug fix turnaround | 72 hours (industry data) | 6.2h median (1,498 matched pairs) |
+| Bug fix turnaround | 72 hours (industry data) | 6.2h median (139 matched estimate-actual pairs) |
 | Sprint velocity | 35 story points (industry data) | 80 story points |
 | Estimation accuracy (MAPE) | 25% (Jorgensen 2004) | 15% (from AI-native profiles) |
 | Correction factor | 1.8x (industry standard) | 1.07-1.45x (from reference DB) |
@@ -666,15 +684,15 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 
 ## Tech Stack
 
-- **Runtime**: Node.js 20+ (ESM)
-- **Language**: TypeScript 5.8 (strict mode, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
-- **Validation**: Zod 3.24 with `.describe()` on every field
+- **Runtime**: Node.js 22+ (ESM; `engines.node >=22` — Node 20 reached EOL April 2026)
+- **Language**: TypeScript 6 (strict mode, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
+- **Validation**: Zod 4 with `.describe()` on every field
 - **MCP SDK**: `@modelcontextprotocol/sdk` 1.12+
 - **HTTP**: Hono (lightweight, multi-runtime)
 - **CLI**: Commander.js
 - **Date Handling**: `date-fns` 4.x + `date-fns-tz` 3.x
 - **Build**: `tsup` (ESM output)
-- **Testing**: `vitest` 3.x with v8 coverage (97% statements, 88% branches)
+- **Testing**: `vitest` 4.x with v8 coverage (97% statements, 88% branches)
 
 ## Configuration
 
@@ -735,7 +753,7 @@ epoch share-data --description "Anonymized Epoch usage export" --validate
 
 ## License
 
-MIT License. See [LICENSE](./LICENSE) for full terms.
+Apache License 2.0. See [LICENSE](./LICENSE) for full terms.
 
 ---
 

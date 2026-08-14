@@ -72,6 +72,13 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Stamp release surfaces from package.json
+        # Ticket 09: server.json / llms.txt version strings derive from
+        # package.json at release time — a forgotten hand-edit can never ship
+        # a stale version on a published surface. Stamps in-place in this
+        # checkout before the artifacts are consumed.
+        run: node scripts/stamp-release-versions.mjs
+
       - name: Verify npm package surface
         run: npm pack --dry-run
 
@@ -102,5 +109,9 @@ jobs:
           rm -f mcp-publisher.tar.gz
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc
+      - name: Stamp server.json version from package.json
+        # Same derivation as the npm job: server.json's published version must
+        # match package.json even if the committed file drifted.
+        run: node scripts/stamp-release-versions.mjs
       - name: Publish server metadata
         run: ./mcp-publisher publish

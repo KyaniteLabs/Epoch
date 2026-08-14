@@ -6,6 +6,8 @@ import { recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedb
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
 import { setTransport } from "../lib/telemetry-context.js";
+import { isInternalError } from "../lib/internal/error-helpers.js";
+import type { TaggedToolError } from "../lib/internal/error-helpers.js";
 import type { ToolResult } from "../types/index.js";
 import { z } from "zod";
 import { getVersion } from "../version.js";
@@ -402,6 +404,12 @@ function buildOpenApiSpec(): Record<string, unknown> {
                           type: "object",
                           properties: {
                             isError: { type: "boolean" },
+                            errorKind: {
+                              type: "string",
+                              enum: ["validation", "internal"],
+                              description:
+                                'Failure class: "validation" (caller-fixable, HTTP 422) or "internal" (server-side, HTTP 500).',
+                            },
                             message: { type: "string" },
                             retryHint: { type: "string" },
                           },
@@ -573,8 +581,31 @@ export function createApiApp(): Hono {
     }
 
     const result = await dispatch(toolName, body);
-    const status = result.ok ? 200 : 422;
-    return c.json(result, status);
+    // Ticket 06 (422/500 split at the HTTP seam): caller-fixable failures —
+    // validation (errorKind "validation", e.g. malformed/invalid inputs) and
+    // handler-produced actionable errors — map to 422 with the formatted
+    // message intact. Internal failures (errorKind "internal": a thrown
+    // non-validation error inside dispatch) map to 500 with a generic-safe
+    // message — the dispatcher's preserved Error.message may embed
+    // filesystem paths or stack details that must not leak over HTTP.
+    if (result.ok) {
+      return c.json(result, 200);
+    }
+    if (isInternalError(result.error)) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            isError: true,
+            errorKind: "internal",
+            message: `Internal error while executing "${toolName}".`,
+            retryHint: "This is a server-side failure, not an input problem. Retry, and file an issue at https://github.com/KyaniteLabs/Epoch/issues if it persists.",
+          },
+        } satisfies { ok: false; error: TaggedToolError },
+        500,
+      );
+    }
+    return c.json(result, 422);
   });
 
   app.post("/v1/telemetry", async (c) => {
@@ -641,16 +672,34 @@ export function createApiApp(): Hono {
         : result.reason === "below_threshold" || result.reason === "synthetic_id"
           ? 400
           : 500;
+      // Ticket 16 (unknown-tool policy): append the lib's actionable hint
+      // (currently unknown_tool's canonical estimation-tool set) so the
+      // rejection is never a silent contract severance.
+      const reasonEcho = `Failed to record actual: ${result.reason}.`;
       return c.json({
         ok: false,
         error: {
           isError: true,
-          message: `Failed to record actual: ${result.reason}.`,
+          message: result.hint ? `${reasonEcho} ${result.hint}` : reasonEcho,
           retryHint: "Use a real estimate_id, positive actual_hours, and avoid duplicate submissions.",
         },
       }, status);
     }
-    return c.json({ ok: true, data: { estimateId, actualHours, recorded: true } });
+    // Ticket 16 (unit_suspect lifecycle): surface the persisted flag with an
+    // actionable hint — the record is saved, but the caller should verify the
+    // units (hours vs days/weeks/person-months).
+    return c.json({
+      ok: true,
+      data: {
+        estimateId,
+        actualHours,
+        recorded: true,
+        ...(result.flagged === "unit_suspect" && {
+          flagged: "unit_suspect" as const,
+          flagHint: "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
+        }),
+      },
+    });
   });
 
   app.get("/v1/feedback/pending", (c) => {
