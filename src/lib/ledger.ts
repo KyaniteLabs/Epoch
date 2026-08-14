@@ -13,7 +13,7 @@
 // feedback.ts imports from this module; this module must never import from
 // feedback.ts (kept acyclic per execution annotation 2).
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { TaskType } from "../types/index.js";
@@ -33,26 +33,171 @@ export function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;
 }
 
+// ---- Read cache (ticket 17, W3 performance) ----------------------------------
+//
+// A single estimation dispatch used to re-read+re-parse the whole ledger ~3x
+// (correction factors, empirical intervals, calibration data), with parse cost
+// growing linearly in history. readLines() now memoizes the parsed array per
+// absolute file path, validated on EVERY call by a stat of the file:
+//
+//   key = (size, mtimeMs, ino)
+//
+// Append-only files make this exact: an append changes size; a rename-based
+// rewrite (atomicWriteJsonl) changes inode AND mtime; an in-place same-size
+// rewrite changes mtime (APFS/ext4 expose sub-millisecond mtimeMs). Any stat
+// mismatch re-reads and re-parses. External appends from other processes are
+// therefore picked up on the next read — the cache is a per-call memo, never a
+// TTL cache.
+//
+// Own writes (feedback.ts's appendLine, migrations' atomicWriteJsonl) are NOT
+// hooked: they invalidate implicitly because every write changes the stat key
+// (appends change size; rewrites change mtime/ino). Nothing in this module
+// writes, so there is no self-write path to invalidate proactively.
+//
+// Mutation discipline (deliberate choice, per ticket): cached rows are
+// deep-frozen and readLines() hands out a SHALLOW COPY of the array
+// (copy-on-read). A caller may sort/reverse/splice its returned array freely —
+// it owns that copy — but any in-place mutation of a row object throws in
+// strict mode instead of silently corrupting the cache. Deep-copying every row
+// per read was rejected: it would reintroduce O(rows) work per read, which is
+// the exact blowup this cache exists to remove.
+//
+// Escape hatch: EPOCH_LEDGER_CACHE=0 (or "false") bypasses the cache entirely
+// (reads still parse, and still count in the parse counters) — used to A/B
+// measure the parse-count improvement and as a safety valve.
+
+interface LedgerCacheEntry {
+  /** Stat key the cached rows were parsed from. */
+  size: number;
+  mtimeMs: number;
+  /** Inode as an exact string (real Stats carry bigint inos; mocks carry numbers). */
+  ino: string;
+  /** Deep-frozen parsed rows. Never handed out directly — readLines() returns a shallow copy. */
+  rows: unknown[];
+  /** Epoch-ms of the parse that populated this entry. */
+  parsedAt: number;
+  /** Epoch-ms of the most recent read that validated/produced this entry. */
+  lastReadAt: number;
+}
+
+/**
+ * Cached parsed ledger contents, keyed by absolute file path. The key set is
+ * bounded by the fixed set of ledger/sidecar filenames (constants in this
+ * module), so no eviction policy is needed.
+ */
+const ledgerCache = new Map<string, LedgerCacheEntry>();
+
+/**
+ * Cumulative count of full read+parse executions per absolute path, incremented
+ * on EVERY parse whether it hit the cache validation or ran in bypass mode.
+ * Test instrumentation (ticket 17): lets tests assert bounded parse counts
+ * without wall-clock flakiness. Never reset except by
+ * {@link resetLedgerReadCache}.
+ */
+const ledgerParseCounts = new Map<string, number>();
+
+function ledgerCacheEnabled(): boolean {
+  const raw = process.env["EPOCH_LEDGER_CACHE"];
+  return !(raw === "0" || raw === "false");
+}
+
+/** Deep-freeze a parsed row (and everything reachable from it) so cache corruption fails loudly. */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && (typeof value === "object" || typeof value === "function")) {
+    for (const key of Object.keys(value as object)) {
+      deepFreeze((value as Record<string, unknown>)[key]);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/**
+ * Stat facts used to validate cache entries; null when stat is unavailable.
+ * The statSync access sits inside the try because test suites that mock
+ * node:fs without a statSync export throw at the property access itself —
+ * that must degrade to a cache bypass (plain read), never a hard failure.
+ */
+function statKey(path: string): { size: number; mtimeMs: number; ino: string } | null {
+  try {
+    const s = statSync(path);
+    return { size: s.size, mtimeMs: s.mtimeMs, ino: String(s.ino) };
+  } catch {
+    return null;
+  }
+}
+
 /** Read and parse a JSONL file under the Epoch data dir. Missing file / unparsable lines yield []. */
 export function readLines<T>(filename: string): T[] {
   const path = join(dataDir(), filename);
   if (!existsSync(path)) return [];
+
+  const stat = ledgerCacheEnabled() ? statKey(path) : null;
+  const cached = stat !== null ? ledgerCache.get(path) : undefined;
+  if (cached && stat && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs && cached.ino === stat.ino) {
+    cached.lastReadAt = Date.now();
+    return cached.rows.slice() as T[];
+  }
+
+  let rows: unknown[];
   try {
     const content = readFileSync(path, "utf-8");
-    return content
+    rows = content
       .split("\n")
       .filter((line) => line.trim())
       .map((line) => {
         try {
-          return JSON.parse(line) as T;
+          return JSON.parse(line) as unknown;
         } catch {
           return null;
         }
       })
-      .filter((r): r is T => r !== null);
+      .filter((r) => r !== null);
   } catch {
     return [];
   }
+
+  ledgerParseCounts.set(path, (ledgerParseCounts.get(path) ?? 0) + 1);
+  if (stat !== null) {
+    ledgerCache.set(path, {
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      ino: stat.ino,
+      rows: rows.map(deepFreeze),
+      parsedAt: Date.now(),
+      lastReadAt: Date.now(),
+    });
+  }
+  return rows as T[];
+}
+
+/** Test/observability hook: clear the read cache and parse counters (ticket 17). */
+export function resetLedgerReadCache(): void {
+  ledgerCache.clear();
+  ledgerParseCounts.clear();
+}
+
+/** Per-file read-cache status, keyed by absolute path. `parses` counts every parse including cache-bypass reads. */
+export interface LedgerCacheStatusEntry {
+  parses: number;
+  /** Epoch-ms of the parse that populated the cache entry; null when the file was only read in bypass mode. */
+  parsedAt: number | null;
+  /** Epoch-ms of the most recent read that validated/produced the entry; null when never read. */
+  lastReadAt: number | null;
+}
+
+/** Snapshot of the read-cache state, for data_status surfacing and tests. */
+export function getLedgerCacheStatus(): ReadonlyMap<string, LedgerCacheStatusEntry> {
+  const out = new Map<string, LedgerCacheStatusEntry>();
+  for (const [path, count] of ledgerParseCounts) {
+    const entry = ledgerCache.get(path);
+    out.set(path, {
+      parses: count,
+      parsedAt: entry?.parsedAt ?? null,
+      lastReadAt: entry?.lastReadAt ?? null,
+    });
+  }
+  return out;
 }
 
 /**

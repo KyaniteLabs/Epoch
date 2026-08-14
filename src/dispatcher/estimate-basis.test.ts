@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TOOL_REGISTRY, dispatch } from "./index.js";
 import { extractEstimatedHours } from "../lib/feedback.js";
+import { resetLedgerReadCache, getLedgerCacheStatus, ESTIMATES_FILE, ACTUALS_FILE } from "../lib/ledger.js";
 import type { ToolResult } from "../types/index.js";
 
 const maybePertHandler = TOOL_REGISTRY.get("pert_estimate")?.handler;
@@ -278,5 +279,75 @@ describe("recordEstimate — basis-version stamp (ticket 11)", () => {
     const unstamped = rows.filter((r) => r["basisVersion"] === undefined);
     expect(stamped).toHaveLength(1);
     expect(unstamped).toHaveLength(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ticket 17 (ledger read cache) — bounded parse counts on the estimation path
+// ---------------------------------------------------------------------------
+// A reference_class_estimate dispatch previously parsed estimates.jsonl 3x
+// (getCalibrationData's own readLines + its overlayFlagsById load + the
+// empirical-interval load), growing linearly with ledger size. Under the
+// stat-keyed read cache the parse count per file is bounded at 1 per dispatch
+// (all reads precede the dispatch-time append) and <= 2 across two dispatches
+// (the append between them legitimately re-parses estimates once via its
+// changed stat key). Asserted via the instrumented parse counter — no timing.
+
+describe("ledger read cache — bounded estimation-path parse counts (ticket 17)", () => {
+  /** Seed a large matched reference_class_estimate/bugfix ledger (5k rows). */
+  function seedLargeLedger(rowCount: number): void {
+    const ratios = [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0];
+    seedLedger(
+      Array.from({ length: rowCount }, (_, i) => ({
+        id: `cache-perf-${i}`,
+        tool: "reference_class_estimate",
+        outputs: { correctedEstimate: 10 },
+      })),
+    );
+    seedActuals(
+      Array.from({ length: rowCount }, (_, i) => ({
+        estimateId: `cache-perf-${i}`,
+        actualHours: 10 * (ratios[i % ratios.length] ?? 1),
+      })),
+    );
+  }
+
+  function parsesOf(filename: string): number {
+    return getLedgerCacheStatus().get(join(tempDataDir, filename))?.parses ?? 0;
+  }
+
+  it("a 5k-row reference_class_estimate dispatch parses each ledger file at most once", async () => {
+    seedLargeLedger(5000);
+    resetLedgerReadCache();
+
+    const started = Date.now();
+    const result = await dispatch("reference_class_estimate", { task_type: "bugfix", complexity: 3 });
+    const elapsed = Date.now() - started;
+    expect(result.ok).toBe(true);
+
+    // Every read inside one dispatch happens before the recordEstimate append,
+    // so a stat-validated cache serves all of them from a single parse.
+    expect(parsesOf(ESTIMATES_FILE)).toBeLessThanOrEqual(1);
+    expect(parsesOf(ACTUALS_FILE)).toBeLessThanOrEqual(1);
+
+    // Smoke only (not a hard assert): report the measured dispatch latency.
+    console.log(`[ledger-cache perf] reference_class_estimate over 5k rows: ${elapsed}ms, estimates parsed ${parsesOf(ESTIMATES_FILE)}x, actuals parsed ${parsesOf(ACTUALS_FILE)}x`);
+  });
+
+  it("across two dispatches separated by the cache's own append, parses stay bounded at <= 2 per file", async () => {
+    seedLargeLedger(5000);
+    resetLedgerReadCache();
+
+    await dispatch("reference_class_estimate", { task_type: "bugfix", complexity: 3 });
+    // The dispatch appended an estimate row: its size changed, so the next
+    // dispatch re-parses estimates.jsonl exactly once more — never 3x+.
+    await dispatch("reference_class_estimate", { task_type: "bugfix", complexity: 3 });
+
+    expect(parsesOf(ESTIMATES_FILE)).toBeLessThanOrEqual(2);
+    expect(parsesOf(ACTUALS_FILE)).toBeLessThanOrEqual(1);
+
+    // Correctness under the cache: both appended rows are on file.
+    const rows = readEstimateRows().filter((r) => r["tool"] === "reference_class_estimate" && r["basisVersion"] === 2);
+    expect(rows).toHaveLength(2);
   });
 });

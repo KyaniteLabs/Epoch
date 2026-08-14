@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getEpochDataPaths, getEpochDataStatus } from "./data-status.js";
+import { readLines, resetLedgerReadCache, ESTIMATES_FILE, type EstimateRecord } from "./ledger.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-data-status-test-${Date.now()}`);
 
@@ -160,5 +161,33 @@ describe("getEpochDataStatus", () => {
     expect(status.files.estimates.exists).toBe(false);
     delete process.env["EPOCH_DATA_DIR"];
     process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+  });
+
+  // ---- ledger read-cache provenance (ticket 17) ----
+
+  it("surfaces ledger cache age (parsedAt/cacheAgeMs/parses) once the ledger has been read this process", () => {
+    resetLedgerReadCache();
+    writeFileSync(
+      join(TEST_DIR, "estimates.jsonl"),
+      JSON.stringify({ id: "1", tool: "pert", inputs: {}, outputs: {}, estimatedAt: "2026-01-01T00:00:00Z" }) + "\n",
+    );
+
+    // Before any ledger read through ledger.ts: no cache provenance.
+    const cold = getEpochDataStatus();
+    expect(cold.files.estimates.parses).toBe(0);
+    expect(cold.files.estimates.parsedAt).toBeNull();
+    expect(cold.files.estimates.cacheAgeMs).toBeNull();
+
+    // One read populates the cache; a second is served without re-parsing.
+    readLines<EstimateRecord>(ESTIMATES_FILE);
+    readLines<EstimateRecord>(ESTIMATES_FILE);
+
+    const warm = getEpochDataStatus();
+    expect(warm.files.estimates.parses).toBe(1);
+    expect(warm.files.estimates.parsedAt).not.toBeNull();
+    expect(typeof warm.files.estimates.parsedAt).toBe("number");
+    expect(warm.files.estimates.cacheAgeMs).toBeGreaterThanOrEqual(0);
+    // Non-ledger files keep the plain shape (no cache fields asserted there).
+    expect(warm.files.toolTelemetry.exists).toBe(false);
   });
 });

@@ -9,6 +9,7 @@ import * as os from "node:os";
 import { loadConfig, isUsableTelemetryEndpoint } from "./config.js";
 import { extractAnonymizedRecords } from "./telemetry-submit.js";
 import { loadReferenceDb } from "./self-improve.js";
+import { getLedgerCacheStatus } from "./ledger.js";
 
 // ---- Path helpers -----------------------------------------------------------
 
@@ -53,6 +54,18 @@ interface FileStatus {
   path: string;
   exists: boolean;
   lines: number;
+  /**
+   * Ledger read-cache provenance (ticket 17; present on estimates/actuals
+   * only — files read through ledger.ts's cached readLines()): epoch-ms of the
+   * parse that populated the in-memory cache, or null when this process has
+   * not cached the file. The cache is stat-validated on every read, so a
+   * growing cacheAgeMs means "file unchanged for that long", never staleness.
+   */
+  parsedAt?: number | null;
+  /** Age of the cached parse in ms (now - parsedAt); null when not cached this process. */
+  cacheAgeMs?: number | null;
+  /** Total full read+parse executions of this file since process start (cache hits excluded). */
+  parses?: number;
 }
 
 interface FeedbackSummary {
@@ -126,6 +139,24 @@ function fileStatus(filePath: string): FileStatus {
   };
 }
 
+/**
+ * Attach ledger read-cache provenance (ticket 17) to a ledger file's status:
+ * how old the cached parse is and how many parses this process performed.
+ * Additive/optional — non-ledger files keep the plain FileStatus shape.
+ */
+function withLedgerCacheInfo(status: FileStatus): FileStatus {
+  const entry = getLedgerCacheStatus().get(status.path);
+  if (!entry) {
+    return { ...status, parsedAt: null, cacheAgeMs: null, parses: 0 };
+  }
+  return {
+    ...status,
+    parsedAt: entry.parsedAt,
+    cacheAgeMs: entry.parsedAt !== null ? Date.now() - entry.parsedAt : null,
+    parses: entry.parses,
+  };
+}
+
 /** Count estimate IDs that have matching actual records. */
 function countMatchedPairs(estimatesPath: string, actualsPath: string): number {
   let estimateIds: Set<string>;
@@ -183,8 +214,8 @@ export function getEpochDataStatus(): EpochDataStatus {
   };
 
   // File status
-  const estimates = fileStatus(paths.estimates);
-  const actuals = fileStatus(paths.actuals);
+  const estimates = withLedgerCacheInfo(fileStatus(paths.estimates));
+  const actuals = withLedgerCacheInfo(fileStatus(paths.actuals));
   const toolTelemetry = fileStatus(paths.toolTelemetry);
   const receiverRecords = fileStatus(paths.receiverRecords);
   const receiverReceipts = fileStatus(paths.receiverReceipts);
