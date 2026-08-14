@@ -103,14 +103,15 @@ export async function dispatch(
     // inputs. Error.message is preserved for stdio/MCP consumers (agents need
     // the real reason), but the errorKind: "internal" tag lets the HTTP seam
     // replace it with a generic-safe message (no path/stack leakage) and a
-    // 500 status.
+    // 500 status. The retryHint matches that seam's vocabulary: server-side,
+    // not an input problem (ticket 06).
     const message =
       err instanceof Error ? err.message : "Unexpected handler error.";
     return {
       ok: false,
       error: makeInternalError(
         message,
-        `Tool "${toolName}" encountered an internal error. Check inputs and try again.`,
+        `Tool "${toolName}" failed with a server-side error — this is not an input problem. Retry, and file an issue at https://github.com/KyaniteLabs/Epoch/issues if it persists.`,
       ),
     };
   }

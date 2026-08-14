@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { assertEstimateWritten } from "../test-support.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-telemetry-privacy-test-${Date.now()}`);
 
@@ -65,6 +66,7 @@ describe("telemetry privacy field allowlist (pinned)", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3);
 
 		const extracted = extractAnonymizedRecords();

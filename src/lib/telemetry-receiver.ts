@@ -56,7 +56,7 @@ const VALID_RUNTIME_HINTS = new Set(["agent", "human", "unknown"]);
  * realistic hours magnitude; the half-cent hour-rounding interval below
  * covers the rest (see isRatioConsistent).
  */
-export const RATIO_CONSISTENCY_TOLERANCE = 0.02;
+const RATIO_CONSISTENCY_TOLERANCE = 0.02;
 /**
  * The sender rounds hours to 2 decimals, so the unrounded true ratio lies in
  * [(actual−0.005)/(estimated+0.005), (actual+0.005)/(estimated−0.005)]. The
@@ -71,29 +71,29 @@ const HOURS_ROUNDING_HALF_SPAN = 0.005;
  * MINIMUM_CALIBRATION_ACTUAL_HOURS — anything smaller is a microtask
  * artifact (or rounding noise) and never trains calibration math anyway.
  */
-export const MIN_TELEMETRY_HOURS = MINIMUM_CALIBRATION_ACTUAL_HOURS;
+const MIN_TELEMETRY_HOURS = MINIMUM_CALIBRATION_ACTUAL_HOURS;
 /** Ceiling for transmitted hours — ~11 years of continuous work; larger values are unit mistakes or abuse. */
-export const MAX_TELEMETRY_HOURS = 100_000;
+const MAX_TELEMETRY_HOURS = 100_000;
 /** Records per submission payload (pre-existing wire limit). */
-export const MAX_RECORDS_PER_PAYLOAD = 100;
+const MAX_RECORDS_PER_PAYLOAD = 100;
 /**
  * Admitted (stored + quarantined) records allowed per installation_id.
  * Bounds a patient attacker spamming fresh installation IDs: each identity
  * is capped, making volume poisoning require observable identity churn.
  * Overridable for tests via EPOCH_TELEMETRY_RECEIVER_MAX_PER_INSTALLATION.
  */
-export const DEFAULT_MAX_RECORDS_PER_INSTALLATION = 10_000;
+const DEFAULT_MAX_RECORDS_PER_INSTALLATION = 10_000;
 /**
  * Admitted records across ALL installations. Bounds total receiver growth
  * and the blast radius of any poisoning campaign.
  * Overridable for tests via EPOCH_TELEMETRY_RECEIVER_MAX_TOTAL.
  */
-export const DEFAULT_MAX_TOTAL_RECORDS = 1_000_000;
+const DEFAULT_MAX_TOTAL_RECORDS = 1_000_000;
 
 /** Quarantine reason for records admitted over the untrusted (integrity-only HMAC) receive path. */
-export const QUARANTINE_REASON_UNTRUSTED_SOURCE = "untrusted_integrity_only_source";
+const QUARANTINE_REASON_UNTRUSTED_SOURCE = "untrusted_integrity_only_source";
 /** Quarantine reason for records whose provenance matches the smoke/synthetic patterns (soft check). */
-export const QUARANTINE_REASON_SMOKE_PROVENANCE = "smoke_provenance";
+const QUARANTINE_REASON_SMOKE_PROVENANCE = "smoke_provenance";
 
 function hasOnlyAllowedKeys(obj: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(obj).every((key) => allowed.has(key));

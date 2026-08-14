@@ -328,9 +328,7 @@ export const criticalPathSchema = z.object({
     .array(taskSchema)
     .min(1)
     .max(TASK_ARRAY_LIMIT, { error: `tasks must contain at most ${TASK_ARRAY_LIMIT} tasks per call. Split very large graphs into phases.` })
-    .describe(
-      "All tasks in the project graph. Each task must have a unique name.",
-    ),
+    .describe("All tasks in the project graph. Each task must have a unique name."),
   task_type: taskTypeEnum
     .describe("Optional task type for feedback matching.")
     .optional(),
@@ -400,9 +398,7 @@ export const monteCarloSchema = z.object({
     )
     .min(1)
     .max(TASK_ARRAY_LIMIT, { error: `tasks must contain at most ${TASK_ARRAY_LIMIT} tasks per call. Split very large schedules into phases.` })
-    .describe(
-      "Task list with PERT-style three-point estimates and dependency edges.",
-    ),
+    .describe("Task list with PERT-style three-point estimates and dependency edges."),
   iterations: z
     .coerce.number()
     .min(1)

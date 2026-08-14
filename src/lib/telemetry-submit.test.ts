@@ -4,6 +4,7 @@ import { existsSync, rmSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
+import { assertEstimateWritten } from "../test-support.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-tel-sub-test-${Date.now()}`);
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -102,6 +103,7 @@ describe("extractAnonymizedRecords", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3);
 		const cutoff = new Date(Date.now() + 1_000).toISOString();
 
@@ -206,6 +208,7 @@ describe("submitTelemetry", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3);
 		saveConfig({
 			telemetry: {
@@ -284,6 +287,7 @@ describe("submitTelemetry", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours", confidence: 0.8 },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3, "force submit coverage real record");
 		process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"] = "1";
 
@@ -309,6 +313,7 @@ describe("submitTelemetry", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3);
 		saveConfig({
 			telemetry: {
@@ -346,6 +351,7 @@ describe("submitTelemetry", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3);
 		saveConfig({
 			telemetry: {
@@ -400,6 +406,7 @@ describe("submitTelemetry", () => {
 				{ task_type: "feature", complexity: 3 },
 				{ expected: 2, unit: "hours" },
 			);
+			assertEstimateWritten(estimateId);
 			recordActual(estimateId, 3);
 		}
 		saveConfig({
@@ -450,6 +457,7 @@ describe("submitTelemetry", () => {
 				{ task_type: "feature", complexity: 3 },
 				{ expected: 2, unit: "hours" },
 			);
+			assertEstimateWritten(estimateId);
 			recordActual(estimateId, 3);
 		}
 		saveConfig({
@@ -592,6 +600,7 @@ describe("ticket 19 — sender hardening", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(estimateId);
 		recordActual(estimateId, 3);
 		// Corrupt cursor: unparsable timestamp (manual edit / partial write).
 		// Pre-ticket-19 this made extractAnonymizedRecords throw RangeError
@@ -635,12 +644,14 @@ describe("ticket 19 — sender hardening", () => {
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(good);
 		recordActual(good, 3);
 		const bad = recordEstimate(
 			"pert_estimate",
 			{ task_type: "feature", complexity: 3 },
 			{ expected: 2, unit: "hours" },
 		);
+		assertEstimateWritten(bad);
 		recordActual(bad, 3);
 		// Corrupt the second actual's completedAt in the ledger (non-empty but
 		// unparsable — empty strings fall back to reportedAt upstream).

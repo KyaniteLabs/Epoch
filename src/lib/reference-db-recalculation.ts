@@ -106,12 +106,12 @@ function isFiniteNumber(value: unknown): value is number {
 
 /**
  * Shared receiver-record provenance classification (ticket 19): the receive
- * path and self-improvement's loadReceivedTelemetryRecords() both route
+ * path and self-improve's loadReceivedTelemetryRecords() both route
  * records through this, so smoke/synthetic provenance and explicit excludes
  * are filtered identically everywhere a received record can reach
  * calibration math.
  */
-export function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
+function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
   calibrationProvenance: NonNullable<HistoricalRecord["calibrationProvenance"]>;
   calibrationUsage: NonNullable<HistoricalRecord["calibrationUsage"]>;
   legacyReceiverBaseline: boolean;

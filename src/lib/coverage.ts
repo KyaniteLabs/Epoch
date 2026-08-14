@@ -263,7 +263,7 @@ function populationKey(tool: string, taskType: string, basisVersion: BasisVersio
  * tool-registry.ts) can label which population produced an interval — and
  * apply it to an estimate on the SAME basis the ratios were computed on.
  */
-export interface RatioQuantileSelection {
+interface RatioQuantileSelection {
   readonly quantiles: RatioQuantiles;
   readonly basisVersion: BasisVersion;
   readonly n: number;

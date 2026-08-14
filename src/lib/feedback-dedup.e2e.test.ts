@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defined } from "../test-support.js";
+import { assertEstimateWritten, defined } from "../test-support.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-dedup-e2e-${process.pid}`);
 
@@ -46,8 +46,11 @@ describe("recordEstimate dedup get-or-create — real filesystem e2e", () => {
     const { recordEstimate } = await import("./feedback.js");
 
     const id1 = recordEstimate("pert_estimate", { session_id: "sess-e2e-1", task_type: "feature", task_label: "issue-42" }, { expected: 6 });
+    assertEstimateWritten(id1);
     const id2 = recordEstimate("pert_estimate", { session_id: "sess-e2e-1", task_type: "feature", task_label: "issue-42" }, { expected: 6 });
+    assertEstimateWritten(id2);
     const id3 = recordEstimate("pert_estimate", { session_id: "sess-e2e-1", task_type: "feature", task_label: "issue-42" }, { expected: 6 });
+    assertEstimateWritten(id3);
 
     expect(id2).toBe(id1);
     expect(id3).toBe(id1);
@@ -59,7 +62,9 @@ describe("recordEstimate dedup get-or-create — real filesystem e2e", () => {
     const { recordEstimate } = await import("./feedback.js");
 
     const id1 = recordEstimate("pert_estimate", { session_id: "sess-e2e-a", task_type: "feature" }, { expected: 6 });
+    assertEstimateWritten(id1);
     const id2 = recordEstimate("pert_estimate", { session_id: "sess-e2e-b", task_type: "feature" }, { expected: 6 });
+    assertEstimateWritten(id2);
 
     expect(id2).not.toBe(id1);
     expect(readEstimatesCount()).toBe(2);
@@ -70,7 +75,9 @@ describe("recordEstimate dedup get-or-create — real filesystem e2e", () => {
     const { recordEstimate } = await import("./feedback.js");
 
     const id1 = recordEstimate("pert_estimate", { task_type: "feature" }, { expected: 6 });
+    assertEstimateWritten(id1);
     const id2 = recordEstimate("pert_estimate", { task_type: "feature" }, { expected: 6 });
+    assertEstimateWritten(id2);
 
     expect(id2).not.toBe(id1);
     expect(readEstimatesCount()).toBe(2);
@@ -84,11 +91,13 @@ describe("recordEstimate dedup get-or-create — real filesystem e2e", () => {
     try {
       vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
       const id1 = recordEstimate("pert_estimate", { session_id: "sess-e2e-window", task_type: "feature" }, { expected: 6 });
+      assertEstimateWritten(id1);
       expect(readEstimatesCount()).toBe(1);
 
       // 20 minutes later — past the 10-minute window.
       vi.setSystemTime(new Date("2026-01-01T00:20:00.000Z"));
       const id2 = recordEstimate("pert_estimate", { session_id: "sess-e2e-window", task_type: "feature" }, { expected: 6 });
+      assertEstimateWritten(id2);
 
       expect(id2).not.toBe(id1);
       expect(readEstimatesCount()).toBe(2);
@@ -102,7 +111,9 @@ describe("recordEstimate dedup get-or-create — real filesystem e2e", () => {
     const { recordEstimate } = await import("./feedback.js");
 
     const id1 = recordEstimate("pert_estimate", { session_id: "sess-e2e-off", task_type: "feature" }, { expected: 6 });
+    assertEstimateWritten(id1);
     const id2 = recordEstimate("pert_estimate", { session_id: "sess-e2e-off", task_type: "feature" }, { expected: 6 });
+    assertEstimateWritten(id2);
 
     expect(id2).not.toBe(id1);
     expect(readEstimatesCount()).toBe(2);
@@ -165,6 +176,7 @@ describe("recordActualDetailed dry-run consistency — real filesystem e2e", () 
     const { recordEstimate, recordActualDetailed } = await import("./feedback.js");
 
     const estimateId = recordEstimate("pert_estimate", { task_type: "feature" }, { expected: 5 });
+    assertEstimateWritten(estimateId);
     expect(exists("estimates.dry-run.jsonl")).toBe(true);
     expect(exists("estimates.jsonl")).toBe(false); // production ledger untouched
 
@@ -184,6 +196,7 @@ describe("recordActualDetailed dry-run consistency — real filesystem e2e", () 
     const { recordEstimate, recordActualDetailed } = await import("./feedback.js");
 
     const estimateId = recordEstimate("pert_estimate", { task_type: "feature" }, { expected: 5 });
+    assertEstimateWritten(estimateId);
     const result = recordActualDetailed(estimateId, 300); // 60x
     expect(result).toEqual({ ok: true, flagged: "unit_suspect" });
 

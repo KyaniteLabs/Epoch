@@ -45,14 +45,14 @@ export function dataDir(): string {
 //   key = (size, mtimeMs, ino)
 //
 // Append-only files make this exact: an append changes size; a rename-based
-// rewrite (atomicWriteJsonl) changes inode AND mtime; an in-place same-size
-// rewrite changes mtime (APFS/ext4 expose sub-millisecond mtimeMs). Any stat
-// mismatch re-reads and re-parses. External appends from other processes are
-// therefore picked up on the next read — the cache is a per-call memo, never a
-// TTL cache.
+// rewrite (migrations' rewriteJsonlWithTailMerge) changes inode AND mtime; an
+// in-place same-size rewrite changes mtime (APFS/ext4 expose sub-millisecond
+// mtimeMs). Any stat mismatch re-reads and re-parses. External appends from
+// other processes are therefore picked up on the next read — the cache is a
+// per-call memo, never a TTL cache.
 //
-// Own writes (feedback.ts's appendLine, migrations' atomicWriteJsonl) are NOT
-// hooked: they invalidate implicitly because every write changes the stat key
+// Own writes (feedback.ts's appendLine, migrations' rewriteJsonlWithTailMerge)
+// are NOT hooked: they invalidate implicitly because every write changes the stat key
 // (appends change size; rewrites change mtime/ino). Nothing in this module
 // writes LEDGER DATA, so there is no self-write path to invalidate
 // proactively. (The advisory write-lock section below does create/remove

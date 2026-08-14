@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { assertEstimateWritten } from "../test-support.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-telemetry-e2e-${process.pid}`);
 
@@ -26,6 +27,7 @@ describe("telemetry ingestion end to end", () => {
       { task_type: "feature", complexity: 3 },
       { correctedEstimate: 4 },
     );
+    assertEstimateWritten(estimateId);
     expect(recordActual(estimateId, 5)).toBe(true);
 
     const { buildPayload, extractAnonymizedRecords, signPayload } = await import("./telemetry-submit.js");

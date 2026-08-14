@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createCliProgram, maybeShowFirstRunTelemetryNudge } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
+import { assertEstimateWritten } from "../test-support.js";
 
 // ---- Sentinel error for process.exit mock -----------------------------------
 
@@ -1005,6 +1006,7 @@ describe("CLI tests", () => {
 				{ task_type: "feature", complexity: 3 },
 				{ expected: 2, unit: "hours" },
 			);
+			assertEstimateWritten(estimateId);
 			recordActual(estimateId, 3);
 
 			const program = createCliProgram();

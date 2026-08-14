@@ -28,7 +28,7 @@ import {
   getScopeGuide,
   inferScopeFromComplexity,
 } from "../lib/analytics.js";
-import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport, UNIT_SUSPECT_FLAG_HINT } from "../lib/feedback.js";
 import {
   isPertLearnedCorrectionEnabled,
   getPertToolTaskCorrection,
@@ -1126,7 +1126,7 @@ update automatically to reduce estimation bias.`,
           actual_hours: p.actual_hours,
           ...(result.flagged === "unit_suspect" && {
             flagged: "unit_suspect" as const,
-            flagHint: "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
+            flagHint: UNIT_SUSPECT_FLAG_HINT,
           }),
           message: result.flagged === "unit_suspect"
             ? "Actual recorded, but flagged unit_suspect: actual hours are more than 10x the estimate — suspected unit mismatch (check hours vs days/weeks/person-months)."

@@ -19,14 +19,13 @@
 // - acquireQuiesceLock creates the lockfile exclusively (flag "wx") and
 //   steals it when STALE (dead owner PID or age past the migration stale
 //   window) — a crashed migration no longer wedges every later one.
-// - atomicWriteJsonl fsyncs the temp file before rename (and best-effort
-//   fsyncs the directory after), so a crash can't leave a renamed-but-empty
-//   ledger.
-// - rewriteJsonlWithTailMerge re-reads the file's tail immediately before
-//   rename and re-appends any lines that appeared since the rewrite's own
-//   read, so rows appended by the live MCP server during the migration
-//   survive (belt-and-braces on top of the per-file ledger write lock, which
-//   cooperating writers already hold).
+// - rewriteJsonlWithTailMerge writes its temp file through an fsync'd fd
+//   before rename (and best-effort fsyncs the directory after), so a crash
+//   can't leave a renamed-but-empty ledger. It also re-reads the file's tail
+//   immediately before the rename and re-appends any lines that appeared
+//   since the rewrite's own read, so rows appended by the live MCP server
+//   during the migration survive (belt-and-braces on top of the per-file
+//   ledger write lock, which cooperating writers already hold).
 //
 // Plan reference: .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
 // §3 Phase 2 ("scripts/lib/ledger-migrate.mjs — shared helpers").
@@ -147,24 +146,6 @@ export function releaseQuiesceLock(): void {
   quiesceLockPath = null;
 }
 
-/**
- * Atomic tmp+rename write of a full JSONL file, fsync'd (ticket 18): the temp
- * file is written through an explicit fd, fsynced, closed, THEN renamed over
- * the target, and the containing directory gets a best-effort fsync so the
- * rename itself is durable. A crash can no longer leave a renamed ledger with
- * unflushed (empty) contents.
- */
-export function atomicWriteJsonl(filename: string, records: unknown[]): void {
-  const dir = dataDir();
-  ensureDataDir(dir);
-  const finalPath = join(dir, filename);
-  const tmpPath = join(dir, `${filename}.tmp-${process.pid}`);
-  const content = records.map((r) => JSON.stringify(r)).join("\n") + (records.length > 0 ? "\n" : "");
-  writeFsynced(tmpPath, content);
-  renameSync(tmpPath, finalPath);
-  fsyncDirBestEffort(dir);
-}
-
 /** Write `content` to `path` through an explicit fd + fsync (Node durability practice: data must hit disk before the rename). */
 function writeFsynced(path: string, content: string): void {
   const fd = openSync(path, "w");
@@ -196,22 +177,6 @@ function fsyncDirBestEffort(dir: string): void {
 }
 
 // ---- Tail re-merge rewrite (ticket 18) ---------------------------------------
-
-/**
- * Byte length of `filename`'s current content — the "read-to-here" mark for
- * manual tail re-merges (lines appended beyond it must survive a rewrite).
- * {@link rewriteJsonlWithTailMerge} captures its boundary internally (as a
- * char offset over its own read); this export serves callers that stream the
- * file themselves. Snapshot it atomically with (immediately after) the read
- * the rewrite derives from.
- */
-export function captureReadOffset(filename: string): number {
-  try {
-    return Buffer.byteLength(readFileSync(join(dataDir(), filename), "utf-8"), "utf-8");
-  } catch {
-    return 0;
-  }
-}
 
 export interface TailMergeResult {
   /** Number of transformed lines written (the migration's own rewrite output). */

@@ -41,7 +41,7 @@ const TELEMETRY_FILE = "telemetry.jsonl";
 const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_BUFFER_SIZE = 50;
 /** getModelStats() results are cached for this long — compare_models resolves 16 models per call and must not re-read the whole file per model. */
-export const MODEL_STATS_CACHE_TTL_MS = 60_000;
+const MODEL_STATS_CACHE_TTL_MS = 60_000;
 
 function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;

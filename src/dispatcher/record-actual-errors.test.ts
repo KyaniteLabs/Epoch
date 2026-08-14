@@ -18,6 +18,10 @@ vi.mock("../lib/feedback.js", () => ({
   recordToolCall: vi.fn(() => "test-tool-call-id"),
   recordActual: vi.fn(() => true),
   recordActualDetailed: vi.fn(() => ({ ok: true })),
+  // Real text (kept in sync with feedback.ts's UNIT_SUSPECT_FLAG_HINT): the
+  // flagHint surfaced by record_actual comes from this lib constant.
+  UNIT_SUSPECT_FLAG_HINT:
+    "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
   getPendingEstimates: vi.fn(() => []),
   batchRecordActuals: vi.fn(() => ({ total: 0, succeeded: 0, failed: 0, errors: [] })),
   getFeedbackHealthReport: vi.fn(() => ({

@@ -25,6 +25,7 @@ import {
   type ActualRecord,
 } from "./ledger.js";
 import { recordEstimate, recordActualDetailed } from "./feedback.js";
+import { assertEstimateWritten } from "../test-support.js";
 
 let previousDataDir: string | undefined;
 let tempDataDir: string;
@@ -82,8 +83,8 @@ describe("ledger read cache — external modification pickup (ticket 17)", () =>
     writeFileSync(estimatesPath(), row, "utf-8");
     expect(readLines<EstimateRecord>(ESTIMATES_FILE)[0]?.["id"]).toBe("e1");
 
-    // Atomic rewrite pattern (migrations' atomicWriteJsonl): write a temp
-    // file with the SAME byte size, then rename it over the target. Size
+    // Atomic rewrite pattern (migrations' rewriteJsonlWithTailMerge): write a
+    // temp file with the SAME byte size, then rename it over the target. Size
     // alone cannot distinguish these — inode/mtime must.
     const tmp = estimatesPath() + ".tmp";
     writeFileSync(tmp, JSON.stringify({ id: "e9", tag: "after!" }) + "\n", "utf-8");
@@ -110,6 +111,7 @@ describe("ledger read cache — write-then-read via the normal append path (tick
     expect(readLines<EstimateRecord>(ESTIMATES_FILE)).toEqual([]);
 
     const id = recordEstimate("pert_estimate", { optimistic: 1, most_likely: 2, pessimistic: 3 }, { expected: 2, unit: "hours" });
+    assertEstimateWritten(id);
 
     const estimates = readLines<EstimateRecord>(ESTIMATES_FILE);
     expect(estimates.map((e) => e.id)).toEqual([id]);
@@ -121,6 +123,7 @@ describe("ledger read cache — write-then-read via the normal append path (tick
 
   it("recordActualDetailed's append joins the estimate on the next ledger load", () => {
     const id = recordEstimate("pert_estimate", { optimistic: 1, most_likely: 2, pessimistic: 3 }, { expected: 10, unit: "hours" });
+    assertEstimateWritten(id);
 
     const result = recordActualDetailed(id, 8);
     expect(result.ok).toBe(true);

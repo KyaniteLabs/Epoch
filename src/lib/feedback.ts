@@ -356,7 +356,7 @@ export type RecordActualResult =
  * type lives with the code that writes it; read-side consumers see it via
  * exclusion.ts's ExclusionActual.unitSuspect.
  */
-export type RecordedActualRecord = ActualRecord & { unitSuspect?: true };
+type RecordedActualRecord = ActualRecord & { unitSuspect?: true };
 
 /**
  * Hint surfaced with every unknown_tool rejection (ticket 16): names the
@@ -364,7 +364,17 @@ export type RecordedActualRecord = ActualRecord & { unitSuspect?: true };
  * a bad estimate id. Derived from the authoritative partition, never
  * hand-copied.
  */
-export const UNKNOWN_TOOL_HINT = `Actuals can only join estimates produced by Epoch's estimation tools: ${[...ESTIMATION_TOOL_NAMES].join(", ")}.`;
+const UNKNOWN_TOOL_HINT = `Actuals can only join estimates produced by Epoch's estimation tools: ${[...ESTIMATION_TOOL_NAMES].join(", ")}.`;
+
+/**
+ * Hint attached to write_failed results abandoned on ledger write-lock
+ * contention (ticket 18): names the lock path and the automatic stale-lock
+ * recovery so the failure is actionable, never a silent drop. Shared by the
+ * single (recordActualDetailed) and batch (batchRecordActuals) paths.
+ */
+function lockTimeoutHint(err: LedgerLockTimeoutError): string {
+  return `Another process held the feedback ledger write lock past the timeout (${err.lockPath}). Retry shortly; a stale lock is removed automatically once its owner PID is gone or it exceeds the staleness window.`;
+}
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
@@ -385,6 +395,16 @@ const ACTUAL_UNIT_TO_HOURS: Record<ActualUnit, number> = {
 
 /** Ratio (in either direction) between normalized actual hours and the matched estimate's hours above which a unit mistake (e.g. person-months entered as hours) is likely. Recorded, not silently ingested — flagged "unit_suspect". */
 const UNIT_SUSPECT_RATIO = 10;
+
+/**
+ * Actionable hint surfaced alongside every unit_suspect flag (ticket 16) by
+ * BOTH transport seams — the record_actual MCP tool
+ * (dispatcher/tool-registry.ts) and the /v1/feedback/record-actual HTTP route
+ * (entries/http.ts) — so the two surfaces can never drift on what the flag
+ * means. Text is pinned by substring in dispatcher and http tests.
+ */
+export const UNIT_SUSPECT_FLAG_HINT =
+  "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.";
 
 /**
  * Hours-per-unit conversion for estimate outputs recorded with a `unit` field
@@ -551,7 +571,7 @@ export function recordActualDetailed(
       return {
         ok: false,
         reason: "write_failed",
-        hint: `Another process held the feedback ledger write lock past the timeout (${err.lockPath}). Retry shortly; a stale lock is removed automatically once its owner PID is gone or it exceeds the staleness window.`,
+        hint: lockTimeoutHint(err),
       };
     }
     throw err;
@@ -646,20 +666,7 @@ function classifyCalibrationRecord(
     inputs: est.inputs,
     estimatedAt: est.estimatedAt,
     estimatedHours,
-    actual: {
-      actualHours: act.actualHours,
-      notes: act.notes,
-      reportedAt: act.reportedAt,
-      completedAt: act.completedAt,
-      calibrationProvenance: act.calibrationProvenance,
-      // Actual-side usage/provenance spellings (legacy camelCase + snake_case)
-      // must reach isExcluded too — dropping them here would let note-sniffing
-      // override an explicit structured classification (ticket 16).
-      calibrationUsage: stringField(actualAsRecord["calibrationUsage"]),
-      calibration_provenance: stringField(actualAsRecord["calibration_provenance"]),
-      calibration_usage: stringField(actualAsRecord["calibration_usage"]),
-      ...(unitSuspectFlag(act) && { unitSuspect: true }),
-    },
+    actual: exclusionActualFields(act),
     ...(overlayFlags && { flags: { quarantined: overlayFlags.quarantined, orphan: overlayFlags.orphan } }),
   });
   if (verdict.excluded) {
@@ -718,6 +725,28 @@ function classifyCalibrationRecord(
 /** Read the persisted write-time unit-suspect flag off an actual record (tolerates older rows without it). */
 function unitSuspectFlag(act: ActualRecord): boolean {
   return (act as unknown as Record<string, unknown>)["unitSuspect"] === true;
+}
+
+/**
+ * Actual-side fields for isExcluded(), including the legacy camelCase and
+ * snake_case provenance/usage spellings (ticket 16) — shared by the matcher
+ * (classifyCalibrationRecord) and the feedback-health seed recount so the two
+ * can never drift. The write-time unitSuspect audit flag rides along; it is
+ * documentation on the record and never gates an exclusion verdict by itself.
+ */
+function exclusionActualFields(act: ActualRecord) {
+  const asRecord = act as unknown as Record<string, unknown>;
+  return {
+    actualHours: act.actualHours,
+    notes: act.notes,
+    reportedAt: act.reportedAt,
+    completedAt: act.completedAt,
+    calibrationProvenance: act.calibrationProvenance,
+    calibrationUsage: stringField(asRecord["calibrationUsage"]),
+    calibration_provenance: stringField(asRecord["calibration_provenance"]),
+    calibration_usage: stringField(asRecord["calibration_usage"]),
+    ...(unitSuspectFlag(act) && { unitSuspect: true as const }),
+  };
 }
 
 const VALID_PROVENANCE = new Set<CalibrationProvenance>([
@@ -1008,7 +1037,7 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
     } catch (err) {
       if (err instanceof LedgerLockTimeoutError) {
         debugLog("feedback.lock-timeout", `batch_record_actuals (${candidates.length} entries) abandoned: ${err.message}`);
-        const hint = `Another process held the feedback ledger write lock past the timeout (${err.lockPath}). Retry shortly; a stale lock is removed automatically once its owner PID is gone or it exceeds the staleness window.`;
+        const hint = lockTimeoutHint(err);
         for (const candidate of candidates) {
           if (perEntry[candidate.index] === undefined) {
             perEntry[candidate.index] = { ok: false, reason: "write_failed", hint };
@@ -1149,18 +1178,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
       inputs: est.inputs,
       estimatedAt: est.estimatedAt,
       estimatedHours: estHours,
-      actual: {
-        actualHours: a.actualHours,
-        notes: a.notes,
-        reportedAt: a.reportedAt,
-        completedAt: a.completedAt,
-        calibrationProvenance: a.calibrationProvenance,
-        // Same actual-side spellings as classifyCalibrationRecord — the
-        // recount must not drift from the matcher (ticket 16).
-        calibrationUsage: stringField((a as unknown as Record<string, unknown>)["calibrationUsage"]),
-        calibration_provenance: stringField((a as unknown as Record<string, unknown>)["calibration_provenance"]),
-        calibration_usage: stringField((a as unknown as Record<string, unknown>)["calibration_usage"]),
-      },
+      actual: exclusionActualFields(a),
       flags: { quarantined: overlayFlags.get(est.id)?.quarantined, orphan: overlayFlags.get(est.id)?.orphan },
     });
     if (verdict.excluded) seedRecordsFiltered++;

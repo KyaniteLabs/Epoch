@@ -5,7 +5,7 @@ import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { dispatch, listTools, TOOL_NAMES, TOOL_REGISTRY } from "../dispatcher/index.js";
 import { TOOL_COUNT } from "../lib/tool-aliases.js";
-import { recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import { recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport, UNIT_SUSPECT_FLAG_HINT } from "../lib/feedback.js";
 import type { BatchActualEntry } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
@@ -123,8 +123,6 @@ function requestBodyText(c: Context): string {
 function requestBodyJson(c: Context): unknown {
   return JSON.parse(requestBodyText(c));
 }
-
-
 
 const AI_PLUGIN_MANIFEST = {
   schema_version: "v1",
@@ -909,7 +907,7 @@ export function createApiApp(): Hono {
         recorded: true,
         ...(result.flagged === "unit_suspect" && {
           flagged: "unit_suspect" as const,
-          flagHint: "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
+          flagHint: UNIT_SUSPECT_FLAG_HINT,
         }),
       },
     });
