@@ -22,7 +22,7 @@
   },
   "types": "./dist/index.d.ts",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bugs": {
     "url": "https://github.com/KyaniteLabs/Epoch/issues"
