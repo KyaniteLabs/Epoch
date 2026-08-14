@@ -237,7 +237,7 @@ const PROVIDERS = {
       apiType: "anthropic",
       baseURL: "https://api.z.ai/api/anthropic/v1",
       token: process.env.GLM_AUTH_TOKEN,
-      models: ["glm-5", "glm-5-turbo", "glm-5.1"],
+      models: ["glm-5", "glm-5-turbo", "glm-5.3"],
     },
     minimax: {
       name: "Minimax",
