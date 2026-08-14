@@ -107,6 +107,9 @@ describe("pert_estimate handler — learned correction (feature-flagged)", () =>
     // ledger via coverage.ts's empiricalRatioQuantilesForTaskType() regardless
     // of EPOCH_PERT_LEARNED_CORRECTION, so they legitimately differ once >=5
     // matched pairs exist for the task_type — that's covered separately below.
+    // `intervalPopulation` (ticket 11) joins the same omit list for the same
+    // reason: it labels which basis-era population produced the interval and
+    // therefore differs between the no-data and with-data calls.
     const withoutData = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
     seedMatchedPairs("bugfix", 5, 10, 50);
     const withData = callPert({ ...BASE_INPUT, task_type: "bugfix", ai_native: 0.5 });
@@ -115,6 +118,7 @@ describe("pert_estimate handler — learned correction (feature-flagged)", () =>
       const rest = { ...data };
       delete rest["interval"];
       delete rest["intervalNote"];
+      delete rest["intervalPopulation"];
       delete rest["humanReadable"];
       return rest;
     };

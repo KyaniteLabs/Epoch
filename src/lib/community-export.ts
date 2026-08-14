@@ -31,6 +31,17 @@ export interface CommunityEstimationRecord {
 	complexity: number;
 	timestamp: string;
 	contributor_id?: string;
+	/**
+	 * Optional basis-era label (ticket 11, estimate-basis unification):
+	 * 1 = legacy row (pre-unification), 2 = post-unification row
+	 * (displayed estimate == recorded estimate). `estimated_hours` is
+	 * ALWAYS the ledger-recorded basis in both eras; this label lets
+	 * consumers keep v1/v2 ratio populations split. Not emitted by the
+	 * local exporter (the anonymized extraction path does not carry the
+	 * row stamp), but accepted on import so contributors can supply it —
+	 * dual labeled fields per the PRD, for one minor version.
+	 */
+	estimate_basis_version?: 1 | 2;
 }
 
 export interface CommunityEstimationDataset {
@@ -257,6 +268,7 @@ export function validateCommunityExport(
 		"complexity",
 		"timestamp",
 		"contributor_id",
+		"estimate_basis_version",
 		"team_size",
 		"model_used",
 		"tokens_used",
@@ -337,6 +349,18 @@ export function validateCommunityExport(
 			errors.push(`Record ${i}: timestamp must be a valid ISO date-time`);
 		} else if (isNaN(Date.parse(timestampVal))) {
 			errors.push(`Record ${i}: timestamp must be a valid ISO date-time`);
+		}
+
+		// Optional basis-era label (ticket 11): when present it must be a
+		// valid era integer; absent is always fine (legacy/unknown).
+		const basisVersionVal = rec["estimate_basis_version"];
+		if (
+			basisVersionVal !== undefined &&
+			(typeof basisVersionVal !== "number" ||
+				!Number.isInteger(basisVersionVal) ||
+				(basisVersionVal !== 1 && basisVersionVal !== 2))
+		) {
+			errors.push(`Record ${i}: estimate_basis_version must be the integer 1 or 2 when present`);
 		}
 	}
 

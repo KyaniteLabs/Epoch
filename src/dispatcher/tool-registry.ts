@@ -410,13 +410,27 @@ const timeMathOutput = {
 //
 // pert_estimate and reference_class_estimate both lead their `humanReadable`
 // output with a calibrated P80 range and mention the point estimate second
-// (interval-first). Both prefer per-task-type empirical ratio quantiles
-// (>= MIN_N_FOR_QUANTILES matched pairs, via coverage.ts's shared
-// exclusion-filtered "clean path") and fall back to a PERT-variance interval
-// only for pert_estimate (which has its own optimistic/most_likely/
+// (interval-first). Both prefer per-(tool, task_type, basis-era) empirical
+// ratio quantiles (>= MIN_N_FOR_QUANTILES matched pairs, via coverage.ts's
+// shared exclusion-filtered "clean path") and fall back to a PERT-variance
+// interval only for pert_estimate (which has its own optimistic/most_likely/
 // pessimistic spread to derive one from); reference_class_estimate has no
 // analogous variance source, so it states plainly when there isn't enough
 // data for an interval rather than fabricating one.
+//
+// Ticket 11 (estimate-basis unification): empirical intervals apply the
+// ratio quantiles to the SAME basis the quantiles were computed on — the
+// ledger-RECORDED estimate (what feedback.ts's extractEstimatedHours reads
+// back), which is also the value the humanReadable point estimate displays:
+//   - pert_estimate: the raw PERT `expected` converted to hours (NOT
+//     adjustedEstimate — the ratio populations were trained on recorded raw
+//     expected, so applying them to a profile-corrected value biased every
+//     empirical interval low by the correction factor).
+//   - reference_class_estimate: correctedEstimate (the data-factor-corrected
+//     value extractEstimatedHours records for this tool — NOT the
+//     developerProfile-adjusted adjustedEstimate).
+// adjustedEstimate keeps its existing name and shape (PRD dual-field rule,
+// one minor version) and every estimate field is labeled via `basisNote`.
 
 /** Mirrors calibration-factors.ts's extractPertEstimatedHours unit table, for converting a pert_estimate value to/from hours so empirical (hours-denominated) ratio quantiles can be applied regardless of the caller's chosen `unit`. */
 const HOURS_PER_UNIT: Record<string, number> = { hours: 1, days: 8, weeks: 40, months: 160 };
@@ -604,20 +618,30 @@ Use when estimating task duration with uncertain outcomes.`,
         n: learnedN,
       };
 
-      // Interval-first humanReadable (coverage.ts wiring): prefer per-task-type
-      // empirical ratio quantiles (n >= MIN_N_FOR_QUANTILES); fall back to this
-      // estimate's own PERT-variance interval when unavailable, saying so.
-      const quantiles = p.task_type ? empiricalRatioQuantilesForTaskType(p.task_type) : null;
+      // Interval-first humanReadable (coverage.ts wiring): prefer empirical
+      // ratio quantiles from this tool's (task_type, basis-era) population
+      // (n >= MIN_N_FOR_QUANTILES); fall back to this estimate's own
+      // PERT-variance interval when unavailable, saying so.
+      //
+      // Ticket 11 (same-basis rule): the quantiles were calibrated on the
+      // ledger-RECORDED basis — raw `expected` converted to hours — so they
+      // are applied to that same value (never to adjustedEstimate, which
+      // additionally multiplies in the correction factor and would bias the
+      // interval low by exactly that factor). The humanReadable point
+      // estimate displays the same recorded value.
+      const selection = p.task_type ? empiricalRatioQuantilesForTaskType(p.task_type, "pert_estimate") : null;
       let interval: PredictedIntervals;
       let intervalNote: string | undefined;
-      if (quantiles) {
-        const hoursIntervals = empiricalIntervals(toHoursForUnit(adjustedEstimate, p.unit), quantiles);
+      let intervalPopulation: string | undefined;
+      if (selection) {
+        const hoursIntervals = empiricalIntervals(toHoursForUnit(result.data.expected, p.unit), selection.quantiles);
         interval = {
           p50: intervalToUnit(hoursIntervals.p50, p.unit),
           p80: intervalToUnit(hoursIntervals.p80, p.unit),
           p90: intervalToUnit(hoursIntervals.p90, p.unit),
           source: "empirical_ratio_quantile",
         };
+        intervalPopulation = `basis-v${selection.basisVersion} pert_estimate "${p.task_type}" matched pairs (n=${selection.n})`;
       } else {
         interval = pertVarianceIntervals(result.data.expected, result.data.stdDeviation);
         intervalNote = p.task_type
@@ -626,7 +650,15 @@ Use when estimating task duration with uncertain outcomes.`,
       }
       data.interval = interval;
       if (intervalNote) data.intervalNote = intervalNote;
-      data.humanReadable = `Expected ${formatInterval(interval.p80, p.unit)} (80% confidence interval); point estimate ${adjustedEstimate} ${p.unit}.${intervalNote ? ` ${intervalNote}` : ""}`;
+      if (intervalPopulation) data.intervalPopulation = intervalPopulation;
+      // PRD dual-field rule (ticket 11): both bases are emitted, labeled.
+      data.basisNote =
+        `Interval and point estimate are on the ledger-recorded basis (raw PERT expected × unit factor). ` +
+        `adjustedEstimate (${adjustedEstimate} ${p.unit}) additionally applies the correction factor (${composedFactor}) and is display-only — it is never recorded or calibrated against.`;
+      data.humanReadable =
+        `Expected ${formatInterval(interval.p80, p.unit)} (80% confidence interval); point estimate ${result.data.expected} ${p.unit} ` +
+        `(ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the correction factor).` +
+        `${intervalNote ? ` ${intervalNote}` : ""}${intervalPopulation ? ` Interval calibrated from ${intervalPopulation}.` : ""}`;
 
       // Cross-check with reference class for AI-native workflows
       if (p.ai_native >= 0.7 && p.task_type) {
@@ -806,18 +838,32 @@ Prioritize this over algorithmic models when historical data is available.`,
 
       // Interval-first humanReadable (coverage.ts wiring): reference_class_estimate
       // has no PERT-variance spread to fall back on, so when there isn't enough
-      // per-task-type empirical data (n < MIN_N_FOR_QUANTILES) it states that
-      // plainly rather than fabricating an interval.
-      const quantiles = empiricalRatioQuantilesForTaskType(p.task_type);
+      // per-(task_type, basis-era) empirical data (n < MIN_N_FOR_QUANTILES) it
+      // states that plainly rather than fabricating an interval.
+      //
+      // Ticket 11 (same-basis rule): extractEstimatedHours records
+      // `correctedEstimate` for this tool, and the ratio quantiles were
+      // calibrated on exactly that recorded basis — so the interval and the
+      // humanReadable point estimate both display correctedEstimate (the
+      // number the ledger records). adjustedEstimate (rawEstimate ×
+      // developerProfile.correctionFactor) previously diverged from the
+      // recorded value by profileCF/dataCF (~1.75x); it is now kept only as a
+      // labeled dual field (PRD dual-field rule, one minor version).
+      const selection = empiricalRatioQuantilesForTaskType(p.task_type, "reference_class_estimate");
       let interval: PredictedIntervals | undefined;
       let intervalNote: string | undefined;
+      let intervalPopulation: string | undefined;
       let humanReadable: string;
-      if (quantiles) {
-        interval = empiricalIntervals(adjustedEstimate, quantiles);
-        humanReadable = `Expected ${formatInterval(interval.p80, "hours")} (80% confidence interval); point estimate ${adjustedEstimate} hours.`;
+      if (selection) {
+        interval = empiricalIntervals(result.correctedEstimate, selection.quantiles);
+        intervalPopulation = `basis-v${selection.basisVersion} reference_class_estimate "${p.task_type}" matched pairs (n=${selection.n})`;
+        humanReadable =
+          `Expected ${formatInterval(interval.p80, "hours")} (80% confidence interval); point estimate ${result.correctedEstimate} hours ` +
+          `(ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the developerProfile correction).` +
+          ` Interval calibrated from ${intervalPopulation}.`;
       } else {
         intervalNote = `Fewer than 5 exclusion-filtered historical "${p.task_type}" reference_class_estimate pairs are available yet, so no empirical confidence interval could be computed.`;
-        humanReadable = `Expected ~${adjustedEstimate} hours (point estimate). ${intervalNote}`;
+        humanReadable = `Expected ~${result.correctedEstimate} hours (point estimate, ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the developerProfile correction). ${intervalNote}`;
       }
 
       return {
@@ -832,12 +878,17 @@ Prioritize this over algorithmic models when historical data is available.`,
             correctionFactor: profile.correctionFactor,
           },
           adjustedEstimate,
+          // PRD dual-field rule (ticket 11): both bases are emitted, labeled.
+          basisNote:
+            `correctedEstimate (${result.correctedEstimate} hours) is the ledger-recorded and displayed basis (rawEstimate × correctionFactor). ` +
+            `adjustedEstimate (${adjustedEstimate} hours) additionally applies the developerProfile factor (${profile.correctionFactor}) and is display-only — it is never recorded or calibrated against.`,
           note: records.length >= 5
             ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
             : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
           humanReadable,
           ...(interval ? { interval } : {}),
           ...(intervalNote ? { intervalNote } : {}),
+          ...(intervalPopulation ? { intervalPopulation } : {}),
         },
       };
     },
@@ -1033,7 +1084,7 @@ Pairs with any estimation tool. The estimate_id comes from the estimate response
 Actuals feed into the self-improvement loop — after enough samples, correction factors
 update automatically to reduce estimation bias.`,
     recordActualSchema,
-    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" }, flagged: { type: "string", enum: ["unit_suspect"], description: "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months." }, flagHint: { type: "string", description: "Actionable hint accompanying a flagged record." } } } satisfies Record<string, unknown>,
     (input) => {
       const p = recordActualSchema.parse(input);
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes, p.unit, p.calibration_provenance);
@@ -1056,7 +1107,13 @@ update automatically to reduce estimation bias.`,
           ok: false as const,
           error: {
             isError: true,
-            message: messages[result.reason] ?? `Failed to record actual for estimate ${p.estimate_id} (unrecognized reason: ${String(result.reason)}).`,
+            // Ticket 16 (unknown-tool policy): the lib may attach an
+            // actionable hint (currently unknown_tool's canonical
+            // estimation-tool set) — append it so the rejection is never a
+            // silent contract severance.
+            message: result.hint
+              ? `${messages[result.reason] ?? `Failed to record actual for estimate ${p.estimate_id} (unrecognized reason: ${String(result.reason)}).`} ${result.hint}`
+              : messages[result.reason] ?? `Failed to record actual for estimate ${p.estimate_id} (unrecognized reason: ${String(result.reason)}).`,
             retryHint: "Use the feedbackRef from a recent estimation tool call with a positive actual_hours value.",
           },
         };
@@ -1067,7 +1124,13 @@ update automatically to reduce estimation bias.`,
           recorded: true,
           estimate_id: p.estimate_id,
           actual_hours: p.actual_hours,
-          message: "Actual recorded. Correction factors update after more feedback accumulates.",
+          ...(result.flagged === "unit_suspect" && {
+            flagged: "unit_suspect" as const,
+            flagHint: "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
+          }),
+          message: result.flagged === "unit_suspect"
+            ? "Actual recorded, but flagged unit_suspect: actual hours are more than 10x the estimate — suspected unit mismatch (check hours vs days/weeks/person-months)."
+            : "Actual recorded. Correction factors update after more feedback accumulates.",
         },
       };
     },

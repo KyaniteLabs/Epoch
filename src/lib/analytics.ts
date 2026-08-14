@@ -301,6 +301,14 @@ export function referenceClassEstimate(
   scopeInferred: boolean;
   confidence: ConfidenceLevel;
   estimatedTokenCost: number;
+  /**
+   * Ticket 11 (estimate-basis unification): names the estimate basis this
+   * function outputs, so downstream surfaces (tool handlers, exports) never
+   * have to guess which number is the ledger-recorded one. correctedEstimate
+   * is the recorded AND displayed basis; any developerProfile-adjusted value
+   * is derived downstream and never recorded.
+   */
+  basisNote: string;
 } {
   const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
 
@@ -369,6 +377,11 @@ export function referenceClassEstimate(
     scopeInferred,
     confidence: sampleSize >= 10 ? "likely" : sampleSize >= 5 ? "optimistic" : "pessimistic",
     estimatedTokenCost: Math.round(correctedEstimate * 50000 * 100) / 100,
+    basisNote:
+      `correctedEstimate (${correctedEstimate} hours) is the ledger-recorded and displayed basis ` +
+      "(rawEstimate x correctionFactor from historical actual/estimated ratios); it is the value " +
+      "feedback.ts's extractEstimatedHours records for reference-class tools and the value empirical " +
+      "ratio quantiles are calibrated against.",
   };
 }
 

@@ -7,7 +7,9 @@ import {
   empiricalRatioQuantiles,
   empiricalIntervals,
   computeIntervalCoverage,
+  empiricalRatioQuantilesForTaskType,
   MIN_N_FOR_QUANTILES,
+  MIN_N_FOR_V2_POPULATION,
 } from "./coverage.js";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +63,20 @@ describe("empiricalIntervals", () => {
     expect(intervals.p80).toEqual({ lower: 9, upper: 13 });
     expect(intervals.p90).toEqual({ lower: 8.5, upper: 14 });
   });
+
+  // Ticket 11 golden (estimate-basis unification): quantiles are applied to
+  // the SAME-basis estimated hours. A 10h estimate with ratio quantiles
+  // [0.6, 1.5] yields exactly 6–15 — NOT 5.34–13.35, which is what the old
+  // handler produced by applying the quantiles to the correction-factor-
+  // adjusted estimate (10 × 0.89 × [0.6, 1.5]) even though the quantiles were
+  // calibrated on the raw recorded basis.
+  it("golden: 10h estimate × quantiles [0.6, 1.5] → P80 interval 6–15 (same-basis application)", () => {
+    const quantiles = { n: 7, p50: [0.75, 1.25] as const, p80: [0.6, 1.5] as const, p90: [0.5, 1.75] as const };
+    const intervals = empiricalIntervals(10, quantiles);
+    expect(intervals.p80).toEqual({ lower: 6, upper: 15 });
+    expect(intervals.p80.lower).not.toBeCloseTo(5.34, 2);
+    expect(intervals.p80.upper).not.toBeCloseTo(13.35, 2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -90,6 +106,8 @@ interface FixtureEstimate {
   tool: string;
   taskType: string;
   outputs: Record<string, unknown>;
+  /** Optional basis-era stamp (ticket 11): 2 = post-unification row; omitted = legacy v1. */
+  basisVersion?: 1 | 2;
 }
 
 function writeFixture(estimates: FixtureEstimate[], actuals: Array<{ estimateId: string; actualHours: number }>): void {
@@ -101,6 +119,7 @@ function writeFixture(estimates: FixtureEstimate[], actuals: Array<{ estimateId:
         inputs: { task_type: e.taskType },
         outputs: e.outputs,
         estimatedAt: "2026-06-01T00:00:00.000Z",
+        ...(e.basisVersion !== undefined && { basisVersion: e.basisVersion }),
       }),
     )
     .join("\n");
@@ -246,5 +265,157 @@ describe("computeIntervalCoverage — synthetic fixture", () => {
     expect(report.n).toBe(0);
     expect(report.p80CoverageRate).toBeNull();
     expect(report.byTaskType["feature"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ticket 11 (estimate-basis unification) — ratio populations are split by
+// tool AND by basis era; quantile selection prefers v2 once n >= 30 and
+// otherwise falls back to the v1 population, never mixing the two.
+// ---------------------------------------------------------------------------
+
+describe("empiricalRatioQuantilesForTaskType — tool + basis-era split (ticket 11)", () => {
+  /** Build one tool/taskType cell's matched pairs at a fixed recorded estimate with per-row actual/estimate ratios (caller composes cells into a single writeFixture — the fixture files hold ALL cells at once). */
+  function cell(tool: string, taskType: string, ratios: number[], estimatedHours: number, basisVersion?: 1 | 2): {
+    estimates: FixtureEstimate[];
+    actuals: Array<{ estimateId: string; actualHours: number }>;
+  } {
+    const era = basisVersion ?? 1;
+    const estimates = ratios.map((_, i) => ({
+      id: `coverage-era-${era}-${tool}-${taskType}-${i}`,
+      tool,
+      taskType,
+      outputs: tool === "pert_estimate" ? { expected: estimatedHours, unit: "hours" } : { correctedEstimate: estimatedHours },
+      ...(basisVersion !== undefined && { basisVersion }),
+    }));
+    const actuals = ratios.map((ratio, i) => ({
+      estimateId: estimates[i]?.id ?? "",
+      actualHours: ratio * estimatedHours,
+    }));
+    return { estimates, actuals };
+  }
+
+  function writeCells(...cells: ReturnType<typeof cell>[]): void {
+    writeFixture(
+      cells.flatMap((c) => c.estimates),
+      cells.flatMap((c) => c.actuals),
+    );
+  }
+
+  it("pins the v2 population threshold at 30 (ticket 11)", () => {
+    expect(MIN_N_FOR_V2_POPULATION).toBe(30);
+  });
+
+  it("never pools ratio populations across tools for the same task_type", () => {
+    // Two tools, same task_type, deliberately different ratio distributions:
+    // pert rows [0.5..2.0] (p80 → [0.6, 1.5]) and reference-class rows
+    // [0.8..1.4] (p80 → [0.9, 1.3]). Pooled (pre-ticket-11 behavior) both
+    // tools would return identical blended quantiles.
+    writeCells(
+      cell("pert_estimate", "design", [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0], 10),
+      cell("reference_class_estimate", "design", [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4], 10),
+    );
+
+    const pert = empiricalRatioQuantilesForTaskType("design", "pert_estimate");
+    const ref = empiricalRatioQuantilesForTaskType("design", "reference_class_estimate");
+
+    expect(pert?.basisVersion).toBe(1);
+    expect(pert?.n).toBe(7);
+    expect(pert?.quantiles.p80).toEqual([0.6, 1.5]);
+    expect(ref?.basisVersion).toBe(1);
+    expect(ref?.n).toBe(7);
+    expect(ref?.quantiles.p80).toEqual([0.9, 1.3]);
+  });
+
+  it("falls back to the v1 population (not a blend) while v2 pairs are below MIN_N_FOR_V2_POPULATION", () => {
+    // 7 v1 rows at ratios [0.5..2.0]; 7 v2 rows at a deliberately different
+    // [1.8..2.4] distribution. v2 n=7 < 30, so the v1 population must win —
+    // with n=7 and the v1-only p80 [0.6, 1.5], proving no pooling (a pooled
+    // population would report n=14 and different quantiles).
+    writeCells(
+      cell("reference_class_estimate", "testing", [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0], 10, 1),
+      cell("reference_class_estimate", "testing", [1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4], 10, 2),
+    );
+
+    const selection = empiricalRatioQuantilesForTaskType("testing", "reference_class_estimate");
+
+    expect(selection?.basisVersion).toBe(1);
+    expect(selection?.n).toBe(7);
+    expect(selection?.quantiles.p80).toEqual([0.6, 1.5]);
+  });
+
+  it("prefers the v2-only population once it reaches MIN_N_FOR_V2_POPULATION pairs", () => {
+    writeCells(
+      cell("reference_class_estimate", "feature", [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0], 10, 1),
+      cell("reference_class_estimate", "feature", Array.from({ length: MIN_N_FOR_V2_POPULATION }, () => 1.0), 10, 2),
+    );
+
+    const selection = empiricalRatioQuantilesForTaskType("feature", "reference_class_estimate");
+
+    expect(selection?.basisVersion).toBe(2);
+    expect(selection?.n).toBe(MIN_N_FOR_V2_POPULATION);
+    expect(selection?.quantiles.p80).toEqual([1, 1]);
+  });
+
+  it("uses the v2 population on a v2-only ledger (fresh install) at the ordinary minimum", () => {
+    writeCells(cell("reference_class_estimate", "bugfix", [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0], 10, 2));
+
+    const selection = empiricalRatioQuantilesForTaskType("bugfix", "reference_class_estimate");
+
+    expect(selection?.basisVersion).toBe(2);
+    expect(selection?.n).toBe(7);
+    expect(selection?.quantiles.p80).toEqual([0.6, 1.5]);
+  });
+
+  it("returns null for a thin mixed cell (v1 below minimum, v2 below 30, v1 non-empty)", () => {
+    writeCells(
+      cell("reference_class_estimate", "refactor", [0.8, 0.9, 1.0, 1.1], 10, 1),
+      cell("reference_class_estimate", "refactor", [0.8, 0.9, 1.0, 1.1, 1.2, 1.3], 10, 2),
+    );
+
+    expect(empiricalRatioQuantilesForTaskType("refactor", "reference_class_estimate")).toBeNull();
+  });
+});
+
+describe("computeIntervalCoverage — mixed-era fixture stays non-mixed (ticket 11)", () => {
+  it("scores each era's rows against that era's own population, matching per-era hand math", () => {
+    // Task type "migration", reference_class_estimate rows, recorded estimate 10h each.
+    // v1 era: 7 rows, ratios [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0]
+    //   → v1 population p80 = [0.6, 1.5] → interval [6, 15]
+    //   → hits: 6, 7, 10, 13, 15 (5 and 20 miss) = 5/7
+    // v2 era: 7 rows, ratios [0.55, 0.65, 0.75, 1.05, 1.35, 1.45, 1.95]
+    //   → v2 population p80 = [0.65, 1.45] → interval [6.5, 14.5]
+    //   → hits: 6.5, 7.5, 10.5, 13.5, 14.5 (5.5 and 19.5 miss) = 5/7
+    // Non-mixed total: 10/14 ≈ 0.714. A POOLED 14-row population would produce
+    // the interval [5.5, 19.5] and coverage 12/14 ≈ 0.857 — a different number,
+    // so this assertion pins the split.
+    const v1Ratios = [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0];
+    const v2Ratios = [0.55, 0.65, 0.75, 1.05, 1.35, 1.45, 1.95];
+    const estimates: FixtureEstimate[] = [
+      ...v1Ratios.map((_, i) => ({
+        id: `coverage-mixed-v1-${i}`,
+        tool: "reference_class_estimate",
+        taskType: "migration",
+        outputs: { correctedEstimate: 10 },
+      })),
+      ...v2Ratios.map((_, i) => ({
+        id: `coverage-mixed-v2-${i}`,
+        tool: "reference_class_estimate",
+        taskType: "migration",
+        outputs: { correctedEstimate: 10 },
+        basisVersion: 2 as const,
+      })),
+    ];
+    const actuals = [
+      ...v1Ratios.map((ratio, i) => ({ estimateId: `coverage-mixed-v1-${i}`, actualHours: ratio * 10 })),
+      ...v2Ratios.map((ratio, i) => ({ estimateId: `coverage-mixed-v2-${i}`, actualHours: Math.round(ratio * 10 * 100) / 100 })),
+    ];
+    writeFixture(estimates, actuals);
+
+    const report = computeIntervalCoverage();
+
+    expect(report.n).toBe(14);
+    expect(report.p80CoverageRate).toBeCloseTo(10 / 14, 3);
+    expect(report.byTaskType["migration"]).toEqual({ n: 14, p80CoverageRate: Math.round((10 / 14) * 1000) / 1000, method: "empirical_ratio_quantile" });
   });
 });

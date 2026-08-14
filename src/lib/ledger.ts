@@ -55,6 +55,21 @@ export function readLines<T>(filename: string): T[] {
   }
 }
 
+/**
+ * Basis version stamped on every estimate row written by the CURRENT process
+ * (ticket 11, estimate-basis unification): v2 = post-unification rows, where
+ * the displayed estimate IS the recorded estimate (PERT rows record their raw
+ * `expected`; reference-class rows record `correctedEstimate`). Rows written
+ * before the unification carry no stamp and are implicitly v1 — the era in
+ * which tools displayed an `adjustedEstimate` the ledger never recorded.
+ * Ratio populations are permanently split by this era (see coverage.ts);
+ * there is deliberately no automatic aging-out or merging of the two.
+ */
+export const CURRENT_BASIS_VERSION = 2 as const;
+
+/** Legacy (pre-unification) rows carry no `basisVersion` stamp and read as this. */
+export const LEGACY_BASIS_VERSION = 1 as const;
+
 export interface EstimateRecord {
   id: string;
   tool: string;
@@ -65,6 +80,8 @@ export interface EstimateRecord {
   source?: string;
   /** Pending-estimate TTL expiry (Phase 1 Task 7), set at write time. */
   expiresAt?: string;
+  /** Basis-era stamp (ticket 11): 2 = post-unification (displayed == recorded); absent = legacy v1. */
+  basisVersion?: number;
 }
 
 export interface ActualRecord {
@@ -197,6 +214,8 @@ export interface MergedRecord {
   estimatedAt: string;
   source?: string;
   expiresAt?: string;
+  /** Basis-era stamp propagated from the estimate row (ticket 11); absent = legacy v1. */
+  basisVersion?: number;
   actual?: ActualRecord;
   flags: MergedOverlayFlags;
   /** True if this record was physically moved to the quarantine archive (Phase 2 Task 6). */
@@ -239,6 +258,7 @@ export function loadLedgerWithOverlays(_options: LoadLedgerOptions = {}): Merged
       estimatedAt: est.estimatedAt,
       ...(est.source && { source: est.source }),
       ...(est.expiresAt && { expiresAt: est.expiresAt }),
+      ...(est.basisVersion !== undefined && { basisVersion: est.basisVersion }),
       ...(actualsMap.has(est.id) && { actual: actualsMap.get(est.id) }),
       flags: { ...flags, taskLabel: labels.taskLabel ?? flags.taskLabel },
       archived,
