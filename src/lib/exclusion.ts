@@ -40,6 +40,14 @@ export interface ExclusionActual {
   notes?: string;
   reportedAt?: string;
   completedAt?: string;
+  /**
+   * Write-time unit-suspect flag (ticket 16): recordActualDetailed stamps
+   * `unitSuspect: true` when the actual/estimate ratio exceeded feedback.ts's
+   * UNIT_SUSPECT_RATIO at ingest. Purely an audit artifact — read-side
+   * exclusion decisions always recompute the ratio from estimatedHours, so
+   * this field never gates isExcluded() by itself.
+   */
+  unitSuspect?: true;
   /** Explicit provenance/usage carried on the actual record itself (legacy ingest paths). */
   calibrationProvenance?: string;
   calibrationUsage?: string;
@@ -100,6 +108,24 @@ export function isSyntheticId(id: string): boolean {
 
 /** Ratio threshold — actual/estimate below this indicates synthetic/seed data. */
 export const MIN_RATIO = 0.03;
+/**
+ * Symmetric high-side ratio ceiling (ticket 16) — actual/estimate ABOVE this
+ * indicates a unit mistake (e.g. person-months entered as hours) rather than a
+ * genuine overrun, so the pair is excluded from calibration math exactly like
+ * low-side MIN_RATIO outliers. Previously only auto_wallclock actuals had a
+ * high-side bound (their dedicated 10x gate); every other provenance let
+ * unit-suspect actuals train correction factors.
+ *
+ * Why 50x: it is 5x the write-time UNIT_SUSPECT_RATIO flag threshold (10x in
+ * feedback.ts), so ratios in [10x, 50x) are flagged unit_suspect at ingest but
+ * remain trainable (rare-but-genuine severe overruns), while anything above
+ * 50x is almost certainly a unit error — hours-vs-person-months is 160x, and
+ * the largest legitimate unit gap the ingest normalizer already handles
+ * (weeks→hours) is 40x. Matches the audit's 50x-overrun example and the W2
+ * test spec. Like MIN_RATIO, the bound itself is inclusive-safe: a ratio of
+ * exactly 50x is kept; only strictly-greater ratios are excluded.
+ */
+export const MAX_RATIO = 50;
 /** Actuals below this threshold are stored but excluded from calibration math as microtask artifacts. */
 export const MINIMUM_CALIBRATION_ACTUAL_HOURS = 0.01;
 /** Relative tolerance for treating actual === estimate as an exact ("fake-perfect") match. */
@@ -249,15 +275,29 @@ export function isExcluded(record: ExclusionRecord, now: Date = new Date()): Exc
     return { excluded: true, reason: "auto_wallclock_sanity_gate" };
   }
 
-  if (hasSeedNotes(actual.notes)) return { excluded: true, reason: "seed_notes" };
-  if (hasSmokeSignature(record.tool, actual.notes)) return { excluded: true, reason: "smoke" };
-  if (hasIndustryCalibrationNote(actual.notes)) return { excluded: true, reason: "industry_calibration_note" };
+  // Ticket 16 (notes-sniffing override): a VALID explicit structured
+  // calibration_provenance/calibration_usage field is a deliberate
+  // classification by the caller and wins over the notes-substring
+  // heuristics below — a record stamped calibration_provenance="prospective"
+  // must not be dropped as seed data just because its notes happen to
+  // contain "seed". Only note-driven exclusion is suppressed here; the
+  // date/ratio signature checks further down stay unconditional.
+  const hasExplicitClassification = explicitProvenance !== undefined || explicitUsage !== undefined;
+  if (!hasExplicitClassification) {
+    if (hasSeedNotes(actual.notes)) return { excluded: true, reason: "seed_notes" };
+    if (hasSmokeSignature(record.tool, actual.notes)) return { excluded: true, reason: "smoke" };
+    if (hasIndustryCalibrationNote(actual.notes)) return { excluded: true, reason: "industry_calibration_note" };
+  }
 
   if (record.estimatedHours != null && record.estimatedHours > 0) {
     if (isExactMatch(record.estimatedHours, actual.actualHours) && hasBackfillDateSignature(record)) {
       return { excluded: true, reason: "backfill_signature" };
     }
-    if (actual.actualHours / record.estimatedHours < MIN_RATIO) {
+    // Symmetric outlier bound (ticket 16): low-side MIN_RATIO and high-side
+    // MAX_RATIO apply to EVERY provenance — auto_wallclock actuals were
+    // already bounded above by their stricter dedicated 10x gate above.
+    const ratio = actual.actualHours / record.estimatedHours;
+    if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
       return { excluded: true, reason: "ratio_outlier" };
     }
   }

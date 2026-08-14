@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
-import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays } from "./ledger.js";
+import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
@@ -45,6 +45,13 @@ let dedupHitCount = 0;
 export function getDedupHitCount(): number {
   return dedupHitCount;
 }
+
+/**
+ * Process-lifetime flag: the unknown_tool rejection diagnostic logs only
+ * once (ticket 16) — repeated rejections of the same unmapped tool name must
+ * leave a trace without spamming the log on every attempt.
+ */
+let unknownToolRejectionLogged = false;
 
 /** Deterministic signature over an estimate's inputs, used to match "identical" dedup calls regardless of key order. */
 function inputsSignature(inputs: Record<string, unknown>): string {
@@ -208,6 +215,15 @@ export function recordEstimate(
     estimatedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + pendingTtlDays() * 86_400_000).toISOString(),
     ...(source && { source }),
+    // --- Ticket 11 (estimate-basis unification) — SEPARATE HUNK, lane H ---
+    // Every newly written row carries the post-unification basis-version
+    // stamp: from this point on the estimate a tool DISPLAYS is the estimate
+    // the ledger RECORDS (PERT: raw `expected`; reference-class:
+    // `correctedEstimate`). Legacy rows (no stamp) are implicitly v1 — the
+    // era in which tools displayed an adjustedEstimate the ledger never
+    // recorded — and ratio populations stay split by this era (coverage.ts),
+    // with no automatic aging-out.
+    basisVersion: CURRENT_BASIS_VERSION,
   };
   appendLine(targetFile, record);
   return id;
@@ -253,7 +269,34 @@ export function recordToolCall(
 
 export type RecordActualResult =
   | { ok: true; flagged?: "unit_suspect" }
-  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds" };
+  | {
+      ok: false;
+      reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds";
+      /**
+       * Actionable hint to append to the surfaced error message (ticket 16).
+       * Currently only the unknown_tool rejection carries one — it names the
+       * canonical estimation-tool set so the contract severance is never
+       * silent. The rejection semantics themselves are unchanged.
+       */
+      hint?: string;
+    };
+
+/**
+ * The actual record as persisted by recordActualDetailed: the shared
+ * ledger ActualRecord plus the write-time unit-suspect flag (ticket 16).
+ * Declared here (not on ledger.ts's ActualRecord) so the persisted flag's
+ * type lives with the code that writes it; read-side consumers see it via
+ * exclusion.ts's ExclusionActual.unitSuspect.
+ */
+export type RecordedActualRecord = ActualRecord & { unitSuspect?: true };
+
+/**
+ * Hint surfaced with every unknown_tool rejection (ticket 16): names the
+ * canonical estimation-tool set so callers can tell a garbled tool name from
+ * a bad estimate id. Derived from the authoritative partition, never
+ * hand-copied.
+ */
+export const UNKNOWN_TOOL_HINT = `Actuals can only join estimates produced by Epoch's estimation tools: ${[...ESTIMATION_TOOL_NAMES].join(", ")}.`;
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
@@ -316,8 +359,16 @@ export function recordActualDetailed(
   // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
   if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
 
+  // Dry-run mode reads AND writes its own ledger (ticket 16): the duplicate
+  // check and the estimate lookup below previously read the production files
+  // while writes went to the dry-run ones, so repeated dry-run records never
+  // collided with anything and accumulated unbounded.
+  const dryRun = isDryRun();
+  const actualsSource = dryRun ? DRY_RUN_FILE : ACTUALS_FILE;
+  const estimatesSource = dryRun ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
+
   // Reject duplicates — last-write-wins silently corrupts calibration
-  const existing = readLines<ActualRecord>(ACTUALS_FILE);
+  const existing = readLines<ActualRecord>(actualsSource);
   if (existing.some((a) => a.estimateId === estimateId)) {
     return { ok: false, reason: "duplicate" };
   }
@@ -326,12 +377,22 @@ export function recordActualDetailed(
   // or a raw id (a garbled `tool` field) — such joins would silently corrupt
   // by-tool calibration math. Orphan actuals (no matching estimate on file)
   // are left to the existing join-time handling elsewhere and are not rejected here.
-  const matchedEstimate = readLines<EstimateRecord>(ESTIMATES_FILE).find((e) => e.id === estimateId);
+  const matchedEstimate = readLines<EstimateRecord>(estimatesSource).find((e) => e.id === estimateId);
   let flagged: "unit_suspect" | undefined;
   let matchedEstimatedHours: number | null = null;
   if (matchedEstimate) {
     if (canonicalizeToolName(matchedEstimate.tool) === null) {
-      return { ok: false, reason: "unknown_tool" };
+      // Ticket 16 (unknown-tool policy): the rejection stands (ticket 04's
+      // pinned semantics), but it is never silent — log once per process and
+      // carry an actionable hint naming the canonical estimation-tool set.
+      if (!unknownToolRejectionLogged) {
+        unknownToolRejectionLogged = true;
+        debugLog(
+          "feedback.unknown-tool",
+          `rejecting actual for estimate ${estimateId}: tool "${matchedEstimate.tool}" is not in the canonical estimation set {${[...ESTIMATION_TOOL_NAMES].join(", ")}}`,
+        );
+      }
+      return { ok: false, reason: "unknown_tool", hint: UNKNOWN_TOOL_HINT };
     }
 
     matchedEstimatedHours = extractEstimatedHours(matchedEstimate.outputs);
@@ -350,16 +411,20 @@ export function recordActualDetailed(
     return { ok: false, reason: "auto_wallclock_out_of_bounds" };
   }
 
-  const record: ActualRecord = {
+  const record: RecordedActualRecord = {
     estimateId,
     actualHours: normalizedHours,
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
     ...(calibrationProvenance && { calibrationProvenance }),
+    // Persist the unit-suspect verdict on the record itself (ticket 16) so
+    // the flag survives as an audit artifact even though read-side exclusion
+    // always recomputes the ratio (exclusion.ts's MAX_RATIO gate).
+    ...(flagged === "unit_suspect" && { unitSuspect: true }),
   };
 
   // Dry-run mode: write to separate file so tests never touch production data
-  const targetFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
+  const targetFile = dryRun ? DRY_RUN_FILE : ACTUALS_FILE;
   const written = appendLine(targetFile, record);
   if (!written) return { ok: false, reason: "write_failed" };
   return flagged ? { ok: true, flagged } : { ok: true };
@@ -446,13 +511,27 @@ function classifyCalibrationRecord(
   estimatedHours: number | null,
   overlayFlags?: MergedOverlayFlags,
 ): { calibrationProvenance: CalibrationProvenance; calibrationUsage: CalibrationUsage } {
+  const actualAsRecord = act as unknown as Record<string, unknown>;
   const verdict = isExcluded({
     id: est.id,
     tool: est.tool,
     inputs: est.inputs,
     estimatedAt: est.estimatedAt,
     estimatedHours,
-    actual: { actualHours: act.actualHours, notes: act.notes, reportedAt: act.reportedAt, completedAt: act.completedAt, calibrationProvenance: act.calibrationProvenance },
+    actual: {
+      actualHours: act.actualHours,
+      notes: act.notes,
+      reportedAt: act.reportedAt,
+      completedAt: act.completedAt,
+      calibrationProvenance: act.calibrationProvenance,
+      // Actual-side usage/provenance spellings (legacy camelCase + snake_case)
+      // must reach isExcluded too — dropping them here would let note-sniffing
+      // override an explicit structured classification (ticket 16).
+      calibrationUsage: stringField(actualAsRecord["calibrationUsage"]),
+      calibration_provenance: stringField(actualAsRecord["calibration_provenance"]),
+      calibration_usage: stringField(actualAsRecord["calibration_usage"]),
+      ...(unitSuspectFlag(act) && { unitSuspect: true }),
+    },
     ...(overlayFlags && { flags: { quarantined: overlayFlags.quarantined, orphan: overlayFlags.orphan } }),
   });
   if (verdict.excluded) {
@@ -460,28 +539,19 @@ function classifyCalibrationRecord(
   }
 
   const inputs = est.inputs as Record<string, unknown>;
-  const actual = act as unknown as Record<string, unknown>;
+  const actual = actualAsRecord;
   const explicitProvenance = normalizeProvenance(
     inputs["calibration_provenance"] ?? actual["calibrationProvenance"] ?? actual["calibration_provenance"],
   );
   const explicitUsage = normalizeUsage(
     inputs["calibration_usage"] ?? actual["calibrationUsage"] ?? actual["calibration_usage"],
   );
-  const notes = (act.notes ?? "").toLowerCase();
-
-  if (notes.includes("ingested from")) {
-    return { calibrationProvenance: "backfilled_real_session", calibrationUsage: "baseline" };
-  }
-
-  if (notes.includes("real data calibration")) {
-    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
-  }
-
-  if (happenedBefore(stringField(actual["completedAt"]), est.estimatedAt)) {
-    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
-  }
 
   if (explicitProvenance) {
+    // Ticket 16 (notes-sniffing override): a valid explicit structured
+    // provenance wins over the note-substring and temporal heuristics below
+    // — "ingested from" in free-text notes no longer overrides a deliberate
+    // calibration_provenance="prospective" stamp.
     // "prospective" (an ordinary matched actual) and "auto_wallclock" (Wave 2
     // auto-actuals — included in correction training by default per plan,
     // subject only to isExcluded()'s dedicated sanity gate) both default to
@@ -495,7 +565,31 @@ function classifyCalibrationRecord(
     };
   }
 
+  const notes = (act.notes ?? "").toLowerCase();
+  const hasExplicitUsage = explicitUsage !== undefined;
+
+  // Note-substring heuristics only run when no explicit structured field was
+  // supplied (ticket 16) — an explicit usage classification beats note matches.
+  if (!hasExplicitUsage) {
+    if (notes.includes("ingested from")) {
+      return { calibrationProvenance: "backfilled_real_session", calibrationUsage: "baseline" };
+    }
+
+    if (notes.includes("real data calibration")) {
+      return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
+    }
+  }
+
+  if (happenedBefore(stringField(actual["completedAt"]), est.estimatedAt)) {
+    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
+  }
+
   return { calibrationProvenance: "prospective", calibrationUsage: explicitUsage ?? "correction" };
+}
+
+/** Read the persisted write-time unit-suspect flag off an actual record (tolerates older rows without it). */
+function unitSuspectFlag(act: ActualRecord): boolean {
+  return (act as unknown as Record<string, unknown>)["unitSuspect"] === true;
 }
 
 const VALID_PROVENANCE = new Set<CalibrationProvenance>([
@@ -699,7 +793,7 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
     if (result.ok) {
       succeeded++;
     } else {
-      errors.push(`Failed to record actual for estimate ${entry.estimateId} (reason: ${result.reason})`);
+      errors.push(`Failed to record actual for estimate ${entry.estimateId} (reason: ${result.reason})${result.hint ? ` — ${result.hint}` : ""}`);
     }
   }
 
@@ -795,7 +889,18 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
       inputs: est.inputs,
       estimatedAt: est.estimatedAt,
       estimatedHours: estHours,
-      actual: { actualHours: a.actualHours, notes: a.notes, reportedAt: a.reportedAt, completedAt: a.completedAt, calibrationProvenance: a.calibrationProvenance },
+      actual: {
+        actualHours: a.actualHours,
+        notes: a.notes,
+        reportedAt: a.reportedAt,
+        completedAt: a.completedAt,
+        calibrationProvenance: a.calibrationProvenance,
+        // Same actual-side spellings as classifyCalibrationRecord — the
+        // recount must not drift from the matcher (ticket 16).
+        calibrationUsage: stringField((a as unknown as Record<string, unknown>)["calibrationUsage"]),
+        calibration_provenance: stringField((a as unknown as Record<string, unknown>)["calibration_provenance"]),
+        calibration_usage: stringField((a as unknown as Record<string, unknown>)["calibration_usage"]),
+      },
       flags: { quarantined: overlayFlags.get(est.id)?.quarantined, orphan: overlayFlags.get(est.id)?.orphan },
     });
     if (verdict.excluded) seedRecordsFiltered++;

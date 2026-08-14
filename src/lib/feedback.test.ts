@@ -1652,7 +1652,10 @@ describe("recordActualDetailed unknown_tool rejection", () => {
     });
 
     const result = recordActualDetailed("est-1", 5);
-    expect(result).toEqual({ ok: false, reason: "unknown_tool" });
+    // Ticket 16: the rejection semantics are unchanged (ticket 04 pin), but
+    // the result now carries an actionable hint naming the canonical set.
+    expect(result).toEqual({ ok: false, reason: "unknown_tool", hint: expect.stringContaining("estimation tools") });
+    if (!result.ok) expect(result.hint).toContain("pert_estimate");
     expect(mockAppendFileSync).not.toHaveBeenCalled();
   });
 
@@ -1666,7 +1669,7 @@ describe("recordActualDetailed unknown_tool rejection", () => {
     });
 
     const result = recordActualDetailed("est-1", 5);
-    expect(result).toEqual({ ok: false, reason: "unknown_tool" });
+    expect(result).toEqual({ ok: false, reason: "unknown_tool", hint: expect.any(String) });
     expect(mockAppendFileSync).not.toHaveBeenCalled();
   });
 
@@ -1857,5 +1860,288 @@ describe("recordActualDetailed auto_wallclock sanity gate", () => {
     const result = recordActualDetailed("est-1", 20); // would fail the auto_wallclock bounds, but no provenance was given
     expect(result).toEqual({ ok: true });
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
+  });
+});
+
+// ---- Ticket 16: unit_suspect persistence on the actual record ----
+
+describe("recordActualDetailed unit_suspect persistence (ticket 16)", () => {
+  it("persists unitSuspect: true on the written record when flagged", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 5 } }) + "\n"; // 300 / 5 = 60x
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 300);
+    expect(result).toEqual({ ok: true, flagged: "unit_suspect" });
+    expect(mockAppendFileSync).toHaveBeenCalledOnce();
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written.unitSuspect).toBe(true);
+  });
+
+  it("omits unitSuspect when the ratio is not unit-suspect", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", outputs: { totalHours: 5 } }) + "\n";
+      }
+      return "";
+    });
+
+    const result = recordActualDetailed("est-1", 8);
+    expect(result).toEqual({ ok: true });
+    const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+    expect(written).not.toHaveProperty("unitSuspect");
+  });
+});
+
+// ---- Ticket 16: dry-run duplicate check + estimate lookup use dry-run files ----
+
+describe("recordActualDetailed dry-run ledger consistency (ticket 16)", () => {
+  function withDryRun(enabled: boolean, fn: () => void) {
+    const original = process.env["EPOCH_DRY_RUN"];
+    if (enabled) process.env["EPOCH_DRY_RUN"] = "1";
+    else delete process.env["EPOCH_DRY_RUN"];
+    try {
+      fn();
+    } finally {
+      if (original === undefined) delete process.env["EPOCH_DRY_RUN"];
+      else process.env["EPOCH_DRY_RUN"] = original;
+    }
+  }
+
+  it("checks the DRY-RUN actuals file for duplicates, not the production one", () => {
+    // Production feedback.jsonl already has an actual for est-1; the dry-run
+    // ledger does not. A dry-run write must succeed (proving the production
+    // file was not consulted) and target the dry-run file.
+    withDryRun(true, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("feedback.jsonl")) return makeActual({ estimateId: "est-1" }) + "\n";
+        if (p.endsWith("feedback.dry-run.jsonl")) return "";
+        return "";
+      });
+
+      const result = recordActualDetailed("est-1", 8);
+      expect(result).toEqual({ ok: true });
+      expect(mockAppendFileSync).toHaveBeenCalledOnce();
+      expect((defined(mockAppendFileSync.mock.calls[0])[0] as string).endsWith("feedback.dry-run.jsonl")).toBe(true);
+    });
+  });
+
+  it("rejects a duplicate recorded earlier in the SAME dry-run ledger", () => {
+    withDryRun(true, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("feedback.dry-run.jsonl")) return makeActual({ estimateId: "est-1" }) + "\n";
+        return "";
+      });
+
+      const result = recordActualDetailed("est-1", 8);
+      expect(result).toEqual({ ok: false, reason: "duplicate" });
+      expect(mockAppendFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  it("looks the estimate up in the DRY-RUN estimates file, not the production one", () => {
+    // Production knows est-1 as a resolvable pert_estimate; the dry-run
+    // estimates file knows it as an unmapped tool. The dry-run view must win.
+    withDryRun(true, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.jsonl")) return makeEstimate({ id: "est-1", tool: "pert_estimate" }) + "\n";
+        if (p.endsWith("estimates.dry-run.jsonl")) return makeEstimate({ id: "est-1", tool: "totally_unknown_tool" }) + "\n";
+        return "";
+      });
+
+      const result = recordActualDetailed("est-1", 5);
+      expect(result).toEqual({ ok: false, reason: "unknown_tool", hint: expect.any(String) });
+      expect(mockAppendFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  it("computes the unit_suspect ratio against the dry-run estimate and writes the dry-run actuals file", () => {
+    withDryRun(true, () => {
+      mockReadFileSync.mockImplementation((path: unknown) => {
+        const p = path as string;
+        if (p.endsWith("estimates.dry-run.jsonl")) return makeEstimate({ id: "est-1", outputs: { totalHours: 5 } }) + "\n";
+        return "";
+      });
+
+      const result = recordActualDetailed("est-1", 300); // 60x
+      expect(result).toEqual({ ok: true, flagged: "unit_suspect" });
+      expect((defined(mockAppendFileSync.mock.calls[0])[0] as string).endsWith("feedback.dry-run.jsonl")).toBe(true);
+      const written = JSON.parse(defined(mockAppendFileSync.mock.calls[0])[1] as string);
+      expect(written.unitSuspect).toBe(true);
+    });
+  });
+});
+
+// ---- Ticket 16: unknown_tool rejection leaves a trace (log-once) ----
+
+describe("recordActualDetailed unknown_tool log-once diagnostic (ticket 16)", () => {
+  it("logs the diagnostic once per process even across repeated rejections", async () => {
+    vi.resetModules(); // fresh module instance so the process-lifetime flag starts unset
+    const originalDebug = process.env["EPOCH_DEBUG"];
+    process.env["EPOCH_DEBUG"] = "1";
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const fresh = await import("./feedback.js");
+      const readFixture = () =>
+        mockReadFileSync.mockImplementation((path: unknown) => {
+          const p = path as string;
+          if (p.endsWith("estimates.jsonl")) return makeEstimate({ id: "est-1", tool: "totally_unknown_tool" }) + "\n";
+          return "";
+        });
+
+      readFixture();
+      const first = fresh.recordActualDetailed("est-1", 5);
+      expect(first).toEqual({ ok: false, reason: "unknown_tool", hint: expect.any(String) });
+
+      readFixture();
+      const second = fresh.recordActualDetailed("est-1", 5);
+      expect(second).toEqual({ ok: false, reason: "unknown_tool", hint: expect.any(String) });
+
+      const writes = stderrSpy.mock.calls.map((args) => String(defined(args)[0])).join("\n");
+      const hits = writes.split("feedback.unknown-tool").length - 1;
+      expect(hits).toBe(1); // once, not twice — repeated severance must not spam
+      expect(writes).toContain("totally_unknown_tool");
+    } finally {
+      stderrSpy.mockRestore();
+      if (originalDebug === undefined) delete process.env["EPOCH_DEBUG"];
+      else process.env["EPOCH_DEBUG"] = originalDebug;
+    }
+  });
+});
+
+// ---- Ticket 16: explicit structured classification overrides note-sniffing ----
+
+describe("classifyCalibrationRecord explicit-override (ticket 16)", () => {
+  it("an explicit calibration_provenance beats an 'ingested from' note (no baseline demotion)", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", inputs: { task_type: "feature", calibration_provenance: "prospective" } }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "est-1", actualHours: 6, notes: "Ingested from liminal: feature, 10 LOC, 2 files" }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData(undefined, undefined, undefined, undefined, "all");
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("prospective");
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
+  it("an explicit calibration_usage beats an 'ingested from' note", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", inputs: { task_type: "feature", calibration_usage: "correction" } }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "est-1", actualHours: 6, notes: "ingested from a real session log" }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData(undefined, undefined, undefined, undefined, "all");
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("prospective");
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
+  it("an explicit calibration_provenance beats a seed-matching note in exclusion classification", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1", inputs: { task_type: "feature", calibration_provenance: "prospective" } }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "est-1", actualHours: 6, notes: "seeded from dogfood run" }) + "\n";
+      }
+      return "";
+    });
+
+    // Without the explicit field this pair is excluded as seed_notes; with it,
+    // the deliberate classification wins and the pair trains correction.
+    const records = getCalibrationData();
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationProvenance).toBe("prospective");
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
+  it("an explicit structured usage on the actual record overrides a seed note (legacy camelCase field)", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return JSON.stringify({ estimateId: "est-1", actualHours: 6, notes: "seed data", reportedAt: "2026-05-02T10:00:00.000Z", calibrationUsage: "correction" }) + "\n";
+      }
+      return "";
+    });
+
+    const records = getCalibrationData();
+    expect(records).toHaveLength(1);
+    expect(defined(records[0]).calibrationUsage).toBe("correction");
+  });
+
+  it("control: without explicit fields the note heuristics still apply", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      const p = path as string;
+      if (p.endsWith("estimates.jsonl")) {
+        return makeEstimate({ id: "est-1" }) + "\n";
+      }
+      if (p.endsWith("feedback.jsonl")) {
+        return makeActual({ estimateId: "est-1", actualHours: 6, notes: "seed data" }) + "\n";
+      }
+      return "";
+    });
+
+    expect(getCalibrationData()).toEqual([]);
+  });
+});
+
+// ---- Ticket 16: symmetric high-side ratio exclusion in the matcher ----
+
+describe("matchEstimatesToActuals symmetric ratio bounds (ticket 16)", () => {
+  const estimate = (id: string, hours: number) => ({
+    id,
+    tool: "pert_estimate",
+    inputs: {},
+    outputs: { totalHours: hours },
+    estimatedAt: "2026-01-01T00:00:00Z",
+  });
+  const actual = (id: string, hours: number) => ({
+    estimateId: id,
+    actualHours: hours,
+    reportedAt: "2026-01-10T00:00:00Z",
+  });
+
+  it("excludes a 60x overrun (suspected person-months-as-hours) from calibration", () => {
+    const result = matchFixtureRecords([estimate("e1", 5)], [actual("e1", 300)]);
+    expect(result).toHaveLength(0);
+  });
+
+  it("keeps a ratio of exactly 50x (bound is inclusive-safe, mirroring MIN_RATIO)", () => {
+    const result = matchFixtureRecords([estimate("e1", 10)], [actual("e1", 500)]);
+    expect(result).toHaveLength(1);
+  });
+
+  it("excludes a ratio just above 50x", () => {
+    const result = matchFixtureRecords([estimate("e1", 10)], [actual("e1", 501)]);
+    expect(result).toHaveLength(0);
+  });
+
+  it("still keeps a 9x overrun (flagged unit_suspect at write time, but trainable)", () => {
+    const result = matchFixtureRecords([estimate("e1", 10)], [actual("e1", 90)]);
+    expect(result).toHaveLength(1);
   });
 });

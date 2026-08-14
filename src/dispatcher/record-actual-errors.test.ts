@@ -129,6 +129,45 @@ describe("record_actual failure vocabulary (dispatcher seam)", () => {
       expect((result.data as Record<string, unknown>)["message"]).toBeDefined();
     }
   });
+
+  // ---- Ticket 16: unit_suspect surfaced + unknown_tool hint appended ----
+
+  it("a flagged unit_suspect success surfaces flagged + flagHint + a warning message", async () => {
+    mockRecordActualDetailed.mockReturnValueOnce({ ok: true, flagged: "unit_suspect" });
+
+    const result = await dispatch("record_actual", { estimate_id: "unit-suspect-fixture", actual_hours: 300 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const data = result.data as Record<string, unknown>;
+      expect(data["recorded"]).toBe(true);
+      expect(data["flagged"]).toBe("unit_suspect");
+      expect(String(data["flagHint"])).toContain("unit mismatch");
+      expect(String(data["message"])).toContain("unit_suspect");
+    }
+  });
+
+  it("an unflagged success carries no flagged field", async () => {
+    const result = await dispatch("record_actual", { estimate_id: "ok-fixture", actual_hours: 2 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect((result.data as Record<string, unknown>)["flagged"]).toBeUndefined();
+    }
+  });
+
+  it("the lib's unknown_tool hint is appended to the error message (canonical name set visible)", async () => {
+    mockRecordActualDetailed.mockReturnValueOnce({
+      ok: false,
+      reason: "unknown_tool",
+      hint: "Actuals can only join estimates produced by Epoch's estimation tools: pert_estimate, reference_class_estimate.",
+    });
+
+    const result = await dispatch("record_actual", { estimate_id: "unknown-tool-fixture", actual_hours: 2 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("unrecognized tool name"); // ticket 04 vocabulary retained
+      expect(result.error.message).toContain("pert_estimate"); // ticket 16 hint appended
+    }
+  });
 });
 
 describe("batch_record_actuals per-entry reasons (dispatcher seam)", () => {
