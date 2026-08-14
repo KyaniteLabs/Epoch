@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { getCalibrationData } from "./feedback.js";
+import { readPackageVersion } from "../version.js";
 import {
 	isTelemetryEnabled,
 	loadConfig,
@@ -68,14 +69,21 @@ export interface SubmissionPayloadV2 {
 
 export type SubmissionPayload = SubmissionPayloadV1 | SubmissionPayloadV2;
 
+let _cachedVersion: string | undefined;
+
+/**
+ * Ticket 19: dist-safe version resolution. The old hand-rolled reader
+ * joined `../../package.json` off this module — correct from `src/lib/`
+ * (dev/tsx) but wrong once tsup inlines this module into `dist/*.js`, where
+ * the package.json is only ONE hop up, so installed builds silently reported
+ * "unknown". The depth chain [2, 1] resolves both layouts; per the
+ * src/version.ts contract there is no "unknown" fallback — a missing
+ * version throws (caught by submitTelemetry's chunk loop) instead of lying
+ * in the payload.
+ */
 function getVersion(): string {
-	try {
-		const pkgPath = join(import.meta.dirname, "..", "..", "package.json");
-		const raw = readFileSync(pkgPath, "utf-8");
-		return JSON.parse(raw).version ?? "unknown";
-	} catch {
-		return "unknown";
-	}
+	_cachedVersion ??= readPackageVersion([2, 1], import.meta.url);
+	return _cachedVersion;
 }
 
 function dataDir(): string {
@@ -85,24 +93,40 @@ function dataDir(): string {
 export function extractAnonymizedRecords(
 	sinceDate?: string,
 ): AnonymizedRecord[] {
-	const windowDays = sinceDate
-		? Math.ceil((Date.now() - new Date(sinceDate).getTime()) / 86_400_000) + 1
+	// Ticket 19: a corrupt submission cursor must neither wedge extraction
+	// (Date.parse garbage -> NaN -> the old Math.ceil(NaN) windowDays made
+	// matchEstimatesToActuals throw RangeError on Invalid Date.toISOString())
+	// nor silently NaN-filter out every record (NaN > sinceMs is always
+	// false). Unparsable cursors are treated as "no cursor".
+	const parsedSinceMs = sinceDate !== undefined ? Date.parse(sinceDate) : NaN;
+	const sinceMs = Number.isFinite(parsedSinceMs) ? parsedSinceMs : undefined;
+	const windowDays = sinceMs !== undefined
+		? Math.ceil((Date.now() - sinceMs) / 86_400_000) + 1
 		: undefined;
-	const sinceMs = sinceDate ? new Date(sinceDate).getTime() : undefined;
 
 	const historical = getCalibrationData(undefined, undefined, windowDays);
 
 	return historical
-		.filter(
-			(rec) =>
-				sinceMs === undefined || new Date(rec.completedAt).getTime() > sinceMs,
-		)
+		.filter((rec) => {
+			// Ticket 19: filter non-parsable/empty completedAt AT EXTRACTION.
+			// A single malformed ledger row used to make
+			// new Date(rec.completedAt).toISOString() below throw RangeError,
+			// wedging the first-ever submission (the cursor never advances
+			// past a record that can never be extracted successfully).
+			const completedMs = Date.parse(rec.completedAt);
+			return (
+				Number.isFinite(completedMs) &&
+				(sinceMs === undefined || completedMs > sinceMs)
+			);
+		})
 		.filter(
 			(rec) => Number.isFinite(rec.estimatedHours) && rec.estimatedHours > 0,
 		)
 		.filter((rec) => Number.isFinite(rec.actualHours))
-		.map(
-			(rec): AnonymizedRecord => ({
+		.map((rec): AnonymizedRecord => {
+			const completedMs = Date.parse(rec.completedAt);
+			const completedIso = new Date(completedMs).toISOString();
+			return {
 				task_type: rec.taskType,
 				complexity: rec.complexity ?? null,
 				tool: rec.tool ?? "unknown",
@@ -110,10 +134,10 @@ export function extractAnonymizedRecords(
 				actual_hours: Math.round(rec.actualHours * 100) / 100,
 				ratio:
 					Math.round((rec.actualHours / rec.estimatedHours) * 10000) / 10000,
-				date: rec.completedAt.slice(0, 10),
-				completed_at: new Date(rec.completedAt).toISOString(),
-			}),
-		);
+				date: completedIso.slice(0, 10),
+				completed_at: completedIso,
+			};
+		});
 }
 
 export function buildPayload(records: AnonymizedRecord[]): SubmissionPayload {
@@ -180,6 +204,18 @@ function isTelemetrySubmitRateLimited(
 	return hoursSinceLast < intervalHours;
 }
 
+/**
+ * Ticket 19: validate the cursor when read. A corrupt lastSubmissionAt
+ * (manually edited config, partial write) must never wedge or NaN-poison
+ * submission math — unparsable values are treated as "never submitted",
+ * which resubmits (the receiver deduplicates) instead of silently dropping
+ * the entire backlog.
+ */
+function sanitizedLastSubmissionAt(last: string | null): string | null {
+	if (!last) return null;
+	return Number.isFinite(Date.parse(last)) ? last : null;
+}
+
 export async function submitTelemetry(): Promise<SubmissionResult> {
 	const config = loadConfig();
 
@@ -196,7 +232,7 @@ export async function submitTelemetry(): Promise<SubmissionResult> {
 	}
 	const endpoint = resolveTelemetryEndpoint(config);
 
-	const lastSub = config.telemetry.lastSubmissionAt;
+	const lastSub = sanitizedLastSubmissionAt(config.telemetry.lastSubmissionAt);
 	if (isTelemetrySubmitRateLimited(lastSub)) {
 		return {
 			ok: false,
@@ -293,7 +329,7 @@ export function maybeSubmitTelemetry(): void {
 	)
 		return;
 
-	const lastSub = config.telemetry.lastSubmissionAt;
+	const lastSub = sanitizedLastSubmissionAt(config.telemetry.lastSubmissionAt);
 	if (isTelemetrySubmitRateLimited(lastSub)) return;
 
 	submitTelemetry().catch(() => {

@@ -104,7 +104,14 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
+/**
+ * Shared receiver-record provenance classification (ticket 19): the receive
+ * path and self-improvement's loadReceivedTelemetryRecords() both route
+ * records through this, so smoke/synthetic provenance and explicit excludes
+ * are filtered identically everywhere a received record can reach
+ * calibration math.
+ */
+export function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
   calibrationProvenance: NonNullable<HistoricalRecord["calibrationProvenance"]>;
   calibrationUsage: NonNullable<HistoricalRecord["calibrationUsage"]>;
   legacyReceiverBaseline: boolean;
@@ -145,7 +152,7 @@ function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
   };
 }
 
-function receiverToHistorical(record: ReceiverTelemetryRecord): {
+export function receiverToHistorical(record: ReceiverTelemetryRecord): {
   record?: HistoricalRecord;
   excluded: boolean;
   legacyReceiverBaseline: boolean;

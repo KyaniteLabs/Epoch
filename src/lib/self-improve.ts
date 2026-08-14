@@ -9,6 +9,12 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { getTelemetry } from "./telemetry.js";
 import { getCalibrationData } from "./feedback.js";
+import { isRatioConsistent } from "./telemetry-receiver.js";
+import {
+	receiverToHistorical,
+	type ReceiverTelemetryRecord,
+} from "./reference-db-recalculation.js";
+import { MAX_RATIO, MIN_RATIO } from "./exclusion.js";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 
 const REFERENCE_DB_PATH = resolveReferenceDbPath();
@@ -109,17 +115,6 @@ interface TokenCalibration {
 	sampleCount: number;
 }
 
-interface ReceivedTelemetryRecord {
-	task_type: string;
-	complexity: number | null;
-	tool: string;
-	estimated_hours: number;
-	actual_hours: number;
-	ratio: number;
-	date: string;
-	received_at?: string;
-}
-
 let callCounter = 0;
 let lastUpdateAt = 0;
 let isUpdating = false;
@@ -200,6 +195,18 @@ export async function updateReferenceDatabase(): Promise<void> {
 	invalidateReferenceDbCache();
 }
 
+/**
+ * Ticket 19: received telemetry records are held to the same exclusion
+ * classification as the reference-db recalculation path — every row is
+ * routed through receiverToHistorical() (smoke/synthetic provenance and
+ * explicit excludes are dropped; unclassified rows count as baseline, not
+ * correction) and only correction-usage records with a statistically
+ * consistent, in-bounds ratio reach correction factors. Rows that predate
+ * receive-time validation are still filtered by the same ratio checks the
+ * receiver now enforces (defense in depth). Quarantined records never
+ * appear here — they live in telemetry-quarantine.jsonl, which this loader
+ * does not read.
+ */
 function loadReceivedTelemetryRecords(): HistoricalRecord[] {
 	const path = join(getUserDataDir(), "telemetry-records.jsonl");
 	if (!existsSync(path)) return [];
@@ -210,16 +217,18 @@ function loadReceivedTelemetryRecords(): HistoricalRecord[] {
 			.filter(Boolean)
 			.map((line) => JSON.parse(line) as unknown)
 			.filter(isReceivedTelemetryRecord)
-			.map(
-				(record): HistoricalRecord => ({
-					taskType: record.task_type,
-					estimatedHours: record.estimated_hours,
-					actualHours: record.actual_hours,
-					tool: record.tool,
-					complexity: record.complexity ?? undefined,
-					completedAt: record.date,
-				}),
-			);
+			.flatMap((record) => {
+				const converted = receiverToHistorical(record);
+				if (!converted.record) return [];
+				const { estimatedHours, actualHours } = converted.record;
+				const impliedRatio = actualHours / estimatedHours;
+				if (impliedRatio < MIN_RATIO || impliedRatio > MAX_RATIO) return [];
+				if (!isRatioConsistent(estimatedHours, actualHours, record.ratio)) return [];
+				// Baseline-usage (unclassified legacy receiver rows) and anything
+				// explicitly excluded must never train correction factors.
+				if (converted.record.calibrationUsage !== "correction") return [];
+				return [converted.record];
+			});
 	} catch {
 		return [];
 	}
@@ -227,7 +236,7 @@ function loadReceivedTelemetryRecords(): HistoricalRecord[] {
 
 function isReceivedTelemetryRecord(
 	value: unknown,
-): value is ReceivedTelemetryRecord {
+): value is ReceiverTelemetryRecord {
 	if (typeof value !== "object" || value === null) return false;
 	const record = value as Record<string, unknown>;
 	return (

@@ -76,6 +76,51 @@ describe("record + flush", () => {
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
   });
 
+  // -------------------------------------------------------------------------
+  // Ticket 19: flush clears the buffer only on SUCCESSFUL append — a failed
+  // write (ENOSPC, EACCES, vanished data dir) used to silently drop every
+  // buffered record.
+  // -------------------------------------------------------------------------
+
+  it("keeps the buffer when the append fails and retries the whole batch on the next flush", () => {
+    const store = getTelemetry();
+    store.record("tool-a", 10, true);
+
+    mockAppendFileSync.mockImplementationOnce(() => {
+      throw new Error("EACCES: permission denied");
+    });
+    store.flush();
+    expect(mockAppendFileSync).toHaveBeenCalledTimes(1);
+
+    // The failed record is still buffered: the next flush must include it.
+    store.record("tool-b", 20, true);
+    store.flush();
+    expect(mockAppendFileSync).toHaveBeenCalledTimes(2);
+    const written = defined(mockAppendFileSync.mock.calls[1])[1] as string;
+    const lines = written.trim().split("\n");
+    expect(lines).toHaveLength(2);
+    expect((JSON.parse(defined(lines[0])) as ToolCallRecord).tool).toBe("tool-a");
+    expect((JSON.parse(defined(lines[1])) as ToolCallRecord).tool).toBe("tool-b");
+  });
+
+  it("clears the buffer after a successful append so records are never written twice", () => {
+    const store = getTelemetry();
+    store.record("tool-a", 10, true);
+    store.flush();
+    expect(mockAppendFileSync).toHaveBeenCalledTimes(1);
+
+    // A second flush with no new records must not re-append the old batch.
+    store.flush();
+    expect(mockAppendFileSync).toHaveBeenCalledTimes(1);
+
+    // Only genuinely new records hit the file afterwards.
+    store.record("tool-b", 20, true);
+    store.flush();
+    expect(mockAppendFileSync).toHaveBeenCalledTimes(2);
+    const written = defined(mockAppendFileSync.mock.calls[1])[1] as string;
+    expect(written.trim().split("\n")).toHaveLength(1);
+  });
+
   it("does not write when disabled (no data dir)", () => {
     mockExistsSync.mockReturnValue(false);
     resetTelemetry();

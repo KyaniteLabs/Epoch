@@ -249,11 +249,13 @@ describe("updateReferenceDatabase", () => {
       const pathText = String(path);
       if (pathText.endsWith("telemetry-records.jsonl")) {
         return [
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 18, ratio: 1.8, date: "2026-04-04", received_at: "2026-04-04T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 20, ratio: 2, date: "2026-04-05", received_at: "2026-04-05T00:00:00.000Z" },
+          // Ticket 19: only explicitly prospective (correction-usage) receiver
+          // records train factors — unclassified rows are baseline now.
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 18, ratio: 1.8, date: "2026-04-04", received_at: "2026-04-04T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 20, ratio: 2, date: "2026-04-05", received_at: "2026-04-05T00:00:00.000Z", calibration_provenance: "prospective" },
         ].map((record) => JSON.stringify(record)).join("\n");
       }
       return makeDb();
@@ -270,6 +272,88 @@ describe("updateReferenceDatabase", () => {
     expect(writtenData.toolTaskCorrectionFactors.reference_class_estimate.feature).toBe(1.6);
     expect(writtenData.complexityCorrectionFactors.feature["3"]).toBe(1.6);
     expect(writtenData.globalCorrectionFactor).toBe(1.6);
+  });
+
+  // -------------------------------------------------------------------------
+  // Ticket 19 — receiver-record exclusion classification. Stored receiver
+  // records must pass the same classification as the reference-db
+  // recalculation path: smoke/synthetic provenance, explicit excludes,
+  // unclassified (baseline) rows, ratio outliers, and ratio-inconsistent rows
+  // never reach correction factors. Quarantined records live in a separate
+  // file this loader never reads.
+  // -------------------------------------------------------------------------
+
+  it("excludes quarantined, smoke, synthetic, baseline, ratio-outlier, and ratio-inconsistent receiver records from correction factors", async () => {
+    mockGetCalibrationData.mockReturnValue([]);
+    const prospective = (ratio: number, hours = 10) => ({
+      task_type: "feature", complexity: 3, tool: "reference_class_estimate",
+      estimated_hours: hours, actual_hours: Math.round(hours * ratio * 100) / 100,
+      ratio, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z",
+      calibration_provenance: "prospective",
+    });
+    const poison = (overrides: Record<string, unknown> = {}) => ({
+      task_type: "bugfix", complexity: 3, tool: "cocomo_estimate",
+      estimated_hours: 10, actual_hours: 15, ratio: 1.5, date: "2026-04-01",
+      received_at: "2026-04-01T00:00:00.000Z", ...overrides,
+    });
+
+    mockReadFileSync.mockImplementation((path) => {
+      const pathText = String(path);
+      if (pathText.endsWith("telemetry-records.jsonl")) {
+        return [
+          // Correction-eligible: five prospective feature records (1.2..2.0,
+          // median 1.6).
+          ...[1.2, 1.4, 1.6, 1.8, 2.0].map((r) => prospective(r)).map((r) => JSON.stringify(r)),
+          // Poison rows for task type "bugfix" — if ANY leaked into the
+          // correction set, a bugfix factor would be computed.
+          JSON.stringify(poison({ tool: "receiver_smoke", calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ tool: "receiver_smoke", calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ tool: "receiver_smoke", calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ calibration_provenance: "synthetic" })),
+          JSON.stringify(poison({ calibration_provenance: "synthetic" })),
+          JSON.stringify(poison({ calibration_provenance: "synthetic" })),
+          JSON.stringify(poison({ calibration_usage: "exclude" })),
+          JSON.stringify(poison({ calibration_usage: "exclude" })),
+          JSON.stringify(poison({ calibration_usage: "exclude" })),
+          // Unclassified legacy receiver row -> baseline usage, not correction.
+          JSON.stringify(poison()),
+          JSON.stringify(poison()),
+          JSON.stringify(poison()),
+          // Implied ratio 60x exceeds exclusion.ts MAX_RATIO (ratio_outlier
+          // guard) even though the claimed ratio is self-consistent.
+          JSON.stringify(poison({ estimated_hours: 10, actual_hours: 600, ratio: 60, calibration_provenance: "prospective" })),
+          // Claimed ratio lies about the hours (actual/estimated = 6 but
+          // ratio says 1.5) -> receive-time consistency guard drops it.
+          JSON.stringify(poison({ estimated_hours: 10, actual_hours: 60, ratio: 1.5, calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ estimated_hours: 10, actual_hours: 60, ratio: 1.5, calibration_provenance: "prospective" })),
+        ].join("\n");
+      }
+      if (pathText.endsWith("telemetry-quarantine.jsonl")) {
+        // Quarantined records must never be read by this loader at all.
+        return [
+          JSON.stringify({ task_type: "migration", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z", calibration_provenance: "prospective", quarantine_reason: "untrusted_integrity_only_source" }),
+          JSON.stringify({ task_type: "migration", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z", calibration_provenance: "prospective", quarantine_reason: "untrusted_integrity_only_source" }),
+          JSON.stringify({ task_type: "migration", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z", calibration_provenance: "prospective", quarantine_reason: "untrusted_integrity_only_source" }),
+        ].join("\n");
+      }
+      return makeDb();
+    });
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // Only the five prospective feature records trained the factors.
+    expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.6);
+    expect(writtenData.globalCorrectionFactor).toBe(1.6);
+    // Every poison category is absent from correction factors.
+    expect(writtenData.taskTypeCorrectionFactors.bugfix).toBeUndefined();
+    expect(writtenData.taskTypeCorrectionFactors.migration).toBeUndefined();
+    expect(writtenData.toolTaskCorrectionFactors.receiver_smoke).toBeUndefined();
+    expect(writtenData.toolTaskCorrectionFactors.cocomo_estimate).toBeUndefined();
   });
 
   it("computes global correction from all records", async () => {

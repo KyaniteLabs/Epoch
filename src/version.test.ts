@@ -110,6 +110,52 @@ describe("readPackageVersion", () => {
 
     expect(() => readPackageVersion(1, moduleUrl)).toThrow();
   });
+
+  // -------------------------------------------------------------------------
+  // Ticket 19 — depth chains. A module like src/lib/telemetry-submit.ts sits
+  // two hops below the root in dev/tsx, but one hop below it after tsup
+  // inlines it into dist/*.js. The chain tries the dev depth first and falls
+  // through to the dist depth, so the same call site resolves both layouts.
+  // -------------------------------------------------------------------------
+
+  it("accepts a depth chain and resolves the first depth with a package.json", () => {
+    const root = makeFixtureRoot();
+    writeFixturePackageJson(root, FIXTURE_VERSION);
+    mkdirSync(join(root, "src", "lib"), { recursive: true });
+    const devModule = join(root, "src", "lib", "telemetry-submit.ts");
+    writeFileSync(devModule, "// simulated nested module\n", "utf-8");
+
+    expect(readPackageVersion([2, 1], pathToFileURL(devModule))).toBe(FIXTURE_VERSION);
+  });
+
+  it("falls through the chain when an earlier depth misses (dist layout via [2, 1])", () => {
+    const root = makeFixtureRoot();
+    writeFixturePackageJson(root, FIXTURE_VERSION);
+    mkdirSync(join(root, "dist"));
+    const distModule = join(root, "dist", "index.js");
+    writeFileSync(distModule, "// simulated tsup bundle\n", "utf-8");
+
+    // Depth 2 escapes the fixture root (no package.json above it) — the
+    // chain must fall through to depth 1 instead of throwing or degrading
+    // to a placeholder.
+    expect(readPackageVersion([2, 1], pathToFileURL(distModule))).toBe(FIXTURE_VERSION);
+  });
+
+  it("still throws (never a placeholder) when no depth in the chain resolves", () => {
+    const root = makeFixtureRoot();
+    writeFixturePackageJson(root, FIXTURE_VERSION);
+    const moduleUrl = pathToFileURL(join(root, "dist", "index.js"));
+
+    expect(() => readPackageVersion([5, 4], moduleUrl)).toThrow();
+  });
+
+  it("rejects an empty depth chain loudly", () => {
+    const root = makeFixtureRoot();
+    writeFixturePackageJson(root, FIXTURE_VERSION);
+    const moduleUrl = pathToFileURL(join(root, "dist", "index.js"));
+
+    expect(() => readPackageVersion([], moduleUrl)).toThrow(/depth chain/);
+  });
 });
 
 describe("getVersion", () => {

@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createHmac } from "node:crypto";
-import { existsSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, rmSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 
 const TEST_DIR = join(tmpdir(), `epoch-tel-sub-test-${Date.now()}`);
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -533,5 +534,155 @@ describe("exportToFile", () => {
 		const path = exportToFile(customPath);
 		expect(path).toBe(customPath);
 		expect(existsSync(customPath)).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Ticket 19 — sender hardening: dist-safe version resolution, corrupt-cursor
+// recovery, and malformed completedAt sanitation.
+// ---------------------------------------------------------------------------
+
+describe("ticket 19 — sender hardening", () => {
+	afterEach(() => {
+		delete process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"];
+	});
+
+	it("resolves epoch_version through the dist-safe depth chain (installed-package layout)", async () => {
+		const { readPackageVersion } = await import("../version.js");
+
+		const root = mkdtempSync(join(tmpdir(), "epoch-tel-submit-ver-"));
+		try {
+			writeFileSync(
+				join(root, "package.json"),
+				JSON.stringify({ name: "epoch-dist-fixture", version: "9.9.9" }),
+				"utf-8",
+			);
+			// Installed-package layout: tsup inlines telemetry-submit into
+			// <root>/dist/*.js — package.json one hop up, nothing at two hops.
+			mkdirSync(join(root, "dist"));
+			const distModule = join(root, "dist", "index.js");
+			writeFileSync(distModule, "// simulated bundle\n", "utf-8");
+			expect(readPackageVersion([2, 1], pathToFileURL(distModule))).toBe("9.9.9");
+
+			// Dev layout: src/lib/telemetry-submit.ts — package.json two hops up.
+			mkdirSync(join(root, "src", "lib"), { recursive: true });
+			const devModule = join(root, "src", "lib", "telemetry-submit.ts");
+			writeFileSync(devModule, "// simulated src module\n", "utf-8");
+			expect(readPackageVersion([2, 1], pathToFileURL(devModule))).toBe("9.9.9");
+
+			// The payload itself must carry the real repo version (previously
+			// hand-resolved ../../package.json, which reported "unknown" from
+			// the dist layout). Resolved from THIS test file's URL (also
+			// src/lib/, same depth chain) against the real repo root.
+			const { buildPayload } = await import("./telemetry-submit.js");
+			const payload = buildPayload([]);
+			expect(payload.epoch_version).toMatch(/^\d+\.\d+\.\d+/);
+			expect(payload.epoch_version).not.toBe("unknown");
+			expect(payload.epoch_version).toBe(readPackageVersion([2, 1], import.meta.url));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("treats a corrupt lastSubmissionAt as no cursor: submission proceeds and the cursor is repaired", async () => {
+		const { saveConfig, loadConfig } = await import("./config.js");
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const estimateId = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(estimateId, 3);
+		// Corrupt cursor: unparsable timestamp (manual edit / partial write).
+		// Pre-ticket-19 this made extractAnonymizedRecords throw RangeError
+		// (NaN windowDays -> Invalid Date.toISOString()) and wedged every
+		// future submission; a NaN cursor filter would instead silently drop
+		// the whole backlog.
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: "not-a-timestamp",
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+
+		let submittedRecords = -1;
+		globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+			const payload = JSON.parse(String(init?.body ?? "")) as { records: unknown[] };
+			submittedRecords = payload.records.length;
+			return new Response(JSON.stringify({ accepted: 0, deduplicated: 0, quarantined: 1 }), {
+				status: 200,
+			});
+		}) as typeof fetch;
+
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+
+		// The backlog was resubmitted (receiver-side dedupe absorbs repeats),
+		// not dropped and not wedged.
+		expect(result).toMatchObject({ ok: true, recordCount: 1 });
+		expect(submittedRecords).toBe(1);
+		const repaired = loadConfig().telemetry.lastSubmissionAt;
+		expect(repaired).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+	});
+
+	it("filters records with a malformed completedAt at extraction so the first-ever submission cannot wedge", async () => {
+		const { recordEstimate, recordActual } = await import("./feedback.js");
+		const good = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(good, 3);
+		const bad = recordEstimate(
+			"pert_estimate",
+			{ task_type: "feature", complexity: 3 },
+			{ expected: 2, unit: "hours" },
+		);
+		recordActual(bad, 3);
+		// Corrupt the second actual's completedAt in the ledger (non-empty but
+		// unparsable — empty strings fall back to reportedAt upstream).
+		const actualsPath = join(TEST_DIR, "feedback.jsonl");
+		const lines = readFileSync(actualsPath, "utf-8").trim().split("\n");
+		const patched = lines.map((line) => {
+			const row = JSON.parse(line) as Record<string, unknown>;
+			if (row["estimateId"] === bad) row["completedAt"] = "definitely-not-a-date";
+			return JSON.stringify(row);
+		});
+		writeFileSync(actualsPath, `${patched.join("\n")}\n`, "utf-8");
+
+		const { extractAnonymizedRecords } = await import("./telemetry-submit.js");
+		// Pre-ticket-19 this threw RangeError (Invalid Date.toISOString()),
+		// so NO submission could ever succeed and the cursor never advanced.
+		const records = extractAnonymizedRecords();
+		expect(records).toHaveLength(1);
+		expect(records[0]?.completed_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+		// And the first-ever submission (null cursor) completes over the
+		// malformed row.
+		const { saveConfig } = await import("./config.js");
+		saveConfig({
+			telemetry: {
+				enabled: true,
+				endpoint: "https://collector.example.net/v1/telemetry",
+				lastSubmissionAt: null,
+				lastSubmissionRecordCount: 0,
+				installationId: "test-id",
+			},
+		});
+		let called = false;
+		globalThis.fetch = (async () => {
+			called = true;
+			return new Response(JSON.stringify({ accepted: 0, deduplicated: 0, quarantined: 1 }), {
+				status: 200,
+			});
+		}) as typeof fetch;
+
+		const { submitTelemetry } = await import("./telemetry-submit.js");
+		const result = await submitTelemetry();
+		expect(result).toMatchObject({ ok: true, recordCount: 1 });
+		expect(called).toBe(true);
 	});
 });

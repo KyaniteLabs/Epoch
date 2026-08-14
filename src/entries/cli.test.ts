@@ -50,6 +50,10 @@ vi.mock("../dispatcher/index.js", () => ({
 
 vi.mock("../version.js", () => ({
 	getVersion: () => "0.1.2-test",
+	// Ticket 19: telemetry-submit now resolves its payload version through
+	// readPackageVersion's dist-safe depth chain — the mock must cover it or
+	// every CLI telemetry command crashes on the undefined import.
+	readPackageVersion: () => "0.1.2-test",
 }));
 
 vi.mock("../lib/auto-actuals.js", () => ({
@@ -105,7 +109,27 @@ async function runWithCapture(
 	try {
 		program.parse(argv, { from: "user" });
 		// Flush microtask queue for async actions that call process.exit.
-		await new Promise((resolve) => setTimeout(resolve, 200));
+		// A fixed 200ms window intermittently lost the floated async
+		// action's output when vitest's dynamic-import graph resolved
+		// slowly under load (verified flaky with and without lane K's
+		// changes); poll for the first observable effect with a 2s cap
+		// instead of racing a fixed deadline.
+		await new Promise<void>((resolve) => {
+			const deadline = Date.now() + 2_000;
+			const poll = () => {
+				if (
+					capture.exitCode !== null ||
+					capture.stdout.length > 0 ||
+					capture.stderr.length > 0 ||
+					Date.now() >= deadline
+				) {
+					resolve();
+					return;
+				}
+				setTimeout(poll, 10);
+			};
+			poll();
+		});
 	} catch (e: unknown) {
 		// Swallow ExitCalled — the exit code is captured above.
 		if (!(e instanceof ExitCalled)) {

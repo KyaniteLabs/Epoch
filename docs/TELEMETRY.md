@@ -106,15 +106,18 @@ Sign with HMAC-SHA256 (keyed by installation_id)
 POST to configurable endpoint via HTTPS
 ```
 
-### HMAC-SHA256 Signing
+### HMAC-SHA256 Signing — integrity-only, not authenticity
 
 Every telemetry submission includes an `X-Epoch-Signature` header containing an HMAC-SHA256 signature of the JSON payload, keyed by the `installation_id`. This:
 
-- Proves the data came from a real Epoch instance
-- Prevents tampering during transmission
+- Detects corruption/tampering of the payload in transit (byte-level integrity)
 - Does **not** reveal any identity information (the `installation_id` is a random UUID)
 
-The server can verify the signature using the `installation_id` from the payload.
+**The signature is integrity-only and must not be read as a trust claim.** The signing key (`installation_id`) travels *inside* the payload, so anyone can compute a "validly signed" submission — a correct signature proves the bytes were not corrupted, not that they came from a real Epoch installation. Provenance trust requires a receiver-side secret, which is a deferred infrastructure decision.
+
+Because the receive path is therefore untrusted, the built-in receiver applies **statistical validation** (below), enforces **admission caps**, and **quarantines** every admitted record instead of merging it into the calibration store.
+
+**Accepted residual risk:** a patient attacker submitting plausible ratios under fresh `installation_id`s can still land records in the quarantine bucket. This is stated as accepted and bounded by the per-installation cap (10,000 admitted records per installation), the receiver-wide total cap (1,000,000), and the visible `quarantinedRecords` counter. Quarantined records — and any record without an explicit trusted-source classification — never influence correction factors.
 
 ## CLI Commands
 
@@ -292,22 +295,28 @@ epoch telemetry set-endpoint --endpoint http://localhost:3099/v1/telemetry
 epoch telemetry submit
 ```
 
-The built-in receiver verifies the signature and writes three local files:
+The built-in receiver verifies the signature (integrity-only — see the signing section above), validates the payload statistically, and writes local files:
 
-- `~/.epoch/telemetry-records.jsonl` — shared anonymized records plus `received_at`
+- `~/.epoch/telemetry-quarantine.jsonl` — **quarantined** anonymized records plus `received_at` and a `quarantine_reason` (every admitted record lands here; see trust model below)
 - `~/.epoch/telemetry-record-keys.jsonl` — receiver-local SHA-256 dedupe keys
-- `~/.epoch/telemetry-receipts.jsonl` — aggregate receipts with accepted/deduplicated counts
+- `~/.epoch/telemetry-receipts.jsonl` — aggregate receipts with accepted/quarantined/deduplicated counts
+- `~/.epoch/telemetry-records.jsonl` — trusted-store records. **Nothing is written here today**: the HMAC is integrity-only, so every current receive path is untrusted and all admitted records are quarantined instead of merged. The file remains the (empty) input for the self-improvement correction factors.
 
-The shared records file contains only anonymized telemetry fields: `task_type`, `complexity`, `tool`, `estimated_hours`, `actual_hours`, `ratio`, `date`, and `received_at`. It does not store installation IDs, notes, project names, source text, team IDs, or dedupe keys.
+The quarantined-records file contains only anonymized telemetry fields: `task_type`, `complexity`, `tool`, `estimated_hours`, `actual_hours`, `ratio`, `date`, `received_at`, and `quarantine_reason`. It does not store installation IDs, notes, project names, source text, team IDs, or dedupe keys. The cumulative `quarantinedRecords` count is derived from this file and exposed via the receiver status surface (`getQuarantineStatus()` in `src/lib/telemetry-receiver.ts`).
 
 **Verification steps (server-side):**
 
 1. Parse the JSON body
 2. Compute HMAC-SHA256 of the raw body using `installation_id` from the payload as the key
-3. Compare with `X-Epoch-Signature` header (constant-time comparison)
+3. Compare with `X-Epoch-Signature` header (constant-time comparison) — integrity check only
 4. Validate `schema_version` is supported
-5. Deduplicate records by a receiver-local hash of `(installation_id, record)`
-6. Store anonymized records and aggregate receipts
+5. **Statistical validation (hard reject, 400, nothing stored):**
+   - `ratio` must be consistent with `actual_hours / estimated_hours`: within a 2% relative tolerance around the interval implied by the sender's 2-decimal hour rounding (forged ratios such as a claimed `1e8` against plausible hours are rejected)
+   - `estimated_hours` and `actual_hours` must be within `[0.01, 100000]`
+   - `ratio` must be within `[0.03, 50]`, matching the calibration-exclusion bounds in `src/lib/exclusion.ts`
+6. **Admission caps (hard reject, 400):** at most 100 records per payload, 10,000 admitted records per `installation_id`, and 1,000,000 admitted records receiver-wide (test/ops overrides: `EPOCH_TELEMETRY_RECEIVER_MAX_PER_INSTALLATION`, `EPOCH_TELEMETRY_RECEIVER_MAX_TOTAL`)
+7. Deduplicate records by a receiver-local hash of `(installation_id, record)`
+8. **Quarantine, not merge:** admitted records are written to `telemetry-quarantine.jsonl` with a reason (`untrusted_integrity_only_source`, or `smoke_provenance` for `receiver_smoke` traffic) and a receipt is appended. Records read back for calibration math additionally pass the same exclusion classification as the reference-db recalculation path — quarantined, smoke/synthetic, unclassified (baseline), and ratio-inconsistent records never train correction factors.
 
 ### Configuring a custom endpoint
 

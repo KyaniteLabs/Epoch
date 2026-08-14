@@ -121,10 +121,15 @@ class TelemetryStore {
     if (!this.enabled || this.buffer.length === 0) return;
 
     const lines = this.buffer.map((r) => JSON.stringify(r)).join("\n") + "\n";
-    this.buffer = [];
 
     try {
       appendFileSync(this.filePath, lines, "utf-8");
+      // Ticket 19: clear the buffer ONLY after a successful append. The old
+      // order (clear, then append) silently dropped every buffered record
+      // whenever the append failed (ENOSPC, EACCES, vanished data dir); now
+      // failed batches stay buffered and retry on the next interval tick or
+      // record()-triggered flush.
+      this.buffer = [];
     } catch (err) {
       debugLog("telemetry.flush", err);
     }
