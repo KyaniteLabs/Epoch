@@ -79,7 +79,10 @@ describe("analytics tools via registry", () => {
       const data = result.data as Record<string, unknown>;
       expect(data.estimatedSeconds as number).toBeGreaterThan(0);
       expect(data.estimatedMinutes as number).toBeGreaterThan(0);
-      expect(data.confidence).toBe("likely");
+      // "optimistic" (was "likely"): confidence now reflects data provenance —
+      // a curated-table calibration is borrowed, not locally measured
+      // telemetry (ticket 15).
+      expect(data.confidence).toBe("optimistic");
       expect(data.model).toBe("claude-sonnet-4-20250514");
     }
   });

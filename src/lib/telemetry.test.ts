@@ -113,6 +113,36 @@ describe("record + flush", () => {
     expect(parsed).not.toHaveProperty("model");
     expect(parsed).not.toHaveProperty("tokens");
   });
+
+  it("derives model and tokens from the raw dispatch input (token-tool call path)", () => {
+    const store = getTelemetry();
+    store.record("token_time_bridge", 100, true, { tokens: 5000, model: "gpt-4o" });
+    store.flush();
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
+    const parsed = JSON.parse(written.trim()) as ToolCallRecord;
+    expect(parsed.model).toBe("gpt-4o");
+    expect(parsed.tokens).toBe(5000);
+  });
+
+  it("does not fabricate model/tokens for inputs that lack them", () => {
+    const store = getTelemetry();
+    store.record("pert_estimate", 100, true, { optimistic: 1, most_likely: 2, pessimistic: 3 });
+    store.flush();
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
+    const parsed = JSON.parse(written.trim()) as ToolCallRecord;
+    expect(parsed).not.toHaveProperty("model");
+    expect(parsed).not.toHaveProperty("tokens");
+  });
+
+  it("explicit model/tokens arguments win over input-derived values", () => {
+    const store = getTelemetry();
+    store.record("token_time_bridge", 100, true, { tokens: 5000, model: "gpt-4o" }, "claude-sonnet-4-20250514", 999);
+    store.flush();
+    const written = defined(mockAppendFileSync.mock.calls[0])[1] as string;
+    const parsed = JSON.parse(written.trim()) as ToolCallRecord;
+    expect(parsed.model).toBe("claude-sonnet-4-20250514");
+    expect(parsed.tokens).toBe(999);
+  });
 });
 
 // ---- getStats() ----
@@ -246,6 +276,76 @@ describe("getModelStats", () => {
     const stats = store.getModelStats("gpt-4o");
     expect(stats).not.toBeNull();
     expect(defined(stats).sampleCount).toBe(10);
+  });
+
+  // -------------------------------------------------------------------------
+  // TTL cache (ticket 15): one full-file read per (model, window) per 60s —
+  // compare_models resolves 16 models per call and must not re-read the
+  // telemetry file for each one on every call.
+  // -------------------------------------------------------------------------
+
+  it("caches getModelStats for the TTL window: repeated lookups do one file read per (model, window)", () => {
+    const records = Array.from({ length: 12 }, () =>
+      makeRecord({ model: "gpt-4o", tokens: 1000, elapsedMs: 100 }),
+    );
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    expect(store.getModelStats("gpt-4o")).not.toBeNull();
+    expect(store.getModelStats("gpt-4o")).not.toBeNull();
+    expect(store.getModelStats("gpt-4o")).not.toBeNull();
+    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+
+    // A different window is a different cache entry — one more read.
+    expect(store.getModelStats("gpt-4o", 30)).not.toBeNull();
+    expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches a null result too (unknown model with no telemetry data)", () => {
+    const records = Array.from({ length: 12 }, () =>
+      makeRecord({ model: "gpt-4o", tokens: 1000, elapsedMs: 100 }),
+    );
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+
+    expect(store.getModelStats("never-recorded-model")).toBeNull();
+    expect(store.getModelStats("never-recorded-model")).toBeNull();
+    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads after the TTL expires", () => {
+    vi.useFakeTimers();
+    try {
+      const records = Array.from({ length: 12 }, () =>
+        makeRecord({ model: "gpt-4o", tokens: 1000, elapsedMs: 100 }),
+      );
+      mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+      const store = getTelemetry();
+
+      expect(store.getModelStats("gpt-4o")).not.toBeNull();
+      expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(60_001);
+      expect(store.getModelStats("gpt-4o")).not.toBeNull();
+      expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a fresh store (resetTelemetry) starts with an empty cache", () => {
+    const records = Array.from({ length: 12 }, () =>
+      makeRecord({ model: "gpt-4o", tokens: 1000, elapsedMs: 100 }),
+    );
+    mockReadFileSync.mockReturnValue(makeRecordsJson(records));
+    const store = getTelemetry();
+    expect(store.getModelStats("gpt-4o")).not.toBeNull();
+
+    resetTelemetry();
+    mockReadFileSync.mockClear();
+    const store2 = getTelemetry();
+    expect(store2.getModelStats("gpt-4o")).not.toBeNull();
+    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
   });
 });
 

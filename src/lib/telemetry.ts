@@ -24,10 +24,18 @@ export interface ToolStats {
   windowDays: number;
 }
 
+export interface ModelStatsResult {
+  avgTps: number;
+  medianTps: number;
+  sampleCount: number;
+}
+
 const DEFAULT_DATA_DIR = join(homedir(), ".epoch");
 const TELEMETRY_FILE = "telemetry.jsonl";
 const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_BUFFER_SIZE = 50;
+/** getModelStats() results are cached for this long — compare_models resolves 16 models per call and must not re-read the whole file per model. */
+export const MODEL_STATS_CACHE_TTL_MS = 60_000;
 
 function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;
@@ -52,6 +60,8 @@ class TelemetryStore {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private filePath: string;
   private enabled: boolean;
+  /** TTL cache for getModelStats() — key `${model}\u0000${windowDays ?? "all"}`. */
+  private modelStatsCache = new Map<string, { value: ModelStatsResult | null; expiresAt: number }>();
 
   constructor() {
     const dir = dataDir();
@@ -83,14 +93,23 @@ class TelemetryStore {
   ): void {
     if (!this.enabled) return;
 
+    // Token tools (token_time_bridge / token_cost_estimate) carry the model
+    // and token count in their raw dispatch input — record them so
+    // getModelStats() has real per-model data to calibrate from (explicit
+    // arguments still win when a caller passes them).
+    const recordedModel = model
+      ?? (input !== undefined && typeof input["model"] === "string" && input["model"].length > 0 ? input["model"] : undefined);
+    const recordedTokens = tokens
+      ?? (input !== undefined && typeof input["tokens"] === "number" && Number.isFinite(input["tokens"]) ? input["tokens"] : undefined);
+
     this.buffer.push({
       timestamp: new Date().toISOString(),
       tool,
       inputHash: input ? hashInput(input) : "none",
       outputOk: ok,
       elapsedMs: Math.round(elapsedMs * 100) / 100,
-      ...(model && { model }),
-      ...(tokens && { tokens }),
+      ...(recordedModel && { model: recordedModel }),
+      ...(recordedTokens && { tokens: recordedTokens }),
     });
 
     if (this.buffer.length >= FLUSH_BUFFER_SIZE) {
@@ -153,7 +172,24 @@ class TelemetryStore {
       .sort((a, b) => b.callCount - a.callCount);
   }
 
-  getModelStats(model: string, windowDays?: number): { avgTps: number; medianTps: number; sampleCount: number } | null {
+  getModelStats(model: string, windowDays?: number): ModelStatsResult | null {
+    // TTL cache: analytics resolves one calibration per token-tool call and
+    // compare_models walks all 16 catalog models — without this, each call
+    // re-reads and re-parses the entire telemetry file per model. Staleness is
+    // bounded by MODEL_STATS_CACHE_TTL_MS (60s); resetTelemetry() drops it
+    // with the instance.
+    const cacheKey = `${model}\u0000${windowDays ?? "all"}`;
+    const cached = this.modelStatsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
+    const value = this.computeModelStats(model, windowDays);
+    this.modelStatsCache.set(cacheKey, { value, expiresAt: Date.now() + MODEL_STATS_CACHE_TTL_MS });
+    return value;
+  }
+
+  private computeModelStats(model: string, windowDays?: number): ModelStatsResult | null {
     this.flush();
 
     if (!this.enabled || !existsSync(this.filePath)) return null;

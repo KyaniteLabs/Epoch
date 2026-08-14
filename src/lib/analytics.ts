@@ -37,6 +37,27 @@ interface ModelCalibration {
   readonly toolCallLatencyMs: number;
 }
 
+/**
+ * Documented generic fallback for models with no calibration data anywhere
+ * (not in the curated table, reference DB, or local telemetry): 75 tps, a
+ * deliberately conservative design default. The bundled reference DB's
+ * `_default` entry (~1686 tps, a raw model-server benchmark aggregate) must
+ * NEVER shadow this — it is ~22x faster and produces wildly optimistic
+ * wall-clock estimates for unknown models.
+ */
+export const GENERIC_MODEL_CALIBRATION: ModelCalibration = {
+  tokensPerSecond: 75,
+  reasoningOverheadMs: 2500,
+  toolCallLatencyMs: 500,
+};
+
+/** Where a model's throughput calibration came from — drives the confidence label. */
+export type ModelCalibrationProvenance =
+  | "telemetry" // locally measured (≥10 token-tool calls with model+tokens recorded)
+  | "reference_db" // per-model community stats from the reference DB
+  | "calibrated_table" // curated MODEL_CALIBRATIONS entry
+  | "generic_fallback"; // GENERIC_MODEL_CALIBRATION — no model-specific data at all
+
 // Model catalog refreshed 2026-07-09 (Phase 5). The 4 new claude-* entries
 // below are latency/throughput CALIBRATION values (tokensPerSecond,
 // reasoningOverheadMs, toolCallLatencyMs) — these are NOT pricing and are
@@ -46,8 +67,8 @@ interface ModelCalibration {
 // stats over this table when enough samples exist — see lines below). Actual
 // PRICING for these models (costInput/costOutput) lives in
 // data/supplementary-database.json's `modelCalibration` and IS
-// primary-source verified — see that file's `sources` array and
-// src/schemas/index.ts's llmModelEnum comment for the citation.
+// primary-source verified — see that file's `sources` array and the
+// `LLMModel` derived union in src/types/index.ts.
 const MODEL_CALIBRATIONS: Record<string, ModelCalibration> = {
   "claude-3.5-haiku-20241022": { tokensPerSecond: 100, reasoningOverheadMs: 145, toolCallLatencyMs: 200 },
   "claude-opus-4-20250514": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
@@ -96,34 +117,49 @@ function getUrgency(seconds: number): UrgencyCategory {
   return "long";
 }
 
+export type LLMModel = keyof typeof MODEL_CALIBRATIONS;
+
 function getMedianTps(cal: { medianTps?: number; medianTokensPerSecond?: number }): number {
   return cal.medianTps ?? cal.medianTokensPerSecond ?? 0;
 }
 
-function getModelCalibration(model: string): ModelCalibration {
-  // Priority: live telemetry → reference DB → hardcoded table → generic fallback
+/**
+ * Resolve a model's calibration AND its provenance. Priority:
+ * live local telemetry (model+tokens recorded by token-tool calls) →
+ * reference-DB per-model stats → curated table → documented generic default.
+ *
+ * The reference DB's `_default` raw-benchmark aggregate is deliberately NOT
+ * consulted: for unknown models it would shadow the 75 tps design default
+ * with a ~1686 tps server benchmark (~22x optimistic).
+ */
+export function resolveModelCalibration(model: string): { calibration: ModelCalibration; provenance: ModelCalibrationProvenance } {
+  const tableBase = MODEL_CALIBRATIONS[model];
+
   const telemetryStats = getTelemetry().getModelStats(model, 30);
   if (telemetryStats && telemetryStats.sampleCount >= 10) {
-    const base = MODEL_CALIBRATIONS[model] ?? { tokensPerSecond: 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
-    return { ...base, tokensPerSecond: telemetryStats.medianTps };
+    const base = tableBase ?? GENERIC_MODEL_CALIBRATION;
+    return { calibration: { ...base, tokensPerSecond: telemetryStats.medianTps }, provenance: "telemetry" };
   }
 
   const db = loadReferenceDb();
-  if (db?.tokenTimeCalibration?.[model]) {
-    const dbTps = getMedianTps(db.tokenTimeCalibration[model]);
+  const dbCal = db?.tokenTimeCalibration?.[model];
+  if (dbCal) {
+    const dbTps = getMedianTps(dbCal);
     if (dbTps > 0) {
-      const base = MODEL_CALIBRATIONS[model] ?? { tokensPerSecond: 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
-      return { ...base, tokensPerSecond: dbTps };
+      const base = tableBase ?? GENERIC_MODEL_CALIBRATION;
+      return { calibration: { ...base, tokensPerSecond: dbTps }, provenance: "reference_db" };
     }
   }
 
-  const dbDefault = db?.tokenTimeCalibration?.["_default"];
-  if (dbDefault && !MODEL_CALIBRATIONS[model]) {
-    const tps = getMedianTps(dbDefault);
-    return { tokensPerSecond: tps > 0 ? tps : 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
+  if (tableBase) {
+    return { calibration: tableBase, provenance: "calibrated_table" };
   }
 
-  return MODEL_CALIBRATIONS[model] ?? { tokensPerSecond: 75, reasoningOverheadMs: 2500, toolCallLatencyMs: 500 };
+  return { calibration: GENERIC_MODEL_CALIBRATION, provenance: "generic_fallback" };
+}
+
+function getModelCalibration(model: string): ModelCalibration {
+  return resolveModelCalibration(model).calibration;
 }
 
 function getPromptRatio(model: string): number {
@@ -137,11 +173,24 @@ function getPromptRatio(model: string): number {
   return 0.3;
 }
 
+/**
+ * Confidence label reflects DATA PROVENANCE, not a magic tps comparison:
+ *   "likely"      — locally measured telemetry for this exact model
+ *   "optimistic"  — borrowed/aggregated figures (curated table or reference-DB
+ *                   per-model stats), not locally verified
+ *   "pessimistic" — generic fallback: no model-specific data at all (75 tps
+ *                   documented default)
+ */
 function getConfidence(model: string): ConfidenceLevel {
-  const cal = getModelCalibration(model);
-  if (MODEL_CALIBRATIONS[model]) return "likely";
-  if (cal.tokensPerSecond !== 75) return "likely";
-  return "optimistic";
+  switch (resolveModelCalibration(model).provenance) {
+    case "telemetry":
+      return "likely";
+    case "reference_db":
+    case "calibrated_table":
+      return "optimistic";
+    case "generic_fallback":
+      return "pessimistic";
+  }
 }
 
 export function tokenTimeBridge(params: {

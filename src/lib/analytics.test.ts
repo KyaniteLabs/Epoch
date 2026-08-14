@@ -1,12 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   tokenTimeBridge,
   referenceClassEstimate,
   computeAccuracyMetrics,
   calibrateEstimates,
   MODEL_CALIBRATIONS,
+  GENERIC_MODEL_CALIBRATION,
+  resolveModelCalibration,
 } from "./analytics.js";
 import type { HistoricalRecord } from "./analytics.js";
+import type { LLMModel } from "../types/index.js";
+import { resetTelemetry } from "./telemetry.js";
+import { resetSupplementaryCache } from "./supplementary-data.js";
 import { defined } from "../test-support.js";
 
 
@@ -28,6 +36,50 @@ describe("MODEL_CALIBRATIONS", () => {
       expect(defined(MODEL_CALIBRATIONS[model]).tokensPerSecond).toBeGreaterThan(0);
     }
   });
+
+  it("LLMModel type stays in sync with the live table (16 models)", () => {
+    const keys = Object.keys(MODEL_CALIBRATIONS);
+    expect(keys).toHaveLength(16);
+    // Compile-time sync guards (enforced by `pnpm run typecheck`): every table
+    // key must be assignable to LLMModel and vice versa. LLMModel is derived
+    // from the table (keyof typeof MODEL_CALIBRATIONS), so drift is a type
+    // error, not a silent runtime mismatch — these lines keep that contract
+    // exercised from the test suite too.
+    const fromTable: LLMModel[] = keys;
+    const sampleFromType: LLMModel = "claude-fable-5";
+    expect(fromTable).toContain(sampleFromType);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Token-time calibration + unknown-model fallback honesty (ticket 15)
+//
+// These tests isolate the telemetry store and supplementary-data cache into a
+// temp EPOCH_DATA_DIR so confidence labels (which now reflect provenance —
+// telemetry / reference-db / table / generic fallback) are deterministic
+// regardless of the developer's real ~/.epoch contents.
+// ---------------------------------------------------------------------------
+
+let previousDataDir: string | undefined;
+let tempDataDir: string;
+
+beforeEach(() => {
+  previousDataDir = process.env["EPOCH_DATA_DIR"];
+  tempDataDir = mkdtempSync(join(tmpdir(), "epoch-analytics-test-"));
+  process.env["EPOCH_DATA_DIR"] = tempDataDir;
+  resetTelemetry();
+  resetSupplementaryCache();
+});
+
+afterEach(() => {
+  if (previousDataDir === undefined) {
+    delete process.env["EPOCH_DATA_DIR"];
+  } else {
+    process.env["EPOCH_DATA_DIR"] = previousDataDir;
+  }
+  rmSync(tempDataDir, { recursive: true, force: true });
+  resetTelemetry();
+  resetSupplementaryCache();
 });
 
 describe("tokenTimeBridge", () => {
@@ -42,7 +94,10 @@ describe("tokenTimeBridge", () => {
     expect(result.model).toBe("claude-sonnet-4-20250514");
     expect(result.estimatedSeconds).toBeGreaterThan(0);
     expect(result.estimatedMinutes).toBeGreaterThan(0);
-    expect(result.confidence).toBe("likely");
+    // "optimistic": curated-table provenance — calibration data exists but is
+    // not locally measured telemetry (was "likely" before provenance-based
+    // labeling; see ticket 15).
+    expect(result.confidence).toBe("optimistic");
   });
 
   it("estimates time for an unknown model with fallback", () => {
@@ -54,7 +109,9 @@ describe("tokenTimeBridge", () => {
     });
     expect(result.model).toBe("unknown-model");
     expect(result.estimatedSeconds).toBeGreaterThan(0);
-    expect(["likely", "optimistic"]).toContain(result.confidence);
+    // "pessimistic": generic-fallback provenance — no model-specific data at
+    // all (75 tps documented default), never a borrowed or benchmark number.
+    expect(result.confidence).toBe("pessimistic");
   });
 
   it("deep reasoning takes longer than shallow", () => {
@@ -541,5 +598,122 @@ describe("referenceClassEstimate AI-native baselines", () => {
     expect(result.correctionFactor).toBe(1.0);
     // AI-native design large = 5.0h * 1.0 = 5.0
     expect(result.rawEstimate).toBeCloseTo(5.0, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unknown-model fallback honesty (ticket 15)
+// ---------------------------------------------------------------------------
+
+describe("model calibration provenance", () => {
+  it("unknown models get the documented generic default (75 tps), never a borrowed number", () => {
+    const { calibration, provenance } = resolveModelCalibration("nonexistent-model-zz9");
+    expect(provenance).toBe("generic_fallback");
+    expect(calibration.tokensPerSecond).toBe(GENERIC_MODEL_CALIBRATION.tokensPerSecond);
+    expect(calibration.tokensPerSecond).toBe(75);
+  });
+
+  it("table models resolve with calibrated_table provenance", () => {
+    const { calibration, provenance } = resolveModelCalibration("gpt-4o");
+    expect(provenance).toBe("calibrated_table");
+    expect(calibration.tokensPerSecond).toBe(85);
+  });
+
+  it("telemetry-backed models override tps and report telemetry provenance", () => {
+    // 12 recorded token-tool calls → median tps = 1000 tokens / 1s = 1000.
+    const lines = Array.from({ length: 12 }, () =>
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        tool: "token_time_bridge",
+        inputHash: "x",
+        outputOk: true,
+        elapsedMs: 1000,
+        model: "my-measured-model",
+        tokens: 1000,
+      }),
+    ).join("\n");
+    writeFileSync(join(tempDataDir, "telemetry.jsonl"), `${lines}\n`);
+    resetTelemetry(); // fresh store so the file is seen
+
+    const { calibration, provenance } = resolveModelCalibration("my-measured-model");
+    expect(provenance).toBe("telemetry");
+    expect(calibration.tokensPerSecond).toBe(1000);
+
+    const result = tokenTimeBridge({ tokens: 5000, model: "my-measured-model", toolCalls: 0, reasoningDepth: "shallow" });
+    expect(result.confidence).toBe("likely");
+  });
+});
+
+describe("unknown-model fallback via the shipped reference DB (no loader mock)", () => {
+  it("unknown model default is 75-based with an honest confidence label, even though the shipped DB's raw-benchmark _default exists", () => {
+    // The real loadReferenceDb() runs here (self-improve.js is NOT mocked).
+    // On CI (no ~/.epoch) it resolves to the repo-bundled
+    // src/data/reference-database.json — the exact shipped artifact.
+    const result = tokenTimeBridge({
+      tokens: 7500,
+      model: "totally-unknown-model-v1",
+      toolCalls: 0,
+      reasoningDepth: "shallow",
+    });
+
+    // 7500 tokens / 75 tps = 100s generation + 2.5s shallow reasoning
+    // overhead = 102.5s. The old bug used the shipped DB's `_default`
+    // (~1686 tps raw model-server benchmark) and estimated ~7s — 22x
+    // optimistic.
+    expect(result.estimatedSeconds).toBe(103);
+    expect(result.confidence).toBe("pessimistic");
+
+    // Prove the shipped DB really carries that `_default` entry (and it is a
+    // big raw-benchmark number), so the 75-based result above is the code
+    // ignoring it — not the DB lacking it.
+    const shippedDb = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "..", "src", "data", "reference-database.json"), "utf-8"),
+    ) as { tokenTimeCalibration?: Record<string, { medianTokensPerSecond?: number; medianTps?: number }> };
+    const dbDefault = shippedDb.tokenTimeCalibration?.["_default"];
+    expect(dbDefault).toBeDefined();
+    expect(dbDefault?.medianTokensPerSecond ?? dbDefault?.medianTps ?? 0).toBeGreaterThan(1000);
+  });
+
+  it("reference-DB per-model stats still calibrate models the curated table lacks", () => {
+    // The shipped DB carries per-model community stats for MiniMax-M2 etc.
+    // Those are real per-model data and must still be used (with an honest
+    // non-"likely" label) — only the `_default` aggregate is ignored.
+    const db = JSON.parse(
+      readFileSync(join(import.meta.dirname, "..", "..", "src", "data", "reference-database.json"), "utf-8"),
+    ) as { tokenTimeCalibration?: Record<string, { medianTokensPerSecond?: number; medianTps?: number }> };
+    const entry = db.tokenTimeCalibration?.["MiniMax-M2"];
+    if (!entry) return; // DBs without per-model entries: nothing to assert
+
+    const { calibration, provenance } = resolveModelCalibration("MiniMax-M2");
+    expect(provenance).toBe("reference_db");
+    expect(calibration.tokensPerSecond).toBe(entry.medianTokensPerSecond ?? entry.medianTps);
+    expect(tokenTimeBridge({ tokens: 1000, model: "MiniMax-M2", toolCalls: 0, reasoningDepth: "shallow" }).confidence).toBe("optimistic");
+  });
+});
+
+describe("compare_models telemetry read amortization", () => {
+  it("reads the telemetry file once per model, not once per model per call (60s TTL cache)", async () => {
+    const { compareModels } = await import("./cost.js");
+    const { getTelemetry } = await import("./telemetry.js");
+    // A telemetry file WITHOUT model data: every getModelStats miss reads the
+    // full file (the pre-cache behavior: 16 reads per compare_models call).
+    writeFileSync(join(tempDataDir, "telemetry.jsonl"), `${JSON.stringify({ timestamp: new Date().toISOString(), tool: "pert_estimate", inputHash: "x", outputOk: true, elapsedMs: 5 })}\n`);
+    resetTelemetry();
+
+    const store = getTelemetry();
+    // computeModelStats() performs exactly one full telemetry-file read per
+    // invocation (proven 1:1 in telemetry.test.ts under a mocked fs), so its
+    // call count is the telemetry read count.
+    type StoreWithPrivates = { computeModelStats: (model: string, windowDays?: number) => unknown };
+    const spy = vi.spyOn(store as unknown as StoreWithPrivates, "computeModelStats");
+    try {
+      compareModels({ tokens: 10_000, toolCalls: 0, reasoningDepth: "shallow" });
+      expect(spy).toHaveBeenCalledTimes(16); // one per catalog model
+
+      compareModels({ tokens: 10_000, toolCalls: 0, reasoningDepth: "shallow" });
+      expect(spy).toHaveBeenCalledTimes(16); // fully served from the TTL cache
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

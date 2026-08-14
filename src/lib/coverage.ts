@@ -13,10 +13,12 @@
 //
 // Two interval sources, chosen per matched record:
 //   1. "pert_variance" — for pert_estimate rows, the estimate's own recorded
-//      `expected`/`stdDeviation` (persisted on the ledger row's outputs)
-//      are used directly with a normal-distribution z-score approximation.
-//      This is the more principled source when it's available, since it
-//      reflects the actual three-point spread the caller supplied.
+//      `expected`/`stdDeviation` (persisted on the ledger row's outputs),
+//      converted from the row's unit to HOURS with the same 8/40/160 table
+//      used at ingest (feedback.ts's ESTIMATE_UNIT_TO_HOURS), are used with a
+//      normal-distribution z-score approximation. This is the more principled
+//      source when it's available, since it reflects the actual three-point
+//      spread the caller supplied.
 //   2. "empirical_ratio_quantile" — for every other tool (and for
 //      pert_estimate rows without a usable variance), intervals are derived
 //      from the empirical distribution of actual/estimate ratios for
@@ -40,7 +42,7 @@
 
 import { loadLedgerWithOverlays } from "./ledger.js";
 import { isExcluded } from "./exclusion.js";
-import { extractEstimatedHours } from "./feedback.js";
+import { extractEstimatedHours, ESTIMATE_UNIT_TO_HOURS } from "./feedback.js";
 
 /** Matches the "sufficient data" threshold used elsewhere (analytics.ts referenceClassEstimate, `filtered.length >= 5`). */
 export const MIN_N_FOR_QUANTILES = 5;
@@ -152,6 +154,21 @@ interface CleanPair {
   readonly stdDeviation?: number;
 }
 
+/**
+ * Convert a PERT output value (expected/stdDeviation) recorded in the row's
+ * unit to hours, using the same 8/40/160 table feedback.ts applies at ingest
+ * (extractEstimatedHours / ESTIMATE_UNIT_TO_HOURS) — never a local copy.
+ * A missing unit field means hours (mirrors extractEstimatedHours); an
+ * unrecognized unit returns null ("cannot convert — skip this source") so an
+ * ambiguous row falls back to the empirical-ratio interval instead of being
+ * scored against a unit-corrupted interval.
+ */
+function pertValueToHours(value: number, unit: unknown): number | null {
+  if (unit === undefined) return value;
+  const factor = ESTIMATE_UNIT_TO_HOURS[unit as string];
+  return factor === undefined ? null : value * factor;
+}
+
 /** Load exclusion-filtered, overlay-merged matched pairs with enough data to predict an interval. Mirrors calibration-factors.ts's loadPertMatchedRecords() "clean path" pattern, generalized to every tool. */
 function loadCleanMatchedPairs(): CleanPair[] {
   const merged = loadLedgerWithOverlays();
@@ -183,16 +200,21 @@ function loadCleanMatchedPairs(): CleanPair[] {
     if (verdict.excluded) continue;
 
     const taskType = typeof rec.inputs["task_type"] === "string" ? (rec.inputs["task_type"] as string) : "feature";
-    const expected = typeof rec.outputs["expected"] === "number" ? rec.outputs["expected"] : undefined;
-    const stdDeviation = typeof rec.outputs["stdDeviation"] === "number" ? rec.outputs["stdDeviation"] : undefined;
+    const expectedRaw = typeof rec.outputs["expected"] === "number" ? rec.outputs["expected"] : undefined;
+    const stdDeviationRaw = typeof rec.outputs["stdDeviation"] === "number" ? rec.outputs["stdDeviation"] : undefined;
+    // pert_variance intervals are only usable when BOTH the expected value and
+    // the standard deviation convert cleanly from the row's unit to hours —
+    // a half-converted pair would compare a days-denominated sigma against
+    // hours-denominated actuals.
+    const expectedHours = expectedRaw !== undefined ? pertValueToHours(expectedRaw, rec.outputs["unit"]) : undefined;
+    const stdDeviationHours = stdDeviationRaw !== undefined ? pertValueToHours(stdDeviationRaw, rec.outputs["unit"]) : undefined;
 
     pairs.push({
       taskType,
       tool: rec.tool,
       estimatedHours,
       actualHours: rec.actual.actualHours,
-      ...(expected !== undefined && { expected }),
-      ...(stdDeviation !== undefined && { stdDeviation }),
+      ...(expectedHours !== null && expectedHours !== undefined && stdDeviationHours !== null && stdDeviationHours !== undefined && { expected: expectedHours, stdDeviation: stdDeviationHours }),
     });
   }
 
@@ -287,7 +309,8 @@ export function computeIntervalCoverage(): IntervalCoverageReport {
     targetP80Coverage: 0.8,
     byTaskType,
     note:
-      "In-sample calibration: P80 intervals for pert_estimate rows use their own recorded expected/stdDeviation; " +
+      "In-sample calibration: P80 intervals for pert_estimate rows use their own recorded expected/stdDeviation " +
+      "converted to hours with the shared unit table (days=8h, weeks=40h, months=160h — same as ingest); " +
       "every other tool uses per-task-type empirical actual/estimate ratio quantiles from the same exclusion-filtered " +
       `corpus (minimum ${MIN_N_FOR_QUANTILES} matched pairs per task_type; below that, method is "insufficient_data" ` +
       "and the pair is excluded from the coverage rate rather than scored against a fabricated interval). This is a " +

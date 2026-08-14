@@ -1046,7 +1046,10 @@ describe("analytics — tokenTimeBridge stress", () => {
         reasoningDepth: "moderate",
       });
       expect(result.estimatedSeconds).toBeGreaterThan(0);
-      expect(result.confidence).toBe("likely");
+      // "optimistic" (was "likely"): confidence reflects provenance — a
+      // curated-table calibration is borrowed, not locally measured
+      // telemetry (ticket 15).
+      expect(result.confidence).toBe("optimistic");
     });
   }
 

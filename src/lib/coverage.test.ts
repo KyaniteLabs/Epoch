@@ -180,4 +180,71 @@ describe("computeIntervalCoverage — synthetic fixture", () => {
     expect(report.n).toBe(0);
     expect(report.byTaskType["design"]).toEqual({ n: 0, p80CoverageRate: null, method: "insufficient_data" });
   });
+
+  // -------------------------------------------------------------------------
+  // Unit normalization (ticket 12): PERT rows recorded in days/weeks/months
+  // must have expected/stdDeviation converted to hours (8/40/160 table) before
+  // being compared against hours-denominated actuals.
+  // -------------------------------------------------------------------------
+
+  it("golden fixture: 2-day estimate (expected=2, σ=0.33) vs actualHours=16 flips miss→hit", () => {
+    writeFixture(
+      [{ id: "coverage-golden-days", tool: "pert_estimate", taskType: "feature", outputs: { expected: 2, stdDeviation: 0.33, unit: "days" } }],
+      [{ estimateId: "coverage-golden-days", actualHours: 16 }],
+    );
+
+    const report = computeIntervalCoverage();
+
+    // Converted with the shared ingest table: expected = 2d × 8h = 16h,
+    // σ = 0.33d × 8h = 2.64h → p80 = 16 ± 1.282×2.64 = [12.62, 19.38] → 16 is a hit.
+    // Without conversion the interval would be [1.58, 2.42] and 16h would score as a miss.
+    expect(report.n).toBe(1);
+    expect(report.p80CoverageRate).toBe(1);
+    expect(report.byTaskType["feature"]).toEqual({ n: 1, p80CoverageRate: 1, method: "pert_variance" });
+  });
+
+  it("mixed-unit fixture matches hand-computed coverage (hours/days/weeks/months)", () => {
+    const estimates: FixtureEstimate[] = [
+      // hours row: p80 = 10 ± 1.282×2 = [7.44, 12.56]; actual 10 → hit
+      { id: "coverage-mixed-hours", tool: "pert_estimate", taskType: "feature", outputs: { expected: 10, stdDeviation: 2, unit: "hours" } },
+      // days row: 2d = 16h, σ 0.25d = 2h → p80 = [13.44, 18.56]; actual 16 → hit
+      { id: "coverage-mixed-days", tool: "pert_estimate", taskType: "feature", outputs: { expected: 2, stdDeviation: 0.25, unit: "days" } },
+      // weeks row: 1w = 40h, σ 0.1w = 4h → p80 = [34.87, 45.13]; actual 45 → hit
+      { id: "coverage-mixed-weeks", tool: "pert_estimate", taskType: "feature", outputs: { expected: 1, stdDeviation: 0.1, unit: "weeks" } },
+      // months row: 0.5mo = 80h, σ 0.05mo = 8h → p80 = [69.74, 90.26]; actual 100 → miss
+      { id: "coverage-mixed-months", tool: "pert_estimate", taskType: "feature", outputs: { expected: 0.5, stdDeviation: 0.05, unit: "months" } },
+    ];
+    const actuals = [
+      { estimateId: "coverage-mixed-hours", actualHours: 10 },
+      { estimateId: "coverage-mixed-days", actualHours: 16 },
+      { estimateId: "coverage-mixed-weeks", actualHours: 45 },
+      { estimateId: "coverage-mixed-months", actualHours: 100 },
+    ];
+    writeFixture(estimates, actuals);
+
+    const report = computeIntervalCoverage();
+
+    // Hand-computed: 3 hits of 4 scored pairs → 0.75, all via pert_variance.
+    expect(report.n).toBe(4);
+    expect(report.p80CoverageRate).toBeCloseTo(0.75, 3);
+    expect(report.byTaskType["feature"]).toEqual({ n: 4, p80CoverageRate: 0.75, method: "pert_variance" });
+  });
+
+  it("a pert row with an unrecognized unit falls back to the empirical path instead of a unit-corrupted interval", () => {
+    writeFixture(
+      [
+        { id: "coverage-bad-unit", tool: "pert_estimate", taskType: "feature", outputs: { expected: 10, stdDeviation: 2, unit: "fortnights" } },
+      ],
+      [{ estimateId: "coverage-bad-unit", actualHours: 10 }],
+    );
+
+    const report = computeIntervalCoverage();
+
+    // The row is unusable end-to-end: extractEstimatedHours() refuses the
+    // unrecognized unit (null estimated hours → the pair never loads), so
+    // nothing is scored and no "feature" entry is fabricated.
+    expect(report.n).toBe(0);
+    expect(report.p80CoverageRate).toBeNull();
+    expect(report.byTaskType["feature"]).toBeUndefined();
+  });
 });

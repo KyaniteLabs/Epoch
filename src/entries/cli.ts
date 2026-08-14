@@ -40,6 +40,22 @@ function safeFloat(flagName: string): (value: string) => number {
 	};
 }
 
+/**
+ * Parse a --port value for `epoch serve`: an integer in the legal TCP range
+ * (1-65535). Non-numeric, fractional, or out-of-range values exit 1 with a
+ * clear message instead of crashing later inside the server's bind call.
+ */
+function parsePortArg(value: string): number {
+	const n = Number(value);
+	if (!Number.isInteger(n) || n < 1 || n > 65535) {
+		process.stderr.write(
+			`Error: --port must be an integer between 1 and 65535, got "${value}"\n`,
+		);
+		process.exit(1);
+	}
+	return n;
+}
+
 /** Resolve output format from root options, applying --pretty override. */
 function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
 	if (rootOpts.pretty === true) return "table";
@@ -64,7 +80,22 @@ async function runAndExit(
 	quiet: boolean,
 ): Promise<never> {
 	const result: ToolResult<unknown> = await dispatch(toolName, input);
+	return emitAndExit(result, toolName, format, quiet);
+}
 
+/**
+ * Emit a ToolResult under the standard CLI result contract and exit:
+ * failures go to stderr (exit 2 for tool errors, 1 otherwise); success writes
+ * exactly ONE output document to stdout (JSON or table), with --quiet
+ * suppressing only the human-oriented table form. No JSON+summary
+ * double-writes.
+ */
+function emitAndExit(
+	result: ToolResult<unknown>,
+	toolName: string,
+	format: "json" | "table",
+	quiet: boolean,
+): never {
 	if (!result.ok) {
 		process.stderr.write(formatJson(result) + "\n");
 		process.exit(result.error.isError ? 2 : 1);
@@ -806,12 +837,35 @@ export function createCliProgram(): Command {
 		)
 		.requiredOption("--session <id>", "Session identifier to match pending estimates against")
 		.option("--dry-run", "Preview what would be recorded without writing", false)
-		.action(async (opts) => {
+		.action(async (opts, cmd) => {
+			const rootOpts = getRootOpts(cmd);
+			const format = resolveFormat(rootOpts);
+			const quiet = isQuiet(rootOpts);
 			const { runAutoActuals } = await import("../lib/auto-actuals.js");
 			const result = runAutoActuals(opts.session, opts.dryRun === true);
-			process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-			process.stdout.write(result.summary + "\n");
-			process.exit(0);
+
+			// Standard CLI result contract (ticket 10): one output document,
+			// --format/--quiet honored, and a non-zero exit when any entry was
+			// skipped with a write failure — automation must never record
+			// silent success over lost writes. The summary stays a field of the
+			// single JSON document instead of a second stdout write.
+			const writeFailed = result.skipped.filter((s) => s.reason === "write_failed");
+			const toolResult: ToolResult<unknown> = writeFailed.length > 0
+				? {
+						ok: false,
+						error: {
+							isError: true,
+							message:
+								`auto-actuals: ${writeFailed.length} of ${result.candidates} candidate estimate(s) could not be recorded (write failed): ` +
+								`${writeFailed.map((s) => s.estimateId).join(", ")}. ` +
+								`${result.recorded.length} actual(s) were recorded before the failure.`,
+							retryHint:
+								"Re-run 'epoch auto-actuals --session <id>' (already-recorded estimates are skipped as duplicates). If failures persist, check that the Epoch data directory's feedback.jsonl is writable.",
+						},
+					}
+				: { ok: true, data: result };
+
+			emitAndExit(toolResult, "auto-actuals", format, quiet);
 		});
 
 	program
@@ -996,6 +1050,18 @@ export function createCliProgram(): Command {
 			}
 
 			if (!opts.yes) {
+				// Loud failure for non-interactive callers (ticket 10): without
+				// this guard, a piped/EOF'd stdin resolves the prompt with ""
+				// and the command "Cancelled."s its way to a silent exit 0 —
+				// automation records success while nothing was enabled.
+				if (!process.stdin.isTTY) {
+					process.stderr.write(
+						"Error: 'epoch telemetry enable' needs an interactive terminal to show the consent prompt.\n" +
+						"Re-run with --yes to opt in non-interactively (e.g. 'epoch telemetry enable --yes'), or run it in a TTY.\n",
+					);
+					process.exit(1);
+				}
+
 				const records = extractAnonymizedRecords();
 				console.log("Epoch Anonymous Telemetry — Informed Consent");
 				console.log("");
@@ -1038,8 +1104,8 @@ export function createCliProgram(): Command {
 				);
 				rl.close();
 				if (answer.toLowerCase() !== "yes" && answer.toLowerCase() !== "y") {
-					console.log("Cancelled.");
-					process.exit(0);
+					process.stderr.write("Cancelled — telemetry was NOT enabled.\n");
+					process.exit(1);
 				}
 			}
 
@@ -1249,6 +1315,27 @@ export function createCliProgram(): Command {
 		});
 
 	// ---- Utility commands -------------------------------------------------------
+
+	program
+		.command("serve")
+		.description(
+			"Start the Epoch HTTP API server (REST endpoints for tools, feedback, telemetry, and docs).",
+		)
+		.option(
+			"--port <n>",
+			"TCP port to listen on (1-65535; default: $EPOCH_PORT, $PORT, or 3000)",
+			parsePortArg,
+		)
+		.option(
+			"--host <host>",
+			"Interface to bind (default: $EPOCH_HOST or 127.0.0.1)",
+		)
+		.action(async (opts) => {
+			const { startHttpServer } = await import("../entries/http.js");
+			// Pass through only what the caller supplied so the documented
+			// env-var defaults ($EPOCH_PORT/$PORT/$EPOCH_HOST) keep working.
+			startHttpServer(opts.port, opts.host);
+		});
 
 	program
 		.command("list-tools")
