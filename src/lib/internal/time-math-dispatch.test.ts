@@ -291,15 +291,17 @@ describe("dispatchTimeMath", () => {
   // ---- num() coercion edge cases ----
 
   describe("num() coercion (string-to-number)", () => {
-    it("add_days with non-numeric string for days throws through addDays", () => {
-      // Number("abc") is NaN, which passes the num() !== undefined check,
-      // but addDays throws when given NaN. This documents the current behavior.
-      expect(() =>
-        dispatchTimeMath("add_days", {
-          start_date: "2026-05-01",
-          days: "abc",
-        }),
-      ).toThrow();
+    it("add_days with non-numeric string for days returns a clear validation error", () => {
+      // W1 input safety: previously Number("abc") = NaN slipped past the
+      // num() !== undefined check and threw deep inside addDays (framework
+      // error). The operand is now validated here and rejected cleanly.
+      const result = dispatchTimeMath("add_days", {
+        start_date: "2026-05-01",
+        days: "abc",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("finite number");
     });
 
     it("num() returns undefined for boolean operands", () => {
@@ -600,6 +602,92 @@ describe("dispatchTimeMath", () => {
         end_date: undefined,
       });
       expect(result.ok).toBe(false);
+    });
+  });
+
+  // ---- operand type/bounds validation (W1 input safety) ----
+
+  describe("operand type and bounds validation (W1)", () => {
+    it("rejects a numeric country with a clear error instead of reaching toUpperCase", () => {
+      const result = dispatchTimeMath("add_business_days", {
+        start_date: "2026-05-04",
+        days: 5,
+        country: 1,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("country must be a 2-letter ISO-3166 country code string");
+      expect(result.error.message).toContain("number");
+      expect(result.error.message).not.toContain("toUpperCase");
+    });
+
+    it("rejects a null country with a clear error", () => {
+      const result = dispatchTimeMath("add_business_days", {
+        start_date: "2026-05-04",
+        days: 5,
+        country: null,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("country must be a 2-letter ISO-3166 country code string");
+    });
+
+    it("still accepts a valid string country", () => {
+      const result = dispatchTimeMath("add_business_days", {
+        start_date: "2026-05-04",
+        days: 5,
+        country: "UK",
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it("rejects non-finite days strings on add_days", () => {
+      const result = dispatchTimeMath("add_days", {
+        start_date: "2026-05-01",
+        days: "next week",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("finite number");
+    });
+
+    it("rejects days beyond the 100000 cap on add_days", () => {
+      for (const days of [1e9, -1e9]) {
+        const result = dispatchTimeMath("add_days", { start_date: "2026-05-01", days });
+        expect(result.ok, String(days)).toBe(false);
+        if (result.ok) continue;
+        expect(result.error.message).toContain("100000");
+      }
+    });
+
+    it("rejects non-finite days on add_business_days", () => {
+      const result = dispatchTimeMath("add_business_days", {
+        start_date: "2026-05-04",
+        days: "abc",
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("finite number");
+    });
+
+    it("rejects days beyond the 100000 cap on add_business_days (bounded latency)", () => {
+      const start = performance.now();
+      const result = dispatchTimeMath("add_business_days", {
+        start_date: "2026-05-04",
+        days: 1e9,
+      });
+      const elapsedMs = performance.now() - start;
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("100000");
+      expect(elapsedMs).toBeLessThan(100);
+    });
+
+    it("rejects non-finite milliseconds on format_duration", () => {
+      const result = dispatchTimeMath("format_duration", { milliseconds: "soon" });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.message).toContain("finite number");
     });
   });
 });

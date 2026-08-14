@@ -7,7 +7,7 @@ import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
 import { setTransport } from "../lib/telemetry-context.js";
 import type { ToolResult } from "../types/index.js";
-import type { z } from "zod";
+import { z } from "zod";
 import { getVersion } from "../version.js";
 
 const VERSION = getVersion();
@@ -159,135 +159,41 @@ curl -X POST http://localhost:3000/v1/tools/pert_estimate \\
 `;
 
 // ---- Zod -> JSON Schema converter -------------------------------------------
+//
+// zod v4 ships a native JSON Schema converter (z.toJSONSchema). The previous
+// hand-rolled walker read zod v3 internals (`_def.typeName`), which are dead
+// under zod 4 — every tool path rendered an empty schema. We now convert with
+// the native API (io: "input", since request bodies describe what callers
+// send, pre-transform/pre-coercion) and degrade per tool: a schema zod cannot
+// represent (e.g. z.date()) falls back to the documented object below instead
+// of failing the whole /openapi.json document.
 
 interface JsonSchema {
   [key: string]: unknown;
 }
 
+/** Documented fallback for a tool whose zod input schema has no JSON Schema representation. */
+const UNREPRESENTABLE_SCHEMA_FALLBACK: JsonSchema = {
+  type: "object",
+  additionalProperties: true,
+  description:
+    "Input schema unavailable: this tool's zod schema could not be converted to JSON Schema. Send a JSON object per the tool's documentation.",
+};
+
+/**
+ * Convert a zod schema to a JSON Schema for the OpenAPI request body.
+ * Never throws: an unrepresentable schema degrades to
+ * {@link UNREPRESENTABLE_SCHEMA_FALLBACK} for that tool only.
+ */
 function zodToJsonSchema(schema: z.ZodType): JsonSchema {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const def = (schema as any)._def;
-
-  if (!def) return {};
-
-  switch (def.typeName) {
-    case "ZodObject": {
-      const shape = def.shape();
-      const properties: Record<string, JsonSchema> = {};
-      const required: string[] = [];
-
-      for (const [key, fieldSchema] of Object.entries(shape)) {
-        const resolved = resolveField(fieldSchema as z.ZodType);
-        properties[key] = resolved.schema;
-        if (!resolved.isOptional) {
-          required.push(key);
-        }
-      }
-
-      const result: JsonSchema = { type: "object", properties };
-      if (required.length > 0) {
-        result.required = required;
-      }
-      return result;
-    }
-
-    case "ZodString":
-      return withDescription({ type: "string" }, def);
-
-    case "ZodNumber": {
-      const result: JsonSchema = { type: "number" };
-      if (def.checks) {
-        for (const check of def.checks as Array<{ kind: string; value?: unknown }>) {
-          if (check.kind === "int") (result as Record<string, unknown>).format = "integer";
-          if (check.kind === "min") result.minimum = check.value;
-          if (check.kind === "max") result.maximum = check.value;
-        }
-      }
-      return withDescription(result, def);
-    }
-
-    case "ZodBoolean":
-      return withDescription({ type: "boolean" }, def);
-
-    case "ZodEnum":
-      return withDescription({ type: "string", enum: def.values }, def);
-
-    case "ZodNativeEnum": {
-      const values = Object.values(def.values as Record<string, string>);
-      return withDescription({ type: "string", enum: values }, def);
-    }
-
-    case "ZodArray": {
-      const items = zodToJsonSchema(def.type);
-      return withDescription({ type: "array", items }, def);
-    }
-
-    case "ZodTuple": {
-      const items = (def.items as z.ZodType[]).map((t: z.ZodType) => zodToJsonSchema(t));
-      return withDescription({ type: "array", items }, def);
-    }
-
-    case "ZodRecord":
-      return withDescription(
-        { type: "object", additionalProperties: zodToJsonSchema(def.valueType) },
-        def,
-      );
-
-    case "ZodDefault": {
-      const inner = zodToJsonSchema(def.innerType);
-      inner.default = def.defaultValue();
-      return inner;
-    }
-
-    case "ZodOptional":
-      return zodToJsonSchema(def.innerType);
-
-    case "ZodNullable": {
-      const inner = zodToJsonSchema(def.innerType);
-      return { anyOf: [inner, { type: "null" }] };
-    }
-
-    case "ZodEffects":
-      return zodToJsonSchema(def.innerType || def.schema);
-
-    case "ZodBranded":
-      return zodToJsonSchema(def.type);
-
-    case "ZodLiteral":
-      return { const: def.value };
-
-    case "ZodUnion":
-      return { anyOf: (def.options as z.ZodType[]).map((o: z.ZodType) => zodToJsonSchema(o)) };
-
-    case "ZodDiscriminatedUnion":
-      return { anyOf: (def.options as z.ZodType[]).map((o: z.ZodType) => zodToJsonSchema(o)) };
-
-    default:
-      return {};
+  try {
+    const converted = z.toJSONSchema(schema, { io: "input" }) as JsonSchema;
+    // $schema belongs on the document root, not on every embedded schema.
+    delete converted.$schema;
+    return converted;
+  } catch {
+    return { ...UNREPRESENTABLE_SCHEMA_FALLBACK };
   }
-}
-
-/** Resolve a field, tracking whether it is optional (via ZodOptional or ZodDefault). */
-function resolveField(schema: z.ZodType): { schema: JsonSchema; isOptional: boolean } {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const def = (schema as any)._def;
-  if (!def) return { schema: {}, isOptional: false };
-
-  if (def.typeName === "ZodOptional") {
-    return { schema: zodToJsonSchema(schema), isOptional: true };
-  }
-  if (def.typeName === "ZodDefault") {
-    return { schema: zodToJsonSchema(schema), isOptional: true };
-  }
-  return { schema: zodToJsonSchema(schema), isOptional: false };
-}
-
-/** Attach description from a Zod def's description field, if present. */
-function withDescription(schema: JsonSchema, def: { description?: string }): JsonSchema {
-  if (def.description) {
-    schema.description = def.description;
-  }
-  return schema;
 }
 
 // ---- OpenAPI spec builder ---------------------------------------------------

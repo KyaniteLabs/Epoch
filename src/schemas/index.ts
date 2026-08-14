@@ -27,39 +27,13 @@ export const taskTypeEnum = z
   ])
   .describe("Category of work being estimated for reference-class lookup.");
 
-// Model catalog last refreshed 2026-07-09 (Phase 5). Claude 5 family + current
-// models added below (claude-opus-4-8, claude-sonnet-5, claude-haiku-4-5,
-// claude-fable-5) — pricing for these is primary-source verified against the
-// `claude-api` skill's cached Anthropic model/pricing reference (cache date
-// 2026-06-24), cross-checked against shared/models.md in the same skill.
-// See src/lib/analytics.ts's MODEL_CALIBRATIONS and
-// data/supplementary-database.json's `modelCalibration`/`sources` for the
-// paired latency/pricing entries and the full source citation. Older Claude
-// aliases (claude-sonnet-4-20250514, claude-opus-4-20250514,
-// claude-3.5-haiku-20241022) are left in place — additive superset, nothing
-// removed.
-export const llmModelEnum = z
-  .enum([
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "claude-sonnet-4-20250514",
-    "claude-opus-4-20250514",
-    "claude-3.5-haiku-20241022",
-    "claude-fable-5",
-    "claude-opus-4-8",
-    "claude-sonnet-5",
-    "claude-haiku-4-5",
-    "gemini-2.0-flash",
-    "gemini-2.5-pro",
-    "llama-3.1-70b",
-    "llama-3.1-405b",
-    "mistral-large",
-    "deepseek-v3",
-  ])
-  .describe(
-    "LLM model identifier used to estimate token-to-time conversion."
-  );
+// Model catalog note (Phase 5 refresh, 2026-07-09): `model` inputs are plain
+// strings by design — unknown models are accepted and fall back to the
+// documented generic default (75 tps, src/lib/analytics.ts's
+// GENERIC_MODEL_CALIBRATION) with a "pessimistic" confidence label. The
+// curated catalog itself lives in MODEL_CALIBRATIONS (src/lib/analytics.ts;
+// the LLMModel type in src/types/index.ts is derived from it), and pricing
+// lives in data/supplementary-database.json's `modelCalibration`/`sources`.
 
 /** AI ratio: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Booleans accepted for backward compat. */
 const aiNativeGradient = z
@@ -139,6 +113,35 @@ export const calibrationProvenanceEnum = z
 /** Brand a string to prevent accidental ID interchange. */
 const brandedString = (label: string) =>
   z.string().describe(`${label} identifier`).brand<string>();
+
+// ---- Input safety bounds (W1) ----------------------------------------------
+//
+// Single-call server-freeze vectors: every numeric/array input that drives a
+// loop (business-day walking, task-graph traversal, Monte Carlo sampling) is
+// bounded at the schema so an adversarial caller gets an immediate validation
+// error instead of an unbounded computation on the event loop. The business
+// day walk is day-by-day, so an uncapped `days` (e.g. 1e9) hangs the server.
+
+/** Maximum |days| accepted by business-day arithmetic (add_business_days). ~400 years of day-walking; generous vs. any real planning horizon. */
+export const BUSINESS_DAYS_LIMIT = 100_000;
+
+/** Bounded business-day offset: integer days with |days| <= {@link BUSINESS_DAYS_LIMIT}. */
+export const businessDaysOffset = z
+  .coerce
+  .number()
+  .int({ error: `days must be a whole number of business days (between -${BUSINESS_DAYS_LIMIT} and ${BUSINESS_DAYS_LIMIT}).` })
+  .min(-BUSINESS_DAYS_LIMIT, { error: `days must be >= -${BUSINESS_DAYS_LIMIT}. For larger shifts, call the tool repeatedly or convert to calendar days.` })
+  .max(BUSINESS_DAYS_LIMIT, { error: `days must be <= ${BUSINESS_DAYS_LIMIT}. For larger shifts, call the tool repeatedly or convert to calendar days.` })
+  .describe(`Number of business days to add (negative to subtract). Integer between -${BUSINESS_DAYS_LIMIT} and ${BUSINESS_DAYS_LIMIT}.`);
+
+/** Maximum number of tasks accepted per call by critical_path / monte_carlo_schedule. */
+export const TASK_ARRAY_LIMIT = 500;
+
+/** Maximum iterations × tasks product accepted by monte_carlo_schedule (enforced in the handler; the schema bounds each factor independently). */
+export const MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT = 10_000_000;
+
+/** Maximum context string length (characters) accepted by estimate_from_context. */
+export const CONTEXT_LENGTH_LIMIT = 50_000;
 
 // ---- Tool 2: timeMath -----------------------------------------------------
 
@@ -324,8 +327,9 @@ export const criticalPathSchema = z.object({
   tasks: z
     .array(taskSchema)
     .min(1)
+    .max(TASK_ARRAY_LIMIT, { error: `tasks must contain at most ${TASK_ARRAY_LIMIT} tasks per call. Split very large graphs into phases.` })
     .describe(
-      "All tasks in the project graph. Each task must have a unique name."
+      "All tasks in the project graph. Each task must have a unique name.",
     ),
   task_type: taskTypeEnum
     .describe("Optional task type for feedback matching.")
@@ -395,8 +399,9 @@ export const monteCarloSchema = z.object({
       )
     )
     .min(1)
+    .max(TASK_ARRAY_LIMIT, { error: `tasks must contain at most ${TASK_ARRAY_LIMIT} tasks per call. Split very large schedules into phases.` })
     .describe(
-      "Task list with PERT-style three-point estimates and dependency edges."
+      "Task list with PERT-style three-point estimates and dependency edges.",
     ),
   iterations: z
     .coerce.number()
@@ -628,6 +633,7 @@ export const estimateFromContextSchema = z.object({
   context: z
     .string()
     .min(1)
+    .max(CONTEXT_LENGTH_LIMIT, { error: `context must be at most ${CONTEXT_LENGTH_LIMIT} characters. Summarize the task or attach only the relevant excerpt.` })
     .describe(
       "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Will be used to classify task_type and complexity and delegate to reference_class_estimate / PERT correction once classification logic ships (Phase 5)."
     ),

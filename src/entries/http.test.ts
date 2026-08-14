@@ -8,9 +8,33 @@ import { createHmac } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { z } from "zod";
 import { createApiApp } from "./http.js";
+import { TOOL_REGISTRY, TOOL_NAMES } from "../dispatcher/index.js";
+import type { ToolDefinition } from "../dispatcher/tool-registry.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-http-test-${process.pid}`);
+
+/** Extract a tool path's request-body JSON Schema from an OpenAPI document. */
+function toolRequestSchema(spec: Record<string, unknown>, tool: string): Record<string, unknown> {
+  const paths = spec.paths as Record<string, Record<string, unknown>>;
+  const pathObj = paths[`/v1/tools/${tool}`];
+  if (!pathObj) throw new Error(`missing path for tool ${tool}`);
+  const post = pathObj.post as Record<string, unknown>;
+  const requestBody = post.requestBody as Record<string, unknown>;
+  const content = requestBody.content as Record<string, Record<string, unknown>>;
+  const json = content["application/json"];
+  if (!json) throw new Error(`missing application/json content for tool ${tool}`);
+  return json.schema as Record<string, unknown>;
+}
+
+/** Fetch a named property schema, failing loudly if the converter omitted it. */
+function prop(schema: Record<string, unknown>, field: string): Record<string, unknown> {
+  const properties = schema.properties as Record<string, unknown>;
+  const value = properties[field];
+  if (value === undefined) throw new Error(`schema is missing property "${field}"`);
+  return value as Record<string, unknown>;
+}
 
 describe("HTTP API", () => {
   let app: ReturnType<typeof createApiApp>;
@@ -489,6 +513,103 @@ describe("HTTP API", () => {
 
       // Same spec object returned
       expect(spec1).toEqual(spec2);
+    });
+
+    // -------------------------------------------------------------------------
+    // Request-schema contents (zod v4 native conversion — W1 ticket 07)
+    // -------------------------------------------------------------------------
+
+    it("converts all 25 tool request schemas without throwing or falling back", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      expect(TOOL_NAMES.size).toBe(25);
+      for (const name of TOOL_NAMES) {
+        const schema = toolRequestSchema(spec, name);
+        // Converted (not the unrepresentable fallback): a real object schema
+        // with a properties map, and no fallback marker in the description.
+        expect(schema.type).toBe("object");
+        expect(schema.properties).toBeDefined();
+        expect(String(schema.description ?? "")).not.toContain("unavailable");
+      }
+    });
+
+    it("emits typed properties for tool request schemas", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const pert = toolRequestSchema(spec, "pert_estimate");
+      expect(prop(pert, "optimistic").type).toBe("number");
+      expect(prop(pert, "most_likely").type).toBe("number");
+      expect(prop(pert, "pessimistic").type).toBe("number");
+      expect(prop(pert, "unit").enum).toEqual(["hours", "days", "weeks", "months"]);
+
+      const abd = toolRequestSchema(spec, "add_business_days");
+      expect(prop(abd, "start_date").type).toBe("string");
+      // .int() on the bounded days field surfaces as JSON Schema "integer".
+      expect(prop(abd, "days").type).toBe("integer");
+      // W1 input-safety bounds surface in the published schema.
+      expect(prop(abd, "days").minimum).toBe(-100000);
+      expect(prop(abd, "days").maximum).toBe(100000);
+      expect(prop(abd, "country").type).toBe("string");
+
+      const mc = toolRequestSchema(spec, "monte_carlo_schedule");
+      expect(prop(mc, "tasks").type).toBe("array");
+      expect(prop(mc, "tasks").maxItems).toBe(500);
+      expect(prop(mc, "iterations").maximum).toBe(100000);
+    });
+
+    it("lists required fields as required and keeps optional/defaulted fields out of required", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+
+      const pert = toolRequestSchema(spec, "pert_estimate");
+      expect(pert.required).toEqual(["optimistic", "most_likely", "pessimistic"]);
+      // Optional fields must not be listed as required.
+      for (const optionalField of ["unit", "task_type", "complexity", "task_label", "project", "session_id"]) {
+        expect(pert.required, optionalField).not.toContain(optionalField);
+      }
+      // Defaulted fields stay optional but carry their default value.
+      expect(prop(pert, "unit").default).toBe("hours");
+
+      const ctz = toolRequestSchema(spec, "convert_timezone");
+      expect(ctz.required).toEqual(["timestamp", "target_tz"]);
+    });
+
+    it("degrades a tool with an unrepresentable schema to the documented fallback (document still 200)", async () => {
+      // z.date() has no JSON Schema representation, so zod v4's toJSONSchema
+      // throws for it — the per-tool fallback must absorb that. (Note: a bare
+      // .transform() is NOT unrepresentable under io: "input", which converts
+      // the input side — the probe-confirmed throwing constructs are
+      // z.date()/z.bigint()/z.custom().)
+      const fixtureName = "fixture_unrepresentable_schema_tool";
+      TOOL_REGISTRY.set(fixtureName, {
+        name: fixtureName,
+        description: "Test fixture: input schema that cannot be represented in JSON Schema.",
+        inputSchema: z.object({ when: z.date() }),
+        outputSchema: { type: "object" },
+        handler: () => ({ ok: true as const, data: {} }),
+      } satisfies ToolDefinition);
+
+      try {
+        const fixtureApp = createApiApp(); // fresh app — the spec is cached per instance
+        const res = await fixtureApp.request("/openapi.json");
+        expect(res.status).toBe(200);
+
+        const spec = await res.json() as Record<string, unknown>;
+        const fallback = toolRequestSchema(spec, fixtureName);
+        expect(fallback.type).toBe("object");
+        expect(String(fallback.description)).toContain("unavailable");
+
+        // The other 25 tools are unaffected.
+        for (const name of TOOL_NAMES) {
+          const schema = toolRequestSchema(spec, name);
+          expect(schema.type).toBe("object");
+          expect(String(schema.description ?? "")).not.toContain("unavailable");
+        }
+      } finally {
+        TOOL_REGISTRY.delete(fixtureName);
+      }
     });
   });
 

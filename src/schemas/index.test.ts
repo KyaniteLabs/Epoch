@@ -19,8 +19,11 @@ import {
   estimateFromContextSchema,
   timeUnitEnum,
   taskTypeEnum,
-  llmModelEnum,
   reasoningDepthEnum,
+  businessDaysOffset,
+  BUSINESS_DAYS_LIMIT,
+  TASK_ARRAY_LIMIT,
+  CONTEXT_LENGTH_LIMIT,
 } from "./index.js";
 
 // ---- Enum schemas ----
@@ -34,21 +37,11 @@ describe("enum schemas", () => {
     expect(taskTypeEnum.safeParse("hotfix").success).toBe(false);
   });
 
-  it("llmModelEnum rejects unknown model", () => {
-    expect(llmModelEnum.safeParse("gpt-5").success).toBe(false);
-  });
-
-  it("llmModelEnum accepts the Claude 5 family / current models added in Phase 5", () => {
-    for (const model of ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]) {
-      expect(llmModelEnum.safeParse(model).success, model).toBe(true);
-    }
-  });
-
-  it("llmModelEnum keeps the pre-Phase-5 Claude aliases (additive superset)", () => {
-    for (const model of ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022"]) {
-      expect(llmModelEnum.safeParse(model).success, model).toBe(true);
-    }
-  });
+  // llmModelEnum was deleted (2026-08 remediation): it wired into nothing —
+  // `model` inputs are plain strings with a documented unknown-model generic
+  // fallback (75 tps) and provenance-based confidence labels. The catalog
+  // truth lives in MODEL_CALIBRATIONS (src/lib/analytics.ts), surfaced as the
+  // derived LLMModel union (src/types/index.ts).
 
   it("reasoningDepthEnum rejects invalid depth", () => {
     expect(reasoningDepthEnum.safeParse("extreme").success).toBe(false);
@@ -509,6 +502,89 @@ describe("pertEstimateSchema — optional complexity (Phase 3 contract wave)", (
   it("rejects complexity outside [1,5]", () => {
     expect(pertEstimateSchema.safeParse({ ...valid, complexity: 0 }).success).toBe(false);
     expect(pertEstimateSchema.safeParse({ ...valid, complexity: 6 }).success).toBe(false);
+  });
+});
+
+// ---- Input safety bounds (W1) ----------------------------------------------
+//
+// Every bound below is a single-call server-freeze vector: an uncapped days
+// walks the calendar day-by-day (1e9 days = event-loop hang), oversized task
+// arrays and iteration products monopolize the CPU, and an unbounded context
+// string forces O(context) work. Rejections must be immediate and carry an
+// actionable message.
+
+describe("businessDaysOffset (W1 input safety bound)", () => {
+  it("accepts integers within [-100000, 100000], including negatives", () => {
+    expect(businessDaysOffset.safeParse(5).success).toBe(true);
+    expect(businessDaysOffset.safeParse(-5).success).toBe(true);
+    expect(businessDaysOffset.safeParse(BUSINESS_DAYS_LIMIT).success).toBe(true);
+    expect(businessDaysOffset.safeParse(-BUSINESS_DAYS_LIMIT).success).toBe(true);
+  });
+
+  it("coerces numeric strings (backward-compatible with LLM callers)", () => {
+    const r = businessDaysOffset.safeParse("5");
+    expect(r.success && r.data).toBe(5);
+  });
+
+  it("rejects days above the cap with a clear message", () => {
+    const r = businessDaysOffset.safeParse(1e9);
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues[0]?.message).toContain("100000");
+  });
+
+  it("rejects days below the negative cap with a clear message", () => {
+    const r = businessDaysOffset.safeParse(-1e9);
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues[0]?.message).toContain("-100000");
+  });
+
+  it("rejects non-integer days", () => {
+    expect(businessDaysOffset.safeParse(1.5).success).toBe(false);
+  });
+
+  it("rejects non-numeric strings", () => {
+    expect(businessDaysOffset.safeParse("next week").success).toBe(false);
+  });
+});
+
+describe("task array bounds (W1 input safety bound)", () => {
+  const cpTask = (i: number) => ({ name: `T${i}`, duration: 2, predecessors: [] });
+  const mcTask = (i: number) => ({ name: `T${i}`, optimistic: 1, most_likely: 2, pessimistic: 3 });
+
+  it(`criticalPathSchema accepts ${TASK_ARRAY_LIMIT} tasks and rejects ${TASK_ARRAY_LIMIT + 1}`, () => {
+    expect(criticalPathSchema.safeParse({ tasks: Array.from({ length: TASK_ARRAY_LIMIT }, (_, i) => cpTask(i)) }).success).toBe(true);
+    const r = criticalPathSchema.safeParse({ tasks: Array.from({ length: TASK_ARRAY_LIMIT + 1 }, (_, i) => cpTask(i)) });
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues[0]?.message).toContain(String(TASK_ARRAY_LIMIT));
+  });
+
+  it(`monteCarloSchema accepts ${TASK_ARRAY_LIMIT} tasks and rejects ${TASK_ARRAY_LIMIT + 1}`, () => {
+    expect(monteCarloSchema.safeParse({ tasks: Array.from({ length: TASK_ARRAY_LIMIT }, (_, i) => mcTask(i)), iterations: 10 }).success).toBe(true);
+    const r = monteCarloSchema.safeParse({ tasks: Array.from({ length: TASK_ARRAY_LIMIT + 1 }, (_, i) => mcTask(i)), iterations: 10 });
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues[0]?.message).toContain(String(TASK_ARRAY_LIMIT));
+  });
+
+  it("keeps the existing iterations cap at 100000", () => {
+    expect(monteCarloSchema.safeParse({ tasks: [mcTask(0)], iterations: 100000 }).success).toBe(true);
+    expect(monteCarloSchema.safeParse({ tasks: [mcTask(0)], iterations: 100001 }).success).toBe(false);
+  });
+});
+
+describe("estimate_from_context context bound (W1 input safety bound)", () => {
+  it(`accepts a context of exactly ${CONTEXT_LENGTH_LIMIT} characters`, () => {
+    expect(estimateFromContextSchema.safeParse({ context: "x".repeat(CONTEXT_LENGTH_LIMIT) }).success).toBe(true);
+  });
+
+  it(`rejects a context longer than ${CONTEXT_LENGTH_LIMIT} characters with a clear message`, () => {
+    const r = estimateFromContextSchema.safeParse({ context: "x".repeat(CONTEXT_LENGTH_LIMIT + 1) });
+    expect(r.success).toBe(false);
+    if (r.success) return;
+    expect(r.error.issues[0]?.message).toContain("50000");
   });
 });
 
