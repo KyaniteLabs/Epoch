@@ -217,11 +217,20 @@ Output: {
   confidence99: [0, 10],
   unit: "hours",
   urgencyCategory: "medium",
-  humanReadable: "Expected: 5 hours. 95% confidence: 1.67 to 8.33 hours. 99% confidence: 0 to 10 hours.",
-  developerProfile: { mode: "ai_native", correctionFactor: 1.45 },
-  adjustedEstimate: 7.25
+  riskLevel: "high",
+  humanReadable: "Expected 2.86–7.14 hours (80% confidence interval); point estimate 5 hours (ledger-recorded basis; adjustedEstimate 5 applies the correction factor). No task_type was supplied, so this interval is derived from the PERT variance (optimistic/most_likely/pessimistic spread) instead of empirical data.",
+  developerProfile: { mode: "ai_native", correctionFactor: 1 },
+  adjustedEstimate: 5,
+  rawEstimate: 5,
+  correctionFactor: 1,
+  n: 0,
+  interval: { p50: { lower: 3.87, upper: 6.13 }, p80: { lower: 2.86, upper: 7.14 }, p90: { lower: 2.25, upper: 7.75 }, source: "pert_variance" },
+  intervalNote: "No task_type was supplied, so this interval is derived from the PERT variance (optimistic/most_likely/pessimistic spread) instead of empirical data.",
+  basisNote: "Interval and point estimate are on the ledger-recorded basis (raw PERT expected × unit factor). adjustedEstimate (5 hours) additionally applies the correction factor (1) and is display-only — it is never recorded or calibrated against."
 }
 ```
+
+(Example from a fresh install with no accumulated feedback; with ≥5 exclusion-filtered matched pairs for the task type, `interval.source` becomes `"empirical_ratio_quantile"`, `n` reports the sample size, and `intervalPopulation` names the ratio population used.)
 
 **`cocomo_estimate`** -- COCOMO II software sizing with LLM-adapted cost drivers
 
@@ -307,10 +316,15 @@ Output: {
   p50: "7.91",
   p80: "9.39",
   p95: "10.75",
-  riskEvents: [{ description: "Task \"A\" exceeded 1.5x PERT expected in 5% of simulations", probability: 0.05, impactDays: 3 }],
-  criticalPathProbability: 0.8
+  riskEvents: [
+    { description: "Task \"A\" exceeded 1.5x PERT expected in 10% of simulations", probability: 0.1, impactDays: 0.05 },
+    { description: "Task \"B\" exceeded 1.5x PERT expected in 10% of simulations", probability: 0.1, impactDays: 0.04 }
+  ],
+  criticalPathProbability: null
 }
 ```
+
+(`criticalPathProbability` is `null` unless a `target_hours` deadline is supplied — then it is the real P(total ≤ target); `riskEvents[].impactDays` is per-task expected overrun, sorted by impact.)
 
 ### Layer 4 -- Analytics
 
@@ -322,17 +336,22 @@ Input:  {
   complexity: 3
 }
 Output: {
-  rawEstimate: 6.7,
-  correctedEstimate: 11.1,
-  correctionFactor: 1.67,
-  sampleSize: 117791,
-  baselineSource: "self-improvement",
+  rawEstimate: 2,
+  correctedEstimate: 2,
+  correctionFactor: 1,
+  sampleSize: 0,
+  baselineSource: "inferred_scope_medium_real_tasks",
+  scopeUsed: "medium",
+  scopeInferred: true,
   confidence: "pessimistic",
-  developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1.45 },
-  adjustedEstimate: 9.7,
-  note: "Correction factors from bundled reference database (117,791 samples). Record actuals to personalize further."
+  developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1 },
+  adjustedEstimate: 2,
+  basisNote: "correctedEstimate (2 hours) is the ledger-recorded and displayed basis (rawEstimate × correctionFactor). adjustedEstimate (2 hours) additionally applies the developerProfile factor (1) and is display-only — it is never recorded or calibrated against.",
+  intervalNote: "Fewer than 5 exclusion-filtered historical \"feature\" reference_class_estimate pairs are available yet, so no empirical confidence interval could be computed."
 }
 ```
+
+(Fresh-install output; with accumulated feedback the correction factor and sample size come from your own matched pairs and the empirical interval is populated — `correctedEstimate` is always the recorded basis.)
 
 Valid `task_type` values: `feature`, `bugfix`, `refactor`, `migration`, `infrastructure`, `documentation`, `testing`, `design`.
 
