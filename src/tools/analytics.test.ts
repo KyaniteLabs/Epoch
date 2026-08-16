@@ -1,11 +1,39 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { TOOL_REGISTRY } from "../dispatcher/tool-registry.js";
 import { defined } from "../test-support.js";
+import { resetTelemetry } from "../lib/telemetry.js";
 
 
 // ---------------------------------------------------------------------------
 // Tool Registry Tests — Layer 4-5 (Analytics)
 // ---------------------------------------------------------------------------
+
+// Confidence labels reflect provenance (ticket 15): dispatching token tools in
+// this file records model telemetry, which would flip later assertions from
+// the curated table ("optimistic") to locally-measured ("likely"). Isolate to
+// a temp data dir so provenance stays deterministic.
+let tempDataDir: string;
+let previousDataDir: string | undefined;
+
+beforeAll(() => {
+  previousDataDir = process.env["EPOCH_DATA_DIR"];
+  tempDataDir = mkdtempSync(join(tmpdir(), "epoch-tools-analytics-test-"));
+  process.env["EPOCH_DATA_DIR"] = tempDataDir;
+  resetTelemetry();
+});
+
+afterAll(() => {
+  resetTelemetry();
+  rmSync(tempDataDir, { recursive: true, force: true });
+  if (previousDataDir === undefined) {
+    delete process.env["EPOCH_DATA_DIR"];
+  } else {
+    process.env["EPOCH_DATA_DIR"] = previousDataDir;
+  }
+});
 
 describe("analytics tools via registry", () => {
   it("registers 7 analytics tools", () => {
@@ -79,7 +107,10 @@ describe("analytics tools via registry", () => {
       const data = result.data as Record<string, unknown>;
       expect(data.estimatedSeconds as number).toBeGreaterThan(0);
       expect(data.estimatedMinutes as number).toBeGreaterThan(0);
-      expect(data.confidence).toBe("likely");
+      // "optimistic" (was "likely"): confidence now reflects data provenance —
+      // a curated-table calibration is borrowed, not locally measured
+      // telemetry (ticket 15).
+      expect(data.confidence).toBe("optimistic");
       expect(data.model).toBe("claude-sonnet-4-20250514");
     }
   });

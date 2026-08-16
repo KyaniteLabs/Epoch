@@ -119,4 +119,56 @@ describe("runRepairOrphanedActuals", () => {
     const backupContent = readFileSync(report.backupPath as string, "utf-8");
     expect(backupContent).toBe(before);
   });
+
+  // ---- Ticket 18: a target estimate can be claimed by at most ONE orphan ----
+
+  it("two orphans matching the same single target → first relinks, second is refused as multiple_candidates (never a double relink)", () => {
+    // One pending target estimate; TWO orphan actuals whose 24h windows,
+    // tool, and inputs signatures all match it.
+    writeFileSync(
+      join(TEST_DIR, ESTIMATES_FILE),
+      JSON.stringify({ id: "contested-target", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { expected: 5, unit: "hours" }, estimatedAt: "2026-06-10T09:00:00.000Z" }) + "\n",
+    );
+    writeFileSync(
+      join(TEST_DIR, ACTUALS_FILE),
+      [
+        JSON.stringify({ estimateId: "orphan-a", actualHours: 4, tool: "pert_estimate", inputs: { task_type: "feature" }, reportedAt: "2026-06-10T12:00:00.000Z", completedAt: "2026-06-10T12:00:00.000Z" }),
+        JSON.stringify({ estimateId: "orphan-b", actualHours: 6, tool: "pert_estimate", inputs: { task_type: "feature" }, reportedAt: "2026-06-10T13:00:00.000Z", completedAt: "2026-06-10T13:00:00.000Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const report = runRepairOrphanedActuals({ mode: "dry-run" });
+    expect(report.totalOrphans).toBe(2);
+    // Exactly one relink — file order decides the claim deterministically.
+    expect(report.relinked).toHaveLength(1);
+    expect(report.relinked[0]).toMatchObject({ orphanEstimateId: "orphan-a", relinkedToEstimateId: "contested-target" });
+    // The second orphan is refused with multiple_candidates...
+    const refused = report.unresolved.find((u) => u.orphanEstimateId === "orphan-b");
+    expect(refused).toMatchObject({ reason: "multiple_candidates" });
+    // ...and listed in the dedicated refused-double-relinks report field.
+    expect(report.refusedDoubleRelinks).toEqual([{ orphanEstimateId: "orphan-b", targetEstimateId: "contested-target" }]);
+  });
+
+  it("apply keeps exactly ONE actual per relinked target even when two orphans contested it", () => {
+    writeFileSync(
+      join(TEST_DIR, ESTIMATES_FILE),
+      JSON.stringify({ id: "contested-target", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { expected: 5, unit: "hours" }, estimatedAt: "2026-06-10T09:00:00.000Z" }) + "\n",
+    );
+    writeFileSync(
+      join(TEST_DIR, ACTUALS_FILE),
+      [
+        JSON.stringify({ estimateId: "orphan-a", actualHours: 4, tool: "pert_estimate", inputs: { task_type: "feature" }, reportedAt: "2026-06-10T12:00:00.000Z", completedAt: "2026-06-10T12:00:00.000Z" }),
+        JSON.stringify({ estimateId: "orphan-b", actualHours: 6, tool: "pert_estimate", inputs: { task_type: "feature" }, reportedAt: "2026-06-10T13:00:00.000Z", completedAt: "2026-06-10T13:00:00.000Z" }),
+      ].join("\n") + "\n",
+    );
+
+    const report = runRepairOrphanedActuals({ mode: "apply" });
+    expect(report.written).toBe(1);
+    expect(report.refusedDoubleRelinks).toHaveLength(1);
+
+    const rows = readFileSync(join(TEST_DIR, ACTUALS_FILE), "utf-8").trim().split("\n").map((l) => JSON.parse(l) as { estimateId: string });
+    expect(rows.filter((r) => r.estimateId === "contested-target")).toHaveLength(1); // no double join
+    expect(rows.some((r) => r.estimateId === "orphan-a")).toBe(false); // the claimer was relinked
+    expect(rows.some((r) => r.estimateId === "orphan-b")).toBe(true); // the refused orphan is retained for audit
+  });
 });

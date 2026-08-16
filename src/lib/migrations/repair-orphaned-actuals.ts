@@ -30,7 +30,7 @@
 import { createHash } from "node:crypto";
 import { readLines, ESTIMATES_FILE, ACTUALS_FILE, type EstimateRecord, type ActualRecord } from "../ledger.js";
 import { canonicalizeToolName } from "../tool-aliases.js";
-import { acquireQuiesceLock, releaseQuiesceLock, atomicWriteJsonl, backupFile, migrationStamp, type MigrationMode } from "./shared.js";
+import { acquireQuiesceLock, releaseQuiesceLock, rewriteJsonlWithTailMerge, backupFile, migrationStamp, type MigrationMode, type TailMergeResult } from "./shared.js";
 
 const DEFAULT_WINDOW_HOURS = 24;
 
@@ -45,6 +45,17 @@ export interface RelinkedActual {
   tool: string;
 }
 
+/**
+ * Ticket 18 (double-relink refusal): an orphan whose single candidate target
+ * was already CLAIMED by an earlier orphan in the same run. The relink is
+ * refused (surfaced as multiple_candidates in `unresolved` too) — two actuals
+ * must never be relinked onto one estimate.
+ */
+export interface RefusedDoubleRelink {
+  orphanEstimateId: string;
+  targetEstimateId: string;
+}
+
 export interface UnresolvedOrphan {
   orphanEstimateId: string;
   candidateCount: number;
@@ -57,7 +68,10 @@ export interface RepairReport {
   totalOrphans: number;
   relinked: RelinkedActual[];
   unresolved: UnresolvedOrphan[];
+  refusedDoubleRelinks: RefusedDoubleRelink[];
   written: number;
+  /** Lines appended concurrently during the rewrite that were re-merged and survived (ticket 18). */
+  tailMerged: number;
   backupPath: string | null;
 }
 
@@ -113,6 +127,11 @@ export function runRepairOrphanedActuals(options: RepairOptions): RepairReport {
 
   const relinked: RelinkedActual[] = [];
   const unresolved: UnresolvedOrphan[] = [];
+  const refusedDoubleRelinks: RefusedDoubleRelink[] = [];
+  // Ticket 18: a pending estimate may be claimed by AT MOST ONE orphan per
+  // run — otherwise two actuals would relink onto one estimate (duplicate
+  // actuals). Deterministic claim order: file order of the orphan rows.
+  const claimedTargets = new Set<string>();
 
   for (const orphan of orphans) {
     const completedAtRaw = orphan.completedAt ?? orphan.reportedAt;
@@ -131,7 +150,14 @@ export function runRepairOrphanedActuals(options: RepairOptions): RepairReport {
 
     if (candidates.length === 1) {
       const only = candidates[0];
-      if (only) {
+      if (only && claimedTargets.has(only.id)) {
+        // Ticket 18 (double-relink refusal): the single candidate was already
+        // claimed by an earlier orphan — treated as multiple_candidates, never
+        // guessed, and listed separately for audit.
+        refusedDoubleRelinks.push({ orphanEstimateId: orphan.estimateId, targetEstimateId: only.id });
+        unresolved.push({ orphanEstimateId: orphan.estimateId, candidateCount: candidates.length, reason: "multiple_candidates" });
+      } else if (only) {
+        claimedTargets.add(only.id);
         relinked.push({ orphanEstimateId: orphan.estimateId, relinkedToEstimateId: only.id, tool: only.tool });
       }
     } else {
@@ -144,6 +170,7 @@ export function runRepairOrphanedActuals(options: RepairOptions): RepairReport {
   }
 
   let written = 0;
+  let tailMerged = 0;
   let backupPath: string | null = null;
 
   if (options.mode === "apply" && relinked.length > 0) {
@@ -152,19 +179,30 @@ export function runRepairOrphanedActuals(options: RepairOptions): RepairReport {
     try {
       backupPath = backupFile(ACTUALS_FILE, stamp);
       const relinkMap = new Map(relinked.map((r) => [r.orphanEstimateId, r.relinkedToEstimateId]));
-      // Re-read fresh under the lock so a concurrent appender's rows aren't lost.
-      const freshActuals = readLines<ActualRecord>(ACTUALS_FILE);
-      const updated = freshActuals.map((a) => {
-        const target = relinkMap.get(a.estimateId);
-        if (target === undefined) return a;
-        written++;
-        return { ...a, estimateId: target };
-      });
-      atomicWriteJsonl(ACTUALS_FILE, updated);
+      // Ticket 18: rewrite under the per-file ledger write lock with a tail
+      // re-merge — rows appended by the live server between the fresh read and
+      // the rename are re-appended verbatim instead of being lost. Unparseable
+      // lines are dropped, matching the readLines-based rewrite this replaces.
+      const result: TailMergeResult = rewriteJsonlWithTailMerge(ACTUALS_FILE, (rawLines) =>
+        rawLines.flatMap((line) => {
+          let a: ActualRecord;
+          try {
+            a = JSON.parse(line) as ActualRecord;
+          } catch {
+            return [];
+          }
+          if (a === null || typeof a !== "object") return [];
+          const target = relinkMap.get(a.estimateId);
+          if (target === undefined) return [line];
+          written++;
+          return [JSON.stringify({ ...a, estimateId: target })];
+        }),
+      );
+      tailMerged = result.tailMerged;
     } finally {
       releaseQuiesceLock();
     }
   }
 
-  return { mode: options.mode, windowHours, totalOrphans: orphans.length, relinked, unresolved, written, backupPath };
+  return { mode: options.mode, windowHours, totalOrphans: orphans.length, relinked, unresolved, refusedDoubleRelinks, written, tailMerged, backupPath };
 }

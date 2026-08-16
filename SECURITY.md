@@ -2,10 +2,10 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest  | :white_check_mark: |
-| < 1.0   | :x:                |
+| Version      | Supported          |
+| ------------ | ------------------ |
+| 0.4.x (latest) | :white_check_mark: |
+| < 0.4.0      | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -22,9 +22,9 @@ To report a vulnerability:
 ## Security Controls
 
 - **Supply chain**: All GitHub Actions pinned by SHA. Dependencies audited in CI via `pnpm audit`. Dependabot enabled for npm and GitHub Actions.
-- **Secret scanning**: [gitleaks](https://gitleaks.io/) runs on every push and pull request.
+- **Secret scanning**: [TruffleHog OSS](https://github.com/trufflesecurity/trufflehog) runs in CI on pushes to `main` and pull requests targeting `main` (verified findings only).
 - **Input validation**: All tool inputs validated via Zod schemas. HTTP requests limited to 1 MB.
-- **Telemetry**: Fully opt-in (disabled by default). Data is anonymized. HMAC-signed payloads.
+- **Telemetry**: Fully opt-in (disabled by default). Data is anonymized. HMAC-signed payloads — **integrity-only, not authenticity**: the signing key (`installation_id`) travels inside the payload, so a valid signature proves the payload was not corrupted in transit but cannot prove who sent it. The receiver validates submitted records statistically (ratio ≈ actual/estimated within tolerance, bounded hour/ratio magnitudes, per-installation and total admission caps) and **quarantines** every admitted record (`~/.epoch/telemetry-quarantine.jsonl`, visible `quarantinedRecords` counter) instead of merging it into the calibration store — quarantined and unclassified records never influence correction factors. Accepted residual risk: a patient attacker submitting plausible ratios under fresh installation IDs can still land records in the quarantine bucket; this is bounded by the admission caps and accepted until a receiver-side secret exists (deferred infrastructure decision). See [docs/TELEMETRY.md](docs/TELEMETRY.md).
 - **HTTP server**: Binds to `127.0.0.1` by default. Rate-limited (100 req/min, configurable). CORS enabled.
 - **No secrets in source**: No API keys, tokens, or credentials in the codebase. All configuration via environment variables.
 - **npm provenance**: Published packages include signed provenance attestations.

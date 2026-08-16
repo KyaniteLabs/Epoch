@@ -17,7 +17,7 @@ Agent skill: skills/epoch/SKILL.md, invoked as $epoch in compatible agent hosts
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.3.1 — 25 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.5.0 — 25 structured tools for grounded time estimation
 
 ## What
 

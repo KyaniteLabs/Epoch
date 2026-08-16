@@ -18,6 +18,7 @@ import {
 	getPertToolTaskCorrection,
 	composePertCorrectionFactor,
 	PERT_CORRECTION_RECENCY_DEFAULT,
+	weightedMedian,
 } from "./calibration-factors.js";
 import type { HistoricalRecord } from "../types/index.js";
 
@@ -247,6 +248,75 @@ describe("calibration-factors", () => {
 				const weighted = computeToolTaskCorrectionFactors(records, { scheme: { kind: "exponential", halfLifeDays: 7 }, asOf });
 				expect(weighted.pert_estimate).toEqual({});
 			});
+		});
+	});
+
+	describe("weightedMedian", () => {
+		/** The file's own unweighted median(): average of the two middle values for even n. */
+		function median(values: number[]): number {
+			const sorted = [...values].sort((a, b) => a - b);
+			const mid = Math.floor(sorted.length / 2);
+			return sorted.length % 2 === 0
+				? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
+				: (sorted[mid] ?? 0);
+		}
+
+		it("equal weights reduce exactly to the unweighted median for even n (W2 parity fix)", () => {
+			// Previously the >= half-weight comparison returned the LOWER median
+			// (1), diverging from median([1,3]) = 2.
+			expect(weightedMedian([{ value: 1, weight: 1 }, { value: 3, weight: 1 }], 0)).toBe(2);
+			expect(
+				weightedMedian(
+					[1, 2, 3, 4].map((v) => ({ value: v, weight: 2 })),
+					0,
+				),
+			).toBe(2.5);
+		});
+
+		it("equal weights reduce exactly to the unweighted median for odd n", () => {
+			expect(
+				weightedMedian([1, 3, 5].map((v) => ({ value: v, weight: 1 })), 0),
+			).toBe(3);
+		});
+
+		it("equal weights match median() on a deterministic sweep of lengths and orderings", () => {
+			for (let n = 1; n <= 17; n += 1) {
+				const values = Array.from({ length: n }, (_, i) => ((i * 7) % 11) - 5);
+				const wm = weightedMedian(values.map((v) => ({ value: v, weight: 1 })), 0);
+				expect(wm).toBe(median(values));
+			}
+		});
+
+		it("respects weights: a 3:1 split picks the heavier side", () => {
+			expect(
+				weightedMedian(
+					[
+						{ value: 1, weight: 3 },
+						{ value: 3, weight: 1 },
+					],
+					0,
+				),
+			).toBe(1);
+			expect(
+				weightedMedian(
+					[
+						{ value: 1, weight: 1 },
+						{ value: 3, weight: 3 },
+					],
+					0,
+				),
+			).toBe(3);
+		});
+
+		it("returns fallback for empty input or all-zero weights", () => {
+			expect(weightedMedian([], 1.4)).toBe(1.4);
+			expect(
+				weightedMedian([{ value: 5, weight: 0 }], 1.4),
+			).toBe(1.4);
+		});
+
+		it("single item returns its own value", () => {
+			expect(weightedMedian([{ value: 5, weight: 0.5 }], 1.4)).toBe(5);
 		});
 	});
 

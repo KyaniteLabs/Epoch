@@ -94,7 +94,7 @@ When telemetry is enabled, data is:
 1. Extracted from local JSONL files
 2. Anonymized (all identifying fields stripped)
 3. Batched (max 100 records per submission, max 1 submission per hour)
-4. Signed with HMAC-SHA256 (proves data came from a real Epoch instance)
+4. Signed with HMAC-SHA256 (integrity-only — detects in-transit corruption; see "HMAC signing" below)
 5. Sent via HTTPS POST to an explicitly configured endpoint
 
 Epoch does not ship with a built-in default telemetry receiver URL. Configure an endpoint with `epoch telemetry set-endpoint`, `epoch telemetry enable --endpoint ...`, `epoch telemetry submit --endpoint ...`, or `EPOCH_TELEMETRY_ENDPOINT`. You may use a Kyanite Labs-operated endpoint if one is provided, or self-host the telemetry receiver.
@@ -112,7 +112,7 @@ Self-hosted or third-party endpoints are governed by the operator of that endpoi
 
 ### HMAC signing
 
-Each telemetry submission is signed with HMAC-SHA256 using the `installation_id` as the key. This allows the server to verify that data came from a real Epoch instance without revealing any identity information.
+Each telemetry submission is signed with HMAC-SHA256 using the `installation_id` as the key. This is an **integrity-only** check: it lets the receiver detect corrupted or tampered bytes without revealing any identity information. It does **not** prove the data came from a real Epoch instance — the key travels in the payload — so receivers also validate records statistically and quarantine (rather than merge) what they accept. See [TELEMETRY.md](./TELEMETRY.md) for the trust model and accepted residual risk.
 
 ## Community Data Contribution
 

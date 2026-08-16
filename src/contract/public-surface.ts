@@ -89,6 +89,7 @@ export const EXPECTED_CLI_COMMAND_PATHS = [
 	"data",
 	"data where",
 	"data status",
+	"serve",
 	"list-tools",
 ] as const;
 

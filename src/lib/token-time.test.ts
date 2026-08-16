@@ -41,7 +41,9 @@ describe("tokenTimeBridge", () => {
       });
       expect(result.estimatedSeconds).toBeGreaterThan(0);
       expect(result.estimatedMinutes).toBeGreaterThan(0);
-      expect(result.confidence).toBe("likely");
+      // "optimistic": curated-table provenance — calibration data exists but
+      // is not locally measured telemetry (provenance-based labels, ticket 15).
+      expect(result.confidence).toBe("optimistic");
       expect(result.model).toBe(model);
       expect(result.tokens).toBe(tokens);
       // Sanity: no model should estimate > 10 hours for 100k tokens
@@ -105,8 +107,11 @@ describe("tokenTimeBridge", () => {
       reasoningDepth: "shallow",
     });
     expect(result.estimatedSeconds).toBeGreaterThan(0);
-    // Fallback uses optimistic confidence
-    expect(result.confidence).toBe("optimistic");
+    // Generic fallback (75 tps documented default) — "pessimistic" reflects
+    // that NO model-specific data exists (provenance-based labels, ticket 15).
+    expect(result.confidence).toBe("pessimistic");
+    // 5000 tokens / 75 tps + 2.5s shallow reasoning overhead = 69.17s
+    expect(result.estimatedSeconds).toBe(69);
   });
 
   it("human-readable string includes key information", () => {

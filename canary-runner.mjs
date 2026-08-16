@@ -1372,7 +1372,7 @@ async function main() {
     // ---- Phase 1: GLM --------------------------------------------------------
     const glmToken = process.env.GLM_AUTH_TOKEN;
     if (glmToken) {
-      const glmModels = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5", "glm-5-turbo", "glm-5.1"];
+      const glmModels = ["glm-4.5", "glm-4.5-air", "glm-4.6", "glm-4.7", "glm-5.3", "glm-5", "glm-5-turbo"];
       for (const model of glmModels) {
         await runProviderMatrix({ name: `GLM/${model}`, apiType: "anthropic", baseURL: "https://api.z.ai/api/anthropic/v1", authToken: glmToken, model }, toolDefs, allResults, allTasks);
       }

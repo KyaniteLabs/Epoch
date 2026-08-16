@@ -81,6 +81,12 @@ export interface BusinessDayResult {
   readonly businessDays: number;
   /** ISO-3166-1-alpha-2 country code used for holiday calculation. */
   readonly countryCode: string;
+  /**
+   * Holiday-table version stamp (CALENDAR_VERSION, "YYYY.MM") that produced
+   * this result — lets consumers detect when a holiday-rule correction
+   * (observed/substitute days, equinox tables) shifts saved forecasts.
+   */
+  readonly calendarVersion: string;
   /** Human-readable summary (e.g. "19 business days between May 1, 2026 and May 31, 2026 (US)"). */
   readonly humanReadable: string;
 }
@@ -188,9 +194,14 @@ export interface TokenTimeMapping {
 export interface RiskEvent {
   /** Human-readable risk description. */
   readonly description: string;
-  /** Probability of occurrence (0-1). */
+  /** Probability of occurrence (0-1): share of simulations where the task exceeded 1.5x its PERT expected duration. */
   readonly probability: number;
-  /** Expected schedule impact in days. */
+  /**
+   * Expected schedule impact in days for THIS task: the mean per-simulation
+   * excess of the task's sampled duration beyond 1.5x its PERT expected value
+   * (E[(X - 1.5*E[X])+] over all simulations). Per-task by construction —
+   * never the project-level p95-p50 spread.
+   */
   readonly impactDays: number;
 }
 
@@ -207,8 +218,17 @@ export interface MonteCarloResult {
   readonly estimatedHours: number;
   /** Estimated AI token cost at p50 (50k tokens/hour × estimatedHours). */
   readonly estimatedCost: number;
-  /** Probability the critical path will be met (0-1). */
-  readonly criticalPathProbability: number;
+  /**
+   * P(total duration ≤ target_hours): the probability the simulated project
+   * fits within the caller-supplied deadline, where task durations are in
+   * 8-hour days (targetHours/8 in day units). `null` when no `target_hours`
+   * was supplied — the metric is only reported against a real deadline,
+   * never a fabricated target. (Previously this field always read ~0.80
+   * because the "target" was the simulation's own p80 — a tautology.)
+   */
+  readonly criticalPathProbability: number | null;
+  /** The caller-supplied deadline in hours that criticalPathProbability was computed against, when one was supplied. */
+  readonly targetHours?: number;
   /** Whether p50 converged (difference between first and second half < 5%). */
   readonly converged: boolean;
   /** Identified risk events and their characteristics. */
@@ -245,19 +265,18 @@ export type TaskType =
 
 // ---- LLM Model Identifiers -----------------------------------------------
 
-export type LLMModel =
-  | "gpt-4o"
-  | "gpt-4o-mini"
-  | "gpt-4-turbo"
-  | "claude-sonnet-4-20250514"
-  | "claude-opus-4-20250514"
-  | "claude-3.5-haiku-20241022"
-  | "gemini-2.0-flash"
-  | "gemini-2.5-pro"
-  | "llama-3.1-70b"
-  | "llama-3.1-405b"
-  | "mistral-large"
-  | "deepseek-v3";
+/**
+ * LLM model identifiers with latency-calibration entries in the live
+ * MODEL_CALIBRATIONS table (src/lib/analytics.ts). Derived from the table via
+ * an import type, so the union cannot drift from it — adding or removing a
+ * calibration entry changes this type automatically.
+ *
+ * `model` INPUT fields stay plain strings everywhere (schemas + handlers):
+ * unknown models are accepted and fall back to the documented generic default
+ * (75 tps, GENERIC_MODEL_CALIBRATION) with a "pessimistic" confidence label
+ * rather than being rejected.
+ */
+export type { LLMModel } from "../lib/analytics.js";
 
 // ---- Token Time Reasoning Depth -------------------------------------------
 

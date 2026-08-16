@@ -1,5 +1,43 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeToolName, CANONICAL_TOOL_NAMES } from "./tool-aliases.js";
+import {
+  canonicalizeToolName,
+  CANONICAL_TOOL_NAMES,
+  ESTIMATION_TOOL_NAMES,
+  NON_ESTIMATION_TOOL_NAMES,
+  TOOL_COUNT,
+  ESTIMATION_TOOL_COUNT,
+} from "./tool-aliases.js";
+
+// ---------------------------------------------------------------------------
+// Authoritative tool surface (remediation ticket 03)
+// ---------------------------------------------------------------------------
+//
+// This module is the single source of truth for the tool surface; these
+// invariants pin its internal consistency. Cross-module derivation (registry,
+// feedback-health list, llms.txt) is pinned by
+// src/dispatcher/tool-surface-sync.test.ts.
+
+describe("authoritative tool surface", () => {
+  it("defines exactly 25 canonical tools, including estimate_from_context", () => {
+    expect(TOOL_COUNT).toBe(25);
+    expect(CANONICAL_TOOL_NAMES.has("estimate_from_context")).toBe(true);
+  });
+
+  it("estimation partition has 9 tools, including estimate_from_context", () => {
+    expect(ESTIMATION_TOOL_COUNT).toBe(9);
+    expect(ESTIMATION_TOOL_NAMES.has("estimate_from_context")).toBe(true);
+    for (const name of ESTIMATION_TOOL_NAMES) {
+      expect(CANONICAL_TOOL_NAMES.has(name)).toBe(true);
+    }
+  });
+
+  it("non-estimation partition is the derived complement of the estimation partition", () => {
+    expect([...NON_ESTIMATION_TOOL_NAMES]).toEqual(
+      [...CANONICAL_TOOL_NAMES].filter((name) => !ESTIMATION_TOOL_NAMES.has(name)),
+    );
+    expect(NON_ESTIMATION_TOOL_NAMES.size).toBe(TOOL_COUNT - ESTIMATION_TOOL_COUNT);
+  });
+});
 
 describe("canonicalizeToolName", () => {
   it("passes through already-canonical tool names unchanged", () => {
@@ -16,6 +54,7 @@ describe("canonicalizeToolName", () => {
       ["criticalPath", "critical_path"],
       ["monteCarloSchedule", "monte_carlo_schedule"],
       ["referenceClassEstimate", "reference_class_estimate"],
+      ["estimateFromContext", "estimate_from_context"],
       ["calibrateEstimates", "calibrate_estimates"],
       ["tokenTimeBridge", "token_time_bridge"],
       ["tokenCostEstimate", "token_cost_estimate"],

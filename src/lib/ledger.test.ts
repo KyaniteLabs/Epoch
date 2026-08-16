@@ -3,15 +3,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(false),
   readFileSync: vi.fn(),
+  statSync: vi.fn(),
 }));
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type * as NodeFs from "node:fs";
 import type * as NodePath from "node:path";
 import {
   readLines,
   loadLedgerWithOverlays,
   appendOverlayRecord,
+  resetLedgerReadCache,
+  getLedgerCacheStatus,
   ESTIMATES_FILE,
   ACTUALS_FILE,
   FLAGS_FILE,
@@ -22,10 +25,19 @@ import {
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+const mockStatSync = vi.mocked(statSync);
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockExistsSync.mockReturnValue(true);
+  // Ticket 17 read cache: start every test with a cold cache and statSync
+  // unconfigured (a throwing stat degrades readLines to a cache-bypass read,
+  // which is the pre-cache behavior the original suites below pin).
+  resetLedgerReadCache();
+  mockStatSync.mockReset();
+  mockStatSync.mockImplementation(() => {
+    throw new Error("statSync not configured for this test");
+  });
 });
 
 function jsonl(records: unknown[]): string {
@@ -221,6 +233,150 @@ describe("loadLedgerWithOverlays", () => {
   it("returns [] when no ledger files exist", () => {
     mockExistsSync.mockReturnValue(false);
     expect(loadLedgerWithOverlays()).toEqual([]);
+  });
+});
+
+// ---- readLines stat-keyed cache (ticket 17) ---------------------------------
+
+describe("readLines read cache (ticket 17)", () => {
+  /** Build a minimal Stats-shaped object (ino as number is fine — statKey stringifies it). */
+  function fakeStat(size: number, mtimeMs: number, ino: number) {
+    return { size, mtimeMs, ino } as unknown as NodeFs.Stats;
+  }
+
+  /** Configure a stable stat so repeated reads exercise the cache path. */
+  function mockStableStat(size = 100, mtimeMs = 1_000, ino = 7) {
+    mockStatSync.mockImplementation(() => fakeStat(size, mtimeMs, ino));
+  }
+
+  it("an unchanged stat key returns the cached parse without re-reading the file", () => {
+    mockReadFileSync.mockReturnValue(jsonl([{ id: "e1" }, { id: "e2" }]));
+    mockStableStat();
+
+    readLines<{ id: string }>(ESTIMATES_FILE);
+    const second = readLines<{ id: string }>(ESTIMATES_FILE);
+
+    expect(second).toEqual([{ id: "e1" }, { id: "e2" }]);
+    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts only real parses in the test-visible parse counter", () => {
+    mockReadFileSync.mockReturnValue(jsonl([{ id: "e1" }]));
+    mockStableStat();
+
+    readLines(ESTIMATES_FILE);
+    readLines(ESTIMATES_FILE);
+    readLines(ESTIMATES_FILE);
+
+    const parses = [...getLedgerCacheStatus().values()].reduce((sum, e) => sum + e.parses, 0);
+    expect(parses).toBe(1);
+  });
+
+  it("a size change (external append) re-reads and re-parses", () => {
+    mockReadFileSync.mockReturnValueOnce(jsonl([{ id: "e1" }])).mockReturnValueOnce(jsonl([{ id: "e1" }, { id: "e2" }]));
+    let size = 50;
+    mockStatSync.mockImplementation(() => fakeStat(size, 1_000, 7));
+
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1" }]);
+
+    size = 80; // an external process appended a row
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1" }, { id: "e2" }]);
+    expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("an mtime-only change (same-size in-place rewrite) re-parses", () => {
+    mockReadFileSync.mockReturnValueOnce(jsonl([{ id: "e1" }])).mockReturnValueOnce(jsonl([{ id: "e1-replaced" }]));
+    let mtimeMs = 1_000;
+    mockStatSync.mockImplementation(() => fakeStat(50, mtimeMs, 7));
+
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1" }]);
+
+    mtimeMs = 1_001; // same size, rewritten
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1-replaced" }]);
+  });
+
+  it("an inode-only change (same-size rename rewrite) re-parses", () => {
+    mockReadFileSync.mockReturnValueOnce(jsonl([{ id: "e1" }])).mockReturnValueOnce(jsonl([{ id: "e1-renamed" }]));
+    let ino = 7;
+    mockStatSync.mockImplementation(() => fakeStat(50, 1_000, ino));
+
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1" }]);
+
+    ino = 9; // atomic rename over the same path
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1-renamed" }]);
+  });
+
+  it("a caller sorting or mutating its returned array cannot corrupt subsequent reads", () => {
+    mockReadFileSync.mockReturnValue(jsonl([{ id: "e1" }, { id: "e2" }, { id: "e3" }]));
+    mockStableStat();
+
+    const rows = readLines<{ id: string }>(ESTIMATES_FILE);
+    rows.sort((a, b) => b.id.localeCompare(a.id)); // descending
+    rows.push({ id: "injected" });
+
+    expect(readLines<{ id: string }>(ESTIMATES_FILE)).toEqual([{ id: "e1" }, { id: "e2" }, { id: "e3" }]);
+    expect(mockReadFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a fresh array per call, but cached rows are frozen (in-place row mutation fails loudly)", () => {
+    mockReadFileSync.mockReturnValue(jsonl([{ id: "e1", inputs: { a: 1 } }]));
+    mockStableStat();
+
+    const first = readLines<{ id: string; inputs: Record<string, unknown> }>(ESTIMATES_FILE);
+    const second = readLines<{ id: string; inputs: Record<string, unknown> }>(ESTIMATES_FILE);
+    expect(second).not.toBe(first); // copy-on-read: each caller owns its array
+    expect(second).toEqual(first);
+
+    expect(Object.isFrozen(first[0])).toBe(true);
+    const row = first[0] as { id: string };
+    expect(() => {
+      row.id = "mutated";
+    }).toThrow();
+  });
+
+  it("resetLedgerReadCache drops cached rows and counters", () => {
+    mockReadFileSync.mockReturnValue(jsonl([{ id: "e1" }]));
+    mockStableStat();
+
+    readLines(ESTIMATES_FILE);
+    resetLedgerReadCache();
+    expect(getLedgerCacheStatus().size).toBe(0);
+
+    // Post-reset read re-parses even though the stat is unchanged.
+    readLines(ESTIMATES_FILE);
+    const parses = [...getLedgerCacheStatus().values()].reduce((sum, e) => sum + e.parses, 0);
+    expect(parses).toBe(1);
+  });
+
+  it("EPOCH_LEDGER_CACHE=0 bypasses the cache (every read parses)", () => {
+    mockReadFileSync.mockReturnValue(jsonl([{ id: "e1" }]));
+    mockStableStat();
+    process.env["EPOCH_LEDGER_CACHE"] = "0";
+    try {
+      readLines(ESTIMATES_FILE);
+      readLines(ESTIMATES_FILE);
+      expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+      const parses = [...getLedgerCacheStatus().values()].reduce((sum, e) => sum + e.parses, 0);
+      expect(parses).toBe(2);
+    } finally {
+      delete process.env["EPOCH_LEDGER_CACHE"];
+    }
+  });
+
+  it("caches overlay sidecar reads made through loadLedgerWithOverlays too", () => {
+    mockFiles({
+      [ESTIMATES_FILE]: [{ id: "e1", tool: "pert_estimate", inputs: {}, outputs: {}, estimatedAt: "2026-01-01T00:00:00Z" }],
+      [FLAGS_FILE]: [{ id: "e1", seq: 1, recordedAt: "2026-01-05T00:00:00Z", quarantined: true, reason: "backfill" }],
+    });
+    mockStableStat();
+
+    loadLedgerWithOverlays();
+    loadLedgerWithOverlays();
+    loadLedgerWithOverlays();
+
+    // 5 ledger files (live + archived estimates, actuals, flags, labels),
+    // each parsed exactly once across three full ledger loads.
+    expect(mockReadFileSync).toHaveBeenCalledTimes(5);
   });
 });
 

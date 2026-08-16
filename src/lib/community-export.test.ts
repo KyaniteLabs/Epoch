@@ -333,4 +333,54 @@ describe("validateCommunityExport", () => {
 			]),
 		);
 	});
+
+	// Ticket 11 (estimate-basis unification): the community schema stays
+	// stable via dual labeled fields — estimated_hours keeps its recorded-basis
+	// semantics, and an optional estimate_basis_version (1|2) era label is
+	// accepted so contributors can keep v1/v2 ratio populations split.
+	it("accepts the optional estimate_basis_version dual field when it is 1 or 2", () => {
+		const goodPath = join(TEST_DIR, "basis-version.json");
+		writeFileSync(
+			goodPath,
+			JSON.stringify({
+				_schema: "estimation-record",
+				records: [
+					{
+						estimated_hours: 8,
+						actual_hours: 12,
+						task_type: "feature",
+						complexity: 3,
+						timestamp: "2026-05-24T00:00:00Z",
+						estimate_basis_version: 2,
+					},
+				],
+			}),
+		);
+		const result = validateCommunityExport(goodPath);
+		expect(result.valid).toBe(true);
+		expect(result.errors).toHaveLength(0);
+	});
+
+	it("rejects an invalid estimate_basis_version (must be integer 1 or 2)", () => {
+		const badPath = join(TEST_DIR, "basis-version-invalid.json");
+		writeFileSync(
+			badPath,
+			JSON.stringify({
+				_schema: "estimation-record",
+				records: [
+					{
+						estimated_hours: 8,
+						actual_hours: 12,
+						task_type: "feature",
+						complexity: 3,
+						timestamp: "2026-05-24T00:00:00Z",
+						estimate_basis_version: 3,
+					},
+				],
+			}),
+		);
+		const result = validateCommunityExport(badPath);
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("Record 0: estimate_basis_version must be the integer 1 or 2 when present");
+	});
 });

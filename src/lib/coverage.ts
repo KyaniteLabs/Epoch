@@ -13,10 +13,12 @@
 //
 // Two interval sources, chosen per matched record:
 //   1. "pert_variance" — for pert_estimate rows, the estimate's own recorded
-//      `expected`/`stdDeviation` (persisted on the ledger row's outputs)
-//      are used directly with a normal-distribution z-score approximation.
-//      This is the more principled source when it's available, since it
-//      reflects the actual three-point spread the caller supplied.
+//      `expected`/`stdDeviation` (persisted on the ledger row's outputs),
+//      converted from the row's unit to HOURS with the same 8/40/160 table
+//      used at ingest (feedback.ts's ESTIMATE_UNIT_TO_HOURS), are used with a
+//      normal-distribution z-score approximation. This is the more principled
+//      source when it's available, since it reflects the actual three-point
+//      spread the caller supplied.
 //   2. "empirical_ratio_quantile" — for every other tool (and for
 //      pert_estimate rows without a usable variance), intervals are derived
 //      from the empirical distribution of actual/estimate ratios for
@@ -36,14 +38,39 @@
 // does not do leave-one-out cross-validation). It is a coverage SANITY
 // CHECK, not an out-of-sample validation. Drift from the 0.80 target is a
 // signal to revisit interval width, not a guarantee of future calibration.
+//
+// Basis-era + tool split (ticket 11, estimate-basis unification): empirical
+// ratio populations are NEVER pooled across estimate bases or across tools.
+// Every population is keyed by (tool, task_type, basisVersion), where
+// basisVersion comes from the estimate row's `basisVersion` stamp (2 =
+// post-unification rows: displayed == recorded; absent = legacy v1 rows:
+// tools displayed an adjustedEstimate the ledger never recorded). A pair is
+// always scored against quantiles from ITS OWN (tool, task_type, era)
+// population, so a mixed-era ledger never blends v1-anchored and
+// v2-anchored actual/estimate ratio distributions. The split is permanent —
+// there is no automatic aging-out; retiring it requires an explicit future
+// decision (PRD D1).
 // ---------------------------------------------------------------------------
 
-import { loadLedgerWithOverlays } from "./ledger.js";
+import { loadLedgerWithOverlays, LEGACY_BASIS_VERSION, CURRENT_BASIS_VERSION } from "./ledger.js";
 import { isExcluded } from "./exclusion.js";
-import { extractEstimatedHours } from "./feedback.js";
+import { extractEstimatedHours, ESTIMATE_UNIT_TO_HOURS } from "./feedback.js";
 
 /** Matches the "sufficient data" threshold used elsewhere (analytics.ts referenceClassEstimate, `filtered.length >= 5`). */
 export const MIN_N_FOR_QUANTILES = 5;
+
+/**
+ * Minimum v2 (post-unification) matched pairs a (tool, task_type) cell must
+ * accumulate before the v2 population replaces the legacy v1 population for
+ * interval prediction (ticket 11). Below this, the handler falls back to the
+ * v1 population — computed consistently on the v1 recorded basis — and says
+ * so via the selection's `basisVersion` label. Populations are never mixed
+ * to reach either threshold.
+ */
+export const MIN_N_FOR_V2_POPULATION = 30;
+
+/** Basis era of a matched pair: 2 = post-unification row stamp, 1 = legacy (unstamped) row. */
+export type BasisVersion = typeof LEGACY_BASIS_VERSION | 2;
 
 export interface Interval {
   readonly lower: number;
@@ -146,10 +173,26 @@ export interface IntervalCoverageReport {
 interface CleanPair {
   readonly taskType: string;
   readonly tool: string;
+  readonly basisVersion: BasisVersion;
   readonly estimatedHours: number;
   readonly actualHours: number;
   readonly expected?: number;
   readonly stdDeviation?: number;
+}
+
+/**
+ * Convert a PERT output value (expected/stdDeviation) recorded in the row's
+ * unit to hours, using the same 8/40/160 table feedback.ts applies at ingest
+ * (extractEstimatedHours / ESTIMATE_UNIT_TO_HOURS) — never a local copy.
+ * A missing unit field means hours (mirrors extractEstimatedHours); an
+ * unrecognized unit returns null ("cannot convert — skip this source") so an
+ * ambiguous row falls back to the empirical-ratio interval instead of being
+ * scored against a unit-corrupted interval.
+ */
+function pertValueToHours(value: number, unit: unknown): number | null {
+  if (unit === undefined) return value;
+  const factor = ESTIMATE_UNIT_TO_HOURS[unit as string];
+  return factor === undefined ? null : value * factor;
 }
 
 /** Load exclusion-filtered, overlay-merged matched pairs with enough data to predict an interval. Mirrors calibration-factors.ts's loadPertMatchedRecords() "clean path" pattern, generalized to every tool. */
@@ -183,43 +226,95 @@ function loadCleanMatchedPairs(): CleanPair[] {
     if (verdict.excluded) continue;
 
     const taskType = typeof rec.inputs["task_type"] === "string" ? (rec.inputs["task_type"] as string) : "feature";
-    const expected = typeof rec.outputs["expected"] === "number" ? rec.outputs["expected"] : undefined;
-    const stdDeviation = typeof rec.outputs["stdDeviation"] === "number" ? rec.outputs["stdDeviation"] : undefined;
+    // Basis era (ticket 11): stamped rows are v2 (displayed == recorded);
+    // unstamped or unrecognized values are legacy v1. Never coerced, never
+    // mixed — downstream populations are keyed by this value.
+    const basisVersion: BasisVersion = rec.basisVersion === CURRENT_BASIS_VERSION ? CURRENT_BASIS_VERSION : LEGACY_BASIS_VERSION;
+    const expectedRaw = typeof rec.outputs["expected"] === "number" ? rec.outputs["expected"] : undefined;
+    const stdDeviationRaw = typeof rec.outputs["stdDeviation"] === "number" ? rec.outputs["stdDeviation"] : undefined;
+    // pert_variance intervals are only usable when BOTH the expected value and
+    // the standard deviation convert cleanly from the row's unit to hours —
+    // a half-converted pair would compare a days-denominated sigma against
+    // hours-denominated actuals.
+    const expectedHours = expectedRaw !== undefined ? pertValueToHours(expectedRaw, rec.outputs["unit"]) : undefined;
+    const stdDeviationHours = stdDeviationRaw !== undefined ? pertValueToHours(stdDeviationRaw, rec.outputs["unit"]) : undefined;
 
     pairs.push({
       taskType,
       tool: rec.tool,
+      basisVersion,
       estimatedHours,
       actualHours: rec.actual.actualHours,
-      ...(expected !== undefined && { expected }),
-      ...(stdDeviation !== undefined && { stdDeviation }),
+      ...(expectedHours !== null && expectedHours !== undefined && stdDeviationHours !== null && stdDeviationHours !== undefined && { expected: expectedHours, stdDeviation: stdDeviationHours }),
     });
   }
 
   return pairs;
 }
 
-/**
- * Empirical actual/estimate ratio quantiles for a single task_type, computed
- * from the exclusion-filtered, overlay-merged matched-pair corpus across
- * EVERY tool (not just one). Used by the pert_estimate and
- * reference_class_estimate tool handlers (tool-registry.ts) to lead their
- * `humanReadable` output with a calibrated interval instead of a bare point
- * estimate. Returns null below MIN_N_FOR_QUANTILES — callers must fall back
- * (e.g. to pertVarianceIntervals for pert_estimate) rather than fabricate.
- */
-export function empiricalRatioQuantilesForTaskType(taskType: string): RatioQuantiles | null {
-  const ratios = loadCleanMatchedPairs()
-    .filter((pair) => pair.taskType === taskType)
-    .map((pair) => pair.actualHours / pair.estimatedHours);
-  return empiricalRatioQuantiles(ratios);
+/** Population key for a ratio population: tool × task_type × basis era — the granularity at which quantiles are computed and NEVER pooled across. */
+function populationKey(tool: string, taskType: string, basisVersion: BasisVersion): string {
+  return `${tool}|${taskType}|v${basisVersion}`;
 }
 
-function predictInterval(pair: CleanPair, quantilesByType: Map<string, RatioQuantiles | null>): PredictedIntervals | null {
+/**
+ * An empirical ratio-quantile population plus the basis era it was computed
+ * on, so callers (the pert_estimate / reference_class_estimate handlers in
+ * tool-registry.ts) can label which population produced an interval — and
+ * apply it to an estimate on the SAME basis the ratios were computed on.
+ */
+interface RatioQuantileSelection {
+  readonly quantiles: RatioQuantiles;
+  readonly basisVersion: BasisVersion;
+  readonly n: number;
+}
+
+/**
+ * Empirical actual/estimate ratio quantiles for ONE tool's task_type
+ * population, never pooled across tools or across basis eras (ticket 11).
+ * Used by the pert_estimate and reference_class_estimate tool handlers
+ * (tool-registry.ts) to lead their `humanReadable` output with a calibrated
+ * interval instead of a bare point estimate.
+ *
+ * Population selection (documented status rule, returned as `basisVersion`):
+ *   1. The v2 (post-unification, displayed == recorded) population once it
+ *      has >= MIN_N_FOR_V2_POPULATION pairs.
+ *   2. Otherwise the v1 (legacy) population, still computed consistently on
+ *      the v1 RECORDED basis (ratios of actualHours to what the ledger
+ *      actually recorded) — the larger, established population.
+ *   3. Otherwise, if the ledger holds NO v1 pairs for this cell at all, the
+ *      v2 population at >= MIN_N_FOR_QUANTILES — a fresh post-unification
+ *      install must not lose intervals while it accumulates the first 30
+ *      pairs (this never mixes eras; it only applies when there is nothing
+ *      legacy to fall back to).
+ * Returns null when no eligible population clears MIN_N_FOR_QUANTILES —
+ * callers must fall back (e.g. to pertVarianceIntervals for pert_estimate)
+ * rather than fabricate.
+ */
+export function empiricalRatioQuantilesForTaskType(taskType: string, tool: string): RatioQuantileSelection | null {
+  const cellPairs = loadCleanMatchedPairs().filter((pair) => pair.tool === tool && pair.taskType === taskType);
+  const v2Ratios = cellPairs.filter((pair) => pair.basisVersion === CURRENT_BASIS_VERSION).map((pair) => pair.actualHours / pair.estimatedHours);
+  const v1Ratios = cellPairs.filter((pair) => pair.basisVersion === LEGACY_BASIS_VERSION).map((pair) => pair.actualHours / pair.estimatedHours);
+
+  const fromV2 = v2Ratios.length >= MIN_N_FOR_V2_POPULATION ? empiricalRatioQuantiles(v2Ratios) : null;
+  if (fromV2) return { quantiles: fromV2, basisVersion: CURRENT_BASIS_VERSION, n: v2Ratios.length };
+
+  const fromV1 = v1Ratios.length >= MIN_N_FOR_QUANTILES ? empiricalRatioQuantiles(v1Ratios) : null;
+  if (fromV1) return { quantiles: fromV1, basisVersion: LEGACY_BASIS_VERSION, n: v1Ratios.length };
+
+  // No legacy fallback exists for this cell — a v2-only ledger may use its
+  // own population at the ordinary minimum. Never reached when v1 data exists.
+  const v2Only = v1Ratios.length === 0 && v2Ratios.length >= MIN_N_FOR_QUANTILES ? empiricalRatioQuantiles(v2Ratios) : null;
+  return v2Only ? { quantiles: v2Only, basisVersion: CURRENT_BASIS_VERSION, n: v2Ratios.length } : null;
+}
+
+function predictInterval(pair: CleanPair, quantilesByPopulation: Map<string, RatioQuantiles | null>): PredictedIntervals | null {
   if (pair.tool === "pert_estimate" && pair.expected !== undefined && pair.stdDeviation !== undefined && pair.stdDeviation >= 0) {
     return pertVarianceIntervals(pair.expected, pair.stdDeviation);
   }
-  const quantiles = quantilesByType.get(pair.taskType);
+  // Ticket 11: each pair is scored against ITS OWN (tool, task_type, basis
+  // era) population — never a population pooled across tools or eras.
+  const quantiles = quantilesByPopulation.get(populationKey(pair.tool, pair.taskType, pair.basisVersion));
   if (!quantiles) return null;
   return empiricalIntervals(pair.estimatedHours, quantiles);
 }
@@ -228,20 +323,25 @@ function predictInterval(pair: CleanPair, quantilesByType: Map<string, RatioQuan
  * Compute the P80 coverage-calibration report over the current exclusion-
  * filtered ledger: what fraction of matched actuals fell inside their
  * predicted P80 interval, overall and per task_type. See the file header
- * for the interval-source and in-sample-methodology notes.
+ * for the interval-source, in-sample-methodology, and basis-era-split notes.
  */
 export function computeIntervalCoverage(): IntervalCoverageReport {
   const pairs = loadCleanMatchedPairs();
 
-  const ratiosByType = new Map<string, number[]>();
+  // Ratio populations are keyed by (tool, task_type, basisVersion) — ticket 11:
+  // never pooled across bases or across tools. A population below
+  // MIN_N_FOR_QUANTILES yields null and its pairs are skipped (insufficient
+  // data), matching the pre-split per-task_type behavior at same-size inputs.
+  const ratiosByPopulation = new Map<string, number[]>();
   for (const pair of pairs) {
-    const arr = ratiosByType.get(pair.taskType) ?? [];
+    const key = populationKey(pair.tool, pair.taskType, pair.basisVersion);
+    const arr = ratiosByPopulation.get(key) ?? [];
     arr.push(pair.actualHours / pair.estimatedHours);
-    ratiosByType.set(pair.taskType, arr);
+    ratiosByPopulation.set(key, arr);
   }
-  const quantilesByType = new Map<string, RatioQuantiles | null>();
-  for (const [taskType, ratios] of ratiosByType) {
-    quantilesByType.set(taskType, empiricalRatioQuantiles(ratios));
+  const quantilesByPopulation = new Map<string, RatioQuantiles | null>();
+  for (const [key, ratios] of ratiosByPopulation) {
+    quantilesByPopulation.set(key, empiricalRatioQuantiles(ratios));
   }
 
   let totalScored = 0;
@@ -251,7 +351,7 @@ export function computeIntervalCoverage(): IntervalCoverageReport {
   const typeSources = new Map<string, Set<IntervalSource>>();
 
   for (const pair of pairs) {
-    const interval = predictInterval(pair, quantilesByType);
+    const interval = predictInterval(pair, quantilesByPopulation);
     if (!interval) continue; // insufficient data to predict an interval — skip rather than fabricate
 
     totalScored += 1;
@@ -268,7 +368,11 @@ export function computeIntervalCoverage(): IntervalCoverageReport {
   }
 
   const byTaskType: Record<string, TaskTypeCoverage> = {};
-  const allTaskTypes = new Set<string>([...typeTotals.keys(), ...ratiosByType.keys()]);
+  // Task types with pairs that loaded but whose (tool, task_type, era)
+  // population was too thin to predict an interval still report an
+  // "insufficient_data" row, exactly as before the split.
+  const typesWithPairs = new Set<string>([...pairs.map((pair) => pair.taskType)]);
+  const allTaskTypes = new Set<string>([...typeTotals.keys(), ...typesWithPairs]);
   for (const taskType of allTaskTypes) {
     const n = typeTotals.get(taskType) ?? 0;
     if (n === 0) {
@@ -287,9 +391,12 @@ export function computeIntervalCoverage(): IntervalCoverageReport {
     targetP80Coverage: 0.8,
     byTaskType,
     note:
-      "In-sample calibration: P80 intervals for pert_estimate rows use their own recorded expected/stdDeviation; " +
-      "every other tool uses per-task-type empirical actual/estimate ratio quantiles from the same exclusion-filtered " +
-      `corpus (minimum ${MIN_N_FOR_QUANTILES} matched pairs per task_type; below that, method is "insufficient_data" ` +
+      "In-sample calibration: P80 intervals for pert_estimate rows use their own recorded expected/stdDeviation " +
+      "converted to hours with the shared unit table (days=8h, weeks=40h, months=160h — same as ingest); " +
+      "every other tool uses empirical actual/estimate ratio quantiles computed per (tool, task_type, basis-era) " +
+      "population from the same exclusion-filtered corpus — populations are never pooled across tools or across " +
+      "basis eras (v1 = legacy pre-unification rows, v2 = rows stamped displayed==recorded; minimum " +
+      `${MIN_N_FOR_QUANTILES} matched pairs per population; below that, method is "insufficient_data" ` +
       "and the pair is excluded from the coverage rate rather than scored against a fabricated interval). This is a " +
       "coverage sanity check against the 0.80 target, not an out-of-sample validation.",
   };

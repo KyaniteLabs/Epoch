@@ -8,7 +8,7 @@
 
 **TL;DR:** Epoch — time estimation MCP server. Best for engineering leads, agents, and planners who need calibrated duration estimates.
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
 
 **Epoch helps AI agents understand time.**
 
@@ -55,7 +55,7 @@ Claude (using Epoch):
 
 Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 25 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
-**Works out of the box.** Epoch ships with a bundled reference database built from 126,223 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
+**Works out of the box.** Epoch ships with a bundled reference database built from 117,791 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
 
 ## What is MCP?
 
@@ -94,7 +94,7 @@ Epoch also ships a public agent skill at [`skills/epoch/SKILL.md`](skills/epoch/
 |---|---|---|
 | "How long will this take?" | Gives you a realistic estimate with best/worst case ranges | Estimates |
 | "Can we hit this deadline?" | Tells you if your timeline is realistic or risky | Schedule risk |
-| "How much will the AI calls cost?" | Calculates token costs across 12 AI models side-by-side | Cost comparison |
+| "How much will the AI calls cost?" | Calculates token costs across 16 AI models side-by-side | Cost comparison |
 | "How many business days between now and launch?" | Counts days excluding weekends and holidays (5 countries) | Calendar math |
 | "Are our estimates getting better?" | Tracks your accuracy over time and auto-corrects | Self-improving |
 | "What model should we use?" | Compares speed, cost, and quality across all major AI models | Model comparison |
@@ -115,7 +115,7 @@ Six-layer design with 25 tools for time estimation, scheduling, cost analysis, a
 | **2. Calendar Math** | Business days, holidays (US/UK/FR/DE/JP) | `add_business_days`, `count_business_days` |
 | **3. Estimation** | PERT, COCOMO II, sprint, CPM, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
 | **4. Analytics** | Reference class, context classification, calibration, token-time bridge | `reference_class_estimate`, `estimate_from_context`, `calibrate_estimates`, `token_time_bridge` |
-| **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate` |
+| **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate`, `cocomo_ground_truth` |
 | **6. Feedback** | Record actuals, track pending estimates, batch operations, health checks | `record_actual`, `get_pending_estimates`, `batch_record_actuals`, `feedback_health` |
 
 ## Tool Reference
@@ -325,12 +325,12 @@ Output: {
   rawEstimate: 6.7,
   correctedEstimate: 11.1,
   correctionFactor: 1.67,
-  sampleSize: 126223,
+  sampleSize: 117791,
   baselineSource: "self-improvement",
   confidence: "pessimistic",
   developerProfile: { mode: "ai_native", estimationMape: 15, underestimationBias: 0.2, correctionFactor: 1.45 },
   adjustedEstimate: 9.7,
-  note: "Correction factors from bundled reference database (126,223 samples). Record actuals to personalize further."
+  note: "Correction factors from bundled reference database (117,791 samples). Record actuals to personalize further."
 }
 ```
 
@@ -377,13 +377,13 @@ Output: {
   accuracyTrend: "stable",
   velocityTrend: "stable",
   recommendations: [
-    "Using reference database correction factor (1.45x) — personalized from 126,223 samples.",
+    "Using reference database correction factor (1.45x) — personalized from 117,791 samples.",
     "Record actuals via POST /v1/feedback/record-actual to refine for your team's patterns."
   ]
 }
 ```
 
-**`token_time_bridge`** -- Map LLM token budgets to wall-clock time for 12 model families
+**`token_time_bridge`** -- Map LLM token budgets to wall-clock time for 16 model families
 
 ```
 Input:  {
@@ -468,7 +468,7 @@ Output: {
   estimatedHours: 40,
   riskLevel: "low",
   confidenceIntervals: { p50: 40, p80: 45.1, p95: 49.9 },
-  historicalAccuracy: { mape: 15, sampleSize: 126223 },
+  historicalAccuracy: { mape: 15, sampleSize: 117791 },
   recommendation: "Low risk. Estimate is within normal variance.",
   humanReadable: "Schedule risk: low. MAPE: 15% (based on 0 historical records). Confidence intervals: p50=40h, p80=45.1h, p95=49.9h."
 }
@@ -491,6 +491,24 @@ Output: {
 }
 ```
 
+**`cocomo_ground_truth`** -- Benchmark all COCOMO variants (Basic, COCOMO II nominal, AI 12x speedup, AI + developer-profile gradients) against the same real historical projects, with per-dataset and per-type breakdowns
+
+```
+Input:  {}
+Output: {
+  projectsEvaluated: 182,
+  models: [
+    { name: "COCOMO Basic", mape: 85.55, mmre: 0.856, pred25: 0.313, pred50: 0.544, bias: 53.5, count: 182 },
+    ...
+  ],
+  byDataset: { ... },
+  byType: { ... },
+  winner: "AI + Profile (human)",
+  conclusion: "Best model: AI + Profile (human) (MAPE=79.66%). ...",
+  humanReadable: "..."
+}
+```
+
 ## ai_native Mode
 
 Epoch tools support dual estimation modes to account for the fundamentally different velocity of AI-assisted vs human-only development.
@@ -502,7 +520,7 @@ When `ai_native=false`, tools apply human developer baselines:
 | Parameter | Human Baseline | AI-Native Baseline |
 |-----------|---------------|-------------------|
 | Feature development | 14 calendar days (industry data) | 5.7h median (126K+ real tasks) |
-| Bug fix turnaround | 72 hours (industry data) | 6.2h median (1,498 matched pairs) |
+| Bug fix turnaround | 72 hours (industry data) | 6.2h median (139 matched estimate-actual pairs; source: `src/lib/supplementary-data.ts`) |
 | Sprint velocity | 35 story points (industry data) | 80 story points |
 | Estimation accuracy (MAPE) | 25% (Jorgensen 2004) | 15% (from AI-native profiles) |
 | Correction factor | 1.8x (industry standard) | 1.07-1.45x (from reference DB) |
@@ -513,7 +531,7 @@ Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_fore
 
 ## Self-Improvement Engine
 
-Epoch learns your patterns the more you use it. The bundled reference database already contains 126,223 data points with correction factors tuned from real estimate-vs-actual pairs across 8 task types — **it works accurately on day one.**
+Epoch learns your patterns the more you use it. The bundled reference database already contains 117,791 data points with correction factors tuned from real estimate-vs-actual pairs across 8 task types — **it works accurately on day one.**
 
 If you record your actuals, Epoch personalizes further:
 
@@ -552,7 +570,7 @@ Measured on the maintainers' production ledger (697 held-out matched pairs at ti
 Epoch uses a three-layer data strategy so it's accurate from the start and gets better over time:
 
 **1. Bundled reference database (works immediately, no setup):**
-Epoch ships with a pre-built reference database containing 126,223 data points across 8 task types and 5 complexity levels. Correction factors are computed from real estimate-vs-actual pairs. You get accurate estimates the moment you install it.
+Epoch ships with a pre-built reference database containing 117,791 data points across 8 task types and 5 complexity levels. Correction factors are computed from real estimate-vs-actual pairs. You get accurate estimates the moment you install it.
 
 **2. Local self-improvement (automatic, private):**
 As you use Epoch and record actuals, the self-improvement engine recalibrates correction factors from *your* data. This runs entirely locally in `~/.epoch/` — nothing leaves your machine. The engine triggers automatically every 100 tool calls or 24 hours.
@@ -666,15 +684,15 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 
 ## Tech Stack
 
-- **Runtime**: Node.js 20+ (ESM)
-- **Language**: TypeScript 5.8 (strict mode, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
-- **Validation**: Zod 3.24 with `.describe()` on every field
+- **Runtime**: Node.js 22+ (ESM; `engines.node >=22` — Node 20 reached EOL April 2026)
+- **Language**: TypeScript 6 (strict mode, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
+- **Validation**: Zod 4 with `.describe()` on every field
 - **MCP SDK**: `@modelcontextprotocol/sdk` 1.12+
 - **HTTP**: Hono (lightweight, multi-runtime)
 - **CLI**: Commander.js
 - **Date Handling**: `date-fns` 4.x + `date-fns-tz` 3.x
 - **Build**: `tsup` (ESM output)
-- **Testing**: `vitest` 3.x with v8 coverage (97% statements, 88% branches)
+- **Testing**: `vitest` 4.x with v8 coverage (97% statements, 88% branches)
 
 ## Configuration
 
@@ -685,7 +703,9 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_HOST` | `127.0.0.1` | HTTP server bind address |
 | `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |
 | `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
-| `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per IP (HTTP only) |
+| `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per client (HTTP only). `0` disables limiting; invalid or negative values fall back to `100` with a warning. 429 responses carry a `Retry-After` header. |
+| `EPOCH_TRUST_PROXY` | `0` | Set to `1` only when running behind a trusted reverse proxy: rate limiting then keys on `X-Forwarded-For`/`X-Real-IP` instead of the connection address (those headers are client-spoofable, so they are ignored by default). |
+| `EPOCH_CORS_ORIGINS` | _(none)_ | Comma-separated origins allowed by the HTTP API's CORS handling (e.g. `https://app.example.com,http://localhost:5173`), or `*` to allow any origin. Default: no CORS headers at all — same-origin tools, curl, and MCP clients are unaffected; cross-origin browser requests fail. Preflight `OPTIONS` requests are always answered. |
 | `EPOCH_SOURCE` | _(none)_ | Project/source tag attached to estimate records |
 | `EPOCH_TELEMETRY` | `0` | Set to `1` to enable anonymous telemetry. See [Telemetry & Privacy](#telemetry--privacy). |
 | `EPOCH_TELEMETRY_ENDPOINT` | _(none)_ | Override the configured telemetry receiver endpoint for status/submission. |
@@ -731,11 +751,11 @@ epoch share-data --description "Anonymized Epoch usage export" --validate
 
 ## Machine Labels
 
-`windows-receiver` is a historical label. The current receiver host is `ubuntu-receiver` at `100.113.174.74`. See [docs/ops/machines.md](docs/ops/machines.md) for the full inventory.
+Fleet host inventories are not published in this repository. [docs/ops/machines.md](docs/ops/machines.md) documents the schema used to track machines internally; actual hostnames, addresses, and SSH users are supplied at runtime via environment variables (see `scripts/` and `docs/ops/epoch-fleet-audit.md`). `windows-receiver` is a historical label only.
 
 ## License
 
-MIT License. See [LICENSE](./LICENSE) for full terms.
+Apache License 2.0. See [LICENSE](./LICENSE) for full terms.
 
 ---
 

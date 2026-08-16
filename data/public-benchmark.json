@@ -1,9 +1,121 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-05-25T03:09:47.398Z",
-  "source": "community + cocomo calibration",
-  "total_records": 0,
-  "unique_contributors": 0,
-  "by_task_type": {},
-  "by_tool": {}
+  "generated_at": "2026-08-14T18:06:11.966Z",
+  "source": "community + cocomo calibration + local ledger",
+  "total_records": 2072,
+  "unique_contributors": 2072,
+  "by_task_type": {
+    "infrastructure": {
+      "sample_count": 75,
+      "median_estimated_hours": 1,
+      "median_actual_hours": 0.35,
+      "median_ratio": 0.7,
+      "mean_ratio": 1.0014,
+      "p25_ratio": 0.25,
+      "p75_ratio": 1.2011
+    },
+    "feature": {
+      "sample_count": 1753,
+      "median_estimated_hours": 0.8,
+      "median_actual_hours": 0.32,
+      "median_ratio": 0.6,
+      "mean_ratio": 0.9734,
+      "p25_ratio": 0.3067,
+      "p75_ratio": 1.1905
+    },
+    "testing": {
+      "sample_count": 65,
+      "median_estimated_hours": 1.1,
+      "median_actual_hours": 0.47,
+      "median_ratio": 0.5,
+      "mean_ratio": 0.7381,
+      "p25_ratio": 0.2273,
+      "p75_ratio": 0.8333
+    },
+    "design": {
+      "sample_count": 33,
+      "median_estimated_hours": 1.2,
+      "median_actual_hours": 0.5,
+      "median_ratio": 0.55,
+      "mean_ratio": 0.6951,
+      "p25_ratio": 0.2273,
+      "p75_ratio": 0.9023
+    },
+    "bugfix": {
+      "sample_count": 60,
+      "median_estimated_hours": 1.67,
+      "median_actual_hours": 1,
+      "median_ratio": 0.5,
+      "mean_ratio": 1.075,
+      "p25_ratio": 0.3725,
+      "p75_ratio": 1.1505
+    },
+    "refactor": {
+      "sample_count": 36,
+      "median_estimated_hours": 1.05,
+      "median_actual_hours": 0.5,
+      "median_ratio": 0.4167,
+      "mean_ratio": 0.7249,
+      "p25_ratio": 0.1799,
+      "p75_ratio": 0.8333
+    },
+    "documentation": {
+      "sample_count": 48,
+      "median_estimated_hours": 0.75,
+      "median_actual_hours": 0.3,
+      "median_ratio": 0.5754,
+      "mean_ratio": 0.7775,
+      "p25_ratio": 0.2385,
+      "p75_ratio": 1.25
+    },
+    "migration": {
+      "sample_count": 2,
+      "median_estimated_hours": 0.32,
+      "median_actual_hours": 0.35,
+      "median_ratio": 1.1443,
+      "mean_ratio": 1.1443,
+      "p25_ratio": 1.061,
+      "p75_ratio": 1.2276
+    }
+  },
+  "by_tool": {
+    "reference_class_estimate": {
+      "sample_count": 783,
+      "median_ratio": 0.5
+    },
+    "pert_estimate": {
+      "sample_count": 1268,
+      "median_ratio": 0.6154
+    },
+    "monte_carlo_schedule": {
+      "sample_count": 3,
+      "median_ratio": 0.0458
+    },
+    "token_time_bridge": {
+      "sample_count": 6,
+      "median_ratio": 3.0931
+    },
+    "critical_path": {
+      "sample_count": 3,
+      "median_ratio": 0.0781
+    },
+    "sprint_forecast": {
+      "sample_count": 3,
+      "median_ratio": 0.8264
+    },
+    "schedule_risk": {
+      "sample_count": 3,
+      "median_ratio": 0.05
+    },
+    "cocomo_estimate": {
+      "sample_count": 3,
+      "median_ratio": 0.0375
+    }
+  },
+  "_quality": {
+    "local_pairs_included": 2072,
+    "local_pairs_excluded_by_isExcluded": 299,
+    "contaminated_pairs_filtered": 0,
+    "pre_filter_total_pairs": 2072
+  }
 }

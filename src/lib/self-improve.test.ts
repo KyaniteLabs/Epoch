@@ -20,7 +20,7 @@ vi.mock("node:fs", () => ({
   renameSync: vi.fn(),
 }));
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { getCalibrationData } from "./feedback.js";
 import { getTelemetry } from "./telemetry.js";
 import {
@@ -32,6 +32,7 @@ import {
   invalidateReferenceDbCache,
 } from "./self-improve.js";
 import type { HistoricalRecord } from "./analytics.js";
+import { defined } from "../test-support.js";
 
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockGetCalibrationData = vi.mocked(getCalibrationData);
@@ -249,11 +250,13 @@ describe("updateReferenceDatabase", () => {
       const pathText = String(path);
       if (pathText.endsWith("telemetry-records.jsonl")) {
         return [
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 18, ratio: 1.8, date: "2026-04-04", received_at: "2026-04-04T00:00:00.000Z" },
-          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 20, ratio: 2, date: "2026-04-05", received_at: "2026-04-05T00:00:00.000Z" },
+          // Ticket 19: only explicitly prospective (correction-usage) receiver
+          // records train factors — unclassified rows are baseline now.
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 18, ratio: 1.8, date: "2026-04-04", received_at: "2026-04-04T00:00:00.000Z", calibration_provenance: "prospective" },
+          { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 20, ratio: 2, date: "2026-04-05", received_at: "2026-04-05T00:00:00.000Z", calibration_provenance: "prospective" },
         ].map((record) => JSON.stringify(record)).join("\n");
       }
       return makeDb();
@@ -270,6 +273,88 @@ describe("updateReferenceDatabase", () => {
     expect(writtenData.toolTaskCorrectionFactors.reference_class_estimate.feature).toBe(1.6);
     expect(writtenData.complexityCorrectionFactors.feature["3"]).toBe(1.6);
     expect(writtenData.globalCorrectionFactor).toBe(1.6);
+  });
+
+  // -------------------------------------------------------------------------
+  // Ticket 19 — receiver-record exclusion classification. Stored receiver
+  // records must pass the same classification as the reference-db
+  // recalculation path: smoke/synthetic provenance, explicit excludes,
+  // unclassified (baseline) rows, ratio outliers, and ratio-inconsistent rows
+  // never reach correction factors. Quarantined records live in a separate
+  // file this loader never reads.
+  // -------------------------------------------------------------------------
+
+  it("excludes quarantined, smoke, synthetic, baseline, ratio-outlier, and ratio-inconsistent receiver records from correction factors", async () => {
+    mockGetCalibrationData.mockReturnValue([]);
+    const prospective = (ratio: number, hours = 10) => ({
+      task_type: "feature", complexity: 3, tool: "reference_class_estimate",
+      estimated_hours: hours, actual_hours: Math.round(hours * ratio * 100) / 100,
+      ratio, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z",
+      calibration_provenance: "prospective",
+    });
+    const poison = (overrides: Record<string, unknown> = {}) => ({
+      task_type: "bugfix", complexity: 3, tool: "cocomo_estimate",
+      estimated_hours: 10, actual_hours: 15, ratio: 1.5, date: "2026-04-01",
+      received_at: "2026-04-01T00:00:00.000Z", ...overrides,
+    });
+
+    mockReadFileSync.mockImplementation((path) => {
+      const pathText = String(path);
+      if (pathText.endsWith("telemetry-records.jsonl")) {
+        return [
+          // Correction-eligible: five prospective feature records (1.2..2.0,
+          // median 1.6).
+          ...[1.2, 1.4, 1.6, 1.8, 2.0].map((r) => prospective(r)).map((r) => JSON.stringify(r)),
+          // Poison rows for task type "bugfix" — if ANY leaked into the
+          // correction set, a bugfix factor would be computed.
+          JSON.stringify(poison({ tool: "receiver_smoke", calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ tool: "receiver_smoke", calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ tool: "receiver_smoke", calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ calibration_provenance: "synthetic" })),
+          JSON.stringify(poison({ calibration_provenance: "synthetic" })),
+          JSON.stringify(poison({ calibration_provenance: "synthetic" })),
+          JSON.stringify(poison({ calibration_usage: "exclude" })),
+          JSON.stringify(poison({ calibration_usage: "exclude" })),
+          JSON.stringify(poison({ calibration_usage: "exclude" })),
+          // Unclassified legacy receiver row -> baseline usage, not correction.
+          JSON.stringify(poison()),
+          JSON.stringify(poison()),
+          JSON.stringify(poison()),
+          // Implied ratio 60x exceeds exclusion.ts MAX_RATIO (ratio_outlier
+          // guard) even though the claimed ratio is self-consistent.
+          JSON.stringify(poison({ estimated_hours: 10, actual_hours: 600, ratio: 60, calibration_provenance: "prospective" })),
+          // Claimed ratio lies about the hours (actual/estimated = 6 but
+          // ratio says 1.5) -> receive-time consistency guard drops it.
+          JSON.stringify(poison({ estimated_hours: 10, actual_hours: 60, ratio: 1.5, calibration_provenance: "prospective" })),
+          JSON.stringify(poison({ estimated_hours: 10, actual_hours: 60, ratio: 1.5, calibration_provenance: "prospective" })),
+        ].join("\n");
+      }
+      if (pathText.endsWith("telemetry-quarantine.jsonl")) {
+        // Quarantined records must never be read by this loader at all.
+        return [
+          JSON.stringify({ task_type: "migration", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 12, ratio: 1.2, date: "2026-04-01", received_at: "2026-04-01T00:00:00.000Z", calibration_provenance: "prospective", quarantine_reason: "untrusted_integrity_only_source" }),
+          JSON.stringify({ task_type: "migration", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 14, ratio: 1.4, date: "2026-04-02", received_at: "2026-04-02T00:00:00.000Z", calibration_provenance: "prospective", quarantine_reason: "untrusted_integrity_only_source" }),
+          JSON.stringify({ task_type: "migration", complexity: 3, tool: "reference_class_estimate", estimated_hours: 10, actual_hours: 16, ratio: 1.6, date: "2026-04-03", received_at: "2026-04-03T00:00:00.000Z", calibration_provenance: "prospective", quarantine_reason: "untrusted_integrity_only_source" }),
+        ].join("\n");
+      }
+      return makeDb();
+    });
+
+    await updateReferenceDatabase();
+
+    const { writeFileSync } = await import("node:fs");
+    const writtenData = JSON.parse(
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      vi.mocked(writeFileSync).mock.calls[0]![1] as string,
+    );
+    // Only the five prospective feature records trained the factors.
+    expect(writtenData.taskTypeCorrectionFactors.feature).toBe(1.6);
+    expect(writtenData.globalCorrectionFactor).toBe(1.6);
+    // Every poison category is absent from correction factors.
+    expect(writtenData.taskTypeCorrectionFactors.bugfix).toBeUndefined();
+    expect(writtenData.taskTypeCorrectionFactors.migration).toBeUndefined();
+    expect(writtenData.toolTaskCorrectionFactors.receiver_smoke).toBeUndefined();
+    expect(writtenData.toolTaskCorrectionFactors.cocomo_estimate).toBeUndefined();
   });
 
   it("computes global correction from all records", async () => {
@@ -606,5 +691,345 @@ describe("getComplexityCorrectionFactor", () => {
     invalidateReferenceDbCache();
     expect(getComplexityCorrectionFactor("feature", 9)).toBeNull();
     expect(getComplexityCorrectionFactor("bugfix", 1)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ticket 21 — self-improvement honesty: per-tool watermarks (only records
+// newer than the watermark merge), sampleSize recomputed from merged
+// benchmark counts (never `+=`), the 100th-call update deferred off the
+// dispatch path, and failures logged instead of swallowed.
+// ---------------------------------------------------------------------------
+
+interface FixtureRecord {
+  tool: string;
+  timestamp: string;
+  elapsedMs: number;
+}
+
+/**
+ * Fake telemetry.getStats honoring the ticket-21 watermark contract: rows
+ * aggregate ONLY records strictly newer than sinceByTool[tool] (tools absent
+ * from the map are unwatermarked), zero-delta tools are omitted, and each
+ * row carries newestTimestamp = the delta's max timestamp. Reads the fixture
+ * array live so tests can append records between runs.
+ */
+function watermarkAwareGetStats(fixture: FixtureRecord[]) {
+  return (
+    _toolName?: string,
+    windowDays?: number,
+    sinceByTool?: Record<string, string>,
+  ) =>
+    [...fixture
+      .reduce((groups, record) => {
+        const since = sinceByTool?.[record.tool];
+        if (since !== undefined && record.timestamp <= since) return groups;
+        const arr = groups.get(record.tool) ?? [];
+        arr.push(record);
+        groups.set(record.tool, arr);
+        return groups;
+      }, new Map<string, FixtureRecord[]>())
+      .entries()]
+      .map(([tool, recs]) => {
+        const elapsed = recs.map((r) => r.elapsedMs);
+        return {
+          tool,
+          callCount: recs.length,
+          successRate: 1,
+          p50Ms: elapsed[Math.floor(elapsed.length / 2)] ?? 0,
+          p95Ms: elapsed[elapsed.length - 1] ?? 0,
+          meanMs: Math.round((elapsed.reduce((a, b) => a + b, 0) / elapsed.length) * 100) / 100,
+          windowDays: windowDays ?? 90,
+          newestTimestamp: recs.reduce(
+            (max, r) => (r.timestamp > max ? r.timestamp : max),
+            defined(recs[0]).timestamp,
+          ),
+        };
+      })
+      .sort((a, b) => b.callCount - a.callCount);
+}
+
+function lastWrittenDb(): Record<string, unknown> {
+  const calls = vi.mocked(writeFileSync).mock.calls;
+  const last = calls[calls.length - 1];
+  return JSON.parse(defined(last)[1] as string) as Record<string, unknown>;
+}
+
+function mockTelemetryFixture(fixture: FixtureRecord[]): void {
+  mockGetTelemetry.mockReturnValue({
+    getStats: vi.fn(watermarkAwareGetStats(fixture)),
+    record: vi.fn(),
+    flush: vi.fn(),
+    destroy: vi.fn(),
+  } as unknown as ReturnType<typeof getTelemetry>);
+}
+
+describe("updateReferenceDatabase watermarks (ticket 21)", () => {
+  it("repeated updates with an unchanged window merge zero new records (sampleCount and watermarks unchanged)", async () => {
+    const fixture: FixtureRecord[] = [
+      { tool: "tool-a", timestamp: "2026-06-01T00:00:00.000Z", elapsedMs: 100 },
+      { tool: "tool-a", timestamp: "2026-06-02T00:00:00.000Z", elapsedMs: 200 },
+      { tool: "tool-b", timestamp: "2026-06-03T00:00:00.000Z", elapsedMs: 50 },
+    ];
+    mockTelemetryFixture(fixture);
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        generatedAt: "2026-05-01T00:00:00.000Z",
+        toolExecutionBenchmarks: {},
+      }),
+    );
+
+    // Run 1: no watermarks yet — everything in the window is newer than
+    // generatedAt, so it all merges once and the watermarks are stamped.
+    await updateReferenceDatabase();
+    const first = lastWrittenDb();
+    const firstBenchmarks = first["toolExecutionBenchmarks"] as Record<
+      string,
+      { sampleCount: number }
+    >;
+    expect(defined(firstBenchmarks["tool-a"]).sampleCount).toBe(2);
+    expect(defined(firstBenchmarks["tool-b"]).sampleCount).toBe(1);
+    expect(first["sampleSize"]).toBe(3);
+    expect(first["mergeWatermarks"]).toEqual({
+      "tool-a": "2026-06-02T00:00:00.000Z",
+      "tool-b": "2026-06-03T00:00:00.000Z",
+    });
+
+    // Run 2: the run-1 DB is fed back in; the window is unchanged. This is
+    // THE double-count regression: the old code re-merged the whole window
+    // (sampleCount 2 -> 4 -> 6 ...) on every daily run.
+    mockReadFileSync.mockReturnValue(JSON.stringify(first));
+    vi.mocked(writeFileSync).mockClear();
+    await updateReferenceDatabase();
+    const second = lastWrittenDb();
+    expect(second["toolExecutionBenchmarks"]).toEqual(firstBenchmarks);
+    expect(second["mergeWatermarks"]).toEqual(first["mergeWatermarks"]);
+    expect(second["sampleSize"]).toBe(3);
+  });
+
+  it("merges only records newer than the watermark, with incremental weights", async () => {
+    const fixture: FixtureRecord[] = [
+      { tool: "tool-a", timestamp: "2026-06-01T00:00:00.000Z", elapsedMs: 100 },
+      { tool: "tool-a", timestamp: "2026-06-02T00:00:00.000Z", elapsedMs: 200 },
+    ];
+    mockTelemetryFixture(fixture);
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        generatedAt: "2026-05-01T00:00:00.000Z",
+        toolExecutionBenchmarks: {},
+      }),
+    );
+
+    await updateReferenceDatabase();
+    const first = lastWrittenDb();
+    const firstBench = defined((first["toolExecutionBenchmarks"] as Record<string, { p50_ms: number; sampleCount: number }>)["tool-a"]);
+    expect(firstBench.sampleCount).toBe(2);
+    expect(firstBench.p50_ms).toBe(200);
+
+    // One new record arrives (2026-06-10); the two old ones must NOT merge again.
+    fixture.push({ tool: "tool-a", timestamp: "2026-06-10T00:00:00.000Z", elapsedMs: 300 });
+    mockReadFileSync.mockReturnValue(JSON.stringify(first));
+    await updateReferenceDatabase();
+    const second = lastWrittenDb();
+    const secondBench = defined((second["toolExecutionBenchmarks"] as Record<string, { p50_ms: number; sampleCount: number }>)["tool-a"]);
+
+    // Existing 2 samples (p50 200) weighted 2/3 + 1 new sample (p50 300)
+    // weighted 1/3 -> 233.33, sampleCount 3 (not 5).
+    expect(secondBench.sampleCount).toBe(3);
+    expect(secondBench.p50_ms).toBe(233.33);
+    expect((second["mergeWatermarks"] as Record<string, string>)["tool-a"]).toBe("2026-06-10T00:00:00.000Z");
+    expect(second["sampleSize"]).toBe(3);
+  });
+
+  it("recomputes sampleSize from the merged benchmark counts instead of accumulating", async () => {
+    const fixture: FixtureRecord[] = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        tool: "tool-a",
+        timestamp: `2026-06-${String(i + 11).padStart(2, "0")}T00:00:00.000Z`,
+        elapsedMs: 100,
+      })),
+      ...Array.from({ length: 5 }, (_, i) => ({
+        tool: "tool-c",
+        timestamp: `2026-06-${String(i + 11).padStart(2, "0")}T00:00:00.000Z`,
+        elapsedMs: 80,
+      })),
+    ];
+    mockTelemetryFixture(fixture);
+    // The shipped-style DB: a phantom inflated sampleSize (100) next to a
+    // benchmark that only ever saw 10 samples.
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        generatedAt: "2026-06-01T00:00:00.000Z",
+        sampleSize: 100,
+        toolExecutionBenchmarks: {
+          "tool-a": { p50_ms: 90, p95_ms: 120, mean_ms: 95, stddev_ms: 5, min_ms: 80, max_ms: 130, sampleCount: 10 },
+        },
+      }),
+    );
+
+    await updateReferenceDatabase();
+
+    const written = lastWrittenDb();
+    const benchmarks = written["toolExecutionBenchmarks"] as Record<string, { sampleCount: number }>;
+    // tool-a: 10 existing + 10 delta; tool-c: 5 brand-new samples.
+    expect(defined(benchmarks["tool-a"]).sampleCount).toBe(20);
+    expect(defined(benchmarks["tool-c"]).sampleCount).toBe(5);
+    // Honest total = 20 + 5. The old code produced 100 + 10 + 10 + 5 = 125.
+    expect(written["sampleSize"]).toBe(25);
+  });
+
+  it("bootstraps a watermarkless DB from generatedAt: records at or before it never re-merge", async () => {
+    const fixture: FixtureRecord[] = [
+      { tool: "tool-a", timestamp: "2026-06-01T00:00:00.000Z", elapsedMs: 100 },
+      { tool: "tool-a", timestamp: "2026-06-02T00:00:00.000Z", elapsedMs: 200 },
+    ];
+    mockTelemetryFixture(fixture);
+    // DB written by the old code: benchmark present, no watermarks, and a
+    // generatedAt NEWER than every fixture record — those records were
+    // already merged into the 50 counted samples and must not merge again.
+    mockReadFileSync.mockReturnValue(
+      makeDb({
+        generatedAt: "2026-06-15T00:00:00.000Z",
+        toolExecutionBenchmarks: {
+          "tool-a": { p50_ms: 90, p95_ms: 120, mean_ms: 95, stddev_ms: 5, min_ms: 80, max_ms: 130, sampleCount: 50 },
+        },
+      }),
+    );
+
+    await updateReferenceDatabase();
+
+    const written = lastWrittenDb();
+    const benchmarks = written["toolExecutionBenchmarks"] as Record<string, { sampleCount: number }>;
+    expect(defined(benchmarks["tool-a"]).sampleCount).toBe(50);
+    expect(written["sampleSize"]).toBe(50);
+    expect(written["mergeWatermarks"]).toEqual({ "tool-a": "2026-06-15T00:00:00.000Z" });
+  });
+
+  it("new tools (absent from the DB) still merge their full window", async () => {
+    const fixture: FixtureRecord[] = [
+      { tool: "brand-new-tool", timestamp: "2026-06-01T00:00:00.000Z", elapsedMs: 40 },
+      { tool: "brand-new-tool", timestamp: "2026-06-02T00:00:00.000Z", elapsedMs: 60 },
+    ];
+    mockTelemetryFixture(fixture);
+    mockReadFileSync.mockReturnValue(
+      makeDb({ generatedAt: "2026-05-01T00:00:00.000Z", toolExecutionBenchmarks: {} }),
+    );
+
+    await updateReferenceDatabase();
+
+    const written = lastWrittenDb();
+    const benchmarks = written["toolExecutionBenchmarks"] as Record<string, { sampleCount: number; p50_ms: number }>;
+    expect(defined(benchmarks["brand-new-tool"]).sampleCount).toBe(2);
+    expect(defined(benchmarks["brand-new-tool"]).p50_ms).toBe(60);
+    expect(written["sampleSize"]).toBe(2);
+  });
+});
+
+describe("notifyToolCall (ticket 21: off the request path)", () => {
+  it("defers the 100th-call update: notify latency excludes the update, which runs on the next immediate tick", async () => {
+    vi.resetModules();
+
+    // A forced direct update busy-waits ~120ms inside getStats — the cost the
+    // old code paid inline on the 100th dispatch. hrtime is not faked.
+    const forcedUpdateMs = 120;
+    const busyWait = (ms: number): void => {
+      const end = Date.now() + ms;
+      while (Date.now() < end) { /* spin */ }
+    };
+    const getStatsImpl = vi.fn(() => {
+      busyWait(forcedUpdateMs);
+      return [];
+    });
+    mockGetTelemetry.mockReturnValue({
+      getStats: getStatsImpl,
+      record: vi.fn(),
+      flush: vi.fn(),
+      destroy: vi.fn(),
+    } as unknown as ReturnType<typeof getTelemetry>);
+    mockReadFileSync.mockReturnValue(makeDb());
+
+    const mod = await import("./self-improve.js");
+
+    // Measure a forced update (what the old 100th call paid inline).
+    const forcedStart = process.hrtime.bigint();
+    await mod.updateReferenceDatabase();
+    const forcedNs = Number(process.hrtime.bigint() - forcedStart);
+    expect(getStatsImpl).toHaveBeenCalledTimes(1);
+    // Sanity floor (Date.now() is ms-quantized, so allow slack): the forced
+    // update really did pay the busy-wait.
+    expect(forcedNs).toBeGreaterThan(100_000_000);
+
+    // The 100th notifyToolCall must return without starting the update.
+    const notifyStart = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) mod.notifyToolCall();
+    const notifyNs = Number(process.hrtime.bigint() - notifyStart);
+
+    expect(getStatsImpl).toHaveBeenCalledTimes(1); // update not started inline
+    // Dispatch latency must be >10x smaller than a forced update.
+    expect(notifyNs).toBeLessThan(forcedNs / 10);
+
+    // The deferred update runs after the dispatch turn (setImmediate).
+    await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    expect(getStatsImpl).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(writeFileSync)).toHaveBeenCalled();
+  });
+
+  it("does not schedule a second update while one is running", async () => {
+    vi.resetModules();
+    let inFlight = false;
+    const getStatsImpl = vi.fn(() => {
+      expect(inFlight).toBe(false); // no overlapping update may start
+      inFlight = true;
+      busyWaitMs(30);
+      inFlight = false;
+      return [];
+    });
+    function busyWaitMs(ms: number): void {
+      const end = Date.now() + ms;
+      while (Date.now() < end) { /* spin */ }
+    }
+    mockGetTelemetry.mockReturnValue({
+      getStats: getStatsImpl,
+      record: vi.fn(),
+      flush: vi.fn(),
+      destroy: vi.fn(),
+    } as unknown as ReturnType<typeof getTelemetry>);
+    mockReadFileSync.mockReturnValue(makeDb());
+
+    const mod = await import("./self-improve.js");
+    for (let i = 0; i < 100; i++) mod.notifyToolCall();
+    // Second burst while the first update is still pending: the isUpdating
+    // flag must suppress it (and the 24h gate holds after lastUpdateAt moves).
+    for (let i = 0; i < 200; i++) mod.notifyToolCall();
+    await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    await mod.updateReferenceDatabase(); // direct call is always allowed
+    expect(getStatsImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs a failed update with context instead of swallowing it", async () => {
+    vi.resetModules();
+    process.env["EPOCH_DEBUG"] = "1";
+    const stderrWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    mockReadFileSync.mockReturnValue(makeDb());
+    // The DB write fails (e.g. read-only fs): updateReferenceDatabase rejects.
+    vi.mocked(writeFileSync).mockImplementationOnce(() => {
+      throw new Error("EACCES: read-only file system");
+    });
+
+    try {
+      const mod = await import("./self-improve.js");
+      for (let i = 0; i < 100; i++) mod.notifyToolCall();
+      // Let the deferred update run and its rejection surface.
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
+
+      const logged = stderrWrite.mock.calls.map((c) => String(c[0])).join("");
+      expect(logged).toContain("[epoch:self-improve.update]");
+      expect(logged).toContain("EACCES");
+    } finally {
+      stderrWrite.mockRestore();
+      delete process.env["EPOCH_DEBUG"];
+    }
   });
 });

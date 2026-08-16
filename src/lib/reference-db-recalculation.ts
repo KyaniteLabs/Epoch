@@ -7,6 +7,7 @@ import {
   MIN_RECORDS_FOR_DATABASE_UPDATE,
 } from "./calibration-factors.js";
 import { matchEstimatesToActuals, type ActualRecord, type EstimateRecord } from "./feedback.js";
+import { percentileIndex } from "./estimation.js";
 import type { HistoricalRecord } from "../types/index.js";
 import type { ToolCallRecord } from "./telemetry.js";
 
@@ -103,6 +104,13 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * Shared receiver-record provenance classification (ticket 19): the receive
+ * path and self-improve's loadReceivedTelemetryRecords() both route
+ * records through this, so smoke/synthetic provenance and explicit excludes
+ * are filtered identically everywhere a received record can reach
+ * calibration math.
+ */
 function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
   calibrationProvenance: NonNullable<HistoricalRecord["calibrationProvenance"]>;
   calibrationUsage: NonNullable<HistoricalRecord["calibrationUsage"]>;
@@ -144,7 +152,7 @@ function classifyReceiverRecord(record: ReceiverTelemetryRecord): {
   };
 }
 
-function receiverToHistorical(record: ReceiverTelemetryRecord): {
+export function receiverToHistorical(record: ReceiverTelemetryRecord): {
   record?: HistoricalRecord;
   excluded: boolean;
   legacyReceiverBaseline: boolean;
@@ -221,7 +229,10 @@ function sampleCounts(records: HistoricalRecord[]): Pick<
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
-  const idx = Math.min(Math.floor(sorted.length * p), sorted.length - 1);
+  // Ceil-rank (nearest-rank) index, shared with monteCarloSim's quantiles:
+  // the previous floor-rank index was biased one rank high (floor(p*n) can
+  // equal n for p<1, so p95 of an n=20 sample returned the maximum).
+  const idx = percentileIndex(sorted.length, p);
   return Math.round((sorted[idx] ?? 0) * 100) / 100;
 }
 

@@ -1,6 +1,6 @@
 # Epoch — AI Agent Time Estimation Server
 
-> Epoch is an MCP (Model Context Protocol) server providing 24 structured tools for
+> Epoch is an MCP (Model Context Protocol) server providing 25 structured tools for
 > time estimation, cost analysis, and schedule risk assessment. Built for AI agents
 > (Claude, GPT, Gemini) and developer workflows.
 
@@ -17,7 +17,7 @@ GitHub: https://github.com/KyaniteLabs/Epoch
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.2.5 — 24 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.5.0 — 25 structured tools for grounded time estimation
 
 ## What
 
@@ -27,20 +27,20 @@ Epoch is a Model Context Protocol (MCP) server that gives AI agents data-driven 
 
 AI agents cannot perceive time. Events 10 tokens apart have identical encodings whether 1 second or 1 hour apart. LLMs replicate and amplify human optimism bias through agentic overconfidence. Epoch solves this by providing structured external tools — not prompt hacks — that give AI grounded temporal reasoning.
 
-A UPenn negotiation study showed 4% deal closure under wall-clock time limits vs 99% under turn-based limits. Injecting explicit time state into prompts produced an 8x improvement. Epoch makes time legible to LLMs through 24 callable tools.
+A UPenn negotiation study showed 4% deal closure under wall-clock time limits vs 99% under turn-based limits. Injecting explicit time state into prompts produced an 8x improvement. Epoch makes time legible to LLMs through 25 callable tools.
 
 ## Architecture
 
-Six layers, 24 tools:
+Six layers, 25 tools:
 
 | Layer | Tools | Purpose |
 |-------|-------|---------|
 | Temporal (6) | get_current_time, convert_timezone, parse_duration, time_math, add_business_days, count_business_days | Time grounding, timezone, calendar math |
 | Estimation (5) | pert_estimate, cocomo_estimate, sprint_forecast, critical_path, monte_carlo_schedule | Algorithmic time/effort estimation |
-| Analytics (4) | reference_class_estimate, calibrate_estimates, token_time_bridge, token_cost_estimate | Data-driven estimation from history |
+| Analytics (5) | reference_class_estimate, estimate_from_context, calibrate_estimates, token_time_bridge, token_cost_estimate | Data-driven estimation from history and free-text context |
 | Validation (3) | cocomo_validate, cocomo_ground_truth, accuracy_trend | Model validation and accuracy tracking |
 | Risk (2) | schedule_risk, compare_models | Schedule risk and model comparison |
-| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals |
+| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals — or let `epoch auto-actuals --session <id>` (CLI) close it automatically at session end with provenance-labeled wall-clock actuals |
 
 ## Tool Reference
 
@@ -127,6 +127,14 @@ Reference class forecasting with historical correction.
 - `ai_native` (number 0.0-1.0, default 0.0) — AI-native ratio; values >= 0.7 use AI-native scope baselines
 - Returns: rawEstimate, correctedEstimate, correctionFactor, sampleSize, scopeUsed, adjustedEstimate, developerProfile, feedbackToken
 
+#### estimate_from_context
+Classifies a free-text task description (issue body, PR/diff description, task summary) into task_type/complexity using a local, deterministic keyword/signal heuristic — no LLM call — then delegates to the same reference-class-forecasting path as reference_class_estimate.
+- `context` (string, required) — Free-text task description
+- `task_type` (enum, optional) — Overrides classification when supplied
+- `complexity` (number 1-5, optional) — Overrides classification when supplied
+- `team_id` (string, optional)
+- Returns: rawEstimate, correctedEstimate, correctionFactor, sampleSize, baselineSource, scopeUsed, classification (classified_task_type, classified_complexity, confidence, signals), feedbackToken
+
 #### calibrate_estimates
 Compute team-specific correction factors.
 - `team_id` (string, required)
@@ -135,7 +143,7 @@ Compute team-specific correction factors.
 - Returns: correctionFactor, accuracyTrend, recommendations
 
 #### token_time_bridge
-Map token budgets to wall-clock time for 12 LLM models.
+Map token budgets to wall-clock time across 16 LLM models.
 - `tokens` (number, required)
 - `model` (string, required) — Model identifier
 - `tool_calls` (number, default 0)
@@ -201,7 +209,7 @@ Bulk feedback submission (1-500 entries).
 #### feedback_health
 Health report on the feedback loop.
 - No parameters
-- Returns: totalEstimates, totalActuals, matchRate, byTool, byTaskType, selfImprovement
+- Returns: totalEstimates, totalActuals, matchRate, byTool (with mape + mdape), byTaskType (with mape + mdape), selfImprovement
 
 ## Interfaces
 

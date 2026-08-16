@@ -441,16 +441,30 @@ function topologicalSort(tasks: CpmTask[]): string[] {
   return result;
 }
 
+/**
+ * Nearest-rank (ceil-rank) percentile index: the smallest 0-based index whose
+ * cumulative share reaches `percentile`. Replaces the previous floor-rank
+ * index, which was biased one rank high (floor(p*n) can equal n at p<1, so
+ * e.g. p95 of an n=20 sample returned the maximum). Ceil-rank keeps p95 of an
+ * n=20 sample strictly below the max and puts the median of n=1000 at index
+ * 499 (the 500th order statistic).
+ */
+export function percentileIndex(length: number, percentile: number): number {
+  if (length <= 0) return 0;
+  return Math.min(length - 1, Math.max(0, Math.ceil(percentile * length) - 1));
+}
+
 export function monteCarloSim(
   tasks: MonteCarloTask[],
   iterations: number,
   seed?: number,
+  targetHours?: number,
 ): MonteCarloResult {
   if (tasks.length === 0) {
     return {
       p10: "0", p50: "0", p80: "0", p95: "0",
       estimatedHours: 0, estimatedCost: 0, converged: false,
-      criticalPathProbability: 0,
+      criticalPathProbability: null,
       riskEvents: [{ description: "Task list must not be empty.", probability: 1, impactDays: 0 }],
       humanReadable: "Error: Provide at least one task for Monte Carlo simulation.",
     };
@@ -459,9 +473,22 @@ export function monteCarloSim(
     return {
       p10: "0", p50: "0", p80: "0", p95: "0",
       estimatedHours: 0, estimatedCost: 0, converged: false,
-      criticalPathProbability: 0,
+      criticalPathProbability: null,
       riskEvents: [{ description: "Iterations must be >= 1.", probability: 1, impactDays: 0 }],
       humanReadable: "Error: Iterations must be a positive number.",
+    };
+  }
+  if (targetHours !== undefined && !(Number.isFinite(targetHours) && targetHours > 0)) {
+    return {
+      p10: "0", p50: "0", p80: "0", p95: "0",
+      estimatedHours: 0, estimatedCost: 0, converged: false,
+      criticalPathProbability: null,
+      riskEvents: [{
+        description: `target_hours (${String(targetHours)}) must be a positive, finite number of hours (task durations are in 8-hour days).`,
+        probability: 1,
+        impactDays: 0,
+      }],
+      humanReadable: "Error: target_hours must be a positive number of hours.",
     };
   }
   for (const task of tasks) {
@@ -469,7 +496,7 @@ export function monteCarloSim(
       return {
         p10: "0", p50: "0", p80: "0", p95: "0",
         estimatedHours: 0, estimatedCost: 0, converged: false,
-        criticalPathProbability: 0,
+        criticalPathProbability: null,
         riskEvents: [{
           description: `Invalid estimates for task "${task.name}": optimistic (${task.optimistic}) must be <= mostLikely (${task.mostLikely}) <= pessimistic (${task.pessimistic}).`,
           probability: 1,
@@ -483,7 +510,11 @@ export function monteCarloSim(
   const rng = seededRandom(seed ?? 42);
 
   const durations: number[] = [];
-  const taskOverruns = new Map<string, number>();
+  // Per-task overrun tracking: how often each task blew past 1.5x its PERT
+  // expected duration, and by how much on average (expected excess, in days).
+  // impactDays below is this per-task magnitude — never the project-level
+  // p95-p50 spread copied onto every row.
+  const taskOverruns = new Map<string, { count: number; excessSum: number }>();
 
   // Track running median at two checkpoints for convergence detection
   const quarterRuns: number[] = [];
@@ -497,8 +528,12 @@ export function monteCarloSim(
       const sampled = triangularSample(task.optimistic, task.mostLikely, task.pessimistic, rng);
       total += sampled;
       const expected = (task.optimistic + 4 * task.mostLikely + task.pessimistic) / 6;
-      if (sampled > expected * 1.5) {
-        taskOverruns.set(task.name, (taskOverruns.get(task.name) ?? 0) + 1);
+      const overrunThreshold = expected * 1.5;
+      if (sampled > overrunThreshold) {
+        const entry = taskOverruns.get(task.name) ?? { count: 0, excessSum: 0 };
+        entry.count++;
+        entry.excessSum += sampled - overrunThreshold;
+        taskOverruns.set(task.name, entry);
       }
     }
     durations.push(total);
@@ -509,28 +544,43 @@ export function monteCarloSim(
   durations.sort((a, b) => a - b);
 
   const p = (percentile: number): number => {
-    const idx = Math.min(Math.floor(iterations * percentile), durations.length - 1);
+    const idx = percentileIndex(durations.length, percentile);
     return durations[idx] ?? 0;
   };
 
+  // Expected schedule impact per task: mean per-simulation excess of the
+  // task's sampled duration beyond 1.5x its PERT expected value, in days.
   const riskEvents = [...taskOverruns.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1].excessSum - a[1].excessSum)
     .slice(0, 5)
-    .map(([task, count]) => ({
+    .map(([task, { count, excessSum }]) => ({
       description: `Task "${task}" exceeded 1.5x PERT expected in ${Math.round(count / iterations * 100)}% of simulations`,
       probability: Math.round(count / iterations * 100) / 100,
-      impactDays: Math.round(p(0.95) - p(0.5)),
+      impactDays: Math.round((excessSum / iterations) * 100) / 100,
     }));
 
   const p50Val = p(0.5);
-  const criticalTarget = p(0.8);
+
+  // P(total <= caller-supplied deadline). Reported only against a real
+  // target: without target_hours the metric is null instead of the previous
+  // fabricated ~0.80 (which was P(X <= p80(X)) — a tautology by construction).
+  let criticalPathProbability: number | null = null;
+  if (targetHours !== undefined) {
+    const targetDays = targetHours / 8; // task durations are 8-hour days
+    const metCount = durations.filter((d) => d <= targetDays).length;
+    criticalPathProbability = Math.round((metCount / iterations) * 100) / 100;
+  }
 
   // Convergence: compare running p50 at 25% vs 75% of iterations
   quarterRuns.sort((a, b) => a - b);
   threeQuarterRuns.sort((a, b) => a - b);
-  const earlyP50 = quarterRuns.length > 0 ? quarterRuns[Math.floor(quarterRuns.length * 0.5)] ?? 0 : p50Val;
-  const lateP50 = threeQuarterRuns.length > 0 ? threeQuarterRuns[Math.floor(threeQuarterRuns.length * 0.5)] ?? 0 : p50Val;
+  const earlyP50 = quarterRuns.length > 0 ? quarterRuns[percentileIndex(quarterRuns.length, 0.5)] ?? 0 : p50Val;
+  const lateP50 = threeQuarterRuns.length > 0 ? threeQuarterRuns[percentileIndex(threeQuarterRuns.length, 0.5)] ?? 0 : p50Val;
   const converged = p50Val > 0 ? Math.abs(earlyP50 - lateP50) / p50Val < 0.10 : true;
+
+  const probabilityLine = targetHours !== undefined && criticalPathProbability !== null
+    ? ` Probability of completing within ${targetHours} hours (criticalPathProbability): ${Math.round(criticalPathProbability * 100)}%.`
+    : "";
 
   return {
     p10: String(Math.round(p(0.1) * 100) / 100),
@@ -539,10 +589,11 @@ export function monteCarloSim(
     p95: String(Math.round(p(0.95) * 100) / 100),
     estimatedHours: Math.round(p50Val * 8 * 100) / 100,
     estimatedCost: Math.round(p50Val * 8 * 50000 * 100) / 100,
-    criticalPathProbability: Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100) / 100,
+    criticalPathProbability,
+    ...(targetHours !== undefined && { targetHours }),
     converged,
     riskEvents,
-    humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days. Probability of meeting p80 target: ${Math.round((durations.filter(d => d <= criticalTarget).length / iterations) * 100)}%.`,
+    humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days.${probabilityLine}`,
   };
 }
 

@@ -28,7 +28,9 @@ describe("public surface inventory", () => {
 		expect(collectCliCommandPaths(createCliProgram())).toEqual(
 			EXPECTED_CLI_COMMAND_PATHS,
 		);
-		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(41);
+		// 42 since ticket 10: `serve` is a real commander subcommand (was a
+		// pre-command intercept in src/index.ts, invisible to this tree).
+		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(42);
 	});
 
 	it("matches the live HTTP routes", () => {
@@ -64,6 +66,7 @@ describe("public surface inventory", () => {
 			"batch_record_actuals",
 		]);
 		expect(parsed.http_routes).toHaveLength(11);
-		expect(parsed.cli_command_paths).toHaveLength(41);
+		// 42 since ticket 10 (serve registered as a real subcommand).
+		expect(parsed.cli_command_paths).toHaveLength(42);
 	});
 });

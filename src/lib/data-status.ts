@@ -9,6 +9,16 @@ import * as os from "node:os";
 import { loadConfig, isUsableTelemetryEndpoint } from "./config.js";
 import { extractAnonymizedRecords } from "./telemetry-submit.js";
 import { loadReferenceDb } from "./self-improve.js";
+import {
+  getLedgerCacheStatus,
+  getLedgerCorruptLines,
+  getLedgerStaleRecoveryCount,
+  inspectLedgerWriteLock,
+  readLines,
+  ESTIMATES_FILE,
+  ACTUALS_FILE,
+  type LedgerWriteLockInfo,
+} from "./ledger.js";
 
 // ---- Path helpers -----------------------------------------------------------
 
@@ -53,6 +63,25 @@ interface FileStatus {
   path: string;
   exists: boolean;
   lines: number;
+  /**
+   * Ledger read-cache provenance (ticket 17; present on estimates/actuals
+   * only — files read through ledger.ts's cached readLines()): epoch-ms of the
+   * parse that populated the in-memory cache, or null when this process has
+   * not cached the file. The cache is stat-validated on every read, so a
+   * growing cacheAgeMs means "file unchanged for that long", never staleness.
+   */
+  parsedAt?: number | null;
+  /** Age of the cached parse in ms (now - parsedAt); null when not cached this process. */
+  cacheAgeMs?: number | null;
+  /** Total full read+parse executions of this file since process start (cache hits excluded). */
+  parses?: number;
+  /**
+   * Ticket 18: non-empty lines that failed JSON.parse in the most recent
+   * ledger.ts parse of this file (torn writes / corruption — previously
+   * skipped silently). Present on estimates/actuals only; data_status forces
+   * a parse so the count is always current for those two files.
+   */
+  corruptLines?: number;
 }
 
 interface FeedbackSummary {
@@ -100,6 +129,16 @@ export interface EpochDataStatus {
     receiverReceipts: FileStatus;
   };
   feedback: FeedbackSummary;
+  /**
+   * Ticket 18 (D3 concurrency): advisory write-lock state for the two hot
+   * ledger files, plus the documented recovery path for a stale lock and the
+   * count of stale lockfiles this process has auto-recovered.
+   */
+  writeLocks: {
+    estimates: LedgerWriteLockInfo;
+    actuals: LedgerWriteLockInfo;
+    staleRecoveries: number;
+  };
   telemetry: TelemetrySummary;
   referenceDatabase: ReferenceDatabaseSummary;
   roleHints: RoleHints;
@@ -123,6 +162,28 @@ function fileStatus(filePath: string): FileStatus {
     path: filePath,
     exists,
     lines: exists ? countLines(filePath) : 0,
+  };
+}
+
+/**
+ * Attach ledger read-cache provenance (ticket 17) AND the corrupt-line count
+ * (ticket 18) to a ledger file's status. Forcing one readLines() parse keeps
+ * the corruptLines count current even when this process never read the ledger
+ * before — the stat-validated cache makes repeat calls free.
+ */
+function withLedgerCacheInfo(status: FileStatus, ledgerFilename: string): FileStatus {
+  readLines(ledgerFilename); // populates/refreshes the corrupt-line counter + cache
+  const corrupt = getLedgerCorruptLines().get(status.path) ?? 0;
+  const entry = getLedgerCacheStatus().get(status.path);
+  if (!entry) {
+    return { ...status, parsedAt: null, cacheAgeMs: null, parses: 0, corruptLines: corrupt };
+  }
+  return {
+    ...status,
+    parsedAt: entry.parsedAt,
+    cacheAgeMs: entry.parsedAt !== null ? Date.now() - entry.parsedAt : null,
+    parses: entry.parses,
+    corruptLines: corrupt,
   };
 }
 
@@ -183,11 +244,18 @@ export function getEpochDataStatus(): EpochDataStatus {
   };
 
   // File status
-  const estimates = fileStatus(paths.estimates);
-  const actuals = fileStatus(paths.actuals);
+  const estimates = withLedgerCacheInfo(fileStatus(paths.estimates), ESTIMATES_FILE);
+  const actuals = withLedgerCacheInfo(fileStatus(paths.actuals), ACTUALS_FILE);
   const toolTelemetry = fileStatus(paths.toolTelemetry);
   const receiverRecords = fileStatus(paths.receiverRecords);
   const receiverReceipts = fileStatus(paths.receiverReceipts);
+
+  // Ticket 18: advisory write-lock state for the hot ledger files.
+  const writeLocks = {
+    estimates: inspectLedgerWriteLock(ESTIMATES_FILE),
+    actuals: inspectLedgerWriteLock(ACTUALS_FILE),
+    staleRecoveries: getLedgerStaleRecoveryCount(),
+  };
 
   // Feedback summary
   const matchedPairs = countMatchedPairs(paths.estimates, paths.actuals);
@@ -277,6 +345,7 @@ export function getEpochDataStatus(): EpochDataStatus {
       matchedPairs,
       matchRate,
     },
+    writeLocks,
     telemetry,
     referenceDatabase,
     roleHints,

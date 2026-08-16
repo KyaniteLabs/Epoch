@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Tool Registry
-// Maps all 24 tool names to handler functions and Zod input schemas.
+// Maps all 25 tool names (TOOL_COUNT, derived from src/lib/tool-aliases.ts —
+// the authoritative tool surface) to handler functions and Zod input schemas.
 // Translates between snake_case schema fields and camelCase lib params.
 // ---------------------------------------------------------------------------
 
@@ -27,7 +28,8 @@ import {
   getScopeGuide,
   inferScopeFromComplexity,
 } from "../lib/analytics.js";
-import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport } from "../lib/feedback.js";
+import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport, UNIT_SUSPECT_FLAG_HINT } from "../lib/feedback.js";
+import { makeStorageError } from "../lib/internal/error-helpers.js";
 import {
   isPertLearnedCorrectionEnabled,
   getPertToolTaskCorrection,
@@ -51,6 +53,8 @@ import {
   monteCarloSchema,
   referenceClassEstimateSchema,
   calibrateEstimatesSchema,
+  businessDaysOffset,
+  MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT,
   tokenTimeBridgeSchema,
   tokenCostEstimateSchema,
   compareModelsSchema,
@@ -63,6 +67,11 @@ import {
   feedbackHealthSchema,
   estimateFromContextSchema,
 } from "../schemas/index.js";
+import {
+  CANONICAL_TOOL_NAMES,
+  ESTIMATION_TOOL_NAMES,
+  NON_ESTIMATION_TOOL_NAMES,
+} from "../lib/tool-aliases.js";
 
 // ---- Tool Definition --------------------------------------------------------
 
@@ -114,9 +123,10 @@ const addBusinessDaysSchema = z.object({
   start_date: z
     .string()
     .describe("ISO date string for the start date."),
-  days: z
-    .coerce.number()
-    .describe("Number of business days to add (negative to subtract)."),
+  // Input safety bound (W1): the business-day walk is day-by-day, so an
+  // uncapped days (e.g. 1e9) hangs the event loop. Bounded field from
+  // schemas/index.ts (businessDaysOffset).
+  days: businessDaysOffset,
   country: z
     .string()
     .describe("ISO-3166-1-alpha-2 country code for holiday calendar.")
@@ -168,6 +178,7 @@ const businessDayOutput = {
     endDate: { type: "string", description: "End date (ISO)" },
     businessDays: { type: "number", description: "Number of business days" },
     countryCode: { type: "string", description: "ISO-3166 country code" },
+    calendarVersion: { type: "string", description: "Holiday-table version stamp (CALENDAR_VERSION) used for the computation" },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
 } satisfies Record<string, unknown>;
@@ -189,9 +200,12 @@ const pertOutput = {
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
     riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Estimation risk based on spread between optimistic and pessimistic" },
     humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval when one could be computed, followed by the point estimate." },
+    adjustedEstimate: { type: "number", description: "Labeled dual field (one minor version): the developerProfile/learned-corrected headline. NOT the recorded basis — intervals and calibration use `expected`; see `basisNote`." },
+    basisNote: { type: "string", description: "Names which fields carry the recorded basis (`expected`) versus the adjusted dual (`adjustedEstimate`) and which basis the intervals are scaled on." },
+    intervalPopulation: { type: "string", description: "Which ratio population the empirical interval used: the v2 (basis-unified) (pert_estimate, task_type) cell, or the v1 fallback computed on the v1 recorded basis." },
     interval: {
       type: "object",
-      description: "P50/P80/P90 calibrated prediction intervals around adjustedEstimate. `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (pert_estimate, task_type) pairs are available, else \"pert_variance\" (derived from this estimate's own optimistic/most_likely/pessimistic spread) — see `intervalNote` when the fallback is used.",
+      description: "P50/P80/P90 calibrated prediction intervals around the RECORDED basis (raw PERT `expected` × unit factor — never adjustedEstimate). `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (pert_estimate, task_type) pairs are available, else \"pert_variance\" (derived from this estimate's own optimistic/most_likely/pessimistic spread) — see `intervalNote` when the fallback is used.",
       properties: {
         p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
         p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
@@ -261,7 +275,11 @@ const monteCarloOutput = {
     p50: { type: "string", description: "50th percentile (median)" },
     p80: { type: "string", description: "80th percentile" },
     p95: { type: "string", description: "95th percentile (conservative)" },
-    criticalPathProbability: { type: "number" },
+    criticalPathProbability: {
+      type: ["number", "null"],
+      description: "P(total <= target_hours) when a target_hours deadline was supplied; null otherwise (never a fabricated probability)",
+    },
+    targetHours: { type: "number", description: "The caller-supplied deadline in hours the probability was computed against, when supplied" },
     converged: { type: "boolean", description: "Whether p50 converged between iteration halves" },
     riskEvents: {
       type: "array",
@@ -314,9 +332,12 @@ const referenceClassOutput = {
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × correctedEstimate)" },
     humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval when >=5 exclusion-filtered historical (reference_class_estimate, task_type) pairs are available; otherwise states plainly that there wasn't enough data for a confidence interval." },
+    adjustedEstimate: { type: "number", description: "Labeled dual field (one minor version): developerProfile-adjusted headline. NOT the recorded basis — intervals and calibration use `correctedEstimate`; see `basisNote`." },
+    basisNote: { type: "string", description: "Names which fields carry the recorded basis (`correctedEstimate`) versus the adjusted dual (`adjustedEstimate`) and which basis the intervals are scaled on." },
+    intervalPopulation: { type: "string", description: "Which ratio population the empirical interval used: the v2 (basis-unified) (reference_class_estimate, task_type) cell, or the v1 fallback computed on the v1 recorded basis." },
     interval: {
       type: "object",
-      description: "P50/P80/P90 empirical prediction intervals around adjustedEstimate, from per-task-type actual/estimate ratio quantiles. Present only when >=5 matched pairs were available for this task_type — see `intervalNote` otherwise.",
+      description: "P50/P80/P90 empirical prediction intervals around the RECORDED basis (`correctedEstimate` — never adjustedEstimate), from per-task-type actual/estimate ratio quantiles. Present only when >=5 matched pairs were available for this task_type — see `intervalNote` otherwise.",
       properties: {
         p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
         p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
@@ -396,13 +417,27 @@ const timeMathOutput = {
 //
 // pert_estimate and reference_class_estimate both lead their `humanReadable`
 // output with a calibrated P80 range and mention the point estimate second
-// (interval-first). Both prefer per-task-type empirical ratio quantiles
-// (>= MIN_N_FOR_QUANTILES matched pairs, via coverage.ts's shared
-// exclusion-filtered "clean path") and fall back to a PERT-variance interval
-// only for pert_estimate (which has its own optimistic/most_likely/
+// (interval-first). Both prefer per-(tool, task_type, basis-era) empirical
+// ratio quantiles (>= MIN_N_FOR_QUANTILES matched pairs, via coverage.ts's
+// shared exclusion-filtered "clean path") and fall back to a PERT-variance
+// interval only for pert_estimate (which has its own optimistic/most_likely/
 // pessimistic spread to derive one from); reference_class_estimate has no
 // analogous variance source, so it states plainly when there isn't enough
 // data for an interval rather than fabricating one.
+//
+// Ticket 11 (estimate-basis unification): empirical intervals apply the
+// ratio quantiles to the SAME basis the quantiles were computed on — the
+// ledger-RECORDED estimate (what feedback.ts's extractEstimatedHours reads
+// back), which is also the value the humanReadable point estimate displays:
+//   - pert_estimate: the raw PERT `expected` converted to hours (NOT
+//     adjustedEstimate — the ratio populations were trained on recorded raw
+//     expected, so applying them to a profile-corrected value biased every
+//     empirical interval low by the correction factor).
+//   - reference_class_estimate: correctedEstimate (the data-factor-corrected
+//     value extractEstimatedHours records for this tool — NOT the
+//     developerProfile-adjusted adjustedEstimate).
+// adjustedEstimate keeps its existing name and shape (PRD dual-field rule,
+// one minor version) and every estimate field is labeled via `basisNote`.
 
 /** Mirrors calibration-factors.ts's extractPertEstimatedHours unit table, for converting a pert_estimate value to/from hours so empirical (hours-denominated) ratio quantiles can be applied regardless of the caller's chosen `unit`. */
 const HOURS_PER_UNIT: Record<string, number> = { hours: 1, days: 8, weeks: 40, months: 160 };
@@ -430,6 +465,20 @@ function formatInterval(interval: { lower: number; upper: number }, unitLabel: s
 }
 
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
+
+// monte_carlo_schedule: optional deadline input for the P(total <= target)
+// metric (W2). The base schema lives in schemas/index.ts (owned by the
+// numeric-bounds lane); the optional target is extended here so it stays
+// registry-local.
+const monteCarloTargetSchema = monteCarloSchema.extend({
+  target_hours: z
+    .coerce.number()
+    .positive()
+    .optional()
+    .describe(
+      "Optional deadline in working hours (task durations are in 8-hour days). When supplied, criticalPathProbability reports P(total <= target_hours); when omitted it is null instead of a fabricated value.",
+    ),
+});
 
 const handlers: Record<string, ToolDefinition> = Object.fromEntries([
   // -- Temporal tools (6) ----------------------------------------------------
@@ -576,20 +625,30 @@ Use when estimating task duration with uncertain outcomes.`,
         n: learnedN,
       };
 
-      // Interval-first humanReadable (coverage.ts wiring): prefer per-task-type
-      // empirical ratio quantiles (n >= MIN_N_FOR_QUANTILES); fall back to this
-      // estimate's own PERT-variance interval when unavailable, saying so.
-      const quantiles = p.task_type ? empiricalRatioQuantilesForTaskType(p.task_type) : null;
+      // Interval-first humanReadable (coverage.ts wiring): prefer empirical
+      // ratio quantiles from this tool's (task_type, basis-era) population
+      // (n >= MIN_N_FOR_QUANTILES); fall back to this estimate's own
+      // PERT-variance interval when unavailable, saying so.
+      //
+      // Ticket 11 (same-basis rule): the quantiles were calibrated on the
+      // ledger-RECORDED basis — raw `expected` converted to hours — so they
+      // are applied to that same value (never to adjustedEstimate, which
+      // additionally multiplies in the correction factor and would bias the
+      // interval low by exactly that factor). The humanReadable point
+      // estimate displays the same recorded value.
+      const selection = p.task_type ? empiricalRatioQuantilesForTaskType(p.task_type, "pert_estimate") : null;
       let interval: PredictedIntervals;
       let intervalNote: string | undefined;
-      if (quantiles) {
-        const hoursIntervals = empiricalIntervals(toHoursForUnit(adjustedEstimate, p.unit), quantiles);
+      let intervalPopulation: string | undefined;
+      if (selection) {
+        const hoursIntervals = empiricalIntervals(toHoursForUnit(result.data.expected, p.unit), selection.quantiles);
         interval = {
           p50: intervalToUnit(hoursIntervals.p50, p.unit),
           p80: intervalToUnit(hoursIntervals.p80, p.unit),
           p90: intervalToUnit(hoursIntervals.p90, p.unit),
           source: "empirical_ratio_quantile",
         };
+        intervalPopulation = `basis-v${selection.basisVersion} pert_estimate "${p.task_type}" matched pairs (n=${selection.n})`;
       } else {
         interval = pertVarianceIntervals(result.data.expected, result.data.stdDeviation);
         intervalNote = p.task_type
@@ -598,7 +657,15 @@ Use when estimating task duration with uncertain outcomes.`,
       }
       data.interval = interval;
       if (intervalNote) data.intervalNote = intervalNote;
-      data.humanReadable = `Expected ${formatInterval(interval.p80, p.unit)} (80% confidence interval); point estimate ${adjustedEstimate} ${p.unit}.${intervalNote ? ` ${intervalNote}` : ""}`;
+      if (intervalPopulation) data.intervalPopulation = intervalPopulation;
+      // PRD dual-field rule (ticket 11): both bases are emitted, labeled.
+      data.basisNote =
+        `Interval and point estimate are on the ledger-recorded basis (raw PERT expected × unit factor). ` +
+        `adjustedEstimate (${adjustedEstimate} ${p.unit}) additionally applies the correction factor (${composedFactor}) and is display-only — it is never recorded or calibrated against.`;
+      data.humanReadable =
+        `Expected ${formatInterval(interval.p80, p.unit)} (80% confidence interval); point estimate ${result.data.expected} ${p.unit} ` +
+        `(ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the correction factor).` +
+        `${intervalNote ? ` ${intervalNote}` : ""}${intervalPopulation ? ` Interval calibrated from ${intervalPopulation}.` : ""}`;
 
       // Cross-check with reference class for AI-native workflows
       if (p.ai_native >= 0.7 && p.task_type) {
@@ -629,14 +696,26 @@ Use when estimating task duration with uncertain outcomes.`,
 
 Replaces traditional 17 human-labor cost drivers with 5 LLM-specific factors:
 reasoning complexity, context completeness, transformation impact, iterative cycles,
-and human oversight. Returns both nominal and LLM-adjusted person-months. Use when estimating effort for a codebase you can size in KLOC.`,
+and human oversight. Returns both nominal and LLM-adjusted person-months. Use when estimating effort for a codebase you can size in KLOC.
+iterative_cycles: values <= 2.0 are literal multipliers (0.5 = one-shot,
+1.0 = typical debug loop, 2.0 = heavy back-and-forth); values above 2.0 are
+literal cycle counts, each additional cycle adding 0.1 of multiplier anchored
+at 2.0 (2.0 -> 2.0x, 3 -> 2.1x, 10 -> 2.8x) — monotonic with no cliff at 2.0.`,
     cocomoEstimateSchema,
     cocomoOutput,
     (input) => {
       const p = cocomoEstimateSchema.parse(input);
       const profile = getDeveloperProfileGradient(p.ai_native);
       const rawCycles = p.iterative_cycles;
-      const iterativeCycles = rawCycles > 2.0 ? 1.0 + Math.min(rawCycles, 10) * 0.1 : rawCycles;
+      // Continuous cycle normalization (W2 math fix): values <= 2.0 are literal
+      // multipliers, unchanged. Above 2.0 the input is a literal cycle count
+      // and each additional cycle adds a fixed 0.1 of multiplier, anchored at
+      // the literal-region endpoint (2.0) so the mapping is monotonic
+      // non-decreasing over [0.5, 10] with no cliff at 2.0 — the previous
+      // `1 + min(c,10)*0.1` rule made 2.0 -> 2.0x but 2.01 -> 1.201x.
+      const iterativeCycles = rawCycles <= 2.0
+        ? rawCycles
+        : 2.0 + 0.1 * (Math.min(rawCycles, 10.0) - 2.0);
       const result = cocomoEstimate({
         kloc: p.kloc,
         reasoningComplexity: p.reasoning_complexity,
@@ -698,23 +777,45 @@ Applies merge bias: tasks with >2 predecessors get 5% duration increase per extr
     },
   ),
 
+  // monte_carlo_schedule uses monteCarloTargetSchema (declared above the
+  // handlers map): optional target_hours for P(total <= target).
+
   tool(
     "monte_carlo_schedule",
     `Run Monte Carlo simulation for probabilistic schedule risk analysis.
 
 Samples task durations from triangular distributions and returns P10/P50/P80/P95
-completion estimates with identified risk events. Use seed for reproducible results.`,
-    monteCarloSchema,
+completion estimates with identified risk events. Use seed for reproducible results.
+Supply target_hours (working hours; durations are 8-hour days) to get
+criticalPathProbability = P(total <= target_hours); without it that field is null.`,
+    monteCarloTargetSchema,
     monteCarloOutput,
     (input) => {
-      const p = monteCarloSchema.parse(input);
+      const p = monteCarloTargetSchema.parse(input);
+      // Input safety bound (W1): the schema caps each factor independently
+      // (<=500 tasks, <=100,000 iterations), but 500 × 100,000 sampled task-
+      // durations would still monopolize the event loop in a single call —
+      // cap the product too, rejecting with an actionable message.
+      const taskCount = p.tasks.length;
+      const product = taskCount * p.iterations;
+      if (product > MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT) {
+        const maxIterations = Math.max(1, Math.floor(MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT / taskCount));
+        return {
+          ok: false as const,
+          error: {
+            isError: true as const,
+            message: `iterations × tasks = ${product.toLocaleString("en-US")} exceeds the ${MONTE_CARLO_ITERATION_TASK_PRODUCT_LIMIT.toLocaleString("en-US")} cap (${p.iterations.toLocaleString("en-US")} iterations × ${taskCount} tasks).`,
+            retryHint: `Lower iterations to at most ${maxIterations.toLocaleString("en-US")} for ${taskCount} tasks, or split the schedule into smaller task lists.`,
+          },
+        };
+      }
       const tasks = p.tasks.map((t) => ({
         name: t.name,
         optimistic: t.optimistic,
         mostLikely: t.most_likely,
         pessimistic: t.pessimistic,
       }));
-      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed) };
+      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed, p.target_hours) };
     },
   ),
 
@@ -744,18 +845,32 @@ Prioritize this over algorithmic models when historical data is available.`,
 
       // Interval-first humanReadable (coverage.ts wiring): reference_class_estimate
       // has no PERT-variance spread to fall back on, so when there isn't enough
-      // per-task-type empirical data (n < MIN_N_FOR_QUANTILES) it states that
-      // plainly rather than fabricating an interval.
-      const quantiles = empiricalRatioQuantilesForTaskType(p.task_type);
+      // per-(task_type, basis-era) empirical data (n < MIN_N_FOR_QUANTILES) it
+      // states that plainly rather than fabricating an interval.
+      //
+      // Ticket 11 (same-basis rule): extractEstimatedHours records
+      // `correctedEstimate` for this tool, and the ratio quantiles were
+      // calibrated on exactly that recorded basis — so the interval and the
+      // humanReadable point estimate both display correctedEstimate (the
+      // number the ledger records). adjustedEstimate (rawEstimate ×
+      // developerProfile.correctionFactor) previously diverged from the
+      // recorded value by profileCF/dataCF (~1.75x); it is now kept only as a
+      // labeled dual field (PRD dual-field rule, one minor version).
+      const selection = empiricalRatioQuantilesForTaskType(p.task_type, "reference_class_estimate");
       let interval: PredictedIntervals | undefined;
       let intervalNote: string | undefined;
+      let intervalPopulation: string | undefined;
       let humanReadable: string;
-      if (quantiles) {
-        interval = empiricalIntervals(adjustedEstimate, quantiles);
-        humanReadable = `Expected ${formatInterval(interval.p80, "hours")} (80% confidence interval); point estimate ${adjustedEstimate} hours.`;
+      if (selection) {
+        interval = empiricalIntervals(result.correctedEstimate, selection.quantiles);
+        intervalPopulation = `basis-v${selection.basisVersion} reference_class_estimate "${p.task_type}" matched pairs (n=${selection.n})`;
+        humanReadable =
+          `Expected ${formatInterval(interval.p80, "hours")} (80% confidence interval); point estimate ${result.correctedEstimate} hours ` +
+          `(ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the developerProfile correction).` +
+          ` Interval calibrated from ${intervalPopulation}.`;
       } else {
         intervalNote = `Fewer than 5 exclusion-filtered historical "${p.task_type}" reference_class_estimate pairs are available yet, so no empirical confidence interval could be computed.`;
-        humanReadable = `Expected ~${adjustedEstimate} hours (point estimate). ${intervalNote}`;
+        humanReadable = `Expected ~${result.correctedEstimate} hours (point estimate, ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the developerProfile correction). ${intervalNote}`;
       }
 
       return {
@@ -770,12 +885,17 @@ Prioritize this over algorithmic models when historical data is available.`,
             correctionFactor: profile.correctionFactor,
           },
           adjustedEstimate,
+          // PRD dual-field rule (ticket 11): both bases are emitted, labeled.
+          basisNote:
+            `correctedEstimate (${result.correctedEstimate} hours) is the ledger-recorded and displayed basis (rawEstimate × correctionFactor). ` +
+            `adjustedEstimate (${adjustedEstimate} hours) additionally applies the developerProfile factor (${profile.correctionFactor}) and is display-only — it is never recorded or calibrated against.`,
           note: records.length >= 5
             ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
             : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
           humanReadable,
           ...(interval ? { interval } : {}),
           ...(intervalNote ? { intervalNote } : {}),
+          ...(intervalPopulation ? { intervalPopulation } : {}),
         },
       };
     },
@@ -971,19 +1091,38 @@ Pairs with any estimation tool. The estimate_id comes from the estimate response
 Actuals feed into the self-improvement loop — after enough samples, correction factors
 update automatically to reduce estimation bias.`,
     recordActualSchema,
-    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" }, flagged: { type: "string", enum: ["unit_suspect"], description: "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months." }, flagHint: { type: "string", description: "Actionable hint accompanying a flagged record." } } } satisfies Record<string, unknown>,
     (input) => {
       const p = recordActualSchema.parse(input);
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes, p.unit, p.calibration_provenance);
       if (!result.ok) {
+        // Ticket 04 (feedback contract): EVERY recordActualDetailed failure
+        // reason maps to a distinct, actionable message. The reason union is
+        // closed (src/lib/feedback.ts RecordActualResult); the exhaustive map
+        // below plus the honest fallback means "Unknown error." is unreachable
+        // for these failures. Pinned by
+        // src/dispatcher/record-actual-errors.test.ts.
         const messages: Record<string, string> = {
           below_threshold: `Actual hours (${p.actual_hours}) must be positive.`,
           duplicate: `An actual for estimate ${p.estimate_id} already exists. Each estimate can only have one actual.`,
           write_failed: "Failed to write to feedback storage — ensure ~/.epoch/ directory is writable.",
+          synthetic_id: `Estimate ID "${p.estimate_id}" looks like test/synthetic data (reserved prefix), so it cannot receive actuals. Use the feedbackRef returned by a fresh estimation-tool call.`,
+          unknown_tool: `Estimate ${p.estimate_id} was recorded under an unrecognized tool name, so its actual cannot join calibration. Re-run the estimation tool and record against the new feedbackRef it returns.`,
+          auto_wallclock_out_of_bounds: `Auto wall-clock actual for estimate ${p.estimate_id} failed the sanity gate (outside 0.05–12h or ≥10x the estimate). Record a verified actual manually via record_actual instead.`,
         };
         return {
           ok: false as const,
-          error: { isError: true, message: messages[result.reason] ?? "Unknown error.", retryHint: "Check estimate_id and actual_hours values." },
+          error: {
+            isError: true,
+            // Ticket 16 (unknown-tool policy): the lib may attach an
+            // actionable hint (currently unknown_tool's canonical
+            // estimation-tool set) — append it so the rejection is never a
+            // silent contract severance.
+            message: result.hint
+              ? `${messages[result.reason] ?? `Failed to record actual for estimate ${p.estimate_id} (unrecognized reason: ${String(result.reason)}).`} ${result.hint}`
+              : messages[result.reason] ?? `Failed to record actual for estimate ${p.estimate_id} (unrecognized reason: ${String(result.reason)}).`,
+            retryHint: "Use the feedbackRef from a recent estimation tool call with a positive actual_hours value.",
+          },
         };
       }
       return {
@@ -992,7 +1131,13 @@ update automatically to reduce estimation bias.`,
           recorded: true,
           estimate_id: p.estimate_id,
           actual_hours: p.actual_hours,
-          message: "Actual recorded. Correction factors update after more feedback accumulates.",
+          ...(result.flagged === "unit_suspect" && {
+            flagged: "unit_suspect" as const,
+            flagHint: UNIT_SUSPECT_FLAG_HINT,
+          }),
+            message: result.flagged === "unit_suspect"
+              ? "Actual recorded, but flagged unit_suspect: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — suspected unit mismatch (check hours vs days/weeks/person-months)."
+              : "Actual recorded. Correction factors update after more feedback accumulates.",
         },
       };
     },
@@ -1050,9 +1195,22 @@ Each entry pairs an estimate ID with the actual hours spent. Returns total/succe
         calibrationProvenance: e.calibration_provenance,
       })));
       if (result.succeeded === 0 && result.failed > 0) {
+        // Ticket 04: the all-failed envelope must not swallow the per-entry
+        // reasons — surface the first one (they carry "(reason: ...)" from
+        // batchRecordActuals) so the caller can self-correct.
+        const firstError = result.errors[0] ?? "no per-entry error reported";
+        // Review M3: storage failures are server-side (500-class), not input
+        // errors — classify from the per-entry reasons so the HTTP seam never
+        // maps a disk/lock failure to 422.
+        const anyWriteFailed = result.errors.some((e) => e.includes("write_failed"));
         return {
           ok: false as const,
-          error: { isError: true, message: `All ${result.total} entries failed to record.`, retryHint: "Ensure ~/.epoch/ directory is writable." },
+          error: anyWriteFailed
+            ? makeStorageError(
+                `All ${result.total} entries failed to record. First failure: ${firstError}`,
+                "A write_failed entry is a server-side storage failure (permissions/disk/lock) — fix the Epoch data directory, then retry the batch.",
+              )
+            : { isError: true, message: `All ${result.total} entries failed to record. First failure: ${firstError}`, retryHint: "Each entry needs the feedbackRef from a recent estimation tool call and a positive actual_hours value." },
         };
       }
       return { ok: true as const, data: result };
@@ -1141,7 +1299,16 @@ export const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map(
   Object.entries(handlers),
 );
 
-export const TOOL_NAMES: Set<string> = new Set(Object.keys(handlers));
+// Ticket 03 (authoritative tool surface): TOOL_NAMES / ESTIMATION_TOOLS /
+// NON_ESTIMATION_TOOLS are DERIVED from src/lib/tool-aliases.ts — the single
+// source of truth — not hand-copied here. The sync suite
+// (src/dispatcher/tool-surface-sync.test.ts) pins the actual registration
+// keys in TOOL_REGISTRY to CANONICAL_TOOL_NAMES, so registering a tool
+// without updating lib (or vice versa) fails CI instead of silently drifting
+// (the historical 24-vs-25 drift that broke estimate_from_context's feedback
+// loop must never come back).
+
+export const TOOL_NAMES: ReadonlySet<string> = CANONICAL_TOOL_NAMES;
 
 // ---- Estimation vs. telemetry classification (Phase 1 Task 3) --------------
 //
@@ -1151,41 +1318,12 @@ export const TOOL_NAMES: Set<string> = new Set(Object.keys(handlers));
 // plumbing, comparison/validation reports) is non-estimation telemetry and
 // must be routed to recordToolCall() / tool-calls.jsonl instead — see
 // dispatch() in src/dispatcher/index.ts, the sole recordEstimate() call site.
-// Every tool name registered above must appear in exactly one of these sets.
+// The partition itself is owned by src/lib/tool-aliases.ts and only
+// re-exported here.
 
-export const ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
-  "pert_estimate",
-  "reference_class_estimate",
-  "cocomo_estimate",
-  "sprint_forecast",
-  "monte_carlo_schedule",
-  "schedule_risk",
-  "critical_path",
-  "token_time_bridge",
-  // Phase 5: estimate_from_context now produces a real reference-class-
-  // delegated hour estimate (correctedEstimate), so it joins the ledger and
-  // is eligible for record_actual pairing, same as reference_class_estimate.
-  "estimate_from_context",
-]);
+export const ESTIMATION_TOOLS: ReadonlySet<string> = ESTIMATION_TOOL_NAMES;
 
-export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = new Set([
-  "record_actual",
-  "batch_record_actuals",
-  "get_current_time",
-  "convert_timezone",
-  "parse_duration",
-  "time_math",
-  "add_business_days",
-  "count_business_days",
-  "feedback_health",
-  "get_pending_estimates",
-  "accuracy_trend",
-  "calibrate_estimates",
-  "compare_models",
-  "token_cost_estimate",
-  "cocomo_validate",
-  "cocomo_ground_truth",
-]);
+export const NON_ESTIMATION_TOOLS: ReadonlySet<string> = NON_ESTIMATION_TOOL_NAMES;
 
 export function isEstimationTool(toolName: string): boolean {
   return ESTIMATION_TOOLS.has(toolName);

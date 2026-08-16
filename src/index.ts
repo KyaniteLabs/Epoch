@@ -75,18 +75,11 @@ function main(): void {
     return;
   }
 
-  const args = process.argv.slice(2);
-  const firstArg = args[0];
-
-  if (firstArg === "serve" || firstArg === "--http") {
-    const portIdx = args.indexOf("--port");
-    const portStr = portIdx !== -1 ? args[portIdx + 1] : undefined;
-    const port = portStr ? parseInt(portStr, 10) : undefined;
-    startHttpServer(port !== undefined && !isNaN(port) ? port : undefined);
-    return;
-  }
-
-  if (firstArg && firstArg !== "serve" && firstArg !== "--http" && transport !== "http") {
+  // Any argument routes to the CLI. `serve` is a real commander subcommand
+  // there (validated --port/--host, listed in `epoch --help`), so no
+  // pre-command intercept is needed — and `epoch serve --help` prints help
+  // instead of starting a server. No arguments starts the stdio MCP server.
+  if (process.argv.slice(2)[0]) {
     runCli();
     return;
   }

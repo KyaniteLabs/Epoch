@@ -1,6 +1,0 @@
-0892ea5 test: cover forced telemetry submits after rebase
-0494d74 chore: format telemetry submit helper
-f18219f fix: make telemetry submit cadence configurable
-9cf3b3d fix: codify Epoch fleet autonomy
-18352ee chore: prepare v0.2.7 release
-90ceec1 chore: prepare v0.2.6 release

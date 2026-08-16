@@ -1,5 +1,0 @@
-84c5b40 chore: update bundled reference database (2026-05-25 consolidation)
-334217d fix: resolve all lint errors, make CI lint non-blocking, add missing tests (#73)
-f99d794 fix: complete Epoch data contribution loop, machine identity, and fleet consolidation (#71)
-b70e5ba chore(deps): bump hono from 4.12.19 to 4.12.22 (#70)
-dbe5dbc chore(deps-dev): bump tsx from 4.22.0 to 4.22.3 (#69)

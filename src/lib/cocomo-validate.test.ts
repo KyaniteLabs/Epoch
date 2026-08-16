@@ -251,4 +251,109 @@ describe("cocomoValidate", () => {
     expect(defined(scaleAdj).reason).toContain("Overall bias");
     expect(defined(scaleAdj).reason).toContain("exceeding 20% threshold");
   });
+
+  // --- Direction tests (W2 sign fix): adjustments must REDUCE |bias| on both
+  // signs. Previously the multiplier was (1 + bias/100), which amplified bias
+  // (positive bias = overprediction grew coefficient a, overpredicting more).
+
+  /** Projects whose actual effort is exactly predicted/(1+biasFraction) — a uniform bias. */
+  function uniformlyBiasedProjects(
+    a: number,
+    b: number,
+    biasFraction: number,
+    type: string,
+  ) {
+    const predicted = (kloc: number) => a * Math.pow(kloc, b);
+    return [5, 10, 20].map((kloc, i) => ({
+      id: i + 1,
+      kloc,
+      effortPersonMonths: predicted(kloc) / (1 + biasFraction),
+      type,
+    }));
+  }
+
+  function mockDerived(coeffs: { a: number; b: number }, type: string) {
+    mockGetCocomoDerivedFactors.mockReturnValue({
+      cocomoBasic: { [type]: { ...coeffs, c: 0, d: 0 } },
+      productivityKlocPerPersonMonth: { median: 0, p25: 0, p75: 0 },
+    });
+  }
+
+  it("organic adjustment SHRINKS a under overprediction and reduces |bias| when applied", () => {
+    // +50% bias: predicted = 1.5x actual on every project.
+    mockGetCocomoProjects.mockReturnValue([
+      { name: "over", projects: uniformlyBiasedProjects(2.4, 1.05, 0.5, "organic") },
+    ]);
+    mockGetCocomoDerivedFactors.mockReturnValue(null);
+
+    const before = cocomoValidate();
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    expect(before.data.bias).toBeCloseTo(50, 0);
+    const adj = before.data.recommendedAdjustments.find((x) => x.parameter === "organic.a");
+    expect(adj).toBeDefined();
+    // 2.4 * (1 - 50/100) = 1.2 — smaller, not larger.
+    expect(defined(adj).recommendedValue).toBeLessThan(defined(adj).currentValue);
+    expect(defined(adj).recommendedValue).toBeCloseTo(1.2, 2);
+
+    mockDerived({ a: defined(adj).recommendedValue, b: 1.05 }, "organic");
+    const after = cocomoValidate();
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    expect(Math.abs(after.data.bias)).toBeLessThan(Math.abs(before.data.bias));
+    expect(after.data.mape).toBeLessThan(before.data.mape);
+  });
+
+  it("organic adjustment GROWS a under underprediction and reduces |bias| when applied", () => {
+    // -37.5% bias: predicted = 0.625x actual on every project.
+    mockGetCocomoProjects.mockReturnValue([
+      { name: "under", projects: uniformlyBiasedProjects(2.4, 1.05, -0.375, "organic") },
+    ]);
+    mockGetCocomoDerivedFactors.mockReturnValue(null);
+
+    const before = cocomoValidate();
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    expect(before.data.bias).toBeCloseTo(-37.5, 0);
+    const adj = before.data.recommendedAdjustments.find((x) => x.parameter === "organic.a");
+    expect(adj).toBeDefined();
+    // 2.4 * (1 + 37.5/100) = 3.3 — larger, not smaller.
+    expect(defined(adj).recommendedValue).toBeGreaterThan(defined(adj).currentValue);
+    expect(defined(adj).recommendedValue).toBeCloseTo(3.3, 2);
+
+    mockDerived({ a: defined(adj).recommendedValue, b: 1.05 }, "organic");
+    const after = cocomoValidate();
+    expect(after.ok).toBe(true);
+    if (!after.ok) return;
+    expect(Math.abs(after.data.bias)).toBeLessThan(Math.abs(before.data.bias));
+  });
+
+  it("embedded b adjustment moves against the bias on both signs and reduces |bias| when applied", () => {
+    for (const biasFraction of [0.5, -0.375]) {
+      mockGetCocomoProjects.mockReturnValue([
+        { name: `emb-${biasFraction}`, projects: uniformlyBiasedProjects(3.6, 1.2, biasFraction, "embedded") },
+      ]);
+      mockGetCocomoDerivedFactors.mockReturnValue(null);
+
+      const before = cocomoValidate();
+      expect(before.ok).toBe(true);
+      if (!before.ok) return;
+      const adj = before.data.recommendedAdjustments.find((x) => x.parameter === "embedded.b");
+      expect(adj).toBeDefined();
+      if (biasFraction > 0) {
+        // Overprediction: shrink the exponent.
+        expect(defined(adj).recommendedValue).toBeLessThan(defined(adj).currentValue);
+      } else {
+        // Underprediction: grow the exponent.
+        expect(defined(adj).recommendedValue).toBeGreaterThan(defined(adj).currentValue);
+      }
+
+      mockDerived({ a: 3.6, b: defined(adj).recommendedValue }, "embedded");
+      const after = cocomoValidate();
+      expect(after.ok).toBe(true);
+      if (!after.ok) return;
+      // Conservative half-strength (/200) correction: |bias| must shrink, not vanish.
+      expect(Math.abs(after.data.bias)).toBeLessThan(Math.abs(before.data.bias));
+    }
+  });
 });

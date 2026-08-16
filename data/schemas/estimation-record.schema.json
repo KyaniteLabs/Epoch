@@ -72,6 +72,11 @@
     "contributor_id": {
       "type": "string",
       "description": "Anonymized contributor hash (NOT email or name)"
+    },
+    "estimate_basis_version": {
+      "type": "integer",
+      "enum": [1, 2],
+      "description": "Optional basis-era label (ticket 11, estimate-basis unification). 1 = legacy row (pre-unification: tools displayed an adjusted value the ledger did not record); 2 = post-unification row (displayed estimate == recorded estimate). estimated_hours is ALWAYS the ledger-recorded basis in both eras; this label lets consumers keep v1/v2 ratio populations split. Absent = unknown/legacy."
     }
   },
   "required": ["estimated_hours", "actual_hours", "task_type", "complexity", "timestamp"],

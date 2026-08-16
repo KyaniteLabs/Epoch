@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "generatedAt": "2026-05-25T00:32:54.861Z",
   "source": "self-improvement",
-  "sampleSize": 126223,
+  "sampleSize": 117791,
   "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
   "toolExecutionBenchmarks": {
     "add_business_days": {

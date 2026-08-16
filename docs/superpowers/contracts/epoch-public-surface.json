@@ -24,7 +24,8 @@
     "record_actual",
     "get_pending_estimates",
     "batch_record_actuals",
-    "feedback_health"
+    "feedback_health",
+    "estimate_from_context"
   ],
   "write_tool_names": [
     "record_actual",
@@ -68,6 +69,8 @@
     "batch-record-actuals",
     "feedback-health",
     "cocomo-ground-truth",
+    "estimate-from-context",
+    "auto-actuals",
     "self-improve",
     "telemetry",
     "telemetry status",
@@ -82,6 +85,7 @@
     "data",
     "data where",
     "data status",
+    "serve",
     "list-tools"
   ]
 }

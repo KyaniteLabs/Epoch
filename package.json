@@ -1,6 +1,6 @@
 {
   "name": "@kyanitelabs/epoch",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "mcpName": "io.github.KyaniteLabs/Epoch",
   "description": "Time Estimation MCP Server \u2014 25 tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, context-based estimation, token-to-time mapping, cost estimation, and schedule risk. Self-improving with calibrated intervals and an auto-closing feedback loop. Built for AI agents. MCP + CLI + REST.",
   "type": "module",
@@ -22,7 +22,7 @@
   },
   "types": "./dist/index.d.ts",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bugs": {
     "url": "https://github.com/KyaniteLabs/Epoch/issues"
@@ -38,6 +38,7 @@
     "ops:check": "bash -n scripts/epoch-fleet-bootstrap.sh scripts/epoch-receiver-watchdog.sh scripts/install-epoch-receiver-watchdog.sh",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
     "canary": "node canary-runner.mjs",
+    "stamp:versions": "node scripts/stamp-release-versions.mjs",
     "dataset:build": "tsx scripts/export-public-benchmark.mjs",
     "dataset:verify": "tsx scripts/validate-public-benchmark.mjs",
     "contract:inventory": "tsx src/contract/export-public-surface.ts"

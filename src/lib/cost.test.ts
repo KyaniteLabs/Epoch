@@ -232,9 +232,10 @@ describe("compareModels", () => {
 // ---------------------------------------------------------------------------
 //
 // Pricing is primary-source verified (see data/supplementary-database.json's
-// `sources.claudeModelPricingPhase5` and src/schemas/index.ts's llmModelEnum
-// comment for the citation). This snapshot pins the exact $/1M-token figures
-// so a future catalog refresh can't silently drift without updating the test.
+// `sources.claudeModelPricingPhase5` and the LLMModel derived-union comment
+// in src/types/index.ts for the citation). This snapshot pins the exact
+// $/1M-token figures so a future catalog refresh can't silently drift
+// without updating the test.
 
 describe("Phase 5 catalog — Claude 5 family pricing", () => {
   // Isolated from the developer's real ~/.epoch (or $EPOCH_DATA_DIR): a

@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createCliProgram, maybeShowFirstRunTelemetryNudge } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
+import { assertEstimateWritten } from "../test-support.js";
 
 // ---- Sentinel error for process.exit mock -----------------------------------
 
@@ -50,7 +51,18 @@ vi.mock("../dispatcher/index.js", () => ({
 
 vi.mock("../version.js", () => ({
 	getVersion: () => "0.1.2-test",
+	// Ticket 19: telemetry-submit now resolves its payload version through
+	// readPackageVersion's dist-safe depth chain — the mock must cover it or
+	// every CLI telemetry command crashes on the undefined import.
+	readPackageVersion: () => "0.1.2-test",
 }));
+
+vi.mock("../lib/auto-actuals.js", () => ({
+	runAutoActuals: vi.fn(),
+}));
+
+import { runAutoActuals } from "../lib/auto-actuals.js";
+import type { AutoActualsResult } from "../lib/auto-actuals.js";
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -98,7 +110,27 @@ async function runWithCapture(
 	try {
 		program.parse(argv, { from: "user" });
 		// Flush microtask queue for async actions that call process.exit.
-		await new Promise((resolve) => setTimeout(resolve, 200));
+		// A fixed 200ms window intermittently lost the floated async
+		// action's output when vitest's dynamic-import graph resolved
+		// slowly under load (verified flaky with and without lane K's
+		// changes); poll for the first observable effect with a 2s cap
+		// instead of racing a fixed deadline.
+		await new Promise<void>((resolve) => {
+			const deadline = Date.now() + 2_000;
+			const poll = () => {
+				if (
+					capture.exitCode !== null ||
+					capture.stdout.length > 0 ||
+					capture.stderr.length > 0 ||
+					Date.now() >= deadline
+				) {
+					resolve();
+					return;
+				}
+				setTimeout(poll, 10);
+			};
+			poll();
+		});
 	} catch (e: unknown) {
 		// Swallow ExitCalled — the exit code is captured above.
 		if (!(e instanceof ExitCalled)) {
@@ -207,6 +239,7 @@ describe("CLI tests", () => {
 			"list-tools",
 			"auto-actuals",
 			"self-improve",
+			"serve",
 			"telemetry",
 			"share-data",
 			"data",
@@ -547,6 +580,205 @@ describe("CLI tests", () => {
 		});
 	});
 
+	describe("CLI serve command", () => {
+		it("is listed in the root help output", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, ["--help"]);
+
+			expect(capture.stdout.join("")).toContain("serve");
+			expect(capture.exitCode).toBe(0);
+		});
+
+		it("serve --help shows port/host options without starting a server", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, ["serve", "--help"]);
+			const output = capture.stdout.join("");
+
+			expect(output).toContain("--port");
+			expect(output).toContain("--host");
+			expect(output.toLowerCase()).not.toContain("listening");
+			expect(capture.exitCode).toBe(0);
+		});
+
+		it("rejects a non-numeric --port with a clear error", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"serve",
+				"--port",
+				"abc",
+			]);
+
+			expect(capture.stderr.join("")).toContain(
+				"--port must be an integer between 1 and 65535",
+			);
+			expect(capture.exitCode).toBe(1);
+		});
+
+		it("rejects an out-of-range --port instead of crashing in the bind call", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"serve",
+				"--port",
+				"99999",
+			]);
+
+			expect(capture.stderr.join("")).toContain(
+				"--port must be an integer between 1 and 65535",
+			);
+			expect(capture.exitCode).toBe(1);
+		});
+
+		it("rejects a fractional and a zero --port", async () => {
+			const program = createCliProgram();
+			for (const bad of ["80.5", "0", "-1"]) {
+				const capture = await runWithCapture(program, ["serve", "--port", bad]);
+				expect(capture.exitCode).toBe(1);
+				expect(capture.stderr.join("")).toContain("--port must be an integer");
+			}
+		});
+
+		it("registers --port and --host options on the serve command", () => {
+			const program = createCliProgram();
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			const cmd = program.commands.find((c) => c.name() === "serve")!;
+			expect(cmd.options.map((o) => o.long)).toContain("--port");
+			expect(cmd.options.map((o) => o.long)).toContain("--host");
+			// No commander default values: unspecified flags must fall through to
+			// the documented $EPOCH_PORT/$PORT/$EPOCH_HOST env defaults.
+			const port = cmd.options.find((o) => o.long === "--port");
+			expect(port?.defaultValue).toBeUndefined();
+			const host = cmd.options.find((o) => o.long === "--host");
+			expect(host?.defaultValue).toBeUndefined();
+		});
+	});
+
+	describe("CLI auto-actuals result contract", () => {
+		beforeEach(() => {
+			vi.clearAllMocks();
+			mkdirSync(TEST_DIR, { recursive: true });
+			process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+		});
+
+		afterEach(() => {
+			delete process.env["EPOCH_DATA_DIR"];
+			rmSync(TEST_DIR, { recursive: true, force: true });
+		});
+
+		function mockAutoActualsResult(overrides: Partial<AutoActualsResult>): AutoActualsResult {
+			return {
+				sessionId: "sess-1",
+				dryRun: false,
+				candidates: 2,
+				recorded: [{ estimateId: "est-1", wallClockHours: 2.5 }],
+				skipped: [],
+				summary: "auto-actuals: session sess-1 -- 1 actual(s) recorded, 0 skipped (of 2 candidates).",
+				...overrides,
+			};
+		}
+
+		it("writes exactly one JSON document to stdout and exits 0 on success", async () => {
+			const result = mockAutoActualsResult({});
+			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(result);
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+			]);
+
+			expect(capture.exitCode).toBe(0);
+			// Single write: stdout is EXACTLY the one JSON envelope — no
+			// JSON+summary double-write (the summary lives inside data).
+			expect(capture.stdout.join("")).toBe(
+				JSON.stringify({ ok: true, data: result }, null, 2) + "\n",
+			);
+			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", false);
+		});
+
+		it("forwards --dry-run", async () => {
+			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(
+				mockAutoActualsResult({ dryRun: true }),
+			);
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+				"--dry-run",
+			]);
+
+			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", true);
+			expect(capture.exitCode).toBe(0);
+		});
+
+		it("exits 2 with the error envelope on stderr when entries were skipped with write_failed", async () => {
+			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(
+				mockAutoActualsResult({
+					candidates: 2,
+					recorded: [],
+					skipped: [{ estimateId: "est-2", reason: "write_failed", wallClockHours: 3 }],
+				}),
+			);
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+			]);
+
+			expect(capture.exitCode).toBe(2);
+			expect(capture.stdout.join("")).toBe("");
+			const stderr = capture.stderr.join("");
+			expect(stderr).toContain("write failed");
+			expect(stderr).toContain("est-2");
+			const parsed = JSON.parse(stderr) as { ok: boolean; error: { retryHint?: string } };
+			expect(parsed.ok).toBe(false);
+			expect(parsed.error.retryHint).toBeDefined();
+		});
+
+		it("non-write-failure skips (sanity bounds) stay exit 0", async () => {
+			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(
+				mockAutoActualsResult({
+					skipped: [{ estimateId: "est-2", reason: "auto_wallclock_out_of_bounds", wallClockHours: 9000 }],
+				}),
+			);
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+			]);
+
+			expect(capture.exitCode).toBe(0);
+		});
+
+		it("honors --format table and --quiet like other commands", async () => {
+			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(
+				mockAutoActualsResult({}),
+			);
+			const program = createCliProgram();
+
+			const table = await runWithCapture(program, [
+				"--format",
+				"table",
+				"auto-actuals",
+				"--session",
+				"sess-1",
+			]);
+			expect(table.stdout.join("")).toContain("auto-actuals");
+
+			const quietTable = await runWithCapture(program, [
+				"--quiet",
+				"--format",
+				"table",
+				"auto-actuals",
+				"--session",
+				"sess-1",
+			]);
+			expect(quietTable.stdout.join("")).toBe("");
+		});
+	});
+
 	describe("CLI cocomo-estimate optional args", () => {
 		beforeEach(() => {
 			vi.clearAllMocks();
@@ -650,6 +882,30 @@ describe("CLI tests", () => {
 			);
 		});
 
+		it("non-interactive enable without --yes fails loudly instead of a silent exit-0 on EOF", async () => {
+			// Force the non-interactive branch regardless of how vitest's own
+			// stdin is connected (piped stdin resolves the prompt with "" on
+			// EOF, which previously "Cancelled."d its way to exit 0).
+			const stdin = process.stdin as { isTTY?: boolean };
+			const originalIsTTY = stdin.isTTY;
+			stdin.isTTY = undefined;
+			try {
+				const program = createCliProgram();
+				const capture = await runWithCapture(program, ["telemetry", "enable"]);
+
+				expect(capture.exitCode).toBe(1);
+				const stderr = capture.stderr.join("");
+				expect(stderr).toContain("interactive");
+				expect(stderr).toContain("--yes");
+				// No silent success shape on stdout, and telemetry stays off.
+				expect(capture.stdout.join("")).not.toContain("\"ok\": true");
+				const { loadConfig } = await import("../lib/config.js");
+				expect(loadConfig().telemetry.enabled).toBe(false);
+			} finally {
+				stdin.isTTY = originalIsTTY;
+			}
+		});
+
 		it("rejects non-HTTPS telemetry endpoints except localhost", async () => {
 			const program = createCliProgram();
 			const capture = await runWithCapture(program, [
@@ -669,8 +925,8 @@ describe("CLI tests", () => {
 				"telemetry",
 				"set-endpoint",
 				"--endpoint",
-				"http://100.66.225.85:3099/v1/telemetry",
-			]);
+			"http://100.100.100.100:3099/v1/telemetry",
+		]);
 
 			const output = JSON.parse(capture.stdout.join("")) as {
 				ok: boolean;
@@ -678,7 +934,7 @@ describe("CLI tests", () => {
 			};
 			expect(capture.exitCode).toBe(0);
 			expect(output.ok).toBe(true);
-			expect(output.endpoint).toBe("http://100.66.225.85:3099/v1/telemetry");
+			expect(output.endpoint).toBe("http://100.100.100.100:3099/v1/telemetry");
 		});
 
 		it("reports placeholder endpoint as not configured in telemetry status", async () => {
@@ -750,6 +1006,7 @@ describe("CLI tests", () => {
 				{ task_type: "feature", complexity: 3 },
 				{ expected: 2, unit: "hours" },
 			);
+			assertEstimateWritten(estimateId);
 			recordActual(estimateId, 3);
 
 			const program = createCliProgram();

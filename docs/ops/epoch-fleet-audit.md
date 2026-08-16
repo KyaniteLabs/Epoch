@@ -2,9 +2,16 @@
 
 ## Prerequisites
 
-- SSH access to `100.115.175.18` (mac-mini) and `100.113.174.74` (ubuntu-receiver)
+- SSH access to the fleet machines (addresses are not stored in this public
+  repo — export them first):
+  ```bash
+  export EPOCH_MAC_MINI_HOST="<mac-mini Tailscale IP or hostname>"
+  export EPOCH_UBUNTU_RECEIVER_HOST="<receiver Tailscale IP or hostname>"
+  ```
 - Tailscale connected
-- Redact secrets before committing audit output
+- Redact secrets before committing audit output. Audit reports contain live
+  fleet topology (hostnames, addresses, ports) and are gitignored — do not
+  commit them to this public repo.
 
 ## Quick audit
 
@@ -14,12 +21,13 @@ Run the convenience script:
 bash scripts/audit-epoch-fleet.sh
 ```
 
-Output is written to `docs/ops/audits/epoch-fleet-audit-<timestamp>.md`.
+Output is written to `docs/ops/audits/epoch-fleet-audit-<timestamp>.md` (gitignored — it contains fleet topology; do not commit it to this public repo).
 
 ## Manual Mac mini audit
 
 ```bash
-ssh 100.115.175.18 '
+# Requires EPOCH_MAC_MINI_HOST (see Prerequisites)
+ssh "${EPOCH_MAC_MINI_HOST:?EPOCH_MAC_MINI_HOST not set}" '
 set -e
 echo "=== identity ==="
 hostname
@@ -73,7 +81,8 @@ curl -fsS http://127.0.0.1:8420 >/dev/null && echo "Factory dashboard local OK" 
 ## Manual Ubuntu receiver audit
 
 ```bash
-ssh 100.113.174.74 '
+# Requires EPOCH_UBUNTU_RECEIVER_HOST (see Prerequisites)
+ssh "${EPOCH_UBUNTU_RECEIVER_HOST:?EPOCH_UBUNTU_RECEIVER_HOST not set}" '
 set -e
 echo "=== identity ==="
 hostname

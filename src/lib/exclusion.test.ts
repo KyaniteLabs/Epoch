@@ -5,6 +5,7 @@ import {
   isAutoWallclockSane,
   SYNTHETIC_ID_PREFIXES,
   MIN_RATIO,
+  MAX_RATIO,
   MINIMUM_CALIBRATION_ACTUAL_HOURS,
   BACKFILL_SIGNATURE_DATE,
   AUTO_WALLCLOCK_MIN_HOURS,
@@ -246,6 +247,87 @@ describe("isExcluded — ratio outlier", () => {
   it("skips the ratio check when estimatedHours is unknown", () => {
     const verdict = isExcluded(baseRecord({ estimatedHours: null, actual: { actualHours: 0.001 + MINIMUM_CALIBRATION_ACTUAL_HOURS, reportedAt: "2026-01-10T00:00:00Z" } }));
     expect(verdict.excluded).toBe(false);
+  });
+});
+
+describe("isExcluded — symmetric high-side bound (ticket 16)", () => {
+  it("excludes ratios above MAX_RATIO for ordinary (non-auto_wallclock) provenance", () => {
+    // 300 / 5 = 60x — a person-months-entered-as-hours class mistake.
+    const verdict = isExcluded(baseRecord({ estimatedHours: 5, actual: { actualHours: 300, reportedAt: "2026-01-10T00:00:00Z" } }));
+    expect(verdict).toEqual({ excluded: true, reason: "ratio_outlier" });
+  });
+
+  it("keeps a ratio of exactly MAX_RATIO (bound itself is safe, mirroring MIN_RATIO)", () => {
+    const verdict = isExcluded(baseRecord({ estimatedHours: 10, actual: { actualHours: 10 * MAX_RATIO, reportedAt: "2026-01-10T00:00:00Z" } }));
+    expect(verdict).toEqual({ excluded: false });
+  });
+
+  it("excludes a ratio just above MAX_RATIO", () => {
+    const verdict = isExcluded(baseRecord({ estimatedHours: 10, actual: { actualHours: 10 * MAX_RATIO + 1, reportedAt: "2026-01-10T00:00:00Z" } }));
+    expect(verdict).toEqual({ excluded: true, reason: "ratio_outlier" });
+  });
+
+  it("keeps ratios in the [10x flag threshold, 50x bound) window — flagged at write time but still trainable", () => {
+    const verdict = isExcluded(baseRecord({ estimatedHours: 10, actual: { actualHours: 90, reportedAt: "2026-01-10T00:00:00Z" } })); // 9x..49x band sample
+    expect(verdict).toEqual({ excluded: false });
+  });
+
+  it("applies to explicit backfilled provenance too, not just auto_wallclock's 10x gate", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "backfilled_real_session" },
+      estimatedHours: 2,
+      actual: { actualHours: 400, reportedAt: "2026-01-10T00:00:00Z" }, // 200x
+    }));
+    expect(verdict).toEqual({ excluded: true, reason: "ratio_outlier" });
+  });
+});
+
+describe("isExcluded — explicit structured classification overrides note-sniffing (ticket 16)", () => {
+  it("an explicit calibration_provenance='prospective' beats a seed-matching note", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "prospective" },
+      actual: { actualHours: 8, notes: "seed data", reportedAt: "2026-01-01T00:00:00Z" },
+    }));
+    expect(verdict).toEqual({ excluded: false });
+  });
+
+  it("an explicit calibration_usage beats a seed-matching note (legacy camelCase actual field)", () => {
+    const verdict = isExcluded(baseRecord({
+      actual: { actualHours: 8, notes: "seeded from dogfood run", reportedAt: "2026-01-01T00:00:00Z", calibrationUsage: "correction" },
+    }));
+    expect(verdict).toEqual({ excluded: false });
+  });
+
+  it("an explicit calibration_provenance beats an 'ingested from' style industry-calibration note", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "prospective" },
+      actual: { actualHours: 8, notes: "industry calibration batch v2", reportedAt: "2026-01-01T00:00:00Z" },
+    }));
+    expect(verdict).toEqual({ excluded: false });
+  });
+
+  it("control: the same seed note without any explicit field still excludes", () => {
+    const verdict = isExcluded(baseRecord({
+      actual: { actualHours: 8, notes: "seed data", reportedAt: "2026-01-01T00:00:00Z" },
+    }));
+    expect(verdict).toEqual({ excluded: true, reason: "seed_notes" });
+  });
+
+  it("control: an INVALID explicit provenance value does not suppress note-sniffing", () => {
+    const verdict = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "made-up-value" },
+      actual: { actualHours: 8, notes: "seed data", reportedAt: "2026-01-01T00:00:00Z" },
+    }));
+    expect(verdict).toEqual({ excluded: true, reason: "seed_notes" });
+  });
+
+  it("explicit fields do NOT suppress the ratio-outlier or backfill-signature checks", () => {
+    const highSide = isExcluded(baseRecord({
+      inputs: { calibration_provenance: "prospective" },
+      estimatedHours: 5,
+      actual: { actualHours: 300, reportedAt: "2026-01-10T00:00:00Z" },
+    }));
+    expect(highSide).toEqual({ excluded: true, reason: "ratio_outlier" });
   });
 });
 

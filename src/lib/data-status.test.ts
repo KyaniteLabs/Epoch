@@ -3,10 +3,11 @@
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, existsSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getEpochDataPaths, getEpochDataStatus } from "./data-status.js";
+import { readLines, resetLedgerReadCache, ESTIMATES_FILE, type EstimateRecord } from "./ledger.js";
 
 const TEST_DIR = join(tmpdir(), `epoch-data-status-test-${Date.now()}`);
 
@@ -160,5 +161,92 @@ describe("getEpochDataStatus", () => {
     expect(status.files.estimates.exists).toBe(false);
     delete process.env["EPOCH_DATA_DIR"];
     process.env["EPOCH_DATA_DIR"] = TEST_DIR;
+  });
+
+  // ---- ledger read-cache provenance (ticket 17) ----
+
+  it("surfaces ledger cache provenance; data_status's own corruptLines read is the first parse (ticket 18)", () => {
+    resetLedgerReadCache();
+    writeFileSync(
+      join(TEST_DIR, "estimates.jsonl"),
+      JSON.stringify({ id: "1", tool: "pert", inputs: {}, outputs: {}, estimatedAt: "2026-01-01T00:00:00Z" }) + "\n",
+    );
+
+    // Ticket 18 changed the cold behavior: data_status forces one ledger.ts
+    // read so the corruptLines count is always current — so the FIRST status
+    // call already shows exactly one parse and a non-null parsedAt.
+    const cold = getEpochDataStatus();
+    expect(cold.files.estimates.parses).toBe(1);
+    expect(cold.files.estimates.parsedAt).not.toBeNull();
+    expect(typeof cold.files.estimates.parsedAt).toBe("number");
+    expect(cold.files.estimates.cacheAgeMs).toBeGreaterThanOrEqual(0);
+    expect(cold.files.estimates.corruptLines).toBe(0);
+
+    // A second status call is served by the stat-validated cache (no re-parse).
+    const second = getEpochDataStatus();
+    expect(second.files.estimates.parses).toBe(1);
+
+    // Explicit ledger reads add no further parses either.
+    readLines<EstimateRecord>(ESTIMATES_FILE);
+    readLines<EstimateRecord>(ESTIMATES_FILE);
+    const warm = getEpochDataStatus();
+    expect(warm.files.estimates.parses).toBe(1);
+    // Non-ledger files keep the plain shape (no cache fields asserted there).
+    expect(warm.files.toolTelemetry.exists).toBe(false);
+  });
+
+  // ---- ticket 18: corruptLines + advisory write-lock surface ----
+
+  it("counts a torn last line in corruptLines (estimates and actuals independently)", () => {
+    resetLedgerReadCache();
+    writeFileSync(
+      join(TEST_DIR, "estimates.jsonl"),
+      JSON.stringify({ id: "1", tool: "pert", inputs: {}, outputs: {}, estimatedAt: "2026-01-01T00:00:00Z" }) + "\n" +
+      '{"id":"2","tool":"trunc', // torn tail — no newline, no closing brace
+    );
+    writeFileSync(
+      join(TEST_DIR, "feedback.jsonl"),
+      "garbage-not-json\n" +
+      JSON.stringify({ estimateId: "1", actualHours: 5, reportedAt: "2026-01-02T00:00:00Z" }) + "\n",
+    );
+
+    const status = getEpochDataStatus();
+    expect(status.files.estimates.corruptLines).toBe(1);
+    expect(status.files.actuals.corruptLines).toBe(1);
+    // The corrupt line still counts as a line (skip semantics unchanged).
+    expect(status.files.estimates.lines).toBe(2);
+    // A corrupt estimate id can never join — matchedPairs unaffected.
+    expect(status.feedback.matchedPairs).toBe(1);
+  });
+
+  it("surfaces advisory write-lock state with the documented recovery path (ticket 18)", () => {
+    // No locks held: absent, not stale, recovery text still documents removal.
+    const clean = getEpochDataStatus();
+    expect(clean.writeLocks.estimates.present).toBe(false);
+    expect(clean.writeLocks.estimates.stale).toBe(false);
+    expect(clean.writeLocks.estimates.recovery).toContain(".lock");
+
+    // Fresh lock owned by THIS live process: present, not stale.
+    writeFileSync(
+      join(TEST_DIR, "feedback.jsonl.lock"),
+      JSON.stringify({ owner: "test", pid: process.pid, acquiredAt: new Date().toISOString(), token: "t-1" }) + "\n",
+    );
+    const held = getEpochDataStatus();
+    expect(held.writeLocks.actuals.present).toBe(true);
+    expect(held.writeLocks.actuals.pid).toBe(process.pid);
+    expect(held.writeLocks.actuals.stale).toBe(false);
+    expect(held.writeLocks.actuals.recovery).toContain(`PID ${process.pid}`);
+
+    // Stale fixture: dead PID + old mtime → stale: true, surfaced for removal.
+    const old = new Date(Date.now() - 120_000);
+    writeFileSync(
+      join(TEST_DIR, "estimates.jsonl.lock"),
+      JSON.stringify({ owner: "dead-process", pid: 999_999_999, acquiredAt: old.toISOString(), token: "t-2" }) + "\n",
+    );
+    utimesSync(join(TEST_DIR, "estimates.jsonl.lock"), old, old);
+    const stale = getEpochDataStatus();
+    expect(stale.writeLocks.estimates.present).toBe(true);
+    expect(stale.writeLocks.estimates.stale).toBe(true);
+    expect(stale.writeLocks.estimates.recovery).toContain("Stale write lock");
   });
 });

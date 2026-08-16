@@ -13,10 +13,12 @@
 // feedback.ts imports from this module; this module must never import from
 // feedback.ts (kept acyclic per execution annotation 2).
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 import type { TaskType } from "../types/index.js";
+import { debugLog } from "./internal/logging.js";
 
 const DEFAULT_DATA_DIR = join(homedir(), ".epoch");
 
@@ -33,27 +35,218 @@ export function dataDir(): string {
   return process.env["EPOCH_DATA_DIR"] ?? DEFAULT_DATA_DIR;
 }
 
+// ---- Read cache (ticket 17, W3 performance) ----------------------------------
+//
+// A single estimation dispatch used to re-read+re-parse the whole ledger ~3x
+// (correction factors, empirical intervals, calibration data), with parse cost
+// growing linearly in history. readLines() now memoizes the parsed array per
+// absolute file path, validated on EVERY call by a stat of the file:
+//
+//   key = (size, mtimeMs, ino)
+//
+// Append-only files make this exact: an append changes size; a rename-based
+// rewrite (migrations' rewriteJsonlWithTailMerge) changes inode AND mtime; an
+// in-place same-size rewrite changes mtime (APFS/ext4 expose sub-millisecond
+// mtimeMs). Any stat mismatch re-reads and re-parses. External appends from
+// other processes are therefore picked up on the next read — the cache is a
+// per-call memo, never a TTL cache.
+//
+// Own writes (feedback.ts's appendLine, migrations' rewriteJsonlWithTailMerge)
+// are NOT hooked: they invalidate implicitly because every write changes the stat key
+// (appends change size; rewrites change mtime/ino). Nothing in this module
+// writes LEDGER DATA, so there is no self-write path to invalidate
+// proactively. (The advisory write-lock section below does create/remove
+// `<file>.lock` sidecar files — lockfiles only, never ledger rows.)
+//
+// Mutation discipline (deliberate choice, per ticket): cached rows are
+// deep-frozen and readLines() hands out a SHALLOW COPY of the array
+// (copy-on-read). A caller may sort/reverse/splice its returned array freely —
+// it owns that copy — but any in-place mutation of a row object throws in
+// strict mode instead of silently corrupting the cache. Deep-copying every row
+// per read was rejected: it would reintroduce O(rows) work per read, which is
+// the exact blowup this cache exists to remove.
+//
+// Escape hatch: EPOCH_LEDGER_CACHE=0 (or "false") bypasses the cache entirely
+// (reads still parse, and still count in the parse counters) — used to A/B
+// measure the parse-count improvement and as a safety valve.
+
+interface LedgerCacheEntry {
+  /** Stat key the cached rows were parsed from. */
+  size: number;
+  mtimeMs: number;
+  /** Inode as an exact string (real Stats carry bigint inos; mocks carry numbers). */
+  ino: string;
+  /** Deep-frozen parsed rows. Never handed out directly — readLines() returns a shallow copy. */
+  rows: unknown[];
+  /**
+   * Non-empty lines that failed JSON.parse in the parse that populated this
+   * entry (ticket 18). Same stat key = same content = same corrupt count, so
+   * cache hits don't need to recount. Skip semantics are unchanged — the rows
+   * were always silently dropped; now the drop is counted.
+   */
+  corruptLines: number;
+  /** Epoch-ms of the parse that populated this entry. */
+  parsedAt: number;
+  /** Epoch-ms of the most recent read that validated/produced this entry. */
+  lastReadAt: number;
+}
+
+/**
+ * Cached parsed ledger contents, keyed by absolute file path. The key set is
+ * bounded by the fixed set of ledger/sidecar filenames (constants in this
+ * module), so no eviction policy is needed.
+ */
+const ledgerCache = new Map<string, LedgerCacheEntry>();
+
+/**
+ * Cumulative count of full read+parse executions per absolute path, incremented
+ * on EVERY parse whether it hit the cache validation or ran in bypass mode.
+ * Test instrumentation (ticket 17): lets tests assert bounded parse counts
+ * without wall-clock flakiness. Never reset except by
+ * {@link resetLedgerReadCache}.
+ */
+const ledgerParseCounts = new Map<string, number>();
+
+/**
+ * Corrupt-line counts per absolute path, updated on every parse (ticket 18):
+ * non-empty lines that failed JSON.parse. Skip semantics in readLines() are
+ * pinned by tests and UNCHANGED — this only makes the previously-silent drop
+ * observable (surfaced via data_status / feedback_health).
+ */
+const ledgerCorruptLines = new Map<string, number>();
+
+function ledgerCacheEnabled(): boolean {
+  const raw = process.env["EPOCH_LEDGER_CACHE"];
+  return !(raw === "0" || raw === "false");
+}
+
+/** Deep-freeze a parsed row (and everything reachable from it) so cache corruption fails loudly. */
+function deepFreeze<T>(value: T): T {
+  if (value !== null && (typeof value === "object" || typeof value === "function")) {
+    for (const key of Object.keys(value as object)) {
+      deepFreeze((value as Record<string, unknown>)[key]);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+/**
+ * Stat facts used to validate cache entries; null when stat is unavailable.
+ * The statSync access sits inside the try because test suites that mock
+ * node:fs without a statSync export throw at the property access itself —
+ * that must degrade to a cache bypass (plain read), never a hard failure.
+ */
+function statKey(path: string): { size: number; mtimeMs: number; ino: string } | null {
+  try {
+    const s = statSync(path);
+    return { size: s.size, mtimeMs: s.mtimeMs, ino: String(s.ino) };
+  } catch {
+    return null;
+  }
+}
+
 /** Read and parse a JSONL file under the Epoch data dir. Missing file / unparsable lines yield []. */
 export function readLines<T>(filename: string): T[] {
   const path = join(dataDir(), filename);
   if (!existsSync(path)) return [];
+
+  const stat = ledgerCacheEnabled() ? statKey(path) : null;
+  const cached = stat !== null ? ledgerCache.get(path) : undefined;
+  if (cached && stat && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs && cached.ino === stat.ino) {
+    cached.lastReadAt = Date.now();
+    return cached.rows.slice() as T[];
+  }
+
+  let rows: unknown[];
+  let corruptLines = 0;
   try {
     const content = readFileSync(path, "utf-8");
-    return content
+    rows = content
       .split("\n")
       .filter((line) => line.trim())
       .map((line) => {
         try {
-          return JSON.parse(line) as T;
+          return JSON.parse(line) as unknown;
         } catch {
+          corruptLines++;
           return null;
         }
       })
-      .filter((r): r is T => r !== null);
+      .filter((r) => r !== null);
   } catch {
     return [];
   }
+
+  ledgerParseCounts.set(path, (ledgerParseCounts.get(path) ?? 0) + 1);
+  ledgerCorruptLines.set(path, corruptLines);
+  if (stat !== null) {
+    ledgerCache.set(path, {
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      ino: stat.ino,
+      rows: rows.map(deepFreeze),
+      corruptLines,
+      parsedAt: Date.now(),
+      lastReadAt: Date.now(),
+    });
+  }
+  return rows as T[];
 }
+
+/** Test/observability hook: clear the read cache and parse counters (ticket 17). */
+export function resetLedgerReadCache(): void {
+  ledgerCache.clear();
+  ledgerParseCounts.clear();
+  ledgerCorruptLines.clear();
+}
+
+/**
+ * Corrupt-line counts per absolute path from the most recent parse (ticket 18).
+ * A count of 0 means the file was parsed and every non-empty line was valid;
+ * absence from the map means the file has not been parsed in this process.
+ */
+export function getLedgerCorruptLines(): ReadonlyMap<string, number> {
+  return new Map(ledgerCorruptLines);
+}
+
+/** Per-file read-cache status, keyed by absolute path. `parses` counts every parse including cache-bypass reads. */
+export interface LedgerCacheStatusEntry {
+  parses: number;
+  /** Epoch-ms of the parse that populated the cache entry; null when the file was only read in bypass mode. */
+  parsedAt: number | null;
+  /** Epoch-ms of the most recent read that validated/produced the entry; null when never read. */
+  lastReadAt: number | null;
+}
+
+/** Snapshot of the read-cache state, for data_status surfacing and tests. */
+export function getLedgerCacheStatus(): ReadonlyMap<string, LedgerCacheStatusEntry> {
+  const out = new Map<string, LedgerCacheStatusEntry>();
+  for (const [path, count] of ledgerParseCounts) {
+    const entry = ledgerCache.get(path);
+    out.set(path, {
+      parses: count,
+      parsedAt: entry?.parsedAt ?? null,
+      lastReadAt: entry?.lastReadAt ?? null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Basis version stamped on every estimate row written by the CURRENT process
+ * (ticket 11, estimate-basis unification): v2 = post-unification rows, where
+ * the displayed estimate IS the recorded estimate (PERT rows record their raw
+ * `expected`; reference-class rows record `correctedEstimate`). Rows written
+ * before the unification carry no stamp and are implicitly v1 — the era in
+ * which tools displayed an `adjustedEstimate` the ledger never recorded.
+ * Ratio populations are permanently split by this era (see coverage.ts);
+ * there is deliberately no automatic aging-out or merging of the two.
+ */
+export const CURRENT_BASIS_VERSION = 2 as const;
+
+/** Legacy (pre-unification) rows carry no `basisVersion` stamp and read as this. */
+export const LEGACY_BASIS_VERSION = 1 as const;
 
 export interface EstimateRecord {
   id: string;
@@ -65,6 +258,8 @@ export interface EstimateRecord {
   source?: string;
   /** Pending-estimate TTL expiry (Phase 1 Task 7), set at write time. */
   expiresAt?: string;
+  /** Basis-era stamp (ticket 11): 2 = post-unification (displayed == recorded); absent = legacy v1. */
+  basisVersion?: number;
 }
 
 export interface ActualRecord {
@@ -75,6 +270,48 @@ export interface ActualRecord {
   completedAt?: string;
   /** Explicit calibration-provenance classification supplied at record_actual time (Phase 3 contract wave). Read by isExcluded() via ExclusionActual.calibrationProvenance. */
   calibrationProvenance?: string;
+}
+
+/** Date.parse an actual's reportedAt; unparseable/missing timestamps rank as "latest possible". */
+function reportedAtMs(a: ActualRecord): number {
+  const t = Date.parse(a.reportedAt ?? "");
+  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Deterministic estimate→actual join (ticket 18, D3 concurrency model): for a
+ * given estimateId the EARLIEST-reported actual wins; ties (equal reportedAt,
+ * or timestamps that can't be parsed) break to the earliest record in file
+ * order — i.e. the FIRST one seen, so identical file contents always produce
+ * the identical joined pair. This replaces the previous last-write-wins-by-
+ * file-order join, which made the winner depend on the append order of
+ * duplicate rows. Duplicates are never silently collapsed anymore either:
+ * countDuplicateActuals() surfaces them.
+ */
+export function joinActualsEarliestReported(actuals: ActualRecord[]): Map<string, ActualRecord> {
+  const byId = new Map<string, ActualRecord>();
+  for (const a of actuals) {
+    const current = byId.get(a.estimateId);
+    if (current === undefined || reportedAtMs(a) < reportedAtMs(current)) {
+      byId.set(a.estimateId, a);
+    }
+  }
+  return byId;
+}
+
+/**
+ * duplicateActuals counter (ticket 18): the number of DISTINCT estimateIds
+ * carrying more than one actual row. Zero is the invariant the write lock
+ * enforces; a non-zero value means duplicate rows predate the lock (or were
+ * written by a non-cooperating writer) and are being resolved deterministically
+ * by {@link joinActualsEarliestReported}.
+ */
+export function countDuplicateActuals(actuals: ActualRecord[]): number {
+  const counts = new Map<string, number>();
+  for (const a of actuals) counts.set(a.estimateId, (counts.get(a.estimateId) ?? 0) + 1);
+  let duplicated = 0;
+  for (const n of counts.values()) if (n > 1) duplicated++;
+  return duplicated;
 }
 
 // ---- Overlay records --------------------------------------------------------
@@ -120,6 +357,9 @@ export type OverlayRecord = OverlayRecordCore & Record<string, unknown>;
  * monotonic `seq` (max existing seq in the file + 1) and `recordedAt`
  * (now, if not supplied). Overlay files are append-only — this never
  * rewrites the hot ledger (Pre-mortem Scenario 4: concurrent-rewrite data loss).
+ * THROWS when the append does not persist (review M4): callers counting
+ * writes (migrations' `written`) must never report a failed append as
+ * successful.
  */
 export function appendOverlayRecord(
   filename: string,
@@ -133,7 +373,10 @@ export function appendOverlayRecord(
     seq: nextSeq,
     recordedAt: record.recordedAt ?? new Date().toISOString(),
   };
-  appendLine(filename, full);
+  const appended = appendLine(filename, full);
+  if (!appended) {
+    throw new Error(`Overlay append failed (disk or permissions) — record not persisted: ${filename} seq=${nextSeq}`);
+  }
   return full;
 }
 
@@ -197,6 +440,8 @@ export interface MergedRecord {
   estimatedAt: string;
   source?: string;
   expiresAt?: string;
+  /** Basis-era stamp propagated from the estimate row (ticket 11); absent = legacy v1. */
+  basisVersion?: number;
   actual?: ActualRecord;
   flags: MergedOverlayFlags;
   /** True if this record was physically moved to the quarantine archive (Phase 2 Task 6). */
@@ -222,8 +467,9 @@ export function loadLedgerWithOverlays(_options: LoadLedgerOptions = {}): Merged
   const flagRecords = readLines<OverlayRecord>(FLAGS_FILE);
   const labelRecords = readLines<OverlayRecord>(LABELS_FILE);
 
-  const actualsMap = new Map<string, ActualRecord>();
-  for (const a of actuals) actualsMap.set(a.estimateId, a);
+  // Deterministic join (ticket 18): earliest-reportedAt wins, tie = earliest
+  // file order — see joinActualsEarliestReported.
+  const actualsMap = joinActualsEarliestReported(actuals);
 
   const flagsById = resolveOverlayConflicts(flagRecords);
   const labelsById = resolveOverlayConflicts(labelRecords);
@@ -239,6 +485,7 @@ export function loadLedgerWithOverlays(_options: LoadLedgerOptions = {}): Merged
       estimatedAt: est.estimatedAt,
       ...(est.source && { source: est.source }),
       ...(est.expiresAt && { expiresAt: est.expiresAt }),
+      ...(est.basisVersion !== undefined && { basisVersion: est.basisVersion }),
       ...(actualsMap.has(est.id) && { actual: actualsMap.get(est.id) }),
       flags: { ...flags, taskLabel: labels.taskLabel ?? flags.taskLabel },
       archived,
@@ -249,4 +496,316 @@ export function loadLedgerWithOverlays(_options: LoadLedgerOptions = {}): Merged
     ...liveEstimates.map((e) => buildRecord(e, false)),
     ...archivedEstimates.map((e) => buildRecord(e, true)),
   ];
+}
+
+// ---- Advisory write lock (ticket 18, D3 concurrency model) -------------------
+//
+// An exclusive-create (writeFileSync flag "wx") lockfile serializing the
+// check-then-append regions of the write path across processes:
+// recordActualDetailed's duplicate check → append, and recordEstimate's dedup
+// get-or-create when enabled. Scope is deliberately minimal (single-digit ms):
+// the lock wraps only read-check → append, never whole tool calls. Plain
+// append-only writes with no read-check (telemetry, overlay records) stay
+// lock-free — two concurrent appenders only ever add lines.
+//
+// Staleness & recovery: the lockfile carries { owner, pid, acquiredAt, token }.
+// A lock is STALE when its owner PID is no longer alive
+// (process.kill(pid, 0) → ESRCH) — or, for legacy/corrupt payloads with no
+// resolvable PID, when its mtime age exceeds the stale window (default 30s,
+// EPOCH_LOCK_STALE_MS). A LIVE owner is never stolen on age: a legitimately
+// slow batch keeps mutual exclusion while running. Stale locks are removed
+// automatically by the next acquirer. The documented MANUAL recovery path
+// (surfaced verbatim in data_status) is: verify the PID is gone, then delete
+// `<ledger-file>.lock`. Release is token-matched so a slow holder that
+// outlived a staleness steal cannot delete a newer owner's lock.
+//
+// Failure mode: this is an ADVISORY lock, but it FAILS CLOSED. If the
+// lockfile cannot be created for infrastructure reasons (unusual
+// permissions, unusable fs), the guarded check-then-append region does NOT
+// run — the write fails (write_failed via LedgerLockUnavailableError)
+// instead of racing unlocked. Contention with a live holder waits up to the
+// timeout (default 2s, EPOCH_LOCK_TIMEOUT_MS) and then fails the write.
+
+/** Default staleness window: a lockfile older than this (or with a dead owner PID) is stealable. */
+export const LEDGER_WRITE_LOCK_STALE_MS = 30_000;
+/** Default contention timeout: how long an acquirer waits for a live holder before failing. */
+export const LEDGER_WRITE_LOCK_TIMEOUT_MS = 2_000;
+
+export interface ExclusiveLockOptions {
+  /** Lockfile age above which the lock is stealable (default EPOCH_LOCK_STALE_MS / 30s). */
+  staleMs?: number;
+  /** How long to wait for a live holder. 0 = single attempt (migrations throw immediately when held). */
+  timeoutMs?: number;
+  /** Retry cadence while waiting (default 25ms). */
+  retryMs?: number;
+}
+
+export interface ExclusiveLockAcquisition {
+  ok: boolean;
+  lockPath: string;
+  /** Ownership token; non-null only on success. Release only removes a matching token. */
+  token: string | null;
+  /** True when at least one stale lockfile was detected and removed to recover. */
+  recoveredStale: boolean;
+  /** Failure reason: "held" = live holder outlasted the timeout; "unavailable" = lock infrastructure error. */
+  reason?: "held" | "unavailable";
+}
+
+/** Observed state of one lockfile, for data_status surfacing. */
+export interface LedgerWriteLockInfo {
+  path: string;
+  present: boolean;
+  pid: number | null;
+  owner: string | null;
+  acquiredAt: string | null;
+  ageMs: number | null;
+  /** True when the next acquirer would steal this lock (dead PID, or a pid-less lock older than the stale window — never a live owner). */
+  stale: boolean;
+  /** Documented recovery path, verbatim for data_status output. */
+  recovery: string;
+}
+
+interface LockFileContent {
+  owner?: unknown;
+  pid?: unknown;
+  acquiredAt?: unknown;
+  token?: unknown;
+}
+
+function lockEnvInt(name: string): number | null {
+  const raw = process.env[name];
+  if (raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** A pid is "alive" when signal 0 is deliverable; EPERM means alive but owned by another user. */
+function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException | null)?.code === "EPERM";
+  }
+}
+
+function readLockFile(lockPath: string): { parsed: LockFileContent | null; ageMs: number | null } {
+  let raw: string;
+  try {
+    raw = readFileSync(lockPath, "utf-8");
+  } catch {
+    return { parsed: null, ageMs: null };
+  }
+  let parsed: LockFileContent | null;
+  try {
+    parsed = JSON.parse(raw) as LockFileContent;
+  } catch {
+    parsed = null;
+  }
+  let ageMs: number | null = null;
+  try {
+    ageMs = Date.now() - statSync(lockPath).mtimeMs;
+  } catch {
+    /* age unknown — staleness then rests on the PID check alone */
+  }
+  return { parsed, ageMs };
+}
+
+function isStaleLock(parsed: LockFileContent | null, ageMs: number | null, staleMs: number): boolean {
+  // Dead owner: steal regardless of age.
+  if (parsed && typeof parsed.pid === "number" && !pidAlive(parsed.pid)) return true;
+  // Live owner: NEVER steal on age alone — a legitimately slow batch or
+  // migration keeps mutual exclusion while it runs; an age-based steal here
+  // would admit a second writer into the check-then-append region (the exact
+  // corruption this lock exists to prevent). Recovery for a hung live owner
+  // is the documented manual path (verify the PID, delete the lockfile).
+  if (parsed && typeof parsed.pid === "number") return false;
+  // No resolvable owner PID (legacy/corrupt payload): age is the only signal.
+  return ageMs !== null && ageMs > staleMs;
+}
+
+/** Absolute lockfile path for a ledger filename: `<dataDir>/<filename>.lock`. */
+export function ledgerWriteLockPath(filename: string): string {
+  return join(dataDir(), `${filename}.lock`);
+}
+
+/**
+ * Acquire an exclusive advisory lock at an absolute path (exclusive-create +
+ * staleness steal + bounded wait). Returns a failed acquisition on timeout or
+ * infrastructure error — callers decide whether to fail the write (feedback.ts)
+ * or throw (migrations' quiesce lock, which refuses to run concurrently).
+ */
+export function acquireExclusiveFileLock(lockPath: string, owner: string, options: ExclusiveLockOptions = {}): ExclusiveLockAcquisition {
+  const staleMs = options.staleMs ?? lockEnvInt("EPOCH_LOCK_STALE_MS") ?? LEDGER_WRITE_LOCK_STALE_MS;
+  const timeoutMs = options.timeoutMs ?? lockEnvInt("EPOCH_LOCK_TIMEOUT_MS") ?? LEDGER_WRITE_LOCK_TIMEOUT_MS;
+  const retryMs = options.retryMs ?? 25;
+
+  try {
+    const dir = dirname(lockPath);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  } catch {
+    /* best effort — creation below reports real errors */
+  }
+
+  const token = randomUUID();
+  const payload =
+    JSON.stringify({ owner, pid: process.pid, acquiredAt: new Date().toISOString(), token }, null, 2) + "\n";
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  let recoveredStale = false;
+  let steals = 0;
+
+  for (;;) {
+    try {
+      writeFileSync(lockPath, payload, { flag: "wx" });
+      ledgerLockAcquisitions.set(lockPath, (ledgerLockAcquisitions.get(lockPath) ?? 0) + 1);
+      return { ok: true, lockPath, token, recoveredStale };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code !== "EEXIST") {
+        // Infrastructure unavailable (EACCES, unusable fs, ...). Reported as a
+        // failed acquisition; withLedgerWriteLock fails the write closed —
+        // the guarded region never runs unlocked.
+        debugLog("ledger.lock-unavailable", `could not create ${lockPath}: ${code ?? String(err)}`);
+        return { ok: false, lockPath, token: null, recoveredStale, reason: "unavailable" };
+      }
+    }
+
+    const { parsed, ageMs } = readLockFile(lockPath);
+    if (isStaleLock(parsed, ageMs, staleMs) && steals < 3) {
+      try {
+        unlinkSync(lockPath);
+        recoveredStale = true;
+        ledgerStaleRecoveries++;
+        steals++;
+        continue; // immediately retry the exclusive create
+      } catch {
+        /* raced another stealer — fall through to the wait/deadline path */
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      return { ok: false, lockPath, token: null, recoveredStale, reason: "held" };
+    }
+    sleepSync(Math.max(1, Math.min(retryMs, deadline - Date.now())));
+  }
+}
+
+/** Release a lock acquired by {@link acquireExclusiveFileLock}. Token-matched: never removes another owner's lock. */
+export function releaseExclusiveFileLock(lockPath: string, token: string | null): void {
+  if (!token) return;
+  try {
+    const raw = readFileSync(lockPath, "utf-8");
+    const parsed = JSON.parse(raw) as LockFileContent;
+    if (parsed?.token === token) unlinkSync(lockPath);
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
+ * Run `fn` while holding the ledger write lock for `filename`
+ * (`<dataDir>/<filename>.lock`). Releases in a finally. Throws
+ * LedgerLockTimeoutError when a live holder outlasts the timeout and
+ * LedgerLockUnavailableError when the lock infrastructure itself fails —
+ * a check-then-append region must never run unlocked (fail closed).
+ */
+export function withLedgerWriteLock<T>(filename: string, fn: () => T, owner = "epoch"): T {
+  const acquisition = acquireExclusiveFileLock(ledgerWriteLockPath(filename), owner);
+  if (!acquisition.ok) {
+    if (acquisition.reason === "unavailable") throw new LedgerLockUnavailableError(acquisition.lockPath);
+    throw new LedgerLockTimeoutError(acquisition.lockPath);
+  }
+  try {
+    return fn();
+  } finally {
+    releaseExclusiveFileLock(acquisition.lockPath, acquisition.token);
+  }
+}
+
+/** Thrown by withLedgerWriteLock when a live holder outlasts the contention timeout. */
+export class LedgerLockTimeoutError extends Error {
+  constructor(public readonly lockPath: string) {
+    super(`Ledger write lock still held after timeout: ${lockPath}`);
+    this.name = "LedgerLockTimeoutError";
+  }
+}
+
+/** Thrown by withLedgerWriteLock when the lock infrastructure itself is unavailable (fail closed — never run the guarded region unlocked). */
+export class LedgerLockUnavailableError extends Error {
+  constructor(public readonly lockPath: string) {
+    super(`Ledger write lock infrastructure unavailable: ${lockPath}`);
+    this.name = "LedgerLockUnavailableError";
+  }
+}
+
+/** Process-lifetime count of stale lockfiles detected and removed (ticket 18 observability). */
+let ledgerStaleRecoveries = 0;
+
+/** How many stale lockfiles this process has recovered (surfaced in data_status). */
+export function getLedgerStaleRecoveryCount(): number {
+  return ledgerStaleRecoveries;
+}
+
+/**
+ * Cumulative count of SUCCESSFUL lock acquisitions per absolute lock path
+ * (ticket 22 test instrumentation): lets tests assert that a k-entry
+ * batch_record_actuals acquired the ledger write lock once, not per-entry —
+ * mirroring ledgerParseCounts for reads. Process-lifetime, never reset
+ * (tests snapshot before/after deltas). Failed acquisitions (contention /
+ * unavailable infrastructure) are not counted.
+ */
+const ledgerLockAcquisitions = new Map<string, number>();
+
+/** How many times this process successfully acquired each ledger write lock (ticket 22). */
+export function getLedgerLockAcquisitionCounts(): ReadonlyMap<string, number> {
+  return new Map(ledgerLockAcquisitions);
+}
+
+/** Inspect a ledger file's write lock for data_status: presence, owner, age, staleness, recovery path. */
+export function inspectLedgerWriteLock(filename: string, staleMs?: number): LedgerWriteLockInfo {
+  const lockPath = ledgerWriteLockPath(filename);
+  const staleWindow = staleMs ?? lockEnvInt("EPOCH_LOCK_STALE_MS") ?? LEDGER_WRITE_LOCK_STALE_MS;
+  const { parsed, ageMs } = readLockFile(lockPath);
+  const present = parsed !== null;
+  if (!present) {
+    // Distinguish "no lockfile" from "unreadable": a read error means absent
+    // for advisory purposes (next acquirer recreates it).
+    try {
+      statSync(lockPath);
+    } catch {
+      return {
+        path: lockPath,
+        present: false,
+        pid: null,
+        owner: null,
+        acquiredAt: null,
+        ageMs: null,
+        stale: false,
+        recovery: `No write lock held. If a stale ${lockPath} ever blocks writes, verify the PID inside it is gone, then delete it.`,
+      };
+    }
+  }
+  const pid = parsed && typeof parsed.pid === "number" ? parsed.pid : null;
+  const lockOwner = parsed && typeof parsed.owner === "string" ? parsed.owner : null;
+  const acquiredAt = parsed && typeof parsed.acquiredAt === "string" ? parsed.acquiredAt : null;
+  const stale = isStaleLock(parsed, ageMs, staleWindow);
+  const ageLabel = ageMs !== null ? `${Math.round(ageMs / 100) / 10}s` : "unknown age";
+  const pidLabel = pid !== null ? `PID ${pid}` : "unknown PID";
+  return {
+    path: lockPath,
+    present: true,
+    pid,
+    owner: lockOwner,
+    acquiredAt,
+    ageMs,
+    stale,
+    recovery: stale
+      ? `Stale write lock (${pidLabel}, ${ageLabel}) — it will be removed automatically on the next locked write, or delete ${lockPath} manually after verifying the owner is gone.`
+      : `Write lock held by ${pidLabel} (${ageLabel}). If that process is no longer running, wait for the staleness window (${Math.round(staleWindow / 1000)}s) or delete ${lockPath} manually.`,
+  };
 }

@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
-import { readLines, dataDir, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays } from "./ledger.js";
+import { readLines, dataDir, joinActualsEarliestReported, countDuplicateActuals, getLedgerCorruptLines, withLedgerWriteLock, LedgerLockTimeoutError, LedgerLockUnavailableError, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
-import { canonicalizeToolName } from "./tool-aliases.js";
+import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
 
 export type { EstimateRecord, ActualRecord };
@@ -45,6 +45,13 @@ let dedupHitCount = 0;
 export function getDedupHitCount(): number {
   return dedupHitCount;
 }
+
+/**
+ * Process-lifetime flag: the unknown_tool rejection diagnostic logs only
+ * once (ticket 16) — repeated rejections of the same unmapped tool name must
+ * leave a trace without spamming the log on every attempt.
+ */
+let unknownToolRejectionLogged = false;
 
 /** Deterministic signature over an estimate's inputs, used to match "identical" dedup calls regardless of key order. */
 function inputsSignature(inputs: Record<string, unknown>): string {
@@ -170,12 +177,81 @@ function appendLine(filename: string, data: unknown): boolean {
   }
 }
 
+/**
+ * Process-lifetime count of appendFileSync executions attempted by
+ * appendLines() (ticket 22 test instrumentation): a k-entry
+ * batch_record_actuals must show exactly ONE batched write, not k. Mirrors
+ * getDedupHitCount's in-memory counter pattern.
+ */
+let batchAppendWriteCalls = 0;
+
+/** Number of joined-line batch writes attempted since process start. Exposed for tests/observability. */
+export function getBatchAppendWriteCallCount(): number {
+  return batchAppendWriteCalls;
+}
+
+/**
+ * Append several records in ONE appendFileSync of the joined lines (ticket 22,
+ * batch single-pass): a single O_APPEND write of the whole payload is the
+ * atomic-enough shape ticket 18 analyzed for the ledger — either the batch of
+ * lines lands or the tail tears exactly like any single-line append would
+ * (and a torn tail is counted by the corruptLines read-side counter either way).
+ */
+function appendLines(filename: string, records: unknown[]): boolean {
+  if (records.length === 0) return true;
+  batchAppendWriteCalls++;
+  if (!ensureDir()) return false;
+  const path = join(dataDir(), filename);
+  try {
+    appendFileSync(path, records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Append a new estimate row and return its id — or null when the append
+ * failed (ticket 18, write-failure propagation): callers must NEVER receive a
+ * usable id for a record that never persisted (no phantom feedbackRefs).
+ * Mirrors recordActualDetailed's write_failed honesty on the estimate side.
+ */
+function appendNewEstimate(
+  canonicalTool: string,
+  inputs: Record<string, unknown>,
+  outputs: Record<string, unknown>,
+  source: string | undefined,
+  targetFile: string,
+): string | null {
+  const id = randomUUID();
+  const record: EstimateRecord = {
+    id,
+    tool: canonicalTool,
+    inputs,
+    outputs,
+    estimatedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + pendingTtlDays() * 86_400_000).toISOString(),
+    ...(source && { source }),
+    // --- Ticket 11 (estimate-basis unification) — SEPARATE HUNK, lane H ---
+    // Every newly written row carries the post-unification basis-version
+    // stamp: from this point on the estimate a tool DISPLAYS is the estimate
+    // the ledger RECORDS (PERT: raw `expected`; reference-class:
+    // `correctedEstimate`). Legacy rows (no stamp) are implicitly v1 — the
+    // era in which tools displayed an adjustedEstimate the ledger never
+    // recorded — and ratio populations stay split by that era (coverage.ts),
+    // with no automatic aging-out.
+    basisVersion: CURRENT_BASIS_VERSION,
+  };
+  const written = appendLine(targetFile, record);
+  return written ? id : null;
+}
+
 export function recordEstimate(
   tool: string,
   inputs: Record<string, unknown>,
   outputs: Record<string, unknown>,
   source?: string,
-): string {
+): string | null {
   // Normalize the tool spelling at ingest (camelCase writers, known aliases)
   // so calibration reads never fragment the same tool across spellings.
   // Falls back to the raw value when it can't be resolved — recordEstimate
@@ -187,30 +263,38 @@ export function recordEstimate(
   // Dedup get-or-create (Phase 4, flag-gated): only engages when the caller
   // supplies session_id AND EPOCH_DEDUP_WINDOW is set. Absent either, this
   // block is a no-op and behavior is byte-identical to pre-Phase-4.
+  //
+  // Ticket 18: the find-match → append sequence is a check-then-act region,
+  // so it runs under the ledger write lock — two concurrent identical calls
+  // can no longer both observe zero candidates and append duplicate pending
+  // rows. Lock-infrastructure failures surface as null (no phantom id).
   const sessionId = stringField(inputs["session_id"]);
   const windowMinutes = dedupWindowMinutes();
   if (sessionId && windowMinutes !== null) {
     const actualsFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
-    const existingId = findDedupMatch(canonicalTool, inputs, sessionId, windowMinutes, targetFile, actualsFile);
-    if (existingId) {
-      dedupHitCount++;
-      debugLog("feedback.dedup-hit", `reused pending estimate ${existingId} for tool ${canonicalTool}, session ${sessionId}`);
-      return existingId;
+    try {
+      return withLedgerWriteLock(
+        targetFile,
+        () => {
+          const existingId = findDedupMatch(canonicalTool, inputs, sessionId, windowMinutes, targetFile, actualsFile);
+          if (existingId) {
+            dedupHitCount++;
+            debugLog("feedback.dedup-hit", `reused pending estimate ${existingId} for tool ${canonicalTool}, session ${sessionId}`);
+            return existingId;
+          }
+          return appendNewEstimate(canonicalTool, inputs, outputs, source, targetFile);
+        },
+        "recordEstimate-dedup",
+      );
+    } catch (err) {
+      if (err instanceof LedgerLockTimeoutError || err instanceof LedgerLockUnavailableError) {
+        debugLog("feedback.lock-failure", `dedup get-or-create for tool ${canonicalTool} abandoned: ${err.message}`);
+      }
+      return null;
     }
   }
 
-  const id = randomUUID();
-  const record: EstimateRecord = {
-    id,
-    tool: canonicalTool,
-    inputs,
-    outputs,
-    estimatedAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + pendingTtlDays() * 86_400_000).toISOString(),
-    ...(source && { source }),
-  };
-  appendLine(targetFile, record);
-  return id;
+  return appendNewEstimate(canonicalTool, inputs, outputs, source, targetFile);
 }
 
 /** Non-estimation tool-call telemetry (Phase 1 Task 3): never joins the estimates ledger. */
@@ -253,7 +337,54 @@ export function recordToolCall(
 
 export type RecordActualResult =
   | { ok: true; flagged?: "unit_suspect" }
-  | { ok: false; reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds" };
+  | {
+      ok: false;
+      reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds";
+      /**
+       * Actionable hint to append to the surfaced error message (ticket 16).
+       * Currently only the unknown_tool rejection carries one — it names the
+       * canonical estimation-tool set so the contract severance is never
+       * silent. The rejection semantics themselves are unchanged.
+       */
+      hint?: string;
+    };
+
+/**
+ * The actual record as persisted by recordActualDetailed: the shared
+ * ledger ActualRecord plus the write-time unit-suspect flag (ticket 16).
+ * Declared here (not on ledger.ts's ActualRecord) so the persisted flag's
+ * type lives with the code that writes it; read-side consumers see it via
+ * exclusion.ts's ExclusionActual.unitSuspect.
+ */
+type RecordedActualRecord = ActualRecord & { unitSuspect?: true };
+
+/**
+ * Hint surfaced with every unknown_tool rejection (ticket 16): names the
+ * canonical estimation-tool set so callers can tell a garbled tool name from
+ * a bad estimate id. Derived from the authoritative partition, never
+ * hand-copied.
+ */
+const UNKNOWN_TOOL_HINT = `Actuals can only join estimates produced by Epoch's estimation tools: ${[...ESTIMATION_TOOL_NAMES].join(", ")}.`;
+
+/**
+ * Hint attached to write_failed results abandoned on ledger write-lock
+ * contention (ticket 18): names the lock path and the automatic stale-lock
+ * recovery so the failure is actionable, never a silent drop. Shared by the
+ * single (recordActualDetailed) and batch (batchRecordActuals) paths.
+ */
+function lockTimeoutHint(err: LedgerLockTimeoutError): string {
+  return `Another process held the feedback ledger write lock past the timeout (${err.lockPath}). Retry shortly; a stale lock is removed automatically once its owner PID is gone or it exceeds the staleness window.`;
+}
+
+/**
+ * Hint surfaced with write_failed results when the lock infrastructure itself
+ * could not be created (permissions, unusable fs). The write fails closed —
+ * the check-then-append region never runs unlocked — so the hint names the
+ * actionable recovery instead of suggesting a blind retry loop.
+ */
+function lockUnavailableHint(err: LedgerLockUnavailableError): string {
+  return `The feedback ledger write lock could not be created (${err.lockPath}) — check directory permissions and filesystem health. The write failed closed rather than racing unlocked; retry once the cause is fixed.`;
+}
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
 const DRY_RUN_FILE = "feedback.dry-run.jsonl";
@@ -275,6 +406,30 @@ const ACTUAL_UNIT_TO_HOURS: Record<ActualUnit, number> = {
 /** Ratio (in either direction) between normalized actual hours and the matched estimate's hours above which a unit mistake (e.g. person-months entered as hours) is likely. Recorded, not silently ingested — flagged "unit_suspect". */
 const UNIT_SUSPECT_RATIO = 10;
 
+/**
+ * Actionable hint surfaced alongside every unit_suspect flag (ticket 16) by
+ * BOTH transport seams — the record_actual MCP tool
+ * (dispatcher/tool-registry.ts) and the /v1/feedback/record-actual HTTP route
+ * (entries/http.ts) — so the two surfaces can never drift on what the flag
+ * means. Text is pinned by substring in dispatcher and http tests.
+ */
+export const UNIT_SUSPECT_FLAG_HINT =
+  "Suspected unit mismatch: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.";
+
+/**
+ * Hours-per-unit conversion for estimate outputs recorded with a `unit` field
+ * (PERT `expected`/`stdDeviation` and friends). Same 8h-day / 40h-week /
+ * 160h-month work-period convention as estimation.ts's toHours(). Shared so
+ * read-side consumers (coverage.ts interval scoring) convert with the exact
+ * table used at ingest instead of duplicating it.
+ */
+export const ESTIMATE_UNIT_TO_HOURS: Record<string, number> = {
+  hours: 1,
+  days: 8,
+  weeks: 40,
+  months: 160,
+};
+
 function normalizeActualHours(value: number, unit?: ActualUnit): number {
   if (!unit) return value;
   return value * ACTUAL_UNIT_TO_HOURS[unit];
@@ -289,35 +444,56 @@ export function recordActual(estimateId: string, actualHours: number, notes?: st
   return result.ok;
 }
 
-export function recordActualDetailed(
+/**
+ * Outcome of evaluating one actual against its (possibly absent) matched
+ * estimate. On success `record` is the row to append; on failure it is null
+ * and `result` carries the ticket-04 rejection reason.
+ */
+type ActualEvaluation =
+  | { result: { ok: true; flagged?: "unit_suspect" }; record: RecordedActualRecord }
+  | { result: Extract<RecordActualResult, { ok: false }>; record: null };
+
+/**
+ * Shared per-entry evaluation for both actual-recording paths — the single
+ * recordActualDetailed and the single-pass batch (ticket 22): everything that
+ * depends on the matched ESTIMATE but on no further file state. Extracted so
+ * the two paths can never drift on order or semantics:
+ *
+ *   unknown_tool rejection (with the once-per-process diagnostic + hint)
+ *   → unit_suspect flagging (ratio > UNIT_SUSPECT_RATIO against the estimate)
+ *   → auto_wallclock write-time sanity gate
+ *   → record construction.
+ *
+ * Duplicate detection deliberately stays with the callers: it depends on
+ * their view of the actuals ledger (on-disk rows for the single path; on-disk
+ * rows + intra-batch claims for the batch), and it PRECEDES everything here.
+ */
+function evaluateActualForWrite(
   estimateId: string,
-  actualHours: number,
-  notes?: string,
-  unit?: ActualUnit,
-  calibrationProvenance?: string,
-): RecordActualResult {
-  const normalizedHours = normalizeActualHours(actualHours, unit);
-  if (normalizedHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
-
-  // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
-  if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
-
-  // Reject duplicates — last-write-wins silently corrupts calibration
-  const existing = readLines<ActualRecord>(ACTUALS_FILE);
-  if (existing.some((a) => a.estimateId === estimateId)) {
-    return { ok: false, reason: "duplicate" };
-  }
-
-  // Guard against actuals joining an estimate whose tool name is unknown/unmapped
-  // or a raw id (a garbled `tool` field) — such joins would silently corrupt
-  // by-tool calibration math. Orphan actuals (no matching estimate on file)
-  // are left to the existing join-time handling elsewhere and are not rejected here.
-  const matchedEstimate = readLines<EstimateRecord>(ESTIMATES_FILE).find((e) => e.id === estimateId);
+  normalizedHours: number,
+  notes: string | undefined,
+  calibrationProvenance: string | undefined,
+  matchedEstimate: EstimateRecord | undefined,
+): ActualEvaluation {
   let flagged: "unit_suspect" | undefined;
   let matchedEstimatedHours: number | null = null;
   if (matchedEstimate) {
+    // Guard against actuals joining an estimate whose tool name is unknown/unmapped
+    // or a raw id (a garbled `tool` field) — such joins would silently corrupt
+    // by-tool calibration math. Orphan actuals (no matching estimate on file)
+    // are left to the existing join-time handling elsewhere and are not rejected here.
     if (canonicalizeToolName(matchedEstimate.tool) === null) {
-      return { ok: false, reason: "unknown_tool" };
+      // Ticket 16 (unknown-tool policy): the rejection stands (ticket 04's
+      // pinned semantics), but it is never silent — log once per process and
+      // carry an actionable hint naming the canonical estimation-tool set.
+      if (!unknownToolRejectionLogged) {
+        unknownToolRejectionLogged = true;
+        debugLog(
+          "feedback.unknown-tool",
+          `rejecting actual for estimate ${estimateId}: tool "${matchedEstimate.tool}" is not in the canonical estimation set {${[...ESTIMATION_TOOL_NAMES].join(", ")}}`,
+        );
+      }
+      return { result: { ok: false, reason: "unknown_tool", hint: UNKNOWN_TOOL_HINT }, record: null };
     }
 
     matchedEstimatedHours = extractEstimatedHours(matchedEstimate.outputs);
@@ -333,22 +509,83 @@ export function recordActualDetailed(
   // isExcluded()'s calibration-math gate (src/lib/exclusion.ts) — all three
   // share isAutoWallclockSane() as the single source of truth.
   if (calibrationProvenance === "auto_wallclock" && !isAutoWallclockSane(normalizedHours, matchedEstimatedHours)) {
-    return { ok: false, reason: "auto_wallclock_out_of_bounds" };
+    return { result: { ok: false, reason: "auto_wallclock_out_of_bounds" }, record: null };
   }
 
-  const record: ActualRecord = {
+  const record: RecordedActualRecord = {
     estimateId,
     actualHours: normalizedHours,
     ...(notes && { notes }),
     reportedAt: new Date().toISOString(),
     ...(calibrationProvenance && { calibrationProvenance }),
+    // Persist the unit-suspect verdict on the record itself (ticket 16) so
+    // the flag survives as an audit artifact even though read-side exclusion
+    // always recomputes the ratio (exclusion.ts's MAX_RATIO gate).
+    ...(flagged === "unit_suspect" && { unitSuspect: true }),
   };
+  return { result: flagged ? { ok: true, flagged } : { ok: true }, record };
+}
 
-  // Dry-run mode: write to separate file so tests never touch production data
-  const targetFile = isDryRun() ? DRY_RUN_FILE : ACTUALS_FILE;
-  const written = appendLine(targetFile, record);
-  if (!written) return { ok: false, reason: "write_failed" };
-  return flagged ? { ok: true, flagged } : { ok: true };
+export function recordActualDetailed(
+  estimateId: string,
+  actualHours: number,
+  notes?: string,
+  unit?: ActualUnit,
+  calibrationProvenance?: string,
+): RecordActualResult {
+  const normalizedHours = normalizeActualHours(actualHours, unit);
+  if (normalizedHours <= MINIMUM_RECORDED_ACTUAL_HOURS) return { ok: false, reason: "below_threshold" };
+
+  // Reject synthetic estimate IDs at write time — prevents test data from polluting calibration
+  if (isSyntheticId(estimateId)) return { ok: false, reason: "synthetic_id" };
+
+  // Dry-run mode reads AND writes its own ledger (ticket 16): the duplicate
+  // check and the estimate lookup below previously read the production files
+  // while writes went to the dry-run ones, so repeated dry-run records never
+  // collided with anything and accumulated unbounded.
+  const dryRun = isDryRun();
+  const actualsSource = dryRun ? DRY_RUN_FILE : ACTUALS_FILE;
+  const estimatesSource = dryRun ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
+
+  // Ticket 18 (D3 concurrency): the duplicate check → append sequence below is
+  // a TOCTOU window — two processes recording the same estimateId could both
+  // observe "no actual yet" and both append. The whole check-then-append
+  // region therefore runs under the ledger write lock (exclusive-create
+  // lockfile, ms-scale scope, released in a finally). A live holder that
+  // outlasts the contention timeout fails the write as write_failed (with a
+  // hint) — never a silent unlocked append.
+  try {
+    return withLedgerWriteLock(
+      actualsSource,
+      (): RecordActualResult => {
+        // Reject duplicates — last-write-wins silently corrupts calibration
+        const existing = readLines<ActualRecord>(actualsSource);
+        if (existing.some((a) => a.estimateId === estimateId)) {
+          return { ok: false, reason: "duplicate" };
+        }
+
+        const matchedEstimate = readLines<EstimateRecord>(estimatesSource).find((e) => e.id === estimateId);
+        const { result, record } = evaluateActualForWrite(estimateId, normalizedHours, notes, calibrationProvenance, matchedEstimate);
+        if (!result.ok) return result;
+
+        // Dry-run mode: write to separate file so tests never touch production data
+        const written = appendLine(actualsSource, record);
+        if (!written) return { ok: false, reason: "write_failed" };
+        return result;
+      },
+      "recordActual",
+    );
+  } catch (err) {
+    if (err instanceof LedgerLockTimeoutError || err instanceof LedgerLockUnavailableError) {
+      debugLog("feedback.lock-failure", `record_actual for ${estimateId} abandoned: ${err.message}`);
+      return {
+        ok: false,
+        reason: "write_failed",
+        hint: err instanceof LedgerLockUnavailableError ? lockUnavailableHint(err) : lockTimeoutHint(err),
+      };
+    }
+    throw err;
+  }
 }
 
 export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasActual: boolean }> {
@@ -432,13 +669,14 @@ function classifyCalibrationRecord(
   estimatedHours: number | null,
   overlayFlags?: MergedOverlayFlags,
 ): { calibrationProvenance: CalibrationProvenance; calibrationUsage: CalibrationUsage } {
+  const actualAsRecord = act as unknown as Record<string, unknown>;
   const verdict = isExcluded({
     id: est.id,
     tool: est.tool,
     inputs: est.inputs,
     estimatedAt: est.estimatedAt,
     estimatedHours,
-    actual: { actualHours: act.actualHours, notes: act.notes, reportedAt: act.reportedAt, completedAt: act.completedAt, calibrationProvenance: act.calibrationProvenance },
+    actual: exclusionActualFields(act),
     ...(overlayFlags && { flags: { quarantined: overlayFlags.quarantined, orphan: overlayFlags.orphan } }),
   });
   if (verdict.excluded) {
@@ -446,28 +684,19 @@ function classifyCalibrationRecord(
   }
 
   const inputs = est.inputs as Record<string, unknown>;
-  const actual = act as unknown as Record<string, unknown>;
+  const actual = actualAsRecord;
   const explicitProvenance = normalizeProvenance(
     inputs["calibration_provenance"] ?? actual["calibrationProvenance"] ?? actual["calibration_provenance"],
   );
   const explicitUsage = normalizeUsage(
     inputs["calibration_usage"] ?? actual["calibrationUsage"] ?? actual["calibration_usage"],
   );
-  const notes = (act.notes ?? "").toLowerCase();
-
-  if (notes.includes("ingested from")) {
-    return { calibrationProvenance: "backfilled_real_session", calibrationUsage: "baseline" };
-  }
-
-  if (notes.includes("real data calibration")) {
-    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
-  }
-
-  if (happenedBefore(stringField(actual["completedAt"]), est.estimatedAt)) {
-    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
-  }
 
   if (explicitProvenance) {
+    // Ticket 16 (notes-sniffing override): a valid explicit structured
+    // provenance wins over the note-substring and temporal heuristics below
+    // — "ingested from" in free-text notes no longer overrides a deliberate
+    // calibration_provenance="prospective" stamp.
     // "prospective" (an ordinary matched actual) and "auto_wallclock" (Wave 2
     // auto-actuals — included in correction training by default per plan,
     // subject only to isExcluded()'s dedicated sanity gate) both default to
@@ -481,7 +710,53 @@ function classifyCalibrationRecord(
     };
   }
 
+  const notes = (act.notes ?? "").toLowerCase();
+  const hasExplicitUsage = explicitUsage !== undefined;
+
+  // Note-substring heuristics only run when no explicit structured field was
+  // supplied (ticket 16) — an explicit usage classification beats note matches.
+  if (!hasExplicitUsage) {
+    if (notes.includes("ingested from")) {
+      return { calibrationProvenance: "backfilled_real_session", calibrationUsage: "baseline" };
+    }
+
+    if (notes.includes("real data calibration")) {
+      return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
+    }
+  }
+
+  if (happenedBefore(stringField(actual["completedAt"]), est.estimatedAt)) {
+    return { calibrationProvenance: "backfilled_calibration", calibrationUsage: "baseline" };
+  }
+
   return { calibrationProvenance: "prospective", calibrationUsage: explicitUsage ?? "correction" };
+}
+
+/** Read the persisted write-time unit-suspect flag off an actual record (tolerates older rows without it). */
+function unitSuspectFlag(act: ActualRecord): boolean {
+  return (act as unknown as Record<string, unknown>)["unitSuspect"] === true;
+}
+
+/**
+ * Actual-side fields for isExcluded(), including the legacy camelCase and
+ * snake_case provenance/usage spellings (ticket 16) — shared by the matcher
+ * (classifyCalibrationRecord) and the feedback-health seed recount so the two
+ * can never drift. The write-time unitSuspect audit flag rides along; it is
+ * documentation on the record and never gates an exclusion verdict by itself.
+ */
+function exclusionActualFields(act: ActualRecord) {
+  const asRecord = act as unknown as Record<string, unknown>;
+  return {
+    actualHours: act.actualHours,
+    notes: act.notes,
+    reportedAt: act.reportedAt,
+    completedAt: act.completedAt,
+    calibrationProvenance: act.calibrationProvenance,
+    calibrationUsage: stringField(asRecord["calibrationUsage"]),
+    calibration_provenance: stringField(asRecord["calibration_provenance"]),
+    calibration_usage: stringField(asRecord["calibration_usage"]),
+    ...(unitSuspectFlag(act) && { unitSuspect: true as const }),
+  };
 }
 
 const VALID_PROVENANCE = new Set<CalibrationProvenance>([
@@ -539,10 +814,10 @@ export function matchEstimatesToActuals(
   },
   overlayFlags?: Map<string, MergedOverlayFlags>,
 ): HistoricalRecord[] {
-  const actualsMap = new Map<string, ActualRecord>();
-  for (const a of actuals) {
-    actualsMap.set(a.estimateId, a);
-  }
+  // Deterministic join (ticket 18, D3): earliest-reportedAt wins, tie =
+  // earliest file order. Mirrors loadLedgerWithOverlays() so the matcher and
+  // the merged view can never disagree about which duplicate actual joined.
+  const actualsMap = joinActualsEarliestReported(actuals);
 
   const cutoff = filters?.windowDays
     ? new Date(Date.now() - filters.windowDays * 86_400_000).toISOString()
@@ -617,13 +892,10 @@ export function extractEstimatedHours(outputs: Record<string, unknown>): number 
   if (typeof outputs["estimatedMinutes"] === "number") return outputs["estimatedMinutes"] / 60;
   if (typeof outputs["estimatedSeconds"] === "number") return outputs["estimatedSeconds"] / 3600;
   if (typeof outputs["expected"] === "number") {
-    const unit = outputs["unit"] as string;
-    if (unit === "hours") return outputs["expected"];
-    if (unit === "days") return outputs["expected"] * 8;
-    if (unit === "weeks") return outputs["expected"] * 40;
-    if (unit === "months") return outputs["expected"] * 160;
-    if (!unit) return outputs["expected"]; // no unit field — assume hours
-    return null; // unrecognized unit — skip to avoid corrupting calibration
+    const unit = outputs["unit"];
+    if (unit === undefined) return outputs["expected"]; // no unit field — assume hours
+    const factor = ESTIMATE_UNIT_TO_HOURS[unit as string];
+    return factor === undefined ? null : outputs["expected"] * factor; // unrecognized unit — skip to avoid corrupting calibration
   }
   if (typeof outputs["personMonthsLlmAdjusted"] === "number") {
     return outputs["personMonthsLlmAdjusted"] * 160;
@@ -675,15 +947,130 @@ export interface BatchResult {
 }
 
 export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
+  // Ticket 22 (batch single-pass): this used to route every entry through
+  // recordActualDetailed, re-reading both ledgers and re-acquiring the write
+  // lock per entry — up to k full parses per call over files the batch itself
+  // was growing (O(n²) overall). The single pass instead:
+  //
+  //   1. rejects file-independent failures (below_threshold, synthetic_id)
+  //      with no I/O at all — when no entry can be recorded, the batch takes
+  //      no lock and reads nothing (matching the sequential loop, where those
+  //      checks also preceded the lock);
+  //   2. takes ONE advisory write lock and loads both ledgers ONCE (≤2 file
+  //      reads for the whole batch), validates and dedupes in memory against
+  //      the on-disk actuals snapshot plus an intra-batch `claimed` set — a
+  //      later entry for an estimateId the batch itself is about to record is
+  //      a duplicate, exactly what the sequential loop saw once the earlier
+  //      append landed; and
+  //   3. appends every successful record in ONE batched write (appendLines:
+  //      a single appendFileSync of the joined lines — atomic-enough per
+  //      ticket 18's analysis).
+  //
+  // Holding the lock across the whole batch also SHRINKS the concurrency
+  // window versus per-entry locking: cooperating writers cannot interleave
+  // at all now, and a non-cooperating writer's mid-batch append has a
+  // strictly smaller window than the old per-entry re-read gaps.
+  //
+  // Per-entry semantics are preserved in order and precedence — each entry's
+  // result is the first failure of
+  //   below_threshold → synthetic_id → duplicate → unknown_tool →
+  //   auto_wallclock_out_of_bounds → write_failed
+  // — and an entry only CLAIMS its estimateId when the batch will actually
+  // append it, so a failed earlier entry never turns a later same-id entry
+  // into a duplicate (matching the sequential loop exactly).
+  const perEntry: Array<RecordActualResult | undefined> = entries.map(() => undefined);
+
+  const dryRun = isDryRun();
+  const actualsSource = dryRun ? DRY_RUN_FILE : ACTUALS_FILE;
+  const estimatesSource = dryRun ? DRY_RUN_ESTIMATES_FILE : ESTIMATES_FILE;
+
+  // Phase 1 — file-independent rejections, in entry order (no reads, no lock).
+  const candidates: Array<{ entry: BatchActualEntry; normalizedHours: number; index: number }> = [];
+  for (const [index, entry] of entries.entries()) {
+    const normalizedHours = normalizeActualHours(entry.actualHours, entry.unit);
+    if (normalizedHours <= MINIMUM_RECORDED_ACTUAL_HOURS) {
+      perEntry[index] = { ok: false, reason: "below_threshold" };
+      continue;
+    }
+    if (isSyntheticId(entry.estimateId)) {
+      perEntry[index] = { ok: false, reason: "synthetic_id" };
+      continue;
+    }
+    candidates.push({ entry, normalizedHours, index });
+  }
+
+  // Phase 2 — one lock, two reads, in-memory validation, one batched append.
+  if (candidates.length > 0) {
+    try {
+      withLedgerWriteLock(
+        actualsSource,
+        () => {
+          const existingIds = new Set(readLines<ActualRecord>(actualsSource).map((a) => a.estimateId));
+          const estimatesById = new Map<string, EstimateRecord>();
+          for (const estimate of readLines<EstimateRecord>(estimatesSource)) estimatesById.set(estimate.id, estimate);
+
+          const claimed = new Set<string>();
+          const toAppend: Array<{ index: number; record: RecordedActualRecord }> = [];
+          for (const candidate of candidates) {
+            // Duplicate precedence is unchanged: an on-disk actual or an
+            // intra-batch claim beats every later check (unknown_tool, the
+            // wallclock gate, ...) — the same order the sequential loop hit.
+            if (existingIds.has(candidate.entry.estimateId) || claimed.has(candidate.entry.estimateId)) {
+              perEntry[candidate.index] = { ok: false, reason: "duplicate" };
+              continue;
+            }
+            const evaluation = evaluateActualForWrite(
+              candidate.entry.estimateId,
+              candidate.normalizedHours,
+              candidate.entry.notes,
+              candidate.entry.calibrationProvenance,
+              estimatesById.get(candidate.entry.estimateId),
+            );
+            perEntry[candidate.index] = evaluation.result;
+            // record is non-null exactly when result.ok (see ActualEvaluation)
+            // — the null check doubles as the success-arm discriminant.
+            if (evaluation.record !== null) {
+              claimed.add(candidate.entry.estimateId);
+              toAppend.push({ index: candidate.index, record: evaluation.record });
+            }
+          }
+
+          // One batched append for the whole batch. If it fails, ONLY the
+          // would-be-recorded entries turn write_failed — nothing persisted
+          // for them, the same no-phantom-records honesty the single path has.
+          if (toAppend.length > 0 && !appendLines(actualsSource, toAppend.map((p) => p.record))) {
+            for (const pending of toAppend) perEntry[pending.index] = { ok: false, reason: "write_failed" };
+          }
+        },
+        "batchRecordActuals",
+      );
+    } catch (err) {
+      if (err instanceof LedgerLockTimeoutError || err instanceof LedgerLockUnavailableError) {
+        debugLog("feedback.lock-failure", `batch_record_actuals (${candidates.length} entries) abandoned: ${err.message}`);
+        const hint = err instanceof LedgerLockUnavailableError ? lockUnavailableHint(err) : lockTimeoutHint(err);
+        for (const candidate of candidates) {
+          if (perEntry[candidate.index] === undefined) {
+            perEntry[candidate.index] = { ok: false, reason: "write_failed", hint };
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Ticket 04 (feedback contract): per-entry error strings carry the failure
+  // REASON (e.g. "(reason: duplicate)") verbatim — callers (MCP
+  // batch_record_actuals, HTTP batch endpoint) surface these strings, so the
+  // reason must survive the batch path. Same shape, same entry order.
   const errors: string[] = [];
   let succeeded = 0;
-
-  for (const entry of entries) {
-    const ok = recordActual(entry.estimateId, entry.actualHours, entry.notes, entry.unit, entry.calibrationProvenance);
-    if (ok) {
+  for (const [index, entry] of entries.entries()) {
+    const result = perEntry[index] ?? { ok: false as const, reason: "write_failed" as const };
+    if (result.ok) {
       succeeded++;
     } else {
-      errors.push(`Failed to record actual for estimate ${entry.estimateId}`);
+      errors.push(`Failed to record actual for estimate ${entry.estimateId} (reason: ${result.reason})${result.hint ? ` — ${result.hint}` : ""}`);
     }
   }
 
@@ -697,6 +1084,19 @@ export interface FeedbackHealthReport {
   totalActuals: number;
   matchedPairs: number;
   seedRecordsFiltered: number;
+  /**
+   * Ticket 18 (D3): count of estimateIds carrying more than one actual row.
+   * Zero is the write lock's invariant; non-zero means duplicates exist on
+   * disk (pre-lock history or a non-cooperating writer) and are being
+   * resolved deterministically (earliest-reportedAt wins).
+   */
+  duplicateActuals: number;
+  /**
+   * Ticket 18: non-empty ledger lines (estimates + actuals) that failed
+   * JSON.parse as of this report's reads — previously skipped silently, now
+   * counted (torn writes / corruption made visible).
+   */
+  corruptLines: number;
   provenance: {
     correctionRecords: number;
     baselineRecords: number;
@@ -731,10 +1131,30 @@ export interface FeedbackHealthReport {
   humanReadable: string;
 }
 
+/**
+ * Denominator list for feedback-health's data-completeness tool-coverage
+ * score: the estimation tools that count as "calibrated" once they accrue
+ * 3+ matched pairs. DERIVED from the authoritative estimation partition
+ * (src/lib/tool-aliases.ts ESTIMATION_TOOL_NAMES), never hand-copied — the
+ * historical hand-copy here was missing estimate_from_context (8 of 9),
+ * silently capping the completeness score. Exported so the dispatcher sync
+ * suite (src/dispatcher/tool-surface-sync.test.ts) can pin the derivation.
+ */
+export const FEEDBACK_HEALTH_CALIBRATION_TOOLS: readonly string[] = [...ESTIMATION_TOOL_NAMES];
+
 export function getFeedbackHealthReport(): FeedbackHealthReport {
   const estimates = readLines<EstimateRecord>(ESTIMATES_FILE);
   const actuals = readLines<ActualRecord>(ACTUALS_FILE);
   const actualIds = new Set(actuals.map((a) => a.estimateId));
+
+  // Ticket 18 counters: duplicate actuals (join-side) and corrupt lines
+  // (read-side, populated by the readLines calls above — skipped lines were
+  // always dropped silently; now the drop count is visible).
+  const duplicateActuals = countDuplicateActuals(actuals);
+  const corruptLineCounts = getLedgerCorruptLines();
+  const corruptLines =
+    (corruptLineCounts.get(join(dataDir(), ESTIMATES_FILE)) ?? 0) +
+    (corruptLineCounts.get(join(dataDir(), ACTUALS_FILE)) ?? 0);
 
   const totalEstimates = estimates.length;
   const totalActuals = actuals.length;
@@ -755,10 +1175,14 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   // Count records dropped by the shared exclusion predicate — single source of
   // truth (previously reimplemented ad hoc here, drifting from matchEstimatesToActuals).
+  // Recount iterates the SAME earliest-reported join winners the matcher
+  // calibrates (review M2): a later duplicate actual that would be excluded
+  // cannot inflate the count while a clean earlier winner joined.
   const estimatesById = new Map<string, EstimateRecord>();
   for (const e of estimates) estimatesById.set(e.id, e);
+  const joinedActuals = joinActualsEarliestReported(actuals);
   let seedRecordsFiltered = 0;
-  for (const a of actuals) {
+  for (const a of joinedActuals.values()) {
     const est = estimatesById.get(a.estimateId);
     if (!est) continue;
     const estHours = extractEstimatedHours(est.outputs);
@@ -768,7 +1192,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
       inputs: est.inputs,
       estimatedAt: est.estimatedAt,
       estimatedHours: estHours,
-      actual: { actualHours: a.actualHours, notes: a.notes, reportedAt: a.reportedAt, completedAt: a.completedAt, calibrationProvenance: a.calibrationProvenance },
+      actual: exclusionActualFields(a),
       flags: { quarantined: overlayFlags.get(est.id)?.quarantined, orphan: overlayFlags.get(est.id)?.orphan },
     });
     if (verdict.excluded) seedRecordsFiltered++;
@@ -869,7 +1293,7 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
   const cappedLabel = overallCappedMdape !== null ? `${Math.round(overallCappedMdape)}%` : "N/A";
 
   // Data completeness score (0-100): tool coverage (40) + type coverage (30) + pair count (30)
-  const estimationTools = ["pert_estimate", "cocomo_estimate", "sprint_forecast", "critical_path", "monte_carlo_schedule", "token_time_bridge", "schedule_risk", "reference_class_estimate"];
+  const estimationTools = FEEDBACK_HEALTH_CALIBRATION_TOOLS;
   const toolsCalibrated = estimationTools.filter(t => (byTool[t]?.matchedPairs ?? 0) >= 3).length;
   const toolScore = Math.round((toolsCalibrated / estimationTools.length) * 40);
 
@@ -895,11 +1319,20 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     auto: { matchedPairs: autoMatched.length, mdape: autoMetrics?.mdape ?? null, cappedMdape: autoMetrics?.cappedMdape ?? null },
   };
 
+  // Ticket 18: integrity visibility appended only when non-zero, so the
+  // base humanReadable stays byte-identical for healthy ledgers.
+  const integrityLabel =
+    duplicateActuals > 0 || corruptLines > 0
+      ? ` Data integrity: ${duplicateActuals} estimate id${duplicateActuals === 1 ? "" : "s"} with duplicate actuals (earliest-reported wins the join), ${corruptLines} corrupt ledger line${corruptLines === 1 ? "" : "s"} skipped.`
+      : "";
+
   return {
     totalEstimates,
     totalActuals,
     matchedPairs: correctionMatched.length,
     seedRecordsFiltered,
+    duplicateActuals,
+    corruptLines,
     provenance: { correctionRecords: correctionMatched.length, baselineRecords, excludedRecords: seedRecordsFiltered },
     matchRate,
     byTool,
@@ -907,6 +1340,6 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
     byProvenance,
     selfImprovement: { readyTypes, callsUntilUpdate },
     dataQuality: { overallMdape, overallCappedMdape, outlierRatio, recommendation, dataCompletenessScore },
-    humanReadable: `${correctionMatched.length} correction-eligible matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}; ${baselineRecords} baseline-only records held out). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}`,
+    humanReadable: `${correctionMatched.length} correction-eligible matched pairs across ${toolsWithData} tools and ${typesWithData} task types (capped MdAPE: ${cappedLabel}, raw MdAPE: ${mdapeLabel}; ${baselineRecords} baseline-only records held out). ${totalEstimates} estimates, ${totalActuals} actuals, match rate: ${matchRate}%${seedLabel}. ${recommendation}${integrityLabel}`,
   };
 }
