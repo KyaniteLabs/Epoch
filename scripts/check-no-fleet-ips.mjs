@@ -2,25 +2,27 @@
 /**
  * Fleet-IP hygiene gate.
  *
- * Fails if any tracked file under docs/, scripts/, or the root README.md
+ * Fails if any tracked file under src/, docs/, scripts/, or the root README.md
  * contains a 100.x.y.z IPv4 literal (the Tailscale/CGNAT range the fleet
  * uses). Fleet addresses must be injected at runtime via environment
  * variables, never committed.
  *
- * Scope is intentionally limited to docs/, scripts/, and README.md:
- * src/ tests contain a synthetic Tailscale endpoint fixture that exercises
- * endpoint-validation logic, and .gitea/ is private CI config outside this
- * gate's surface.
+ * The only allowlisted literal is the synthetic CGNAT-range fixture
+ * (100.100.100.100) used by the endpoint-validation test in src/entries:
+ * it exercises the same shared-address-range branch as a real private
+ * endpoint while being obviously not a fleet host. .gitea/ is private CI
+ * config outside this gate's surface.
  *
  * Usage: node scripts/check-no-fleet-ips.mjs
  */
 import { execFileSync } from "node:child_process";
 
-const IP_PATTERN = /\b100\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/;
-// Tailscale tailnet FQDNs (e.g. host.tail123456.ts.net) are internal endpoints.
+const IP_PATTERN = /\b100\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+// Tailscale tailnet FQDNs (host.tail<digits>.ts.net) are internal endpoints.
 const TAILNET_PATTERN = /\b[\w-]+\.tail\d+\.ts\.net\b/;
+const ALLOWED_LITERALS = new Set(["100.100.100.100"]);
 const SCOPED = (path) =>
-  path === "README.md" || path.startsWith("docs/") || path.startsWith("scripts/");
+  path === "README.md" || path.startsWith("docs/") || path.startsWith("scripts/") || path.startsWith("src/");
 
 const tracked = execFileSync("git", ["ls-files"], { encoding: "utf8" })
   .split("\n")
@@ -32,7 +34,9 @@ const violations = [];
 for (const file of tracked) {
   const lines = readFileSync(file, "utf8").split("\n");
   lines.forEach((line, i) => {
-    if (IP_PATTERN.test(line) || TAILNET_PATTERN.test(line)) {
+    const ips = line.match(IP_PATTERN) ?? [];
+    const hasFleetIp = ips.some((ip) => !ALLOWED_LITERALS.has(ip));
+    if (hasFleetIp || TAILNET_PATTERN.test(line)) {
       violations.push(`${file}:${i + 1}: ${line.trim()}`);
     }
   });

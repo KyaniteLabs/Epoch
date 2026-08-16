@@ -925,8 +925,8 @@ describe("CLI tests", () => {
 				"telemetry",
 				"set-endpoint",
 				"--endpoint",
-				"http://100.66.225.85:3099/v1/telemetry",
-			]);
+			"http://100.100.100.100:3099/v1/telemetry",
+		]);
 
 			const output = JSON.parse(capture.stdout.join("")) as {
 				ok: boolean;
@@ -934,7 +934,7 @@ describe("CLI tests", () => {
 			};
 			expect(capture.exitCode).toBe(0);
 			expect(output.ok).toBe(true);
-			expect(output.endpoint).toBe("http://100.66.225.85:3099/v1/telemetry");
+			expect(output.endpoint).toBe("http://100.100.100.100:3099/v1/telemetry");
 		});
 
 		it("reports placeholder endpoint as not configured in telemetry status", async () => {

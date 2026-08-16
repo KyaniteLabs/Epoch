@@ -227,6 +227,15 @@ function usHolidays(year: number): readonly Date[] {
       holidays.push(normaliseHolidayDate(new Date(year, month, day + 1))); // Sun -> following Mon
     }
   }
+  // Cross-year observed day: when Jan 1 of the NEXT year falls on a Saturday,
+  // its preceding-Friday observation is Dec 31 of THIS year. Holiday sets are
+  // resolved by the visited date's own year (holidayDateKeys memoizes per
+  // year; walkers and isBusinessDay look up the date's year), so this year's
+  // set must carry the key itself — the year+1 set's Dec-31 entry is never
+  // consulted for a Dec-31 visit. Real occurrences: 2021-12-31, 2032-12-31.
+  if (getDay(new Date(year + 1, 0, 1)) === 6) {
+    holidays.push(normaliseHolidayDate(new Date(year, 11, 31)));
+  }
   return holidays;
 }
 

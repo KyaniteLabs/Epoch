@@ -880,8 +880,8 @@ export function createApiApp(): Hono {
     if (!result.ok) {
       const status = result.reason === "duplicate"
         ? 409
-        : result.reason === "below_threshold" || result.reason === "synthetic_id"
-          ? 400
+        : result.reason === "below_threshold" || result.reason === "synthetic_id" || result.reason === "unknown_tool" || result.reason === "auto_wallclock_out_of_bounds"
+          ? 400 // caller-fixable rejections stay 4xx (ticket 06 policy): a 500 invites retry loops on unretryable input errors
           : 500;
       // Ticket 16 (unknown-tool policy): append the lib's actionable hint
       // (currently unknown_tool's canonical estimation-tool set) so the

@@ -1240,7 +1240,7 @@ describe("HTTP API", () => {
         body: JSON.stringify({ estimate_id: estimateId, actual_hours: 4 }),
       });
 
-      expect(res.status).toBe(500); // unknown_tool keeps its existing status mapping
+      expect(res.status).toBe(400); // caller-fixable rejection — 4xx per the ticket 06 policy, not 500
       const body = await res.json() as Record<string, unknown>;
       expect(body.ok).toBe(false);
       const error = body.error as Record<string, unknown>;

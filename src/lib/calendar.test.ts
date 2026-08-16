@@ -234,6 +234,17 @@ describe("US observed-day rules (5 U.S.C. 6103)", () => {
     expect(isBusinessDay("2027-07-05", "US")).toBe(false); // Jul 4 2027 = Sunday
   });
 
+  it("observes a Saturday New Year's Day on the prior year's Dec 31 (cross-year golden 2021/2032)", () => {
+    // Jan 1 2022 = Saturday -> observed Friday 2021-12-31; Jan 1 2033 =
+    // Saturday -> observed Friday 2032-12-31. Both keys must live in the
+    // visited date's own year's set, not only the following year's.
+    expect(isBusinessDay("2021-12-31", "US")).toBe(false);
+    expect(isBusinessDay("2032-12-31", "US")).toBe(false);
+    // The surrounding days are ordinary business days.
+    expect(isBusinessDay("2021-12-30", "US")).toBe(true);
+    expect(isBusinessDay("2032-12-30", "US")).toBe(true);
+  });
+
   it("does not fabricate observed days for midweek fixed-date holidays", () => {
     expect(isBusinessDay("2026-07-02", "US")).toBe(true);
     expect(isBusinessDay("2026-06-30", "US")).toBe(true);
