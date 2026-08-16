@@ -453,6 +453,57 @@ describe("receiveTelemetry", () => {
   });
 });
 
+describe("admission ordering + admission lock (review H1)", () => {
+  it("a failed quarantine append never persists the dedup key — the retry admits the record instead of deduplicating it away", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { rawBody, signature } = signedPayload();
+
+    // Real-fs failure injection: make the quarantine file a DIRECTORY, so
+    // the quarantine append fails (EISDIR) mid-admission.
+    mkdirSync(join(TEST_DIR, "telemetry-quarantine.jsonl"));
+    try {
+      expect(() => receiveTelemetry(rawBody, signature)).toThrow();
+      // The data-first ordering guarantee: the dedup identity was NOT
+      // persisted for a record that was never stored.
+      expect(existsSync(join(TEST_DIR, "telemetry-record-keys.jsonl"))).toBe(false);
+    } finally {
+      rmSync(join(TEST_DIR, "telemetry-quarantine.jsonl"), { recursive: true, force: true });
+    }
+
+    // Retry after the failure is repaired: the record is ADMITTED (the old
+    // key-first order would have reported it as deduplicated and lost it).
+    const retry = receiveTelemetry(rawBody, signature);
+    expect(retry).toMatchObject({ ok: true, accepted: 0, deduplicated: 0, quarantined: 1 });
+    expect(readQuarantine()).toHaveLength(1);
+  });
+
+  it("rejects with 503 while another holder owns the telemetry admission lock (cross-process serialization)", async () => {
+    const { receiveTelemetry } = await import("./telemetry-receiver.js");
+    const { acquireExclusiveFileLock, releaseExclusiveFileLock } = await import("./ledger.js");
+    const { rawBody, signature } = signedPayload();
+
+    const lockPath = join(TEST_DIR, "telemetry-admission.lock");
+    const held = acquireExclusiveFileLock(lockPath, "test-holder", { timeoutMs: 0, retryMs: 1 });
+    expect(held.ok).toBe(true);
+    process.env["EPOCH_LOCK_TIMEOUT_MS"] = "100";
+    try {
+      const result = receiveTelemetry(rawBody, signature);
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(503);
+      expect(result.error ?? "").toContain("admission lock");
+      // Nothing was admitted or keyed around the held lock.
+      expect(existsSync(join(TEST_DIR, "telemetry-record-keys.jsonl"))).toBe(false);
+      expect(existsSync(join(TEST_DIR, "telemetry-quarantine.jsonl"))).toBe(false);
+    } finally {
+      delete process.env["EPOCH_LOCK_TIMEOUT_MS"];
+      releaseExclusiveFileLock(lockPath, held.token);
+    }
+
+    // After release, the same payload admits normally.
+    expect(receiveTelemetry(rawBody, signature)).toMatchObject({ ok: true, quarantined: 1 });
+  });
+});
+
 describe("isRatioConsistent (shared with self-improve)", () => {
   it("is exported for the stored-record defense-in-depth path", async () => {
     const { isRatioConsistent } = await import("./telemetry-receiver.js");

@@ -8,6 +8,7 @@ import {
   MINIMUM_CALIBRATION_ACTUAL_HOURS,
   MIN_RATIO,
 } from "./exclusion.js";
+import { acquireExclusiveFileLock, releaseExclusiveFileLock } from "./ledger.js";
 import type { AnonymizedRecord } from "./telemetry-submit.js";
 
 const V1_TOP_LEVEL_FIELDS = new Set([
@@ -116,7 +117,7 @@ export interface TelemetryReceipt {
 
 export interface TelemetryReceiveResult {
   ok: boolean;
-  status: 200 | 400 | 401;
+  status: 200 | 400 | 401 | 503;
   /** Records merged into the trusted store — always 0 while every receive path is untrusted. */
   accepted: number;
   deduplicated: number;
@@ -259,7 +260,10 @@ interface Admissions {
 // between the dedup check and the append), so the single-threaded event loop
 // makes check-and-add atomic per tick: two concurrent POSTs of the same
 // record can never both admit — the second call cannot start until the first
-// returns, by which point the key is in the set and in the file.
+// returns, by which point the key is in the set and in the file. Across
+// processes, the whole admission section (caps → dedup → appends → receipt)
+// runs under the telemetry-admission advisory lock (review H1), so two
+// receiver processes cannot interleave the sequence either.
 // ---------------------------------------------------------------------------
 
 /** Stat facts used to validate a memo entry against the file it summarizes. */
@@ -430,7 +434,7 @@ function recordKey(installationId: string, record: AnonymizedRecord): string {
   return createHash("sha256").update(JSON.stringify({ installationId, record })).digest("hex");
 }
 
-function rejection(error: string, status: 400 | 401 = 400): TelemetryReceiveResult {
+function rejection(error: string, status: 400 | 401 | 503 = 400): TelemetryReceiveResult {
   return { ok: false, status, accepted: 0, deduplicated: 0, quarantined: 0, error };
 }
 
@@ -518,6 +522,23 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
     return rejection("invalid signature", 401);
   }
 
+  // Admission is serialized across processes by an advisory file lock
+  // (review H1): the cap check → dedup check → append → receipt sequence is
+  // a check-then-append region exactly like the ledger's, so two receiver
+  // processes must not interleave it. The lock fails closed — a receiver
+  // that cannot take the admission lock rejects the payload (503, retryable)
+  // rather than admitting unlocked.
+  const admissionLockPath = join(dataDir(), "telemetry-admission.lock");
+  const admissionLock = acquireExclusiveFileLock(admissionLockPath, "epoch-receiver");
+  if (!admissionLock.ok) {
+    return rejection(
+      admissionLock.reason === "unavailable"
+        ? "receiver admission lock unavailable — storage or permissions problem; retry once fixed"
+        : "receiver admission lock held past the timeout by another receive — retry shortly",
+      503,
+    );
+  }
+  try {
   // Admission caps (Ticket 19): bound per-installation and total volume. The
   // conservative estimate (records.length new admissions) is used so a payload
   // that would exceed a cap is rejected whole rather than partially stored.
@@ -560,8 +581,6 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
       deduplicated += 1;
       continue;
     }
-    knownKeys.add(key);
-    appendFileSync(recordKeysPath(), `${key}\n`, "utf-8");
 
     // Quarantine, not merge (Ticket 19): every current receive path is
     // untrusted — the HMAC is keyed by the in-payload installation_id, so a
@@ -574,6 +593,11 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
     const quarantineReason = record.tool === "receiver_smoke"
       ? QUARANTINE_REASON_SMOKE_PROVENANCE
       : QUARANTINE_REASON_UNTRUSTED_SOURCE;
+    // Review H1 ordering: the DATA (quarantine record) is persisted FIRST,
+    // the dedup identity SECOND. A crash or write failure between the two
+    // can at worst duplicate a quarantined line on retry — it can never
+    // suppress a record that was never stored (the old key-first order
+    // permanently deduplicated away data on a failed quarantine append).
     appendFileSync(
       quarantinePath(),
       `${JSON.stringify({
@@ -591,6 +615,8 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
       })}\n`,
       "utf-8",
     );
+    appendFileSync(recordKeysPath(), `${key}\n`, "utf-8");
+    knownKeys.add(key);
     quarantined += 1;
   }
 
@@ -621,4 +647,7 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   refreshAdmissionsMemo(admissions);
 
   return { ok: true, status: 200, accepted, deduplicated, quarantined };
+  } finally {
+    releaseExclusiveFileLock(admissionLock.lockPath, admissionLock.token);
+  }
 }
