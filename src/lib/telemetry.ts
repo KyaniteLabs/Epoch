@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 import { debugLog } from "./internal/logging.js";
+import { percentileIndex } from "./estimation.js";
 
 export interface ToolCallRecord {
   timestamp: string;
@@ -282,7 +283,7 @@ function aggregate(records: ToolCallRecord[], windowDays: number): ToolStats {
   const n = elapsed.length;
 
   const percentile = (p: number): number => {
-    const idx = Math.min(Math.floor(n * p), n - 1);
+    const idx = percentileIndex(n, p);
     return Math.round((elapsed[idx] ?? 0) * 100) / 100;
   };
 

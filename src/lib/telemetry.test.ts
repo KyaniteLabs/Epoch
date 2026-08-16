@@ -218,7 +218,7 @@ describe("getStats", () => {
     expect(stats).toHaveLength(2);
     const pertStats = stats.find((s) => s.tool === "pert_estimate");
     expect(pertStats?.callCount).toBe(2);
-    expect(pertStats?.p50Ms).toBe(200);
+    expect(pertStats?.p50Ms).toBe(100); // nearest-rank p50 of [100, 200] is the 1st order statistic
   });
 
   it("filters by tool name", () => {
@@ -246,14 +246,27 @@ describe("getStats", () => {
     expect(defined(stats[0]).successRate).toBe(0.75);
   });
 
-  it("computes p50 and p95 percentiles", () => {
+  it("computes p50 and p95 percentiles (ceil-rank, shared with estimation)", () => {
     const times = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
     const records = times.map((ms) => makeRecord({ tool: "tool", elapsedMs: ms }));
     mockReadFileSync.mockReturnValue(makeRecordsJson(records));
     const store = getTelemetry();
     const stats = store.getStats("tool");
-    expect(defined(stats[0]).p50Ms).toBe(60);
+    expect(defined(stats[0]).p50Ms).toBe(50); // ceil-rank median: 5th order statistic, not the biased 6th
     expect(defined(stats[0]).p95Ms).toBe(100);
+
+    // n=20: p95 strictly below the max (the old floor-rank returned the max).
+    const twenty = Array.from({ length: 20 }, (_, i) => (i + 1) * 10);
+    mockReadFileSync.mockReturnValue(makeRecordsJson(twenty.map((ms) => makeRecord({ tool: "tool", elapsedMs: ms }))));
+    const stats20 = getTelemetry().getStats("tool");
+    expect(defined(stats20[0]).p95Ms).toBe(190);
+    expect(defined(stats20[0]).p50Ms).toBe(100);
+
+    // n=1000: median is the 500th order statistic.
+    const thousand = Array.from({ length: 1000 }, (_, i) => i + 1);
+    mockReadFileSync.mockReturnValue(makeRecordsJson(thousand.map((ms) => makeRecord({ tool: "tool", elapsedMs: ms }))));
+    const stats1000 = getTelemetry().getStats("tool");
+    expect(defined(stats1000[0]).p50Ms).toBe(500);
   });
 
   it("filters by time window", () => {

@@ -267,15 +267,29 @@ describe("UK substitute-day rules (England & Wales)", () => {
     expect(isBusinessDay("2026-12-29", "UK")).toBe(true);
   });
 
-  it("moved the 2025 Early May bank holiday to VE Day (8 May 2025)", () => {
-    expect(isBusinessDay("2025-05-08", "UK")).toBe(false);
-    expect(isBusinessDay("2025-05-05", "UK")).toBe(true); // 1st Monday, no longer a holiday
+  it("keeps the 2025 Early May bank holiday on Monday 5 May (no VE Day move)", () => {
+    // gov.uk lists 5 May 2025 for England & Wales; the only VE Day move was
+    // 2020. 8 May 2025 was an ordinary Thursday.
+    expect(isBusinessDay("2025-05-05", "UK")).toBe(false);
+    expect(isBusinessDay("2025-05-08", "UK")).toBe(true);
   });
 });
 
 describe("JP substitute-day rules (furikae kyujitsu)", () => {
   it("substitutes a Sunday Shunbun 2027 with Monday 2027-03-22", () => {
     expect(isBusinessDay("2027-03-22", "JP")).toBe(false);
+  });
+
+  it("makes 2026-09-22 a holiday (kokumin no kyujitsu sandwiched between Keiro no Hi and Shubun no Hi)", () => {
+    // Act on National Holidays Art. 3(3): a non-Sunday weekday between two
+    // national holidays is itself a holiday. Sep 21 2026 (3rd Mon) and the
+    // equinox Sep 23 2026 sandwich Tuesday Sep 22 — per the Cabinet Office.
+    expect(isBusinessDay("2026-09-22", "JP")).toBe(false);
+    expect(isBusinessDay("2026-09-18", "JP")).toBe(true); // ordinary Friday
+    expect(isBusinessDay("2026-09-24", "JP")).toBe(true); // ordinary Thursday
+    // US/UK are unaffected by the JP sandwich rule.
+    expect(isBusinessDay("2026-09-22", "US")).toBe(true);
+    expect(isBusinessDay("2026-09-22", "UK")).toBe(true);
   });
 
   it("substitutes Sunday Constitution Day 2026 past stacked Golden Week holidays onto 2026-05-06", () => {

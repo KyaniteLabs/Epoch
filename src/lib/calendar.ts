@@ -243,11 +243,7 @@ function usHolidays(year: number): readonly Date[] {
 
 function ukHolidays(year: number): readonly Date[] {
   const easter = easterSunday(year);
-  // One-off: the 2025 Early May bank holiday moved to Thursday 8 May 2025
-  // for the 80th anniversary of VE Day (announced Nov 2024, England & Wales).
-  const earlyMay = year === 2025
-    ? new Date(year, 4, 8)
-    : nthWeekdayOfMonth(year, 4, 1, 1);
+  const earlyMay = nthWeekdayOfMonth(year, 4, 1, 1);       // Early May Bank Holiday (1st Mon May)
 
   const base = [
     new Date(year, 0, 1),                                   // New Year's Day
@@ -350,12 +346,28 @@ function jpHolidays(year: number): readonly Date[] {
 
   // Furikae kyujitsu (substitute holiday): a national holiday falling on
   // Sunday moves to the next weekday that is not itself a holiday.
-  // (The separate kokumin no kyujitsu "sandwich day" rule has no occurrences
-  // in 2024-2030 and is not implemented.)
+  // Kokumin no kyujitsu (sandwich day, Act on National Holidays Art. 3(3)):
+  // a non-Sunday day whose immediate predecessor and successor are both
+  // national holidays is itself a holiday — the 2024-2030 occurrence is
+  // 2026-09-22, between Keiro no Hi (Sep 21) and Shubun no Hi (Sep 23).
+  const sandwiches: Date[] = [];
+  for (const holiday of base) {
+    const twoAfter = normaliseHolidayDate(new Date(holiday.getFullYear(), holiday.getMonth(), holiday.getDate() + 2));
+    const middle = normaliseHolidayDate(new Date(holiday.getFullYear(), holiday.getMonth(), holiday.getDate() + 1));
+    if (
+      getDay(middle) !== 0
+      && base.some((h) => h.getTime() === twoAfter.getTime())
+      && !base.some((h) => h.getTime() === middle.getTime())
+    ) {
+      sandwiches.push(middle);
+    }
+  }
+
   const substituted: Date[] = [];
   const isTaken = (d: Date): boolean =>
     getDay(d) === 0 || getDay(d) === 6
     || base.some((h) => h.getTime() === d.getTime())
+    || sandwiches.some((h) => h.getTime() === d.getTime())
     || substituted.some((h) => h.getTime() === d.getTime());
 
   for (const holiday of base) {
@@ -366,7 +378,7 @@ function jpHolidays(year: number): readonly Date[] {
     } while (isTaken(candidate));
     substituted.push(normaliseHolidayDate(candidate));
   }
-  return [...base, ...substituted];
+  return [...base, ...sandwiches, ...substituted];
 }
 
 // ---- Normalisation --------------------------------------------------------
