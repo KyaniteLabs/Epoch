@@ -414,7 +414,7 @@ const UNIT_SUSPECT_RATIO = 10;
  * means. Text is pinned by substring in dispatcher and http tests.
  */
 export const UNIT_SUSPECT_FLAG_HINT =
-  "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.";
+  "Suspected unit mismatch: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.";
 
 /**
  * Hours-per-unit conversion for estimate outputs recorded with a `unit` field
@@ -1175,10 +1175,14 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   // Count records dropped by the shared exclusion predicate — single source of
   // truth (previously reimplemented ad hoc here, drifting from matchEstimatesToActuals).
+  // Recount iterates the SAME earliest-reported join winners the matcher
+  // calibrates (review M2): a later duplicate actual that would be excluded
+  // cannot inflate the count while a clean earlier winner joined.
   const estimatesById = new Map<string, EstimateRecord>();
   for (const e of estimates) estimatesById.set(e.id, e);
+  const joinedActuals = joinActualsEarliestReported(actuals);
   let seedRecordsFiltered = 0;
-  for (const a of actuals) {
+  for (const a of joinedActuals.values()) {
     const est = estimatesById.get(a.estimateId);
     if (!est) continue;
     const estHours = extractEstimatedHours(est.outputs);

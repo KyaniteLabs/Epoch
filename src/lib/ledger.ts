@@ -357,6 +357,9 @@ export type OverlayRecord = OverlayRecordCore & Record<string, unknown>;
  * monotonic `seq` (max existing seq in the file + 1) and `recordedAt`
  * (now, if not supplied). Overlay files are append-only — this never
  * rewrites the hot ledger (Pre-mortem Scenario 4: concurrent-rewrite data loss).
+ * THROWS when the append does not persist (review M4): callers counting
+ * writes (migrations' `written`) must never report a failed append as
+ * successful.
  */
 export function appendOverlayRecord(
   filename: string,
@@ -370,7 +373,10 @@ export function appendOverlayRecord(
     seq: nextSeq,
     recordedAt: record.recordedAt ?? new Date().toISOString(),
   };
-  appendLine(filename, full);
+  const appended = appendLine(filename, full);
+  if (!appended) {
+    throw new Error(`Overlay append failed (disk or permissions) — record not persisted: ${filename} seq=${nextSeq}`);
+  }
   return full;
 }
 

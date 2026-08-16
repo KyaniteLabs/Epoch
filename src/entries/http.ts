@@ -10,7 +10,7 @@ import type { BatchActualEntry } from "../lib/feedback.js";
 import { getTelemetry, resetTelemetry } from "../lib/telemetry.js";
 import { receiveTelemetry } from "../lib/telemetry-receiver.js";
 import { setTransport } from "../lib/telemetry-context.js";
-import { isInternalError } from "../lib/internal/error-helpers.js";
+import { isInternalError, isStorageError } from "../lib/internal/error-helpers.js";
 import type { TaggedToolError } from "../lib/internal/error-helpers.js";
 import type { ToolResult } from "../types/index.js";
 import { z } from "zod";
@@ -791,6 +791,23 @@ export function createApiApp(): Hono {
     if (result.ok) {
       return c.json(result, 200);
     }
+    // Review M3: storage failures are 500-class but their messages are
+    // crafted safe at the source — surface them verbatim so the "NOT
+    // recorded / no feedbackRef" contract reaches the caller.
+    if (isStorageError(result.error)) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            isError: true,
+            errorKind: "storage",
+            message: result.error.message,
+            ...(result.error.retryHint ? { retryHint: result.error.retryHint } : {}),
+          },
+        } satisfies { ok: false; error: TaggedToolError },
+        500,
+      );
+    }
     if (isInternalError(result.error)) {
       return c.json(
         {
@@ -1014,16 +1031,22 @@ export function createApiApp(): Hono {
     if (succeeded === 0 && errors.length > 0) {
       // Mirror the dispatcher's all-failed envelope for batch_record_actuals,
       // but keep every per-entry error attached (ticket 04 + ticket 20) so
-      // nothing is silently dropped.
+      // nothing is silently dropped. Review M3: when any per-entry failure is
+      // a server-side storage failure (write_failed), the envelope is 500 —
+      // not a caller-input 422.
+      const anyWriteFailed = recorded.errors.some((e) => e.includes("write_failed"));
       return c.json({
         ok: false,
         error: {
           isError: true,
+          errorKind: anyWriteFailed ? "storage" : "validation",
           message: `All ${total} entries failed to record. First failure: ${errors[0] ?? "no per-entry error reported"}`,
-          retryHint: "Each entry needs a non-empty estimate_id (from get_pending_estimates) and a positive actual_hours value.",
+          retryHint: anyWriteFailed
+            ? "A write_failed entry is a server-side storage failure (permissions/disk/lock) — fix the Epoch data directory, then retry the batch."
+            : "Each entry needs a non-empty estimate_id (from get_pending_estimates) and a positive actual_hours value.",
           errors,
         },
-      }, 422);
+      }, anyWriteFailed ? 500 : 422);
     }
 
     return c.json({ ok: true, data: { total, succeeded, failed: errors.length, errors } });

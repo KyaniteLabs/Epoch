@@ -29,6 +29,7 @@ import {
   inferScopeFromComplexity,
 } from "../lib/analytics.js";
 import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport, UNIT_SUSPECT_FLAG_HINT } from "../lib/feedback.js";
+import { makeStorageError } from "../lib/internal/error-helpers.js";
 import {
   isPertLearnedCorrectionEnabled,
   getPertToolTaskCorrection,
@@ -199,9 +200,12 @@ const pertOutput = {
     urgencyCategory: { type: "string", enum: ["short", "medium", "long"] },
     riskLevel: { type: "string", enum: ["low", "medium", "high"], description: "Estimation risk based on spread between optimistic and pessimistic" },
     humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval when one could be computed, followed by the point estimate." },
+    adjustedEstimate: { type: "number", description: "Labeled dual field (one minor version): the developerProfile/learned-corrected headline. NOT the recorded basis — intervals and calibration use `expected`; see `basisNote`." },
+    basisNote: { type: "string", description: "Names which fields carry the recorded basis (`expected`) versus the adjusted dual (`adjustedEstimate`) and which basis the intervals are scaled on." },
+    intervalPopulation: { type: "string", description: "Which ratio population the empirical interval used: the v2 (basis-unified) (pert_estimate, task_type) cell, or the v1 fallback computed on the v1 recorded basis." },
     interval: {
       type: "object",
-      description: "P50/P80/P90 calibrated prediction intervals around adjustedEstimate. `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (pert_estimate, task_type) pairs are available, else \"pert_variance\" (derived from this estimate's own optimistic/most_likely/pessimistic spread) — see `intervalNote` when the fallback is used.",
+      description: "P50/P80/P90 calibrated prediction intervals around the RECORDED basis (raw PERT `expected` × unit factor — never adjustedEstimate). `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (pert_estimate, task_type) pairs are available, else \"pert_variance\" (derived from this estimate's own optimistic/most_likely/pessimistic spread) — see `intervalNote` when the fallback is used.",
       properties: {
         p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
         p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
@@ -328,9 +332,12 @@ const referenceClassOutput = {
     confidence: { type: "string", enum: ["likely", "optimistic", "pessimistic"] },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × correctedEstimate)" },
     humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval when >=5 exclusion-filtered historical (reference_class_estimate, task_type) pairs are available; otherwise states plainly that there wasn't enough data for a confidence interval." },
+    adjustedEstimate: { type: "number", description: "Labeled dual field (one minor version): developerProfile-adjusted headline. NOT the recorded basis — intervals and calibration use `correctedEstimate`; see `basisNote`." },
+    basisNote: { type: "string", description: "Names which fields carry the recorded basis (`correctedEstimate`) versus the adjusted dual (`adjustedEstimate`) and which basis the intervals are scaled on." },
+    intervalPopulation: { type: "string", description: "Which ratio population the empirical interval used: the v2 (basis-unified) (reference_class_estimate, task_type) cell, or the v1 fallback computed on the v1 recorded basis." },
     interval: {
       type: "object",
-      description: "P50/P80/P90 empirical prediction intervals around adjustedEstimate, from per-task-type actual/estimate ratio quantiles. Present only when >=5 matched pairs were available for this task_type — see `intervalNote` otherwise.",
+      description: "P50/P80/P90 empirical prediction intervals around the RECORDED basis (`correctedEstimate` — never adjustedEstimate), from per-task-type actual/estimate ratio quantiles. Present only when >=5 matched pairs were available for this task_type — see `intervalNote` otherwise.",
       properties: {
         p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
         p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
@@ -1128,9 +1135,9 @@ update automatically to reduce estimation bias.`,
             flagged: "unit_suspect" as const,
             flagHint: UNIT_SUSPECT_FLAG_HINT,
           }),
-          message: result.flagged === "unit_suspect"
-            ? "Actual recorded, but flagged unit_suspect: actual hours are more than 10x the estimate — suspected unit mismatch (check hours vs days/weeks/person-months)."
-            : "Actual recorded. Correction factors update after more feedback accumulates.",
+            message: result.flagged === "unit_suspect"
+              ? "Actual recorded, but flagged unit_suspect: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — suspected unit mismatch (check hours vs days/weeks/person-months)."
+              : "Actual recorded. Correction factors update after more feedback accumulates.",
         },
       };
     },
@@ -1192,9 +1199,18 @@ Each entry pairs an estimate ID with the actual hours spent. Returns total/succe
         // reasons — surface the first one (they carry "(reason: ...)" from
         // batchRecordActuals) so the caller can self-correct.
         const firstError = result.errors[0] ?? "no per-entry error reported";
+        // Review M3: storage failures are server-side (500-class), not input
+        // errors — classify from the per-entry reasons so the HTTP seam never
+        // maps a disk/lock failure to 422.
+        const anyWriteFailed = result.errors.some((e) => e.includes("write_failed"));
         return {
           ok: false as const,
-          error: { isError: true, message: `All ${result.total} entries failed to record. First failure: ${firstError}`, retryHint: "Each entry needs the feedbackRef from a recent estimation tool call and a positive actual_hours value." },
+          error: anyWriteFailed
+            ? makeStorageError(
+                `All ${result.total} entries failed to record. First failure: ${firstError}`,
+                "A write_failed entry is a server-side storage failure (permissions/disk/lock) — fix the Epoch data directory, then retry the batch.",
+              )
+            : { isError: true, message: `All ${result.total} entries failed to record. First failure: ${firstError}`, retryHint: "Each entry needs the feedbackRef from a recent estimation tool call and a positive actual_hours value." },
         };
       }
       return { ok: true as const, data: result };

@@ -862,6 +862,26 @@ describe("HTTP API", () => {
       expect(info.version).toBeTruthy();
     });
 
+    it("publishes the recorded-basis interval contract for both estimation tools (review M5)", async () => {
+      const res = await app.request("/openapi.json");
+      const spec = await res.json() as Record<string, unknown>;
+      const paths = spec.paths as Record<string, Record<string, Record<string, unknown>>>;
+
+      for (const toolName of ["pert_estimate", "reference_class_estimate"]) {
+        // Response schema bodies embed the tool's output schema.
+        const specJson = JSON.stringify(paths[`/v1/tools/${toolName}`] ?? {});
+        expect(specJson, `${toolName} path missing`).not.toBe("{}");
+        // The interval descriptions must name the RECORDED basis — never the
+        // pre-unification adjustedEstimate basis the release replaced.
+        expect(specJson).toContain("RECORDED basis");
+        expect(specJson).toContain("never adjustedEstimate");
+        // The ticket-11 additive fields are enumerated, not hidden.
+        expect(specJson).toContain("adjustedEstimate");
+        expect(specJson).toContain("basisNote");
+        expect(specJson).toContain("intervalPopulation");
+      }
+    });
+
     it("includes paths for all 25 tools", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;

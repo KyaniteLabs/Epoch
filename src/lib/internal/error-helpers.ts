@@ -25,11 +25,16 @@ export function makeError(message: string, retryHint?: string): ToolError {
 //                   (HTTP 500-class; the message may embed filesystem paths or
 //                   stack details, so HTTP responses replace it with a generic
 //                   one — see src/entries/http.ts).
+//   - "storage":    a server-side persistence failure (ledger write_failed,
+//                   permissions/disk/lock). Also 500-class, but the message is
+//                   crafted safe at the source, so HTTP surfaces it verbatim —
+//                   the "NOT recorded / no feedbackRef" contract must reach the
+//                   caller (review M3).
 //
 // `isError` stays `true` on both so existing MCP error handling is unchanged.
 
 /** Distinguishes caller-fixable validation failures from internal 500-class failures. */
-export type ErrorKind = "validation" | "internal";
+export type ErrorKind = "validation" | "internal" | "storage";
 
 /** A {@link ToolError} with the optional transport-facing classification tag. */
 export interface TaggedToolError extends ToolError {
@@ -41,6 +46,17 @@ export function isInternalError(error: ToolError): boolean {
   return (error as TaggedToolError).errorKind === "internal";
 }
 
+/** True when a ToolError was tagged as any server-side (500-class) failure — internal or storage. */
+export function isServerError(error: ToolError): boolean {
+  const kind = (error as TaggedToolError).errorKind;
+  return kind === "internal" || kind === "storage";
+}
+
+/** True when a ToolError was tagged as a storage (persistence) failure — 500-class, message crafted safe. */
+export function isStorageError(error: ToolError): boolean {
+  return (error as TaggedToolError).errorKind === "storage";
+}
+
 /** Create a validation-flavored error: actionable text, safe to surface verbatim. */
 export function makeValidationError(message: string, retryHint?: string): TaggedToolError {
   return { isError: true, errorKind: "validation", message, retryHint };
@@ -49,6 +65,11 @@ export function makeValidationError(message: string, retryHint?: string): Tagged
 /** Create an internal-flavored error: the message may carry server-side detail. */
 export function makeInternalError(message: string, retryHint?: string): TaggedToolError {
   return { isError: true, errorKind: "internal", message, retryHint };
+}
+
+/** Create a storage-flavored error: server-side persistence failure with a crafted-safe message (surfaced verbatim over HTTP, 500-class). */
+export function makeStorageError(message: string, retryHint?: string): TaggedToolError {
+  return { isError: true, errorKind: "storage", message, retryHint };
 }
 
 // ---- Zod issue formatting (ticket 06) ----------------------------------------

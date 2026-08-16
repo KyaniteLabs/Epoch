@@ -10,7 +10,7 @@ import { TOOL_REGISTRY, TOOL_NAMES, isEstimationTool } from "./tool-registry.js"
 import { getTelemetry } from "../lib/telemetry.js";
 import { recordEstimate, recordToolCall } from "../lib/feedback.js";
 import { notifyToolCall } from "../lib/self-improve.js";
-import { formatZodIssues, makeInternalError, makeValidationError } from "../lib/internal/error-helpers.js";
+import { formatZodIssues, makeInternalError, makeStorageError, makeValidationError } from "../lib/internal/error-helpers.js";
 
 // ---- Dispatch ---------------------------------------------------------------
 
@@ -60,11 +60,13 @@ export async function dispatch(
             notifyToolCall();
             return {
               ok: false as const,
-              error: {
-                isError: true,
-                message: `Failed to write estimate to feedback storage — ensure the Epoch data directory is writable. The ${toolName} result was computed but NOT recorded.`,
-                retryHint: "Fix permissions/disk on the Epoch data directory and re-run the estimation tool; no feedbackRef was issued.",
-              },
+              // errorKind "storage" (review M3): server-side persistence
+              // failure — 500-class at the HTTP seam, message surfaced
+              // verbatim (crafted safe, no paths/stack).
+              error: makeStorageError(
+                `Failed to write estimate to feedback storage — ensure the Epoch data directory is writable. The ${toolName} result was computed but NOT recorded.`,
+                "Fix permissions/disk on the Epoch data directory and re-run the estimation tool; no feedbackRef was issued.",
+              ),
             };
           }
           if (hasHourEstimate(d)) {

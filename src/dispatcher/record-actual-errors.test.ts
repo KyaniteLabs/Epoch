@@ -21,7 +21,7 @@ vi.mock("../lib/feedback.js", () => ({
   // Real text (kept in sync with feedback.ts's UNIT_SUSPECT_FLAG_HINT): the
   // flagHint surfaced by record_actual comes from this lib constant.
   UNIT_SUSPECT_FLAG_HINT:
-    "Suspected unit mismatch: the actual is more than 10x the estimate — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
+    "Suspected unit mismatch: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — check the units (hours vs days/weeks/person-months). The record is saved and flagged; it is excluded from calibration math if the ratio exceeds 50x.",
   getPendingEstimates: vi.fn(() => []),
   batchRecordActuals: vi.fn(() => ({ total: 0, succeeded: 0, failed: 0, errors: [] })),
   getFeedbackHealthReport: vi.fn(() => ({
@@ -47,12 +47,13 @@ vi.mock("../lib/self-improve.js", () => ({
 }));
 
 import { dispatch } from "./index.js";
-import { recordActualDetailed, batchRecordActuals } from "../lib/feedback.js";
+import { recordActualDetailed, batchRecordActuals, recordEstimate } from "../lib/feedback.js";
 import type { RecordActualResult } from "../lib/feedback.js";
 import { defined } from "../test-support.js";
 
 const mockRecordActualDetailed = vi.mocked(recordActualDetailed);
 const mockBatchRecordActuals = vi.mocked(batchRecordActuals);
+const mockRecordEstimate = vi.mocked(recordEstimate);
 
 /** The complete closed set of record_actual failure reasons (lib contract). */
 type FailureReason = Extract<RecordActualResult, { ok: false }>["reason"];
@@ -83,6 +84,17 @@ beforeEach(() => {
 });
 
 describe("record_actual failure vocabulary (dispatcher seam)", () => {
+  it("tags estimate persistence failure as errorKind storage — server-side 500-class, message verbatim (review M3)", async () => {
+    mockRecordEstimate.mockReturnValueOnce(null); // ledger append failed
+    const result = await dispatch("pert_estimate", { optimistic: 1, most_likely: 2, pessimistic: 3 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const error = result.error as { errorKind?: string; message: string };
+      expect(error.errorKind).toBe("storage");
+      expect(error.message).toContain("NOT recorded"); // crafted-safe message must survive the HTTP seam verbatim
+    }
+  });
+
   it.each(FAILURE_REASONS)("maps %s to a specific, actionable message — never 'Unknown error.'", async (reason) => {
     mockRecordActualDetailed.mockReturnValueOnce({ ok: false, reason });
 
