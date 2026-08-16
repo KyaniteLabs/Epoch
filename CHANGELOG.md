@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-16
+
 ### Fixed (estimation math direction — audit tickets 13)
 - **`cocomo_validate` coefficient adjustments no longer amplify bias.** The per-type recommendations previously used `1 + bias/100` (and `1 + bias/200` for the exponent), so a positive bias (systematic overprediction) recommended *growing* the coefficient — overpredicting further. Both now correct against the bias (`1 - typeBias/100` for `organic.a`; `1 - typeBias/200` for `embedded.b`, kept at a deliberately conservative half-strength because exponent corrections compound at large KLOC). The overall scale factor was already sign-correct and is unchanged.
 - **`cocomo_estimate` `iterative_cycles` is now monotonic non-decreasing over [0.5, 10] with no cliff at 2.0.** Previously 2.0 mapped to a 2.0x multiplier but 2.01 collapsed to 1.201x (a ~40% drop for *more* iterations). Values <= 2.0 remain literal multipliers; above 2.0 the input is a literal cycle count and each additional cycle adds a fixed 0.1 of multiplier anchored at the literal-region endpoint: 2.0 -> 2.0x, 3 -> 2.1x, 10 -> 2.8x. Estimates for cycle counts above 2.0 therefore increase relative to the old normalized values (e.g. 10 cycles: 2.0x -> 2.8x).

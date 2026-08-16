@@ -3,7 +3,7 @@
   "name": "io.github.KyaniteLabs/Epoch",
   "title": "Epoch",
   "description": "Epoch time estimation MCP server for PERT, COCOMO, Monte Carlo, calibration, cost, and risk.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "websiteUrl": "https://kyanitelabs.github.io/Epoch/",
   "repository": {
     "url": "https://github.com/KyaniteLabs/Epoch",
@@ -13,7 +13,7 @@
     {
       "registryType": "npm",
       "identifier": "@kyanitelabs/epoch",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "runtimeHint": "npx",
       "packageName": "@kyanitelabs/epoch",
       "registryMetadata": {
