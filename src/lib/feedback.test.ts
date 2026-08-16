@@ -5,6 +5,12 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
   appendFileSync: vi.fn(),
   readFileSync: vi.fn(),
+  // Lock primitives (ticket 18 fail-closed): the write lock's exclusive-create
+  // must succeed in tests — a missing export reads as an infrastructure
+  // failure and now (correctly) fails writes closed instead of running unlocked.
+  writeFileSync: vi.fn(),
+  statSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 vi.mock("node:crypto", () => ({

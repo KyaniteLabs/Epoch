@@ -503,21 +503,22 @@ export function loadLedgerWithOverlays(_options: LoadLedgerOptions = {}): Merged
 // lock-free — two concurrent appenders only ever add lines.
 //
 // Staleness & recovery: the lockfile carries { owner, pid, acquiredAt, token }.
-// A lock is STALE when its mtime age exceeds the stale window (default 30s,
-// EPOCH_LOCK_STALE_MS) or its owner PID is no longer alive
-// (process.kill(pid, 0) → ESRCH). Stale locks are removed automatically by the
-// next acquirer. The documented MANUAL recovery path (surfaced verbatim in
-// data_status) is: verify the PID is gone, then delete `<ledger-file>.lock`.
-// Release is token-matched so a slow holder that outlived a staleness steal
-// cannot delete a newer owner's lock.
+// A lock is STALE when its owner PID is no longer alive
+// (process.kill(pid, 0) → ESRCH) — or, for legacy/corrupt payloads with no
+// resolvable PID, when its mtime age exceeds the stale window (default 30s,
+// EPOCH_LOCK_STALE_MS). A LIVE owner is never stolen on age: a legitimately
+// slow batch keeps mutual exclusion while running. Stale locks are removed
+// automatically by the next acquirer. The documented MANUAL recovery path
+// (surfaced verbatim in data_status) is: verify the PID is gone, then delete
+// `<ledger-file>.lock`. Release is token-matched so a slow holder that
+// outlived a staleness steal cannot delete a newer owner's lock.
 //
-// Failure mode: this is an ADVISORY lock. If the lockfile cannot be created
-// for infrastructure reasons (node:fs partially mocked in unit tests, unusual
-// permissions), the guarded section runs UNLOCKED rather than failing closed —
-// in those environments the append itself fails loudly and propagates
-// (write_failed / null) when the filesystem is genuinely unusable. Contention
-// with a live holder, by contrast, waits up to the timeout (default 2s,
-// EPOCH_LOCK_TIMEOUT_MS) and then fails the write.
+// Failure mode: this is an ADVISORY lock, but it FAILS CLOSED. If the
+// lockfile cannot be created for infrastructure reasons (unusual
+// permissions, unusable fs), the guarded check-then-append region does NOT
+// run — the write fails (write_failed via LedgerLockUnavailableError)
+// instead of racing unlocked. Contention with a live holder waits up to the
+// timeout (default 2s, EPOCH_LOCK_TIMEOUT_MS) and then fails the write.
 
 /** Default staleness window: a lockfile older than this (or with a dead owner PID) is stealable. */
 export const LEDGER_WRITE_LOCK_STALE_MS = 30_000;
@@ -552,7 +553,7 @@ export interface LedgerWriteLockInfo {
   owner: string | null;
   acquiredAt: string | null;
   ageMs: number | null;
-  /** True when the next acquirer would steal this lock (dead PID or age > stale window). */
+  /** True when the next acquirer would steal this lock (dead PID, or a pid-less lock older than the stale window — never a live owner). */
   stale: boolean;
   /** Documented recovery path, verbatim for data_status output. */
   recovery: string;
@@ -610,9 +611,16 @@ function readLockFile(lockPath: string): { parsed: LockFileContent | null; ageMs
 }
 
 function isStaleLock(parsed: LockFileContent | null, ageMs: number | null, staleMs: number): boolean {
+  // Dead owner: steal regardless of age.
   if (parsed && typeof parsed.pid === "number" && !pidAlive(parsed.pid)) return true;
-  if (ageMs !== null && ageMs > staleMs) return true;
-  return false;
+  // Live owner: NEVER steal on age alone — a legitimately slow batch or
+  // migration keeps mutual exclusion while it runs; an age-based steal here
+  // would admit a second writer into the check-then-append region (the exact
+  // corruption this lock exists to prevent). Recovery for a hung live owner
+  // is the documented manual path (verify the PID, delete the lockfile).
+  if (parsed && typeof parsed.pid === "number") return false;
+  // No resolvable owner PID (legacy/corrupt payload): age is the only signal.
+  return ageMs !== null && ageMs > staleMs;
 }
 
 /** Absolute lockfile path for a ledger filename: `<dataDir>/<filename>.lock`. */
@@ -653,9 +661,9 @@ export function acquireExclusiveFileLock(lockPath: string, owner: string, option
     } catch (err) {
       const code = (err as NodeJS.ErrnoException | null)?.code;
       if (code !== "EEXIST") {
-        // Infrastructure unavailable (fs functions mocked/absent, EACCES, ...).
-        // Advisory fail-open — see the section comment; real write errors still
-        // propagate from the append itself.
+        // Infrastructure unavailable (EACCES, unusable fs, ...). Reported as a
+        // failed acquisition; withLedgerWriteLock fails the write closed —
+        // the guarded region never runs unlocked.
         debugLog("ledger.lock-unavailable", `could not create ${lockPath}: ${code ?? String(err)}`);
         return { ok: false, lockPath, token: null, recoveredStale, reason: "unavailable" };
       }
@@ -696,13 +704,14 @@ export function releaseExclusiveFileLock(lockPath: string, token: string | null)
 /**
  * Run `fn` while holding the ledger write lock for `filename`
  * (`<dataDir>/<filename>.lock`). Releases in a finally. Throws
- * LedgerLockTimeoutError when a live holder outlasts the timeout; runs
- * UNLOCKED (advisory fail-open) when the lock infrastructure is unavailable.
+ * LedgerLockTimeoutError when a live holder outlasts the timeout and
+ * LedgerLockUnavailableError when the lock infrastructure itself fails —
+ * a check-then-append region must never run unlocked (fail closed).
  */
 export function withLedgerWriteLock<T>(filename: string, fn: () => T, owner = "epoch"): T {
   const acquisition = acquireExclusiveFileLock(ledgerWriteLockPath(filename), owner);
   if (!acquisition.ok) {
-    if (acquisition.reason === "unavailable") return fn();
+    if (acquisition.reason === "unavailable") throw new LedgerLockUnavailableError(acquisition.lockPath);
     throw new LedgerLockTimeoutError(acquisition.lockPath);
   }
   try {
@@ -717,6 +726,14 @@ export class LedgerLockTimeoutError extends Error {
   constructor(public readonly lockPath: string) {
     super(`Ledger write lock still held after timeout: ${lockPath}`);
     this.name = "LedgerLockTimeoutError";
+  }
+}
+
+/** Thrown by withLedgerWriteLock when the lock infrastructure itself is unavailable (fail closed — never run the guarded region unlocked). */
+export class LedgerLockUnavailableError extends Error {
+  constructor(public readonly lockPath: string) {
+    super(`Ledger write lock infrastructure unavailable: ${lockPath}`);
+    this.name = "LedgerLockUnavailableError";
   }
 }
 

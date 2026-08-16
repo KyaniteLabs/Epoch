@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
-import { readLines, dataDir, joinActualsEarliestReported, countDuplicateActuals, getLedgerCorruptLines, withLedgerWriteLock, LedgerLockTimeoutError, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
+import { readLines, dataDir, joinActualsEarliestReported, countDuplicateActuals, getLedgerCorruptLines, withLedgerWriteLock, LedgerLockTimeoutError, LedgerLockUnavailableError, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
@@ -287,8 +287,8 @@ export function recordEstimate(
         "recordEstimate-dedup",
       );
     } catch (err) {
-      if (err instanceof LedgerLockTimeoutError) {
-        debugLog("feedback.lock-timeout", `dedup get-or-create for tool ${canonicalTool} abandoned: ${err.message}`);
+      if (err instanceof LedgerLockTimeoutError || err instanceof LedgerLockUnavailableError) {
+        debugLog("feedback.lock-failure", `dedup get-or-create for tool ${canonicalTool} abandoned: ${err.message}`);
       }
       return null;
     }
@@ -374,6 +374,16 @@ const UNKNOWN_TOOL_HINT = `Actuals can only join estimates produced by Epoch's e
  */
 function lockTimeoutHint(err: LedgerLockTimeoutError): string {
   return `Another process held the feedback ledger write lock past the timeout (${err.lockPath}). Retry shortly; a stale lock is removed automatically once its owner PID is gone or it exceeds the staleness window.`;
+}
+
+/**
+ * Hint surfaced with write_failed results when the lock infrastructure itself
+ * could not be created (permissions, unusable fs). The write fails closed —
+ * the check-then-append region never runs unlocked — so the hint names the
+ * actionable recovery instead of suggesting a blind retry loop.
+ */
+function lockUnavailableHint(err: LedgerLockUnavailableError): string {
+  return `The feedback ledger write lock could not be created (${err.lockPath}) — check directory permissions and filesystem health. The write failed closed rather than racing unlocked; retry once the cause is fixed.`;
 }
 
 /** File used for dry-run / test writes when EPOCH_DRY_RUN is set. */
@@ -566,12 +576,12 @@ export function recordActualDetailed(
       "recordActual",
     );
   } catch (err) {
-    if (err instanceof LedgerLockTimeoutError) {
-      debugLog("feedback.lock-timeout", `record_actual for ${estimateId} abandoned: ${err.message}`);
+    if (err instanceof LedgerLockTimeoutError || err instanceof LedgerLockUnavailableError) {
+      debugLog("feedback.lock-failure", `record_actual for ${estimateId} abandoned: ${err.message}`);
       return {
         ok: false,
         reason: "write_failed",
-        hint: lockTimeoutHint(err),
+        hint: err instanceof LedgerLockUnavailableError ? lockUnavailableHint(err) : lockTimeoutHint(err),
       };
     }
     throw err;
@@ -1035,9 +1045,9 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
         "batchRecordActuals",
       );
     } catch (err) {
-      if (err instanceof LedgerLockTimeoutError) {
-        debugLog("feedback.lock-timeout", `batch_record_actuals (${candidates.length} entries) abandoned: ${err.message}`);
-        const hint = lockTimeoutHint(err);
+      if (err instanceof LedgerLockTimeoutError || err instanceof LedgerLockUnavailableError) {
+        debugLog("feedback.lock-failure", `batch_record_actuals (${candidates.length} entries) abandoned: ${err.message}`);
+        const hint = err instanceof LedgerLockUnavailableError ? lockUnavailableHint(err) : lockTimeoutHint(err);
         for (const candidate of candidates) {
           if (perEntry[candidate.index] === undefined) {
             perEntry[candidate.index] = { ok: false, reason: "write_failed", hint };

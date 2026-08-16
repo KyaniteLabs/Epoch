@@ -385,6 +385,37 @@ describe("concurrency sandbox: stale lock detection + recovery (S6)", () => {
     expect(info.stale).toBe(false);
   });
 
+  it("a LIVE holder is never stolen on AGE alone — an old lockfile with a live PID fails held, not stolen (review H3)", () => {
+    const lockPath = ledgerWriteLockPath(ACTUALS_FILE);
+    const old = new Date(Date.now() - 300_000);
+    writeFileSync(lockPath, JSON.stringify({ owner: "slow-live-holder", pid: process.pid, acquiredAt: old.toISOString(), token: "slow-live-token" }) + "\n", "utf-8");
+    utimesSync(lockPath, old, old);
+
+    // Surfaced present and NOT stale despite the age — a slow batch keeps
+    // mutual exclusion while it runs.
+    const info = inspectLedgerWriteLock(ACTUALS_FILE);
+    expect(info.present).toBe(true);
+    expect(info.stale).toBe(false);
+
+    // Single-attempt acquisition refuses to steal: held, lock untouched.
+    const acq = acquireExclusiveFileLock(lockPath, "would-be-stealer", { timeoutMs: 0, retryMs: 1 });
+    expect(acq.ok).toBe(false);
+    expect(acq.reason).toBe("held");
+    expect(readFileSync(lockPath, "utf-8")).toContain("slow-live-token");
+    rmSync(lockPath);
+  });
+
+  it("a pid-less legacy lock older than the stale window is still stolen by age (recovery path preserved)", () => {
+    const lockPath = ledgerWriteLockPath(ACTUALS_FILE);
+    const old = new Date(Date.now() - 300_000);
+    writeFileSync(lockPath, JSON.stringify({ owner: "legacy", acquiredAt: old.toISOString() }) + "\n", "utf-8");
+    utimesSync(lockPath, old, old);
+    const acq = acquireExclusiveFileLock(lockPath, "recoverer", { timeoutMs: 0, retryMs: 1 });
+    expect(acq.ok).toBe(true);
+    expect(acq.recoveredStale).toBe(true);
+    releaseExclusiveFileLock(lockPath, acq.token);
+  });
+
   it("release is token-matched: a slow releaser cannot delete a newer owner's lock", () => {
     const lockPath = ledgerWriteLockPath(ACTUALS_FILE);
     // Acquire and keep the token.
