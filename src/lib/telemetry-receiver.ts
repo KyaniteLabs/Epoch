@@ -377,12 +377,29 @@ function parseAdmissions(path: string): Admissions {
  * callers mutate it after appending a receipt, then pass it back to
  * refreshAdmissionsMemo().
  */
+/** Non-empty line count of a text file (0 when missing/unreadable) — the admissions-total floor source. */
+function countNonEmptyLines(path: string): number {
+  try {
+    return readFileSync(path, "utf-8").split("\n").filter((l) => l.trim().length > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
 function loadAdmissions(): Admissions {
   const path = receiptPath();
   const stat = statFacts(path);
   const memo = admissionsByPath.get(path);
   if (stat !== null && memo !== undefined && statMatches(memo.stat, stat)) return memo.admissions;
   const admissions = parseAdmissions(path);
+  // Total floor (independent-review confirmation): the record-keys file is
+  // append-on-admit only (dedup retries append nothing), so its non-empty
+  // line count is a durable lower bound on total admissions that survives a
+  // receipt-append failure after a restart — receipts alone can undercount
+  // what actually hit disk. Per-installation counts cannot be repaired this
+  // way (keys are un-attributable hashes); the total cap backstops them.
+  const keysLineCount = countNonEmptyLines(recordKeysPath());
+  if (keysLineCount > admissions.total) admissions.total = keysLineCount;
   if (stat !== null) admissionsByPath.set(path, { stat, admissions });
   else admissionsByPath.delete(path);
   return admissions;
@@ -538,14 +555,22 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
       503,
     );
   }
+  // Accounting state is declared OUTSIDE the try so the finally below can
+  // keep the in-memory caps correct even when the receipt append fails after
+  // data + keys persisted (independent-review confirmation): `quarantined`
+  // counts only records whose quarantine AND key appends both succeeded, so
+  // finally-accounting charges exactly what hit disk.
+  let admissions: ReturnType<typeof loadAdmissions> | null = null;
+  let knownKeys: ReturnType<typeof loadRecordKeys> | null = null;
+  let quarantinedCount = 0;
   try {
   // Admission caps (Ticket 19): bound per-installation and total volume. The
   // conservative estimate (records.length new admissions) is used so a payload
   // that would exceed a cap is rejected whole rather than partially stored.
   // Ticket 22: admissions come from the stat-validated in-memory accounting
   // (loadAdmissions above) — same numbers the per-POST receipts re-parse
-  // produced, updated on admit at the bottom of this function.
-  const admissions = loadAdmissions();
+  // produced, updated on admit in the finally below.
+  admissions = loadAdmissions();
   const perInstallationCap = maxRecordsPerInstallation();
   const alreadyAdmitted = admissions.byInstallation.get(installationId) ?? 0;
   if (alreadyAdmitted + records.length > perInstallationCap) {
@@ -566,7 +591,7 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   // Ticket 22: the in-memory (stat-validated) key set — O(1) set lookups per
   // record instead of a full-file re-parse per POST. Mutated on admit below;
   // refreshRecordKeysMemo() re-syncs the stat afterwards.
-  const knownKeys = loadRecordKeys();
+  knownKeys = loadRecordKeys();
   // Always 0 while every receive path is untrusted — the merge store
   // (telemetry-records.jsonl) receives nothing until a trusted source
   // exists. Kept as a mutable accumulator so a future trusted path can
@@ -618,6 +643,7 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
     appendFileSync(recordKeysPath(), `${key}\n`, "utf-8");
     knownKeys.add(key);
     quarantined += 1;
+    quarantinedCount = quarantined;
   }
 
   const receipt: TelemetryReceipt = {
@@ -631,23 +657,22 @@ export function receiveTelemetry(rawBody: string, signature: string | undefined)
   };
   appendFileSync(receiptPath(), `${JSON.stringify(receipt)}\n`, "utf-8");
 
-  // Ticket 22: keep the in-memory accounting consistent with the files this
-  // receive just appended — the caps on the NEXT receive are computed from
-  // this same object, so they stay exactly as tight as the receipts re-parse
-  // made them (conservative whole-payload rejection included).
-  const admittedThisReceive = accepted + quarantined;
-  if (admittedThisReceive > 0) {
-    admissions.total += admittedThisReceive;
-    admissions.byInstallation.set(
-      installationId,
-      (admissions.byInstallation.get(installationId) ?? 0) + admittedThisReceive,
-    );
-  }
-  refreshRecordKeysMemo(knownKeys);
-  refreshAdmissionsMemo(admissions);
-
   return { ok: true, status: 200, accepted, deduplicated, quarantined };
   } finally {
+    // Accounting lives in the finally so a failed RECEIPT append (after data
+    // + keys already persisted) still charges the caps for what hit disk —
+    // the running process never undercounts its own admissions. Post-restart
+    // totals are additionally floored by the key-file line count in
+    // loadAdmissions (keys are append-on-admit only).
+    if (admissions !== null && quarantinedCount > 0) {
+      admissions.total += quarantinedCount;
+      admissions.byInstallation.set(
+        installationId,
+        (admissions.byInstallation.get(installationId) ?? 0) + quarantinedCount,
+      );
+    }
+    if (knownKeys !== null) refreshRecordKeysMemo(knownKeys);
+    if (admissions !== null) refreshAdmissionsMemo(admissions);
     releaseExclusiveFileLock(admissionLock.lockPath, admissionLock.token);
   }
 }

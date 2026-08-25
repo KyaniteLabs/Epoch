@@ -12,7 +12,7 @@ import {
   convertTimezone,
   parseDuration,
 } from "../lib/temporal.js";
-import { addBusinessDays, countBusinessDays } from "../lib/calendar.js";
+import { addBusinessDays, countBusinessDays, holidayRegistry } from "../lib/calendar.js";
 import { dispatchTimeMath } from "../lib/internal/time-math-dispatch.js";
 import {
   pertEstimate,
@@ -129,7 +129,8 @@ const addBusinessDaysSchema = z.object({
   days: businessDaysOffset,
   country: z
     .string()
-    .describe("ISO-3166-1-alpha-2 country code for holiday calendar.")
+    .regex(/^[A-Za-z]{2}$/, { error: "country must be a 2-letter ISO-3166-1-alpha-2 code (e.g. US, UK, DE) — got \"USA\"-style and other malformed codes are rejected rather than silently counting weekends-only." })
+    .describe("ISO-3166-1-alpha-2 country code for holiday calendar. Supported holiday sets: US, UK, FR, DE, JP; other valid 2-letter codes fall back to weekend-only counting and say so in holidaySupport.")
     .default("US"),
 });
 
@@ -142,7 +143,8 @@ const countBusinessDaysSchema = z.object({
     .describe("ISO date string for the end date."),
   country: z
     .string()
-    .describe("ISO-3166-1-alpha-2 country code for holiday calendar.")
+    .regex(/^[A-Za-z]{2}$/, { error: "country must be a 2-letter ISO-3166-1-alpha-2 code (e.g. US, UK, DE) — got \"USA\"-style and other malformed codes are rejected rather than silently counting weekends-only." })
+    .describe("ISO-3166-1-alpha-2 country code for holiday calendar. Supported holiday sets: US, UK, FR, DE, JP; other valid 2-letter codes fall back to weekend-only counting and say so in holidaySupport.")
     .default("US"),
 });
 
@@ -179,6 +181,7 @@ const businessDayOutput = {
     businessDays: { type: "number", description: "Number of business days" },
     countryCode: { type: "string", description: "ISO-3166 country code" },
     calendarVersion: { type: "string", description: "Holiday-table version stamp (CALENDAR_VERSION) used for the computation" },
+    holidaySupport: { type: "string", enum: ["holiday_calendar", "weekends_only"], description: "\"weekends_only\" when the country code is valid 2-letter ISO but has no bundled holiday set (US/UK/FR/DE/JP do) — the count then excludes weekends only. Never silent: the fallback is named in the output." },
     humanReadable: { type: "string", description: "Human-readable summary" },
   },
 } satisfies Record<string, unknown>;
@@ -552,7 +555,12 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     businessDayOutput,
     (input) => {
       const p = addBusinessDaysSchema.parse(input);
-      return addBusinessDays(p.start_date, p.days, p.country);
+      // holidaySupport names the weekends-only fallback instead of letting a
+      // valid-but-unsupported country silently return weekend-only counts.
+      // The lib returns a {ok, data} envelope — merge into data, not beside it.
+      const result = addBusinessDays(p.start_date, p.days, p.country);
+      if (!result.ok) return result;
+      return { ok: true as const, data: { ...result.data, holidaySupport: holidayRegistry.hasCountry(p.country) ? "holiday_calendar" : "weekends_only" } };
     },
   ),
 
@@ -566,7 +574,12 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     businessDayOutput,
     (input) => {
       const p = countBusinessDaysSchema.parse(input);
-      return countBusinessDays(p.start_date, p.end_date, p.country);
+      // holidaySupport names the weekends-only fallback instead of letting a
+      // valid-but-unsupported country silently return weekend-only counts.
+      // The lib returns a {ok, data} envelope — merge into data, not beside it.
+      const result = countBusinessDays(p.start_date, p.end_date, p.country);
+      if (!result.ok) return result;
+      return { ok: true as const, data: { ...result.data, holidaySupport: holidayRegistry.hasCountry(p.country) ? "holiday_calendar" : "weekends_only" } };
     },
   ),
 

@@ -512,3 +512,64 @@ describe("isRatioConsistent (shared with self-improve)", () => {
     expect(isRatioConsistent(0, 5, 1)).toBe(false);
   });
 });
+
+describe("receipt-append failure accounting (independent-review confirmation)", () => {
+  const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+
+  function payloadWithDate(date: string): { rawBody: string; signature: string } {
+    const p: Record<string, unknown> = {
+      schema_version: 1,
+      installation_id: "receipt-failure-installation",
+      epoch_version: "0.5.0-test",
+      records: [
+        { task_type: "feature", complexity: 3, tool: "reference_class_estimate", estimated_hours: 4, actual_hours: 5, ratio: 1.25, date },
+      ],
+      generated_at: "2026-08-25T00:00:00.000Z",
+    };
+    const rawBody = JSON.stringify(p);
+    return { rawBody, signature: createHmac("sha256", p.installation_id as string).update(rawBody).digest("hex") };
+  }
+
+  it.skipIf(isRoot)(
+    "a receipt-append failure still charges the caps in-process, and a restart floors the total at the key count",
+    async () => {
+      const { receiveTelemetry } = await import("./telemetry-receiver.js");
+      const { chmodSync } = await import("node:fs");
+      process.env["EPOCH_TELEMETRY_RECEIVER_MAX_TOTAL"] = "2";
+      const receipts = join(TEST_DIR, "telemetry-receipts.jsonl");
+
+      // Healthy receive installs the admissions memo (total = 1).
+      const a = payloadWithDate("2026-07-01");
+      expect(receiveTelemetry(a.rawBody, a.signature)).toMatchObject({ ok: true, quarantined: 1 });
+
+      // Receipt append now fails while the memo stat stays valid (chmod
+      // preserves size/mtime/ino) — data + key appends still succeed.
+      chmodSync(receipts, 0o444);
+      const b = payloadWithDate("2026-07-02");
+      expect(() => receiveTelemetry(b.rawBody, b.signature)).toThrow(); // receipt EACCES after quarantine+key persisted
+      chmodSync(receipts, 0o644);
+      const quarantine = readFileSync(join(TEST_DIR, "telemetry-quarantine.jsonl"), "utf-8").trim().split("\n");
+      expect(quarantine).toHaveLength(2);
+      const keyLines = readFileSync(join(TEST_DIR, "telemetry-record-keys.jsonl"), "utf-8").trim().split("\n");
+      expect(keyLines).toHaveLength(2);
+
+      // SAME process: the persisted record is cap-counted -> a payload that
+      // would make 3 is rejected whole (before the fix, total stayed 1).
+      const c = payloadWithDate("2026-07-03");
+      expect(receiveTelemetry(c.rawBody, c.signature)).toMatchObject({ ok: false, status: 400 });
+      const cAgain = receiveTelemetry(c.rawBody, c.signature) as { error?: string };
+      expect(cAgain.error ?? "").toMatch(/total record cap exceeded/);
+
+      // Simulated restart: fresh modules -> fresh memos. Receipts say total=1,
+      // keys say 2 -> the floor keeps the cap enforced.
+      const { vi } = await import("vitest");
+      vi.resetModules();
+      const fresh = await import("./telemetry-receiver.js");
+      const d = payloadWithDate("2026-07-04");
+      const dResult = fresh.receiveTelemetry(d.rawBody, d.signature) as { ok: boolean; status: number; error?: string };
+      expect(dResult.ok).toBe(false);
+      expect(dResult.status).toBe(400);
+      expect(dResult.error ?? "").toMatch(/total record cap exceeded/);
+    },
+  );
+});

@@ -412,3 +412,28 @@ describe("input safety bounds (W1)", () => {
     }
   });
 });
+
+describe("business-day country contract (ultraqa E2 findings)", () => {
+  it("rejects malformed country codes (USA-style) with readable validation instead of silently counting weekends-only", async () => {
+    const { dispatch } = await import("./index.js");
+    const result = await dispatch("count_business_days", { start_date: "2026-01-01", end_date: "2026-01-31", country: "USA" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect((result.error as { errorKind?: string }).errorKind).toBe("validation");
+      expect(result.error.message).toMatch(/2-letter ISO-3166/);
+    }
+  });
+
+  it("names the weekends-only fallback via holidaySupport instead of returning it silently", async () => {
+    const { dispatch } = await import("./index.js");
+    const es = await dispatch("count_business_days", { start_date: "2026-01-01", end_date: "2026-01-31", country: "ES" });
+    expect(es.ok).toBe(true);
+    if (es.ok) expect((es.data as { holidaySupport: string }).holidaySupport).toBe("weekends_only");
+    const us = await dispatch("count_business_days", { start_date: "2026-01-01", end_date: "2026-01-31", country: "US" });
+    expect(us.ok).toBe(true);
+    if (us.ok) expect((us.data as { holidaySupport: string }).holidaySupport).toBe("holiday_calendar");
+    const add = await dispatch("add_business_days", { start_date: "2026-08-25", days: 3, country: "PT" });
+    expect(add.ok).toBe(true);
+    if (add.ok) expect((add.data as { holidaySupport: string }).holidaySupport).toBe("weekends_only");
+  });
+});
