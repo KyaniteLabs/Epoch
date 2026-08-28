@@ -181,6 +181,7 @@ Output: {
   endDate: "2026-05-08",
   businessDays: 5,
   countryCode: "US",
+  holidaySupport: "holiday_calendar",
   humanReadable: "5 business days from 2026-05-01 to 2026-05-08 (US)."
 }
 ```
@@ -194,9 +195,12 @@ Output: {
   endDate: "2026-05-15",
   businessDays: 10,
   countryCode: "US",
+  holidaySupport: "holiday_calendar",
   humanReadable: "10 business days between 2026-05-01 and 2026-05-15 (US)."
 }
 ```
+
+Both tools always include `holidaySupport` (`"holiday_calendar"` when the country has a bundled holiday set — US/UK/FR/DE/JP — otherwise `"weekends_only"`) in successful output; `country` must match `^[A-Za-z]{2}$` — "USA"-style codes are rejected with a readable error.
 
 ### Layer 3 -- Estimation
 
