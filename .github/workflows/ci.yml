@@ -67,6 +67,9 @@ jobs:
       - name: Verify reference database
         run: node scripts/verify-reference-db.mjs
 
+      - name: Check llms-full contract (holidaySupport + two-letter country note)
+        run: pnpm run contract:llms-full
+
   secret-scan:
     name: Secret scanning
     runs-on: ubuntu-latest
