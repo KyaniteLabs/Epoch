@@ -98,7 +98,7 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.0",
     "@vitest/coverage-v8": "^4.1.8",
-    "eslint": "^10.3.0",
+    "eslint": "^10.9.1",
     "tsup": "^8.4.0",
     "tsx": "^4.19.0",
     "typescript": "^6.0.0",
