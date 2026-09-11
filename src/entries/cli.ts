@@ -56,6 +56,44 @@ function parsePortArg(value: string): number {
 	return n;
 }
 
+/**
+ * Parse --window-start/--window-end for `epoch auto-actuals`: epoch
+ * milliseconds or an ISO timestamp. Both flags are optional but must be
+ * given together; the window only powers the unstamped-estimate fallback
+ * selection and never relaxes the sanity gates.
+ */
+function parseAutoActualsWindow(
+	start: string | undefined,
+	end: string | undefined,
+): { startMs: number; endMs: number } | undefined {
+	if (start === undefined && end === undefined) return undefined;
+	if (start === undefined || end === undefined) {
+		process.stderr.write(
+			"Error: --window-start and --window-end must be given together\n",
+		);
+		process.exit(1);
+	}
+	const toMs = (raw: string, flagName: string): number => {
+		const ms = /^\d+$/.test(raw) ? Number(raw) : Date.parse(raw);
+		if (!Number.isFinite(ms)) {
+			process.stderr.write(
+				`Error: --${flagName} must be epoch milliseconds or an ISO timestamp, got "${raw}"\n`,
+			);
+			process.exit(1);
+		}
+		return ms;
+	};
+	const startMs = toMs(start, "window-start");
+	const endMs = toMs(end, "window-end");
+	if (endMs < startMs) {
+		process.stderr.write(
+			"Error: --window-end must not be earlier than --window-start\n",
+		);
+		process.exit(1);
+	}
+	return { startMs, endMs };
+}
+
 /** Resolve output format from root options, applying --pretty override. */
 function resolveFormat(rootOpts: Record<string, unknown>): "json" | "table" {
 	if (rootOpts.pretty === true) return "table";
@@ -837,12 +875,21 @@ export function createCliProgram(): Command {
 		)
 		.requiredOption("--session <id>", "Session identifier to match pending estimates against")
 		.option("--dry-run", "Preview what would be recorded without writing", false)
+		.option(
+			"--window-start <ts>",
+			"Fallback window start (epoch ms or ISO): when the session_id join is empty, select pending estimates with no session_id whose estimatedAt falls in the window",
+		)
+		.option(
+			"--window-end <ts>",
+			"Fallback window end (epoch ms or ISO); must be given together with --window-start",
+		)
 		.action(async (opts, cmd) => {
 			const rootOpts = getRootOpts(cmd);
 			const format = resolveFormat(rootOpts);
 			const quiet = isQuiet(rootOpts);
+			const window = parseAutoActualsWindow(opts.windowStart, opts.windowEnd);
 			const { runAutoActuals } = await import("../lib/auto-actuals.js");
-			const result = runAutoActuals(opts.session, opts.dryRun === true);
+			const result = runAutoActuals(opts.session, opts.dryRun === true, new Date(), window);
 
 			// Standard CLI result contract (ticket 10): one output document,
 			// --format/--quiet honored, and a non-zero exit when any entry was

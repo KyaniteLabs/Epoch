@@ -669,6 +669,7 @@ describe("CLI tests", () => {
 				sessionId: "sess-1",
 				dryRun: false,
 				candidates: 2,
+				windowFallback: false,
 				recorded: [{ estimateId: "est-1", wallClockHours: 2.5 }],
 				skipped: [],
 				summary: "auto-actuals: session sess-1 -- 1 actual(s) recorded, 0 skipped (of 2 candidates).",
@@ -692,7 +693,7 @@ describe("CLI tests", () => {
 			expect(capture.stdout.join("")).toBe(
 				JSON.stringify({ ok: true, data: result }, null, 2) + "\n",
 			);
-			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", false);
+			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", false, expect.any(Date), undefined);
 		});
 
 		it("forwards --dry-run", async () => {
@@ -707,7 +708,7 @@ describe("CLI tests", () => {
 				"--dry-run",
 			]);
 
-			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", true);
+			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", true, expect.any(Date), undefined);
 			expect(capture.exitCode).toBe(0);
 		});
 

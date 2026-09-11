@@ -180,6 +180,58 @@ describe("runAutoActuals — real filesystem e2e", () => {
     expect(result).toMatchObject({ sessionId: "sess-empty", candidates: 0, recorded: [], skipped: [] });
   });
 
+  it("window fallback: with an empty session_id join, selects unstamped pending estimates inside the window under the same sanity gates", async () => {
+    const { runAutoActuals } = await import("./auto-actuals.js");
+    const now = new Date("2026-07-10T12:00:00.000Z");
+
+    writeEstimates([
+      // No session_id stamp anywhere — the session_id join yields zero candidates.
+      { id: "est-win", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { totalHours: 5 }, estimatedAt: isoHoursAgo(2, now) },
+      { id: "est-fresh", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { totalHours: 5 }, estimatedAt: isoHoursAgo(0.01, now) }, // 36s old — below the sanity lower bound
+    ]);
+
+    const result = runAutoActuals("sess-unstamped", false, now, {
+      startMs: now.getTime() - 3 * 3_600_000,
+      endMs: now.getTime(),
+    });
+
+    expect(result.windowFallback).toBe(true);
+    expect(result.candidates).toBe(2);
+    expect(result.recorded.map((r) => r.estimateId)).toEqual(["est-win"]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toMatchObject({ estimateId: "est-fresh", reason: "auto_wallclock_out_of_bounds" });
+    expect(result.summary).toContain("window");
+    const actuals = readActuals();
+    expect(actuals).toHaveLength(1);
+    expect(actuals.map((a) => a["estimateId"])).toEqual(["est-win"]);
+  });
+
+  it("window fallback never poaches session-stamped estimates and is ignored while the join has candidates", async () => {
+    const { runAutoActuals } = await import("./auto-actuals.js");
+    const now = new Date("2026-07-10T12:00:00.000Z");
+    const window = { startMs: now.getTime() - 3 * 3_600_000, endMs: now.getTime() };
+
+    writeEstimates([
+      { id: "est-stamped", tool: "pert_estimate", inputs: { session_id: "sess-OTHER", task_type: "feature" }, outputs: { totalHours: 5 }, estimatedAt: isoHoursAgo(2, now) },
+    ]);
+
+    // A session-stamped estimate belongs to its own session's join — never
+    // selected by another session's window fallback.
+    const poached = runAutoActuals("sess-unstamped", false, now, window);
+    expect(poached).toMatchObject({ candidates: 0, windowFallback: true, recorded: [], skipped: [] });
+    expect(readActuals()).toEqual([]);
+
+    // While the join has candidates the window is irrelevant (fallback off,
+    // gates unchanged).
+    writeEstimates([
+      { id: "est-joined", tool: "pert_estimate", inputs: { session_id: "sess-1", task_type: "feature" }, outputs: { totalHours: 5 }, estimatedAt: isoHoursAgo(2, now) },
+    ]);
+    const joined = runAutoActuals("sess-1", false, now, window);
+    expect(joined.windowFallback).toBe(false);
+    expect(joined.candidates).toBe(1);
+    expect(joined.recorded.map((r) => r.estimateId)).toEqual(["est-joined"]);
+  });
+
   it("never touches the live ~/.epoch data dir (isolated by EPOCH_DATA_DIR)", async () => {
     const { dataDir } = await import("./ledger.js");
     expect(dataDir()).toBe(TEST_DIR);
