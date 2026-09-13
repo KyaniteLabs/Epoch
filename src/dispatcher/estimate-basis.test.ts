@@ -232,7 +232,9 @@ describe("reference_class_estimate — displayed == recorded (ticket 11)", () =>
 
     const corrected = data["correctedEstimate"] as number;
     const adjusted = data["adjustedEstimate"] as number;
-    expect(adjusted).toBeCloseTo(corrected * 1.8, 1);
+    const raw = data["rawEstimate"] as number;
+    expect(adjusted).toBeCloseTo(raw * 1.8, 1);
+    expect(adjusted).not.toBeCloseTo(corrected * 1.8, 1);
     expect(adjusted).not.toBe(corrected);
 
     // Interval endpoints == quantiles × the SAME value the ledger records.
