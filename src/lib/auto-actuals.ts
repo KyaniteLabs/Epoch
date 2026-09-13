@@ -32,7 +32,7 @@
 // inside the window. The window only widens SELECTION — every candidate,
 // joined or fallback, goes through the exact same sanity gates below.
 
-import { getPendingEstimates, recordActualDetailed, extractEstimatedHours } from "./feedback.js";
+import { getPendingEstimates, hasEstimateForSession, recordActualDetailed, extractEstimatedHours } from "./feedback.js";
 import { isAutoWallclockSane, AUTO_WALLCLOCK_MIN_HOURS, AUTO_WALLCLOCK_MAX_HOURS } from "./exclusion.js";
 
 /** Note persisted on every actual this module records. */
@@ -101,7 +101,7 @@ export function runAutoActuals(
   // never poached by another session's window.
   let candidates = sessionJoined;
   let windowFallback = false;
-  if (candidates.length === 0 && window) {
+  if (candidates.length === 0 && window && !hasEstimateForSession(sessionId)) {
     windowFallback = true;
     candidates = pending.filter((e) => {
       if (sessionIdOf(e) !== undefined) return false;

@@ -232,6 +232,25 @@ describe("runAutoActuals — real filesystem e2e", () => {
     expect(joined.recorded.map((r) => r.estimateId)).toEqual(["est-joined"]);
   });
 
+  it("does not switch to window fallback after a matching session estimate was finalized", async () => {
+    const { runAutoActuals } = await import("./auto-actuals.js");
+    const now = new Date("2026-07-10T12:00:00.000Z");
+    const window = { startMs: now.getTime() - 3 * 3_600_000, endMs: now.getTime() };
+
+    writeEstimates([
+      { id: "est-session", tool: "pert_estimate", inputs: { session_id: "sess-1", task_type: "feature" }, outputs: { totalHours: 5 }, estimatedAt: isoHoursAgo(2, now) },
+      { id: "est-unstamped", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { totalHours: 5 }, estimatedAt: isoHoursAgo(1, now) },
+    ]);
+
+    const first = runAutoActuals("sess-1", false, now, window);
+    expect(first).toMatchObject({ windowFallback: false, candidates: 1 });
+    expect(first.recorded.map((r) => r.estimateId)).toEqual(["est-session"]);
+
+    const second = runAutoActuals("sess-1", false, now, window);
+    expect(second).toMatchObject({ windowFallback: false, candidates: 0, recorded: [], skipped: [] });
+    expect(readActuals().map((a) => a["estimateId"])).toEqual(["est-session"]);
+  });
+
   it("never touches the live ~/.epoch data dir (isolated by EPOCH_DATA_DIR)", async () => {
     const { dataDir } = await import("./ledger.js");
     expect(dataDir()).toBe(TEST_DIR);

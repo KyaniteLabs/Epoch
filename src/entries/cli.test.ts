@@ -712,6 +712,77 @@ describe("CLI tests", () => {
 			expect(capture.exitCode).toBe(0);
 		});
 
+		it("parses and forwards a paired auto-actuals window", async () => {
+			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(
+				mockAutoActualsResult({}),
+			);
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+				"--window-start",
+				"2026-07-10T09:00:00.000Z",
+				"--window-end",
+				"1783677600000",
+			]);
+
+			expect(capture.exitCode).toBe(0);
+			expect(runAutoActuals).toHaveBeenCalledWith("sess-1", false, expect.any(Date), {
+				startMs: Date.parse("2026-07-10T09:00:00.000Z"),
+				endMs: 1783677600000,
+			});
+		});
+
+		it("rejects an unpaired auto-actuals window", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+				"--window-start",
+				"2026-07-10T09:00:00.000Z",
+			]);
+
+			expect(capture.exitCode).toBe(1);
+			expect(capture.stderr.join("")).toContain("must be given together");
+			expect(runAutoActuals).not.toHaveBeenCalled();
+		});
+
+		it("rejects an invalid auto-actuals window timestamp", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+				"--window-start",
+				"not-a-timestamp",
+				"--window-end",
+				"2026-07-10T12:00:00.000Z",
+			]);
+
+			expect(capture.exitCode).toBe(1);
+			expect(capture.stderr.join("")).toContain("epoch milliseconds or an ISO timestamp");
+			expect(runAutoActuals).not.toHaveBeenCalled();
+		});
+
+		it("rejects an auto-actuals window whose end precedes its start", async () => {
+			const program = createCliProgram();
+			const capture = await runWithCapture(program, [
+				"auto-actuals",
+				"--session",
+				"sess-1",
+				"--window-start",
+				"2026-07-10T12:00:00.000Z",
+				"--window-end",
+				"2026-07-10T09:00:00.000Z",
+			]);
+
+			expect(capture.exitCode).toBe(1);
+			expect(capture.stderr.join("")).toContain("must not be earlier");
+			expect(runAutoActuals).not.toHaveBeenCalled();
+		});
+
 		it("exits 2 with the error envelope on stderr when entries were skipped with write_failed", async () => {
 			(runAutoActuals as ReturnType<typeof vi.fn>).mockReturnValue(
 				mockAutoActualsResult({

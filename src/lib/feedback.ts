@@ -606,6 +606,18 @@ export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasAct
     .slice(-limit);
 }
 
+/**
+ * Whether the durable estimates ledger contains any exact session match.
+ * Unlike getPendingEstimates(), this intentionally includes finalized and
+ * expired rows: auto-actuals must not reinterpret a repeated session run as a
+ * window-only session after its matching estimates receive actuals.
+ */
+export function hasEstimateForSession(sessionId: string): boolean {
+  return readLines<EstimateRecord>(ESTIMATES_FILE).some(
+    (estimate) => stringField(estimate.inputs?.["session_id"]) === sessionId,
+  );
+}
+
 export function getCalibrationData(
   teamId?: string,
   taskType?: TaskType,
