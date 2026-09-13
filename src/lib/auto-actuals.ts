@@ -22,8 +22,17 @@
 // CLI entry point: `epoch auto-actuals --session <id> [--dry-run]`
 // (src/entries/cli.ts). Not an MCP tool — session_id is minted by the
 // calling agent/hook (e.g. a SessionEnd hook), not self-reported by an LLM.
+//
+// Window fallback (CEO telemetry fix 2026-09-10): in practice no writer
+// stamps session_id on estimate inputs, so the join below yields zero
+// candidates and the loop starves. When the caller can pass the session's
+// real time span (--window-start/--window-end, e.g. transcript birth time →
+// now from the Stop hook), and the session_id join is empty, selection falls
+// back to pending estimates with NO session_id stamp whose estimatedAt lies
+// inside the window. The window only widens SELECTION — every candidate,
+// joined or fallback, goes through the exact same sanity gates below.
 
-import { getPendingEstimates, recordActualDetailed, extractEstimatedHours } from "./feedback.js";
+import { getPendingEstimates, hasEstimateForSession, recordActualDetailed, extractEstimatedHours } from "./feedback.js";
 import { isAutoWallclockSane, AUTO_WALLCLOCK_MIN_HOURS, AUTO_WALLCLOCK_MAX_HOURS } from "./exclusion.js";
 
 /** Note persisted on every actual this module records. */
@@ -48,11 +57,19 @@ export interface AutoActualsRecorded {
 export interface AutoActualsResult {
   readonly sessionId: string;
   readonly dryRun: boolean;
-  /** Pending estimates matched to this session_id before the sanity gate. */
+  /** Pending estimates matched before the sanity gate (session_id join, or the window fallback when it engaged). */
   readonly candidates: number;
+  /** True when the session_id join was empty and --window-start/--window-end fallback selection engaged. */
+  readonly windowFallback: boolean;
   readonly recorded: readonly AutoActualsRecorded[];
   readonly skipped: readonly AutoActualsSkip[];
   readonly summary: string;
+}
+
+/** Explicit time window (epoch ms) powering the unstamped-estimate fallback selection. */
+export interface AutoActualsWindow {
+  readonly startMs: number;
+  readonly endMs: number;
 }
 
 function sessionIdOf(estimate: { inputs: Record<string, unknown> }): string | undefined {
@@ -69,9 +86,29 @@ function sessionIdOf(estimate: { inputs: Record<string, unknown> }): string | un
  * after a successful run is a no-op (candidates recomputed as 0 for those
  * ids).
  */
-export function runAutoActuals(sessionId: string, dryRun = false, now: Date = new Date()): AutoActualsResult {
+export function runAutoActuals(
+  sessionId: string,
+  dryRun = false,
+  now: Date = new Date(),
+  window?: AutoActualsWindow,
+): AutoActualsResult {
   const pending = getPendingEstimates(PENDING_FETCH_LIMIT);
-  const candidates = pending.filter((e) => sessionIdOf(e) === sessionId);
+  const sessionJoined = pending.filter((e) => sessionIdOf(e) === sessionId);
+
+  // Fallback only when the join is empty AND an explicit window was given:
+  // unstamped estimates (session_id absent) whose estimatedAt falls inside
+  // the window. Session-stamped estimates always belong to their own join —
+  // never poached by another session's window.
+  let candidates = sessionJoined;
+  let windowFallback = false;
+  if (candidates.length === 0 && window && !hasEstimateForSession(sessionId)) {
+    windowFallback = true;
+    candidates = pending.filter((e) => {
+      if (sessionIdOf(e) !== undefined) return false;
+      const estimatedAtMs = Date.parse(e.estimatedAt);
+      return Number.isFinite(estimatedAtMs) && estimatedAtMs >= window.startMs && estimatedAtMs <= window.endMs;
+    });
+  }
 
   const recorded: AutoActualsRecorded[] = [];
   const skipped: AutoActualsSkip[] = [];
@@ -114,7 +151,8 @@ export function runAutoActuals(sessionId: string, dryRun = false, now: Date = ne
   const verb = dryRun ? "would record" : "recorded";
   const summary =
     `auto-actuals: session ${sessionId} -- ${recorded.length} actual(s) ${verb}, ${skipped.length} skipped ` +
-    `(of ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}), sanity bounds [${AUTO_WALLCLOCK_MIN_HOURS}h, ${AUTO_WALLCLOCK_MAX_HOURS}h].`;
+    `(of ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}), sanity bounds [${AUTO_WALLCLOCK_MIN_HOURS}h, ${AUTO_WALLCLOCK_MAX_HOURS}h].` +
+    (windowFallback ? " session_id join was empty; fell back to unstamped estimates inside --window-start/--window-end." : "");
 
-  return { sessionId, dryRun, candidates: candidates.length, recorded, skipped, summary };
+  return { sessionId, dryRun, candidates: candidates.length, windowFallback, recorded, skipped, summary };
 }

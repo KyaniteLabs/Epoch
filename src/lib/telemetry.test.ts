@@ -296,11 +296,14 @@ describe("getStats", () => {
   // -------------------------------------------------------------------------
 
   it("aggregates only records strictly newer than the per-tool watermark and attaches newestTimestamp", () => {
+    const t1 = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    const t2 = new Date(Date.now() - 9 * 86_400_000).toISOString();
+    const t3 = new Date(Date.now() - 1 * 86_400_000).toISOString();
     const records = [
-      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: "2026-06-01T00:00:00.000Z" }),
-      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: "2026-06-02T00:00:00.000Z" }),
-      makeRecord({ tool: "tool-a", elapsedMs: 300, timestamp: "2026-06-10T00:00:00.000Z" }),
-      makeRecord({ tool: "tool-b", elapsedMs: 50, timestamp: "2026-06-02T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: t1 }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: t2 }),
+      makeRecord({ tool: "tool-a", elapsedMs: 300, timestamp: t3 }),
+      makeRecord({ tool: "tool-b", elapsedMs: 50, timestamp: t2 }),
     ];
     mockReadFileSync.mockReturnValue(makeRecordsJson(records));
     const store = getTelemetry();
@@ -309,33 +312,36 @@ describe("getStats", () => {
     // (<= watermark), only T3 is a delta. tool-b watermark predates its only
     // record, so that record is a delta.
     const stats = store.getStats(undefined, 90, {
-      "tool-a": "2026-06-02T00:00:00.000Z",
-      "tool-b": "2026-06-01T00:00:00.000Z",
+      "tool-a": t2,
+      "tool-b": t1,
     });
 
     expect(stats).toHaveLength(2);
     const a = defined(stats.find((s) => s.tool === "tool-a"));
     expect(a.callCount).toBe(1);
     expect(a.p50Ms).toBe(300);
-    expect(a.newestTimestamp).toBe("2026-06-10T00:00:00.000Z");
+    expect(a.newestTimestamp).toBe(t3);
     const b = defined(stats.find((s) => s.tool === "tool-b"));
     expect(b.callCount).toBe(1);
-    expect(b.newestTimestamp).toBe("2026-06-02T00:00:00.000Z");
+    expect(b.newestTimestamp).toBe(t2);
   });
 
   it("omits tools whose records are all at or before their watermark (zero delta)", () => {
+    const t1 = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    const t2 = new Date(Date.now() - 9 * 86_400_000).toISOString();
+    const t3 = new Date(Date.now() - 6 * 86_400_000).toISOString();
     const records = [
-      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: "2026-06-01T00:00:00.000Z" }),
-      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: "2026-06-02T00:00:00.000Z" }),
-      makeRecord({ tool: "tool-b", elapsedMs: 50, timestamp: "2026-06-05T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: t1 }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: t2 }),
+      makeRecord({ tool: "tool-b", elapsedMs: 50, timestamp: t3 }),
     ];
     mockReadFileSync.mockReturnValue(makeRecordsJson(records));
     const store = getTelemetry();
 
     // tool-a is fully watermarked (newest record == watermark); tool-b is not.
     const stats = store.getStats(undefined, 90, {
-      "tool-a": "2026-06-02T00:00:00.000Z",
-      "tool-b": "2026-06-01T00:00:00.000Z",
+      "tool-a": t2,
+      "tool-b": t1,
     });
 
     expect(stats).toHaveLength(1);
@@ -343,20 +349,22 @@ describe("getStats", () => {
   });
 
   it("treats tools absent from sinceByTool as unwatermarked (full window)", () => {
+    const t1 = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    const t2 = new Date(Date.now() - 9 * 86_400_000).toISOString();
     const records = [
-      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: "2026-06-01T00:00:00.000Z" }),
-      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: "2026-06-02T00:00:00.000Z" }),
+      makeRecord({ tool: "tool-a", elapsedMs: 100, timestamp: t1 }),
+      makeRecord({ tool: "tool-a", elapsedMs: 200, timestamp: t2 }),
     ];
     mockReadFileSync.mockReturnValue(makeRecordsJson(records));
     const store = getTelemetry();
 
     // Only tool-b is watermarked; tool-a has no entry and keeps all records.
-    const stats = store.getStats(undefined, 90, { "tool-b": "2026-06-02T00:00:00.000Z" });
+    const stats = store.getStats(undefined, 90, { "tool-b": t2 });
 
     expect(stats).toHaveLength(1);
     expect(defined(stats[0]).tool).toBe("tool-a");
     expect(defined(stats[0]).callCount).toBe(2);
-    expect(defined(stats[0]).newestTimestamp).toBe("2026-06-02T00:00:00.000Z");
+    expect(defined(stats[0]).newestTimestamp).toBe(t2);
   });
 
   it("does not attach newestTimestamp or change output when sinceByTool is absent", () => {
