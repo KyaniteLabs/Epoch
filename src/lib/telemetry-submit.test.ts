@@ -14,6 +14,11 @@ beforeEach(() => {
 	process.env["EPOCH_DATA_DIR"] = TEST_DIR;
 	delete process.env["EPOCH_TELEMETRY"];
 	delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
+	// Set by the fleet-bypass / ticket-19 cases further down; under a shuffled
+	// within-file order they can precede the rate-limit case, whose assertion
+	// silently depends on their absence.
+	delete process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"];
+	delete process.env["EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS"];
 });
 
 afterEach(() => {
@@ -21,6 +26,8 @@ afterEach(() => {
 	delete process.env["EPOCH_DATA_DIR"];
 	delete process.env["EPOCH_TELEMETRY"];
 	delete process.env["EPOCH_TELEMETRY_ENDPOINT"];
+	delete process.env["EPOCH_TELEMETRY_SUBMIT_FORCE"];
+	delete process.env["EPOCH_TELEMETRY_SUBMIT_INTERVAL_HOURS"];
 	rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
