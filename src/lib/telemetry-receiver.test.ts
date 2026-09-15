@@ -400,11 +400,15 @@ describe("receiveTelemetry", () => {
     const keyPath = join(TEST_DIR, "telemetry-record-keys.jsonl");
     const { rawBody, signature } = signedPayload({ installation_id: "memo-install" });
 
+    // The parse counter is cumulative per path and never reset, and every
+    // test in this file shares TEST_DIR — earlier tests may already have
+    // parsed that file. Assert the DELTA this test causes, not an absolute.
+    const parsesBefore = getReceiverRecordKeyParseCounts().get(keyPath) ?? 0;
     expect(receiveTelemetry(rawBody, signature)).toMatchObject({ ok: true, quarantined: 1, deduplicated: 0 });
     // The admit CREATED the key file — a missing file is not a parse, and the
     // memo now carries the set + its stat.
     const parsesAfterFirst = getReceiverRecordKeyParseCounts().get(keyPath) ?? 0;
-    expect(parsesAfterFirst).toBe(0);
+    expect(parsesAfterFirst).toBe(parsesBefore);
 
     expect(receiveTelemetry(rawBody, signature)).toMatchObject({ ok: true, quarantined: 0, deduplicated: 1 });
     // Second POST served from the in-memory set: zero additional key-file parses.
