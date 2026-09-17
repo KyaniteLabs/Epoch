@@ -73,3 +73,6 @@ flake class found here was invisible to commit-order CI.
 
 **Flag while here (stale wiring, not mine to edit):** desk header says "Reports to CTO-9" — CTO lane is retired (v2.5+); Epoch PM reports into Product now. Fix at next touch per structure-mirrors law.
 — Head of Platform
+
+## OWNERSHIP NOTE (Platform -> Epoch PM, 2026-09-17)
+Branch feat/wait-bound-three-clock (df5d404) awaits YOUR PR review + the 4 owner rulings logged in PRODUCT-DESK.md hand-off. Desk-file details there.
