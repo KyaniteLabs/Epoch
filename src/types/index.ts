@@ -475,4 +475,30 @@ export function assertNever(x: never, message?: string): never {
 
 // ---- Re-exports from lib ---------------------------------------------------
 
+
+export interface WaitBoundResult {
+  /** Which of the three clocks this wait rides: fleet (agent-only), world (external 1:1), ceo (named ladder). */
+  readonly clockClass: "fleet" | "world" | "ceo";
+  readonly cycleSeconds?: number;
+  readonly cyclesK?: number;
+  readonly externalAnchor?: string;
+  readonly ceoRung?: string;
+  readonly rungHours?: number;
+  readonly turnPert?: {
+    optimisticMinutes: number;
+    mostLikelyMinutes: number;
+    pessimisticMinutes: number;
+    expectedMinutes: number;
+    stdDeviationMinutes: number;
+  };
+  /** The derived bound in seconds: k x cycle + PERT(turn) + 1 sd (fleet), PERT(turn) (world), rung (ceo). */
+  readonly boundSeconds: number;
+  readonly derivedDeadlineUtc: string;
+  readonly derivedDeadlineLocal: string;
+  readonly timeZone: string;
+  /** Envelope-ready TTL integer (hours, ceil, min 1). */
+  readonly ttlHours: number;
+  readonly lawNote: string;
+}
+
 export type { HistoricalRecord } from "../lib/analytics.js";

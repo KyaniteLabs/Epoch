@@ -54,9 +54,9 @@ function llmsToolReferenceToolNames(content: string): string[] {
 // ---------------------------------------------------------------------------
 
 describe("authoritative tool surface (src/lib/tool-aliases.ts)", () => {
-  it("defines exactly 25 canonical tools, including estimate_from_context", () => {
-    expect(TOOL_COUNT).toBe(25);
-    expect(CANONICAL_TOOL_NAMES.size).toBe(25);
+  it("defines exactly 26 canonical tools, including estimate_from_context", () => {
+    expect(TOOL_COUNT).toBe(26); // +wait_bound 2026-09-17
+    expect(CANONICAL_TOOL_NAMES.size).toBe(26);
     // The tool whose absence broke the feedback contract (ticket 04's root
     // cause) is in the authoritative set.
     expect(CANONICAL_TOOL_NAMES.has("estimate_from_context")).toBe(true);
@@ -151,7 +151,7 @@ describe("llms.txt tool reference matches the authoritative surface", () => {
   const docsLlms = readRepoFile("../../docs/llms.txt");
   const rootLlms = readRepoFile("../../llms.txt");
 
-  it("docs/llms.txt Tool Reference lists exactly the 25 canonical names — none missing, none stale", () => {
+  it("docs/llms.txt Tool Reference lists exactly the 26 canonical names — none missing, none stale", () => {
     const documented = llmsToolReferenceToolNames(docsLlms);
     const diff = setDiff(documented, CANONICAL_TOOL_NAMES);
     expect(diff.missing).toEqual([]);

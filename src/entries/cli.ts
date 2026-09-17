@@ -583,6 +583,41 @@ export function createCliProgram(): Command {
 		});
 
 	program
+		.command("wait-bound")
+		.description(
+			"Derives a deadline from the mechanism a wait actually rides (three-clock law): fleet = k x cycle + PERT(turn) + 1 sd; world = external anchor required; ceo = the named ladder rung.",
+		)
+		.requiredOption(
+			"--clock-class <class>",
+			"Clock the wait rides: fleet | world | ceo",
+		)
+		.option("--cycle-seconds <n>", "Fleet: mechanism cycle seconds (default 40)", safeFloat("cycle-seconds"))
+		.option("--cycles-k <n>", "Fleet: cycle multiplier 1..5 (default 2)", safeFloat("cycles-k"))
+		.option("--turn-optimistic-minutes <n>", "Turn PERT optimistic minutes (default 15)", safeFloat("turn-optimistic-minutes"))
+		.option("--turn-most-likely-minutes <n>", "Turn PERT most-likely minutes (default 45)", safeFloat("turn-most-likely-minutes"))
+		.option("--turn-pessimistic-minutes <n>", "Turn PERT pessimistic minutes (default 120)", safeFloat("turn-pessimistic-minutes"))
+		.option("--external-anchor <anchor>", "World (required): named external event")
+		.option("--ceo-rung <rung>", "CEO (required): pass | burst | sleep | cycle | season")
+		.option("--from-timestamp <iso>", "ISO 8601 start instant (default now)")
+		.option("--time-zone <tz>", "IANA timezone for rendered deadline (default America/Los_Angeles)")
+		.action(async (opts: Record<string, unknown>, cmd) => {
+			const rootOpts = (cmd.parent?.opts() ?? {}) as Record<string, unknown>;
+			const format = resolveFormat(rootOpts);
+			const quiet = isQuiet(rootOpts);
+			const input: Record<string, unknown> = { clock_class: opts["clockClass"] };
+			if (opts["cycleSeconds"] !== undefined) input.cycle_seconds = opts["cycleSeconds"];
+			if (opts["cyclesK"] !== undefined) input.cycles_k = opts["cyclesK"];
+			if (opts["turnOptimisticMinutes"] !== undefined) input.turn_optimistic_minutes = opts["turnOptimisticMinutes"];
+			if (opts["turnMostLikelyMinutes"] !== undefined) input.turn_most_likely_minutes = opts["turnMostLikelyMinutes"];
+			if (opts["turnPessimisticMinutes"] !== undefined) input.turn_pessimistic_minutes = opts["turnPessimisticMinutes"];
+			if (opts["externalAnchor"] !== undefined) input.external_anchor = opts["externalAnchor"];
+			if (opts["ceoRung"] !== undefined) input.ceo_rung = opts["ceoRung"];
+			if (opts["fromTimestamp"] !== undefined) input.from_timestamp = opts["fromTimestamp"];
+			if (opts["timeZone"] !== undefined) input.time_zone = opts["timeZone"];
+			await runAndExit("wait_bound", input, format, quiet);
+		});
+
+	program
 		.command("token-time-bridge")
 		.description(
 			"Estimates wall-clock time from token count and LLM model parameters.",

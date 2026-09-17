@@ -12,6 +12,7 @@ import {
   convertTimezone,
   parseDuration,
 } from "../lib/temporal.js";
+import { waitBound } from "../lib/wait-bound.js";
 import { addBusinessDays, countBusinessDays, holidayRegistry } from "../lib/calendar.js";
 import { dispatchTimeMath } from "../lib/internal/time-math-dispatch.js";
 import {
@@ -111,6 +112,19 @@ const convertTimezoneSchema = z.object({
   target_tz: z
     .string()
     .describe("Target IANA timezone identifier."),
+});
+
+const waitBoundSchema = z.object({
+  clock_class: z.enum(["fleet", "world", "ceo"]).describe("Which of the three clocks this wait rides: fleet = agent-only (mechanism cycle math), world = external 1:1 (requires external_anchor), ceo = the named ladder (requires ceo_rung). Three-clock law v1.1 A2."),
+  cycle_seconds: z.number().positive().optional().describe("Fleet only: the mechanism cycle in seconds the wait rides (org bus sweep = 40). Default 40."),
+  cycles_k: z.number().int().min(1).max(5).optional().describe("Fleet only: cycle multiplier, 1..5 by law (more cycles = broken mechanism, not generous deadline). Default 2."),
+  turn_optimistic_minutes: z.number().positive().optional().describe("Turn-time PERT optimistic in minutes. Default 15."),
+  turn_most_likely_minutes: z.number().positive().optional().describe("Turn-time PERT most-likely in minutes. Default 45."),
+  turn_pessimistic_minutes: z.number().positive().optional().describe("Turn-time PERT pessimistic in minutes (busy/turn-driven seats). Default 120."),
+  external_anchor: z.string().optional().describe("World only REQUIRED: the named external event this wait is bound to (1:1, no dilation)."),
+  ceo_rung: z.enum(["pass", "burst", "sleep", "cycle", "season"]).optional().describe("CEO only REQUIRED: ladder rung (pass=15m, burst=1h, sleep=1d, cycle=1wk, season=1mo). The rung IS the bound."),
+  from_timestamp: z.string().optional().describe("ISO 8601 start instant; omit for now."),
+  time_zone: z.string().optional().describe("IANA timezone for the rendered deadline. Default America/Los_Angeles (PT display law)."),
 });
 
 const parseDurationSchema = z.object({
@@ -409,6 +423,20 @@ const accuracyTrendOutput = {
   },
 } satisfies Record<string, unknown>;
 
+const waitBoundOutput = {
+  type: "object",
+  description: "Derived wait bound: clock class, bound seconds, PERT turn stats, deadline (UTC + local), envelope-ready TTL hours, and the law note.",
+  properties: {
+    clockClass: { type: "string" },
+    boundSeconds: { type: "number" },
+    derivedDeadlineUtc: { type: "string" },
+    derivedDeadlineLocal: { type: "string" },
+    timeZone: { type: "string" },
+    ttlHours: { type: "number" },
+    lawNote: { type: "string" },
+  },
+} satisfies Record<string, unknown>;
+
 const timeMathOutput = {
   type: "object",
   description: "Varies by operation. Returns temporal, duration, or date diff data.",
@@ -520,6 +548,35 @@ const handlers: Record<string, ToolDefinition> = Object.fromEntries([
     (input) => {
       const p = parseDurationSchema.parse(input);
       return parseDuration(p.duration_string);
+    },
+  ),
+
+  tool(
+    "wait_bound",
+    "Derives a deadline from the mechanism a wait actually rides (three-clock law v1.1 A2): " +
+      "fleet = k x cycle_seconds + PERT(turn) + 1 sd; world = PERT(turn) with a REQUIRED named external anchor; " +
+      "ceo = the named ladder rung (machine time never consumes a CEO rung). Returns the bound in seconds, the " +
+      "deadline in UTC and local (PT by default), and an envelope-ready TTL integer. Round human hours are unexamined slack.",
+    waitBoundSchema,
+    waitBoundOutput,
+    (input) => {
+      const p = waitBoundSchema.parse(input);
+      return waitBound({
+        clockClass: p.clock_class,
+        cycleSeconds: p.cycle_seconds,
+        cyclesK: p.cycles_k,
+        turn: p.turn_optimistic_minutes !== undefined || p.turn_most_likely_minutes !== undefined || p.turn_pessimistic_minutes !== undefined
+          ? {
+              optimistic: p.turn_optimistic_minutes ?? 15,
+              mostLikely: p.turn_most_likely_minutes ?? 45,
+              pessimistic: p.turn_pessimistic_minutes ?? 120,
+            }
+          : undefined,
+        externalAnchor: p.external_anchor,
+        ceoRung: p.ceo_rung,
+        fromTimestamp: p.from_timestamp,
+        timeZone: p.time_zone,
+      });
     },
   ),
 
