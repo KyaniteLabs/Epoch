@@ -68,13 +68,15 @@ Compound time operations: add_days, add_business_days, diff, convert_tz, parse_n
 Adds N business days, skipping weekends and holidays.
 - `start_date` (string, required) — ISO date
 - `days` (number, required) — Business days to add
-- `country` (string, default "US") — ISO-3166 country code (US, UK, FR, DE, JP)
+- `country` (string, default "US") — two-letter ISO-3166 code (US, UK, FR, DE, JP); must match `^[A-Za-z]{2}$` — "USA"-style codes are rejected with a readable error
 
 #### count_business_days
 Counts business days between two dates.
 - `start_date` (string, required) — ISO date
 - `end_date` (string, required) — ISO date
-- `country` (string, default "US") — ISO-3166 country code
+- `country` (string, default "US") — two-letter ISO-3166 code; must match `^[A-Za-z]{2}$` — "USA"-style codes are rejected with a readable error
+
+Both tools return `holidaySupport` in successful output: `"holiday_calendar"` when the country has a bundled holiday set (US, UK, FR, DE, JP), `"weekends_only"` otherwise — the fallback is always named in the output, never silent.
 
 ### Layer 2 — Estimation
 

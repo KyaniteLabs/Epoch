@@ -18,8 +18,8 @@ import {
 // src/dispatcher/tool-surface-sync.test.ts.
 
 describe("authoritative tool surface", () => {
-  it("defines exactly 25 canonical tools, including estimate_from_context", () => {
-    expect(TOOL_COUNT).toBe(25);
+  it("defines exactly 26 canonical tools, including estimate_from_context", () => {
+    expect(TOOL_COUNT).toBe(26);
     expect(CANONICAL_TOOL_NAMES.has("estimate_from_context")).toBe(true);
   });
 

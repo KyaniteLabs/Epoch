@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — wait_bound (26th tool)
+
+### feat: wait-bound — deadline derivation from the mechanism a wait rides (three-clock law)
+
+- New tool `wait_bound` (CLI `wait-bound`, MCP `wait_bound`): fleet = k×cycle + PERT(turn) + 1sd; world = PERT(turn) with REQUIRED external anchor; ceo = the named ladder rung (pass/burst/sleep/cycle/season). Returns bound seconds, deadline UTC+local (PT default), envelope-ready TTL hours, law note.
+- First consumer: Kyanite org three-clock TTL law (loop-tightening v1.1 A2, CEO order 2026-09-17); bus validator enforces the ≥24h world-time rule at push time.
+- Tool surface synced: canonical set (26), registry, CLI tree, public-surface contract (43 CLI paths), docs/llms.txt + root llms.txt, README counts.
+- Design decisions flagged for PM ruling: turn-PERT defaults 15/45/120 (desk-wake + busy-seat turn); non-estimation partition for v1 (ledger/record_actual pairing = open design Q); PT-default timezone.
+- Origin: CEO-directed (2026-09-17); built by Platform session 4 per CONTRIBUTING; ownership: Epoch PM / Product.
+
+
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

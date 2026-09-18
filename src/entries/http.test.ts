@@ -81,7 +81,7 @@ describe("HTTP API", () => {
       const body = await res.json() as Record<string, unknown>;
       expect(body.ok).toBe(true);
       const tools = body.tools as Array<{ name: string; description: string }>;
-      expect(tools).toHaveLength(25);
+      expect(tools).toHaveLength(26);
       for (const t of tools) {
         expect(t.name).toBeTruthy();
         expect(t.description).toBeTruthy();
@@ -882,7 +882,7 @@ describe("HTTP API", () => {
       }
     });
 
-    it("includes paths for all 25 tools", async () => {
+    it("includes paths for all 26 tools", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;
 
@@ -890,7 +890,7 @@ describe("HTTP API", () => {
       const pathKeys = Object.keys(paths).filter((path) => path.startsWith("/v1/tools/"));
 
       // Each tool has its own path: /v1/tools/{toolName}
-      expect(pathKeys).toHaveLength(25);
+      expect(pathKeys).toHaveLength(26);
 
       // Every path should start with /v1/tools/
       for (const key of pathKeys) {
@@ -975,11 +975,11 @@ describe("HTTP API", () => {
     // Request-schema contents (zod v4 native conversion — W1 ticket 07)
     // -------------------------------------------------------------------------
 
-    it("converts all 25 tool request schemas without throwing or falling back", async () => {
+    it("converts all 26 tool request schemas without throwing or falling back", async () => {
       const res = await app.request("/openapi.json");
       const spec = await res.json() as Record<string, unknown>;
 
-      expect(TOOL_NAMES.size).toBe(25);
+      expect(TOOL_NAMES.size).toBe(26);
       for (const name of TOOL_NAMES) {
         const schema = toolRequestSchema(spec, name);
         // Converted (not the unrepresentable fallback): a real object schema
@@ -1057,7 +1057,7 @@ describe("HTTP API", () => {
         expect(fallback.type).toBe("object");
         expect(String(fallback.description)).toContain("unavailable");
 
-        // The other 25 tools are unaffected.
+        // The other 26 tools are unaffected.
         for (const name of TOOL_NAMES) {
           const schema = toolRequestSchema(spec, name);
           expect(schema.type).toBe("object");

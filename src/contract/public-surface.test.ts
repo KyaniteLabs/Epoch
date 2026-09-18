@@ -14,7 +14,7 @@ import {
 describe("public surface inventory", () => {
 	it("matches the live MCP tool registry", () => {
 		expect([...TOOL_REGISTRY.keys()]).toEqual(EXPECTED_MCP_TOOL_NAMES);
-		expect(EXPECTED_MCP_TOOL_NAMES).toHaveLength(25);
+		expect(EXPECTED_MCP_TOOL_NAMES).toHaveLength(26);
 	});
 
 	it("records the write tools explicitly", () => {
@@ -30,7 +30,7 @@ describe("public surface inventory", () => {
 		);
 		// 42 since ticket 10: `serve` is a real commander subcommand (was a
 		// pre-command intercept in src/index.ts, invisible to this tree).
-		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(42);
+		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(43); // +wait-bound 2026-09-17
 	});
 
 	it("matches the live HTTP routes", () => {
@@ -60,13 +60,13 @@ describe("public surface inventory", () => {
 		};
 
 		expect(parsed.package_name).toBe("@kyanitelabs/epoch");
-		expect(parsed.mcp_tool_names).toHaveLength(25);
+		expect(parsed.mcp_tool_names).toHaveLength(26);
 		expect(parsed.write_tool_names).toEqual([
 			"record_actual",
 			"batch_record_actuals",
 		]);
 		expect(parsed.http_routes).toHaveLength(11);
 		// 42 since ticket 10 (serve registered as a real subcommand).
-		expect(parsed.cli_command_paths).toHaveLength(42);
+		expect(parsed.cli_command_paths).toHaveLength(43);
 	});
 });
