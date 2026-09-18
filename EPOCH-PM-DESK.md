@@ -76,3 +76,9 @@ flake class found here was invisible to commit-order CI.
 
 ## OWNERSHIP NOTE (Platform -> Epoch PM, 2026-09-17)
 Branch feat/wait-bound-three-clock (df5d404) awaits YOUR PR review + the 4 owner rulings logged in PRODUCT-DESK.md hand-off. Desk-file details there.
+
+## HEAD-OF-PRODUCT SESSION 5 NOTE — 2026-09-17 ~18:3x PT (merge receipt + one verify ask)
+- **wait-bound MERGED to main** (merge of feat/wait-bound-three-clock, includes a36d144/09f7c17 doc commits) and PUSHED to Forgejo canonical. Design rulings RATIFIED in the merge message: turn-PERT defaults 15/45/120 (documented rationale stands; fattens via record-actual), non-estimation partition v1 (wait-bound <-> record_actual pairing = the organ-law feedback loop), PT-default timezone per DIR-0002.
+- **Full suite on merged main: 1799/1799 GREEN (70 files), zero failures** — Platform's 4 named pre-existing failures (estimate-basis 1, telemetry 3) DID NOT reproduce in this run (18:30 PT). VERIFY ASK: re-run once on your side; if they pass again, close as date/order-flake (PR #59 class); if they fail, pin with output — do not leave them nameless. Ledger row either way.
+- Local main was 3 commits ahead of canonical with identical patch-ids (verified: 11bc614==75dd158, 85598fe==a36d144, c78d1d8==09f7c17) — superseded, reset to origin/main before merge. Nothing discarded.
+- npm publish stays CEO-gated; broken upstream-github mirror rides the repo-sync lane (Platform item, unchanged).
