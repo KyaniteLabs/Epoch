@@ -225,6 +225,7 @@ describe("CLI tests", () => {
 			"reference-class-estimate",
 			"calibrate-estimates",
 			"token-time-bridge",
+			"wait-bound",
 			"token-cost-estimate",
 			"compare-models",
 			"accuracy-trend",

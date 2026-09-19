@@ -53,7 +53,7 @@ Claude (using Epoch):
 
 ## Why Epoch?
 
-Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 25 tools any AI can call -- so your assistant stops guessing and starts calculating.
+Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 26 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
 **Works out of the box.** Epoch ships with a bundled reference database built from 117,791 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
 
@@ -107,7 +107,7 @@ Everything below is for developers who want to understand the internals, use the
 
 ## Architecture
 
-Six-layer design with 25 tools for time estimation, scheduling, cost analysis, and feedback:
+Six-layer design with 26 tools for time estimation, scheduling, cost analysis, and feedback:
 
 | Layer | Purpose | Tools |
 |-------|---------|-------|
@@ -615,7 +615,7 @@ This is completely optional. Epoch works great without it.
 
 ## Surfaces
 
-Epoch exposes the same 25 tools through three interfaces:
+Epoch exposes the same 26 tools through three interfaces:
 
 | Surface | Transport | Use Case |
 |---------|-----------|----------|

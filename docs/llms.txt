@@ -1,6 +1,6 @@
 # Epoch — AI Agent Time Estimation Server
 
-> Epoch is an MCP (Model Context Protocol) server providing 25 structured tools for
+> Epoch is an MCP (Model Context Protocol) server providing 26 structured tools for
 > time estimation, cost analysis, and schedule risk assessment. Built for AI agents
 > (Claude, GPT, Gemini) and developer workflows.
 
@@ -17,7 +17,7 @@ Agent skill: skills/epoch/SKILL.md, invoked as $epoch in compatible agent hosts
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.5.0 — 25 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.5.0 — 26 structured tools for grounded time estimation
 
 ## What
 
@@ -29,7 +29,7 @@ The public skill at `skills/epoch/SKILL.md` teaches agents how to route user que
 
 ## Architecture
 
-Six layers, 25 tools:
+Six layers, 26 tools:
 
 | Layer | Tools | Purpose |
 |-------|-------|---------|
@@ -147,6 +147,17 @@ Map token budgets to wall-clock time.
 - `tool_calls` (number, default 0)
 - `reasoning_depth` (enum: shallow|moderate|deep, default "moderate")
 - Returns: estimatedSeconds, estimatedMinutes, confidence, breakdown, feedbackToken
+
+#### wait_bound
+Derives a deadline from the mechanism a wait actually rides (three-clock law).
+- `clock_class` (string, required) — fleet | world | ceo
+- `cycle_seconds` (number, optional) — fleet: mechanism cycle seconds (default 40)
+- `cycles_k` (number, optional) — fleet: cycle multiplier 1..5 (default 2)
+- `turn_optimistic_minutes` / `turn_most_likely_minutes` / `turn_pessimistic_minutes` (numbers, optional) — turn PERT (defaults 15/45/120)
+- `external_anchor` (string, optional but REQUIRED for world) — the named external event
+- `ceo_rung` (string, optional but REQUIRED for ceo) — pass | burst | sleep | cycle | season
+- `from_timestamp` (string, optional) — ISO 8601 start instant (default now)
+- `time_zone` (string, optional) — IANA timezone for the rendered deadline (default America/Los_Angeles)
 
 #### token_cost_estimate
 Token-to-time AND dollar cost estimation.

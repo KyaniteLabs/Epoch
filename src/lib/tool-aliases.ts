@@ -60,6 +60,7 @@ export const CANONICAL_TOOL_NAMES: ReadonlySet<string> = new Set([
   "get_pending_estimates",
   "batch_record_actuals",
   "feedback_health",
+  "wait_bound",
 ]);
 
 /**
