@@ -308,3 +308,54 @@ describe("createStdioGuardTransform", () => {
 		expect(parsed.error?.code).toBe(-32700);
 	});
 });
+
+// Reviewer F1/F2 pins (2026-09-19): chunk-boundary multibyte UTF-8 must not corrupt,
+// and a BOM'd valid message must be forwarded BOM-free (not silently dropped by the SDK).
+describe("stdio guard: reviewer pins F1 (multibyte split) + F2 (BOM forward)", () => {
+	it("forwards CJK content intact when split mid-codepoint across writes", async () => {
+		const { createStdioGuardTransform } = await import("./jsonrpc-stdio-guard.js");
+		const guard = createStdioGuardTransform({});
+		const chunks: string[] = [];
+		guard.on("data", (d: Buffer) => chunks.push(d.toString("utf8")));
+		const payload =
+			JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) +
+			"\n";
+		const bytes = Buffer.from(payload, "utf8");
+		// split inside the payload at a byte boundary that cuts a multibyte seq is
+		// CJK-free here, so also test with CJK in an argument:
+		const cjkPayload =
+			Buffer.from(
+				JSON.stringify({
+					jsonrpc: "2.0",
+					id: 2,
+					method: "tools/call",
+					params: { name: "x", arguments: { text: "日本語テスト" } },
+				}) + "\n",
+				"utf8",
+			);
+		const cut = cjkPayload.indexOf(Buffer.from("日", "utf8")) + 1; // middle of the codepoint
+		guard.write('{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}\n' + bytes);
+		await new Promise((r) => setImmediate(r));
+		guard.write(cjkPayload.subarray(0, cut));
+		await new Promise((r) => setImmediate(r));
+		guard.write(cjkPayload.subarray(cut));
+		guard.end();
+		await new Promise((r) => guard.on("end", r));
+		const out = chunks.join("");
+		expect(out).not.toContain("\\uFFFD");
+		expect(out).toContain("日本語テスト");
+	});
+
+	it("forwards a BOM'd valid message with the BOM stripped", async () => {
+		const { createStdioGuardTransform } = await import("./jsonrpc-stdio-guard.js");
+		const guard = createStdioGuardTransform({});
+		const chunks: string[] = [];
+		guard.on("data", (d: Buffer) => chunks.push(d.toString("utf8")));
+		guard.write('{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}\n' + "\uFEFF" + JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list", params: {} }) + "\n");
+		guard.end();
+		await new Promise((r) => guard.on("end", r));
+		const out = chunks.join("");
+		expect(out).toContain('"id":7');
+		expect(out).not.toContain("\\uFEFF");
+	});
+});
