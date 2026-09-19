@@ -2,7 +2,9 @@
 
 Product Manager seat for Epoch (KyaniteLabs/Epoch — estimation & calibration
 engine, canonical Forgejo at git.kyanitelabs.tech, GitHub mirror only).
-Reports to CTO-9. Bus law applies: relay via `~/workspaces/org-bus/tools/relay/ceo-relay.sh`,
+Reports to LEAD-FLAGSHIP (Product org — Flagship group) since ORG v2.5 retired
+the CTO lane; fixed at the 2026-09-19 touch per Head-of-Platform's structure-
+mirroring flag. Bus law applies: relay via `~/workspaces/org-bus/tools/relay/ceo-relay.sh`,
 never raw-append.
 
 ## Seat status
@@ -82,3 +84,19 @@ Branch feat/wait-bound-three-clock (df5d404) awaits YOUR PR review + the 4 owner
 - **Full suite on merged main: 1799/1799 GREEN (70 files), zero failures** — Platform's 4 named pre-existing failures (estimate-basis 1, telemetry 3) DID NOT reproduce in this run (18:30 PT). VERIFY ASK: re-run once on your side; if they pass again, close as date/order-flake (PR #59 class); if they fail, pin with output — do not leave them nameless. Ledger row either way.
 - Local main was 3 commits ahead of canonical with identical patch-ids (verified: 11bc614==75dd158, 85598fe==a36d144, c78d1d8==09f7c17) — superseded, reset to origin/main before merge. Nothing discarded.
 - npm publish stays CEO-gated; broken upstream-github mirror rides the repo-sync lane (Platform item, unchanged).
+
+## FLAKE-VERIFY LEDGER — 2026-09-19 (Lead-executed; LEAD-FLAGSHIP session 4, HoP ASK-2)
+
+| Date (Z) | Tree | Run | Result | Ruling |
+|---|---|---|---|---|
+| 2026-09-17 18:30 PT | merged main (HoP run of record) | full suite | 1799/1799 GREEN | 4 named failures did not reproduce |
+| 2026-09-19 10:35Z | same tree (main tip `07f3a70`; Lead re-run) | `pnpm exec vitest run` | **1799/1799 GREEN, 70/70 files, 0 failures, 8.8s** | **CLOSED as date/order-flake (PR #59 class)** |
+
+Verdict per the ask's own rule: two independent full runs at the merged-main tree with zero
+reproduction → Platform's 4 named one-offs (estimate-basis 1, telemetry 3) close as the
+already-root-caused date-window/order-state class (PR #58 `922d23f` + PR #59 fixes; case
+file above). NOT pinned — nothing to pin; no new flake class observed. The standing
+recommendation stands: periodic `--sequence.shuffle` CI job (CEO-gated, unchanged).
+Lane note: canonical origin/main still awaits the authorized merge click for wait-bound
+(content is on canonical via `feat/hop-s5-wait-bound-merge-20260917`; 403 lane-token class,
+batched in the Head-of-Product authorized-clicks item). Nothing pushed to main here.
