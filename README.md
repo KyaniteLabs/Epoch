@@ -69,7 +69,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 claude mcp add epoch -- npx @kyanitelabs/epoch
 ```
 
-That's it. Your AI assistant now has 25 time estimation tools.
+That's it. Your AI assistant now has 26 time estimation tools.
 
 Or add it to your project's `.mcp.json`:
 
@@ -638,10 +638,10 @@ epoch token-time-bridge --tokens 50000 --model claude-sonnet-4-20250514
 epoch monte-carlo-schedule --tasks '[{"name":"A","optimistic":2,"most_likely":4,"pessimistic":8}]'
 
 # COCOMO II estimate
-epoch cocomo-estimate --kloc 15 --project-type organic
+epoch cocomo-estimate --kloc 15
 
 # Schedule risk score
-epoch schedule-risk --tasks '[{"name":"A","duration":5,"risk_level":"high"},{"name":"B","duration":3,"risk_level":"low"}]'
+epoch schedule-risk --estimated-hours 40
 
 # List all tools
 epoch list-tools
