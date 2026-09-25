@@ -1,13 +1,13 @@
 {
-  "frozen_at": "2026-09-25T03:58:40.744Z",
+  "frozen_at": "2026-09-25T18:41:11.225Z",
   "corpus_file": "data/eval-corpus/corpus-20260925.jsonl",
-  "corpus_sha256": "c87cfcdbefcce513feee737dc87486f6de2f86aeafdc69b541b43a3a5568bd6b",
+  "corpus_sha256": "ab04764278f17bc6c9e821df8ed33920141ee0e657c1ee28c7babd7cd22dbe07",
   "schema_file": "data/schemas/eval-corpus.schema.json",
   "schema_sha256": "eea0b2a6559593a7cb9f0287e94064086d27ef23d5a5e0857d9dce27d3f8b5d3",
-  "record_count": 240,
+  "record_count": 1147,
   "collection_window": {
     "earliest_issue_open": "2017-11-18T19:08:40.000Z",
-    "latest_issue_open": "2026-09-12T06:14:07.000Z"
+    "latest_issue_open": "2026-09-25T00:40:24.000Z"
   },
   "filters": {
     "selection": "GitHub search `is:issue is:closed linked:pr` (closing-link index), sorted closed-date desc",
@@ -18,22 +18,36 @@
   },
   "per_repo": [
     {
-      "repo": "facebook/docusaurus",
+      "repo": "denoland/deno",
       "fetch_dates": [
-        "2026-09-25T03:57:58.803Z"
+        "2026-09-25T16:32:09.489Z"
       ],
-      "issues_examined": 150,
-      "kept_records": 125,
+      "issues_examined": 200,
+      "kept_records": 165,
       "stale_lines_deduped": 0,
       "drops": {
-        "calendar_window_out_of_bounds": 8,
-        "no_merged_closing_pr": 17
+        "bot_pr_author": 23,
+        "bot_issue_author": 8,
+        "no_merged_closing_pr": 4
+      }
+    },
+    {
+      "repo": "facebook/docusaurus",
+      "fetch_dates": [
+        "2026-09-25T15:54:03.342Z"
+      ],
+      "issues_examined": 200,
+      "kept_records": 167,
+      "stale_lines_deduped": 0,
+      "drops": {
+        "no_merged_closing_pr": 22,
+        "calendar_window_out_of_bounds": 11
       }
     },
     {
       "repo": "nestjs/nest",
       "fetch_dates": [
-        "2026-09-25T03:48:36.677Z"
+        "2026-09-25T15:51:34.094Z"
       ],
       "issues_examined": 225,
       "kept_records": 115,
@@ -42,11 +56,64 @@
         "no_merged_closing_pr": 104,
         "calendar_window_out_of_bounds": 6
       }
+    },
+    {
+      "repo": "nuxt/nuxt",
+      "fetch_dates": [
+        "2026-09-25T16:14:01.496Z"
+      ],
+      "issues_examined": 200,
+      "kept_records": 182,
+      "stale_lines_deduped": 0,
+      "drops": {
+        "no_merged_closing_pr": 18
+      }
+    },
+    {
+      "repo": "strapi/strapi",
+      "fetch_dates": [
+        "2026-09-25T16:03:49.323Z"
+      ],
+      "issues_examined": 200,
+      "kept_records": 158,
+      "stale_lines_deduped": 0,
+      "drops": {
+        "no_merged_closing_pr": 42
+      }
+    },
+    {
+      "repo": "vuejs/core",
+      "fetch_dates": [
+        "2026-09-25T16:23:24.101Z"
+      ],
+      "issues_examined": 200,
+      "kept_records": 177,
+      "stale_lines_deduped": 0,
+      "drops": {
+        "no_merged_closing_pr": 22,
+        "bot_issue_author": 1
+      }
+    },
+    {
+      "repo": "zaproxy/zaproxy",
+      "fetch_dates": [
+        "2026-09-25T16:42:36.189Z"
+      ],
+      "issues_examined": 200,
+      "kept_records": 183,
+      "stale_lines_deduped": 0,
+      "drops": {
+        "no_merged_closing_pr": 10,
+        "calendar_window_out_of_bounds": 4,
+        "bot_pr_author": 3
+      }
     }
   ],
   "drop_counts": {
-    "calendar_window_out_of_bounds": 14,
-    "no_merged_closing_pr": 121
+    "bot_pr_author": 26,
+    "bot_issue_author": 9,
+    "no_merged_closing_pr": 222,
+    "calendar_window_out_of_bounds": 21
   },
-  "total_issues_examined": 375
+  "total_issues_examined": 1425
 }
