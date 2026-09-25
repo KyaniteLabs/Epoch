@@ -1,0 +1,14 @@
+{
+  "repo": "zaproxy/zaproxy",
+  "fetched_at": "2026-09-25T16:42:36.189Z",
+  "candidates_from_search": 200,
+  "newly_fetched": 200,
+  "served_from_cache": 0,
+  "kept_records": 187,
+  "dropped": {
+    "no_merged_closing_pr": 10,
+    "bot_issue_author": 0,
+    "bot_pr_author": 3,
+    "fetch_error": 0
+  }
+}

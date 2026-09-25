@@ -1,0 +1,14 @@
+{
+  "repo": "vuejs/core",
+  "fetched_at": "2026-09-25T16:23:24.101Z",
+  "candidates_from_search": 200,
+  "newly_fetched": 200,
+  "served_from_cache": 0,
+  "kept_records": 177,
+  "dropped": {
+    "no_merged_closing_pr": 22,
+    "bot_issue_author": 1,
+    "bot_pr_author": 0,
+    "fetch_error": 0
+  }
+}

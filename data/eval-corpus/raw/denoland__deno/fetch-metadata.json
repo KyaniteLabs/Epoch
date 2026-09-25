@@ -1,0 +1,14 @@
+{
+  "repo": "denoland/deno",
+  "fetched_at": "2026-09-25T16:32:09.489Z",
+  "candidates_from_search": 200,
+  "newly_fetched": 200,
+  "served_from_cache": 0,
+  "kept_records": 165,
+  "dropped": {
+    "no_merged_closing_pr": 4,
+    "bot_issue_author": 8,
+    "bot_pr_author": 23,
+    "fetch_error": 0
+  }
+}

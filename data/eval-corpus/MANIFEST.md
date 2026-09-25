@@ -1,6 +1,6 @@
 # Eval-corpus dataset manifest — S1.4 (A5)
 
-Status: PILOT (2 of 7 planned repos harvested; rate-limit-aware dry-run shape)
+Status: COMPLETE (7 of 7 planned repos harvested 2026-09-25 by agentless background run; 1,147 frozen records; rate-limit-aware resumable collection)
 Created: 2026-09-25 · Lane: Epoch S1.4 (autopilot/ultragoal G008) · Program: PRD `prd-epoch-upgrade.md` item 8 / roadmap Part 3
 
 Every row below was **verified first-hand by the lane that wrote this file** — the verification
