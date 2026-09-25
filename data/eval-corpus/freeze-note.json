@@ -1,0 +1,52 @@
+{
+  "frozen_at": "2026-09-25T03:58:40.744Z",
+  "corpus_file": "data/eval-corpus/corpus-20260925.jsonl",
+  "corpus_sha256": "c87cfcdbefcce513feee737dc87486f6de2f86aeafdc69b541b43a3a5568bd6b",
+  "schema_file": "data/schemas/eval-corpus.schema.json",
+  "schema_sha256": "eea0b2a6559593a7cb9f0287e94064086d27ef23d5a5e0857d9dce27d3f8b5d3",
+  "record_count": 240,
+  "collection_window": {
+    "earliest_issue_open": "2017-11-18T19:08:40.000Z",
+    "latest_issue_open": "2026-09-12T06:14:07.000Z"
+  },
+  "filters": {
+    "selection": "GitHub search `is:issue is:closed linked:pr` (closing-link index), sorted closed-date desc",
+    "bot_filter": "issue+PR authors with GitHub account type Bot, or login matching known bot patterns (dependabot/renovate/actions/...), are dropped and counted",
+    "closing_pr_rule": "tiered: 'merge_closed' = merged PR within closed_at +/- 120s (the merge closed the issue); 'linked_merged' = merged cross-referenced PR (GitHub linked:pr index) within [issue.created_at, closed_at + 14d] when maintainers closed manually first (close_before_merge flagged); tier recorded per record",
+    "window_bounds": "0 < hours <= 8760 per window (auto_wallclock-class sanity gate)",
+    "privacy": "no author logins stored; body kept as length+sha256 only; title truncated to 280 chars"
+  },
+  "per_repo": [
+    {
+      "repo": "facebook/docusaurus",
+      "fetch_dates": [
+        "2026-09-25T03:57:58.803Z"
+      ],
+      "issues_examined": 150,
+      "kept_records": 125,
+      "stale_lines_deduped": 0,
+      "drops": {
+        "calendar_window_out_of_bounds": 8,
+        "no_merged_closing_pr": 17
+      }
+    },
+    {
+      "repo": "nestjs/nest",
+      "fetch_dates": [
+        "2026-09-25T03:48:36.677Z"
+      ],
+      "issues_examined": 225,
+      "kept_records": 115,
+      "stale_lines_deduped": 225,
+      "drops": {
+        "no_merged_closing_pr": 104,
+        "calendar_window_out_of_bounds": 6
+      }
+    }
+  ],
+  "drop_counts": {
+    "calendar_window_out_of_bounds": 14,
+    "no_merged_closing_pr": 121
+  },
+  "total_issues_examined": 375
+}
