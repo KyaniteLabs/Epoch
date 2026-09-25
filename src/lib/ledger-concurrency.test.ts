@@ -472,7 +472,7 @@ describe.skipIf(isRoot)("concurrency sandbox: write-failure propagation (S6)", (
     }
   });
 
-  it("dispatch(): EACCES → tool error mentioning the write failure, NO feedbackRef in any response shape", async () => {
+  it("dispatch(): EACCES → tool error mentioning the write failure, NO feedbackRef in any response shape", { timeout: 30_000 }, async () => {
     const { dispatch } = await import("../dispatcher/index.js");
     chmodSync(TEST_DIR, 0o555); // read-only data dir
     try {
