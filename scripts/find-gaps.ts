@@ -36,7 +36,7 @@ for (const [u, c] of byUrgency) console.log(`  Urgency ${u}: ${c}`);
 
 // Check for code issues in src/lib
 import { readdirSync, statSync } from "node:fs";
-const srcLib = "/Users/simongonzalezdecruz/Desktop/Epoch/src/lib";
+const srcLib = "~/Desktop/Epoch/src/lib";
 const files = readdirSync(srcLib).filter(f => f.endsWith(".ts") && !f.endsWith(".test.ts"));
 console.log(`\nSource files in src/lib: ${files.length}`);
 for (const f of files) {
