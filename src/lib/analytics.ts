@@ -272,7 +272,9 @@ export interface HistoricalRecord {
     | "synthetic"
     | "smoke"
     | "unknown"
-    | "auto_wallclock";
+    | "auto_wallclock"
+    | "git_derived"
+    | "git_derived_review_inclusive";
   readonly calibrationUsage?: "correction" | "baseline" | "exclude";
 }
 

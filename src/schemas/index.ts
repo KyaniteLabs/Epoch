@@ -103,9 +103,11 @@ export const calibrationProvenanceEnum = z
     "smoke",
     "unknown",
     "auto_wallclock",
+    "git_derived",
+    "git_derived_review_inclusive",
   ])
   .describe(
-    "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math). auto_wallclock marks a wall-clock-derived actual auto-recorded at session end (never focused-effort-verified) — included in correction training by default but subject to a dedicated sanity gate and segmented separately in feedback_health."
+    "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math). auto_wallclock marks a wall-clock-derived actual auto-recorded at session end (never focused-effort-verified) — included in correction training by default but subject to a dedicated sanity gate and segmented separately in feedback_health. git_derived marks a cycle-time actual mined from git history by `epoch mine-git` (first-commit→merge dev window); git_derived_review_inclusive marks the open→merge window — both are sanity-gated and segmented separately, never blended with verified actuals.",
   );
 
 // ---- Branded helpers ------------------------------------------------------

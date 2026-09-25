@@ -951,6 +951,64 @@ export function createCliProgram(): Command {
 		});
 
 	program
+		.command("mine-git")
+		.description(
+			"Mine local git history and auto-record cycle-time actuals (provenance: git_derived / git_derived_review_inclusive) for pending estimates matched via task_label/branch/issue_ref. Offline and read-only by construction.",
+		)
+		.requiredOption("--repo <path>", "Path to a local git repository to mine (never cloned or fetched)")
+		.requiredOption("--since <date>", "Only mine work merged on/after this date (ISO or YYYY-MM-DD)")
+		.option("--dry-run", "Preview matches and windows without writing actuals", false)
+		.option(
+			"--window <window>",
+			"Which cycle-time window becomes the recorded actual: 'dev' (first-commit to merge, provenance git_derived) or 'review-inclusive' (open to merge, provenance git_derived_review_inclusive). Both are always reported separately, never blended",
+			"dev",
+		)
+		.action(async (opts, cmd) => {
+			const rootOpts = getRootOpts(cmd);
+			const format = resolveFormat(rootOpts);
+			const quiet = isQuiet(rootOpts);
+			if (opts.window !== "dev" && opts.window !== "review-inclusive") {
+				program.error(`error: --window must be 'dev' or 'review-inclusive', got '${opts.window}'`);
+			}
+			const { runMineGit, MineGitError } = await import("../lib/mine-git.js");
+			let result;
+			try {
+				result = runMineGit({
+					repo: opts.repo,
+					since: opts.since,
+					dryRun: opts.dryRun === true,
+					window: opts.window as "dev" | "review-inclusive",
+				});
+			} catch (err) {
+				if (err instanceof MineGitError) {
+					program.error(`error: ${err.message}`);
+				}
+				throw err;
+			}
+
+			// Standard CLI result contract (ticket 10): one output document,
+			// --format/--quiet honored, non-zero exit on write failures —
+			// automation must never record silent success over lost writes.
+			const writeFailed = result.skipped.filter((s) => s.reason === "write_failed");
+			const toolResult: ToolResult<unknown> = writeFailed.length > 0
+				? {
+						ok: false,
+						error: {
+							isError: true,
+							message:
+								`mine-git: ${writeFailed.length} matched estimate(s) could not be recorded (write failed): ` +
+								`${writeFailed.map((s) => s.estimateId).join(", ")}. ` +
+								`${result.estimates.recorded} actual(s) were recorded before the failure.`,
+							retryHint:
+								"Re-run 'epoch mine-git --repo <path> --since <date>' (already-recorded estimates are skipped as duplicates). If failures persist, check that the Epoch data directory's feedback.jsonl is writable.",
+						},
+					}
+				: { ok: true, data: result };
+
+			emitAndExit(toolResult, "mine-git", format, quiet);
+		});
+
+	program
 		.command("self-improve")
 		.description(
 			"Trigger self-improvement: recompute correction factors from feedback data.",

@@ -30,7 +30,7 @@ describe("public surface inventory", () => {
 		);
 		// 42 since ticket 10: `serve` is a real commander subcommand (was a
 		// pre-command intercept in src/index.ts, invisible to this tree).
-		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(43); // +wait-bound 2026-09-17
+		expect(EXPECTED_CLI_COMMAND_PATHS).toHaveLength(44); // +wait-bound 2026-09-17, +mine-git 2026-09-24 (S1.1)
 	});
 
 	it("matches the live HTTP routes", () => {
@@ -66,7 +66,7 @@ describe("public surface inventory", () => {
 			"batch_record_actuals",
 		]);
 		expect(parsed.http_routes).toHaveLength(11);
-		// 42 since ticket 10 (serve registered as a real subcommand).
-		expect(parsed.cli_command_paths).toHaveLength(43);
+		// 42 since ticket 10 (serve registered as a real subcommand); 44 with mine-git (S1.1, 2026-09-24).
+		expect(parsed.cli_command_paths).toHaveLength(44);
 	});
 });

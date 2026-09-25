@@ -77,6 +77,7 @@ export const EXPECTED_CLI_COMMAND_PATHS = [
 	"cocomo-ground-truth",
 	"estimate-from-context",
 	"auto-actuals",
+	"mine-git",
 	"self-improve",
 	"telemetry",
 	"telemetry status",

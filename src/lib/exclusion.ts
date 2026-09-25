@@ -27,7 +27,8 @@ export type ExclusionReason =
   | "ratio_outlier"
   | "below_calibration_threshold"
   | "ttl_expired"
-  | "auto_wallclock_sanity_gate";
+  | "auto_wallclock_sanity_gate"
+  | "git_derived_sanity_gate";
 
 export interface ExclusionVerdict {
   excluded: boolean;
@@ -170,6 +171,53 @@ export function isAutoWallclockSane(actualHours: number, estimatedHours?: number
   return true;
 }
 
+// ---- Git-derived actuals sanity gate (S1.1 mine-git) ------------------------
+//
+// Calendar cycle times (first-commit→merge, open→merge) are an honest proxy
+// for elapsed task duration, not focused effort — the same class of noise as
+// auto_wallclock, so they get the same three-part treatment: provenance
+// segmentation, a dedicated sanity gate, and never-overwrite semantics (the
+// ledger's duplicate guard). The BOUNDS differ from auto_wallclock because
+// the windows legitimately span nights and weekends: a 12h wall-clock cap
+// would reject nearly every real PR cycle. The floor matches auto_wallclock
+// exactly (sub-3-minute "cycles" are timestamp noise); the ceiling separates
+// task cycles from abandoned/long-lived branches at 30 calendar days; the
+// ratio limit mirrors auto_wallclock's 10x unit-suspect bound in both
+// directions.
+
+/** Floor for git-derived cycle-time actuals — identical to AUTO_WALLCLOCK_MIN_HOURS (timestamp noise below this). */
+export const GIT_DERIVED_MIN_HOURS = AUTO_WALLCLOCK_MIN_HOURS;
+/** Ceiling for git-derived cycle-time actuals: 30 calendar days (720h). Beyond this a "cycle" is an abandoned or interleaved long-lived branch, not a task. */
+export const GIT_DERIVED_MAX_HOURS = 720;
+/** Ratio limit (either direction) between a git-derived actual and its matched estimate — the <10x-estimate analog of the auto_wallclock gate. */
+export const GIT_DERIVED_RATIO_LIMIT = AUTO_WALLCLOCK_RATIO_LIMIT;
+
+/**
+ * True when a git-derived actual (calibrationProvenance "git_derived" or
+ * "git_derived_review_inclusive") passes the dedicated sanity gate: within
+ * [GIT_DERIVED_MIN_HOURS, GIT_DERIVED_MAX_HOURS] and, when the matched
+ * estimate's hours are known, within GIT_DERIVED_RATIO_LIMIT of them in
+ * either direction. Single source of truth reused by the mine-git CLI's
+ * pre-filter, feedback.ts's write-time guard, and isExcluded()'s
+ * calibration-math gate — the auto_wallclock three-seam pattern.
+ */
+export function isGitDerivedSane(actualHours: number, estimatedHours?: number | null): boolean {
+  if (actualHours < GIT_DERIVED_MIN_HOURS || actualHours > GIT_DERIVED_MAX_HOURS) return false;
+  if (estimatedHours != null && estimatedHours > 0) {
+    const ratio = Math.max(actualHours / estimatedHours, estimatedHours / actualHours);
+    if (ratio >= GIT_DERIVED_RATIO_LIMIT) return false;
+  }
+  return true;
+}
+
+/** Every calibration-provenance stamp this module understands as git-derived (either window). */
+export const GIT_DERIVED_PROVENANCE_STAMPS = ["git_derived", "git_derived_review_inclusive"] as const;
+
+/** True when a provenance string names a git-derived actual (either window label). */
+export function isGitDerivedProvenance(provenance: string | undefined): provenance is (typeof GIT_DERIVED_PROVENANCE_STAMPS)[number] {
+  return provenance === "git_derived" || provenance === "git_derived_review_inclusive";
+}
+
 const VALID_PROVENANCE = new Set([
   "prospective",
   "backfilled_real_session",
@@ -178,6 +226,8 @@ const VALID_PROVENANCE = new Set([
   "smoke",
   "unknown",
   "auto_wallclock",
+  "git_derived",
+  "git_derived_review_inclusive",
 ]);
 const VALID_USAGE = new Set(["correction", "baseline", "exclude"]);
 
@@ -273,6 +323,13 @@ export function isExcluded(record: ExclusionRecord, now: Date = new Date()): Exc
 
   if (explicitProvenance === "auto_wallclock" && !isAutoWallclockSane(actual.actualHours, record.estimatedHours)) {
     return { excluded: true, reason: "auto_wallclock_sanity_gate" };
+  }
+
+  // Git-derived actuals (S1.1 mine-git) get the same calibration-math gate:
+  // out-of-bounds cycle times are excluded here even if a writer bypassed
+  // the CLI pre-filter and the write-time guard (three-seam defense).
+  if (isGitDerivedProvenance(explicitProvenance) && !isGitDerivedSane(actual.actualHours, record.estimatedHours)) {
+    return { excluded: true, reason: "git_derived_sanity_gate" };
   }
 
   // Ticket 16 (notes-sniffing override): a VALID explicit structured

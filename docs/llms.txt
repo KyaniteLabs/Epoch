@@ -38,7 +38,7 @@ Six layers, 26 tools:
 | Analytics (6) | reference_class_estimate, estimate_from_context, calibrate_estimates, token_time_bridge, wait_bound, token_cost_estimate | Data-driven estimation from history, free-text context, and wait-mechanism deadlines |
 | Validation (3) | cocomo_validate, cocomo_ground_truth, accuracy_trend | Model validation and accuracy tracking |
 | Risk (2) | schedule_risk, compare_models | Schedule risk and model comparison |
-| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals — or let `epoch auto-actuals --session <id>` (CLI) close it automatically at session end with provenance-labeled wall-clock actuals |
+| Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals — or let `epoch auto-actuals --session <id>` (CLI) close it automatically at session end with provenance-labeled wall-clock actuals; `epoch mine-git --repo <path> --since <date>` (CLI) additionally mines cycle-time actuals from local git history (task_label/branch/issue_ref join; windows git_derived and git_derived_review_inclusive, never blended) |
 
 ## Tool Reference
 
