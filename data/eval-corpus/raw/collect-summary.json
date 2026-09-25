@@ -1,17 +1,101 @@
 {
-  "completed_at": "2026-09-25T03:57:58.804Z",
+  "completed_at": "2026-09-25T16:42:36.189Z",
   "repos": [
     {
-      "repo": "facebook/docusaurus",
-      "fetched_at": "2026-09-25T03:57:58.803Z",
-      "candidates_from_search": 150,
-      "newly_fetched": 150,
-      "served_from_cache": 0,
-      "kept_records": 133,
+      "repo": "nestjs/nest",
+      "fetched_at": "2026-09-25T15:51:34.094Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 0,
+      "served_from_cache": 200,
+      "kept_records": 113,
       "dropped": {
-        "no_merged_closing_pr": 17,
+        "no_merged_closing_pr": 87,
         "bot_issue_author": 0,
         "bot_pr_author": 0,
+        "fetch_error": 0
+      }
+    },
+    {
+      "repo": "facebook/docusaurus",
+      "fetched_at": "2026-09-25T15:54:03.342Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 50,
+      "served_from_cache": 150,
+      "kept_records": 178,
+      "dropped": {
+        "no_merged_closing_pr": 22,
+        "bot_issue_author": 0,
+        "bot_pr_author": 0,
+        "fetch_error": 0
+      }
+    },
+    {
+      "repo": "strapi/strapi",
+      "fetched_at": "2026-09-25T16:03:49.323Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 200,
+      "served_from_cache": 0,
+      "kept_records": 158,
+      "dropped": {
+        "no_merged_closing_pr": 42,
+        "bot_issue_author": 0,
+        "bot_pr_author": 0,
+        "fetch_error": 0
+      }
+    },
+    {
+      "repo": "nuxt/nuxt",
+      "fetched_at": "2026-09-25T16:14:01.496Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 200,
+      "served_from_cache": 0,
+      "kept_records": 182,
+      "dropped": {
+        "no_merged_closing_pr": 18,
+        "bot_issue_author": 0,
+        "bot_pr_author": 0,
+        "fetch_error": 0
+      }
+    },
+    {
+      "repo": "vuejs/core",
+      "fetched_at": "2026-09-25T16:23:24.101Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 200,
+      "served_from_cache": 0,
+      "kept_records": 177,
+      "dropped": {
+        "no_merged_closing_pr": 22,
+        "bot_issue_author": 1,
+        "bot_pr_author": 0,
+        "fetch_error": 0
+      }
+    },
+    {
+      "repo": "denoland/deno",
+      "fetched_at": "2026-09-25T16:32:09.489Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 200,
+      "served_from_cache": 0,
+      "kept_records": 165,
+      "dropped": {
+        "no_merged_closing_pr": 4,
+        "bot_issue_author": 8,
+        "bot_pr_author": 23,
+        "fetch_error": 0
+      }
+    },
+    {
+      "repo": "zaproxy/zaproxy",
+      "fetched_at": "2026-09-25T16:42:36.189Z",
+      "candidates_from_search": 200,
+      "newly_fetched": 200,
+      "served_from_cache": 0,
+      "kept_records": 187,
+      "dropped": {
+        "no_merged_closing_pr": 10,
+        "bot_issue_author": 0,
+        "bot_pr_author": 3,
         "fetch_error": 0
       }
     }

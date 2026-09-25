@@ -1,12 +1,12 @@
 {
   "repo": "facebook/docusaurus",
-  "fetched_at": "2026-09-25T03:57:58.803Z",
-  "candidates_from_search": 150,
-  "newly_fetched": 150,
-  "served_from_cache": 0,
-  "kept_records": 133,
+  "fetched_at": "2026-09-25T15:54:03.342Z",
+  "candidates_from_search": 200,
+  "newly_fetched": 50,
+  "served_from_cache": 150,
+  "kept_records": 178,
   "dropped": {
-    "no_merged_closing_pr": 17,
+    "no_merged_closing_pr": 22,
     "bot_issue_author": 0,
     "bot_pr_author": 0,
     "fetch_error": 0

@@ -1,12 +1,12 @@
 {
   "repo": "nestjs/nest",
-  "fetched_at": "2026-09-25T03:48:36.677Z",
-  "candidates_from_search": 225,
-  "newly_fetched": 225,
-  "served_from_cache": 0,
-  "kept_records": 121,
+  "fetched_at": "2026-09-25T15:51:34.094Z",
+  "candidates_from_search": 200,
+  "newly_fetched": 0,
+  "served_from_cache": 200,
+  "kept_records": 113,
   "dropped": {
-    "no_merged_closing_pr": 104,
+    "no_merged_closing_pr": 87,
     "bot_issue_author": 0,
     "bot_pr_author": 0,
     "fetch_error": 0
