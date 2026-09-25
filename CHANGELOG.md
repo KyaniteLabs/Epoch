@@ -11,6 +11,30 @@
 - Provenance plumbing: `git_derived` / `git_derived_review_inclusive` added to the shared provenance unions (schemas enum, `exclusion.ts` VALID_PROVENANCE, `feedback.ts` VALID_PROVENANCE, `HistoricalRecord`), correction-eligible by default exactly like `auto_wallclock`, and segmented in `feedback_health.byProvenance` as a third bucket (`gitDerived`) so calendar-window noise never blends with verified actuals.
 - New write-time rejection reason `git_derived_out_of_bounds` (record_actual surfaces a distinct actionable message; HTTP maps it 400-class).
 - CLI-only by design (same posture as auto-actuals): no new MCP tool, so the in-flight "26 tools" public claim and the 0.5.2 truth train stay intact; the tool-count surfaces are untouched.
+## [0.5.1] - 2026-09-19 — stdio JSON-RPC protocol hygiene (re-landed 2026-09-25: shipped in npm 0.5.1 from a mirror-side tag, then lost when the 0.5.2 train was cut from canonical main, which had never received these commits; restored for the next release)
+
+### Fixed (adversarial battery 2026-09-19, defect class CGO-12)
+
+The MCP SDK's stdio transport validates each line with a zod schema and
+swallows failures through `onerror` — malformed lines vanished with no
+JSON-RPC response, orphaning any client blocking on that request id. A
+line-wise guard (`src/lib/jsonrpc-stdio-guard.ts`, the achiote cure pattern)
+now sits between stdin and the SDK transport:
+
+- **`params: null` requests are answered with `-32602 Invalid params`** (echoed id) instead of being silently dropped — previously a naive blocking client would hang forever on that id (battery probe A8).
+- **Non-JSON garbage lines are answered with `-32700 Parse error`** (id null) instead of silence.
+- **Batch (JSON-array) lines are answered with `-32600 Invalid Request: batch requests are not supported`** (JSON-RPC 2.0 refusal; batching was removed by MCP 2025-06-18) instead of silence.
+- **Requests sent before `initialize` are rejected with `-32002 Server not initialized`** instead of being answered; `initialize` itself always passes through.
+- Also cured in the same class: BOM-prefixed lines are stripped and inspected (no longer dropped); non-object `params` (arrays/scalars) get `-32602`; objects that are not JSON-RPC messages get `-32600`; blank lines are dropped without a response (padding, not messages).
+- Well-formed traffic is forwarded byte-identically; unknown methods still get the SDK's `-32601`; EOF still exits 0; no stderr noise.
+
+Regression pins: 20 unit tests (`src/lib/jsonrpc-stdio-guard.test.ts`) + a
+real-server integration test (`src/entries/mcp-stdio-guard.integration.test.ts`)
+driving one hostile session end to end. Adversarial battery
+`growth/tools/mcp-stdio-battery.mjs`: 14/15 → **15/15 PASS** (zero leaks).
+
+Note: 0.5.1 also carries the `wait_bound` 26th tool from the unreleased
+section below — both ship together whenever 0.5.1 is published.
 
 ## [Unreleased] — wait_bound (26th tool)
 
