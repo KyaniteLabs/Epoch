@@ -116,6 +116,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # Job-level so step-level `if:` conditions can actually see it: a step's
+      # `if` is evaluated BEFORE the step's own `env:` mapping is applied, so
+      # the pre-#217 form (`env:` on the guarded step itself) always compared
+      # against an empty job-level value — the steps skipped even WITH a token.
+      MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Install mcp-publisher
@@ -124,7 +130,6 @@ jobs:
         if: env.MCP_REGISTRY_TOKEN != ''
         env:
           MCP_PUBLISHER_VERSION: "1.8.1"
-          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
         run: |
           ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
           OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -136,12 +141,15 @@ jobs:
           rm -f mcp-publisher.tar.gz
       - name: Authenticate to MCP Registry
         if: env.MCP_REGISTRY_TOKEN != ''
-        env:
-          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
         run: ./mcp-publisher login github-oidc
       - name: Stamp server.json version from package.json
         # Same derivation as the npm job: server.json's published version must
         # match package.json even if the committed file drifted.
+        if: env.MCP_REGISTRY_TOKEN != ''
         run: node scripts/stamp-release-versions.mjs
       - name: Publish server metadata
+        # Was unguarded pre-#217-fix: with no token the install step skips, the
+        # binary never exists, and this step fails — turning every tokenless
+        # release red. Same guard closes the loop.
+        if: env.MCP_REGISTRY_TOKEN != ''
         run: ./mcp-publisher publish
