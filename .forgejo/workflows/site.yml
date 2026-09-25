@@ -1,0 +1,71 @@
+name: Site
+
+# Release-triggered Pages deployment (ralplan S0.4e / D141 follow-up).
+#
+# Why this exists: the /Epoch/ product site serves from GitHub Pages
+# (gh-pages on the GitHub mirror), but canonical is Forgejo and the
+# canonical->mirror push-mirror PRUNES refs that do not exist canonically.
+# A gh-pages branch pushed only to the mirror is deleted by the next sync —
+# that mechanism froze the site for 4.5 months (D141) and 404'd it again on
+# 2026-09-25 hours after the v0.5.2 release. Deploying FROM canonical fixes
+# the class: this workflow pushes gh-pages on Forgejo, and the push-mirror
+# then carries it to GitHub Pages itself.
+#
+# Triggers:
+#   - push to main      : keeps the site converged with site/ between releases
+#   - push to v* tags   : release-time deploy (stamps versions from package.json)
+#   - workflow_dispatch : manual heal
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy gh-pages from site/
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp release surfaces from package.json
+        # Same derivation as the npm job: site/llms-full.txt (and the other
+        # release surfaces) must carry package.json's version, never a stale
+        # hand-edit. Idempotent between releases.
+        run: node scripts/stamp-release-versions.mjs
+
+      - name: Publish gh-pages
+        run: |
+          set -euo pipefail
+          git config user.name "site-deploy-bot"
+          git config user.email "site-deploy-bot@kyanitelabs.tech"
+
+          # Payload = site/ contents at the repo root of an orphan commit.
+          PAYLOAD=$(mktemp -d)
+          cp -r site/. "$PAYLOAD/"
+
+          # Skip when gh-pages already carries exactly this tree (no churn).
+          git fetch --quiet origin gh-pages || true
+          git checkout --orphan gh-pages-deploy
+          git rm -rqf .
+          cp -r "$PAYLOAD/." .
+          git add -A
+          NEW_TREE=$(git write-tree)
+          OLD_TREE=$(git rev-parse --verify -q 'origin/gh-pages^{tree}' || true)
+          echo "new tree: $NEW_TREE"
+          echo "old tree: ${OLD_TREE:-<none>}"
+          if [ -n "$OLD_TREE" ] && [ "$NEW_TREE" = "$OLD_TREE" ]; then
+            echo "site/ unchanged vs gh-pages; nothing to deploy."
+            exit 0
+          fi
+          git commit -qm "site: deploy from $GITHUB_SHA (auto, Site workflow)"
+          git push origin HEAD:refs/heads/gh-pages --force
+          echo "Deployed gh-pages from $GITHUB_SHA; push-mirror will sync GitHub Pages."
