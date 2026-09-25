@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Epoch MCP Server — Dispatcher: Tool Registry
-// Maps all 25 tool names (TOOL_COUNT, derived from src/lib/tool-aliases.ts —
+// Maps all 26 tool names (TOOL_COUNT, derived from src/lib/tool-aliases.ts —
 // the authoritative tool surface) to handler functions and Zod input schemas.
 // Translates between snake_case schema fields and camelCase lib params.
 // ---------------------------------------------------------------------------
