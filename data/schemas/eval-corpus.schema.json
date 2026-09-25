@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/KyaniteLabs/Epoch/schemas/eval-corpus.schema.json",
+  "title": "EvalCorpusRecord",
+  "description": "One frozen eval-harness task record: a GitHub issue closed by a merged pull request, with the issue-open information available at estimation time and the actual duration windows measured from git/GitHub timestamps. Windows are reported separately and never blended (S1.1 provenance conventions). No author logins are stored.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_id",
+    "source",
+    "collected_at",
+    "issue",
+    "closing_pr",
+    "actuals"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^[^/]+/[^#]+#[0-9]+$",
+      "description": "Stable identifier: <issue repo>#<issue number>"
+    },
+    "source": {
+      "type": "string",
+      "const": "github-closing-issues",
+      "description": "Corpus source: GitHub issues closed by merged PRs, via gh api"
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this record was harvested"
+    },
+    "issue": {
+      "type": "object",
+      "description": "Issue-open information (the only data the estimator may see at estimate time)",
+      "required": ["repo", "number", "state", "title", "labels", "author_type", "author_association", "created_at", "closed_at", "body_length", "body_sha256"],
+      "properties": {
+        "repo": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+        "number": { "type": "integer", "minimum": 1 },
+        "state": { "type": "string", "enum": ["closed"] },
+        "title": { "type": "string", "maxLength": 280, "description": "Issue title, truncated to 280 chars" },
+        "labels": { "type": "array", "items": { "type": "string" }, "description": "Label names, sorted; human-applied size/complexity labels serve as ground truth where present" },
+        "author_type": { "type": "string", "enum": ["User", "Organization"], "description": "Bot authors are filtered at collection; no login is stored" },
+        "author_association": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "closed_at": { "type": "string", "format": "date-time" },
+        "body_length": { "type": "integer", "minimum": 0 },
+        "body_sha256": { "type": ["string", "null"], "description": "sha256 of the issue body (content kept out of the corpus; refetchable by number for harness rehydration)" }
+      }
+    },
+    "closing_pr": {
+      "type": "object",
+      "description": "The merged PR linked to the issue's closure (cross-repo links included)",
+      "required": ["repo", "number", "cross_repo", "author_type", "author_association", "created_at", "merged_at", "first_commit_at", "closing_link", "close_before_merge"],
+      "properties": {
+        "repo": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+        "number": { "type": "integer", "minimum": 1 },
+        "cross_repo": { "type": "boolean" },
+        "author_type": { "type": "string", "enum": ["User", "Organization"] },
+        "author_association": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "merged_at": { "type": "string", "format": "date-time" },
+        "first_commit_at": { "type": "string", "format": "date-time", "description": "Author date of the PR's first (earliest) commit" },
+        "commits_count": { "type": ["integer", "null"], "minimum": 0 },
+        "closing_link": {
+          "type": "string",
+          "enum": ["merge_closed", "linked_merged"],
+          "description": "merge_closed = PR merge demonstrably closed the issue (merged_at within closed_at +/- 120s); linked_merged = merged PR tied by GitHub's closing-link index within [issue created_at, closed_at + 14d] when the issue was closed manually first"
+        },
+        "close_before_merge": {
+          "type": "boolean",
+          "description": "true when the issue close event precedes the PR merge (manual close; weaker link confidence)"
+        }
+      }
+    },
+    "actuals": {
+      "type": "object",
+      "description": "Duration windows, each with its definition; reported separately, never blended",
+      "required": ["calendar_window_hours", "calendar_window_definition", "dev_window_hours", "dev_window_definition", "pr_window_hours", "pr_window_definition", "provenance_note"],
+      "properties": {
+        "calendar_window_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 8760,
+          "description": "issue open -> close, review-inclusive (git_derived_review_inclusive analog)"
+        },
+        "calendar_window_definition": { "type": "string" },
+        "dev_window_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 8760,
+          "description": "PR first-commit -> merge (git_derived analog)"
+        },
+        "dev_window_definition": { "type": "string" },
+        "pr_window_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 8760,
+          "description": "PR open -> merge, review-inclusive"
+        },
+        "pr_window_definition": { "type": "string" },
+        "provenance_note": { "type": "string" }
+      }
+    }
+  }
+}
