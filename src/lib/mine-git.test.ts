@@ -622,3 +622,228 @@ describe("runMineGit — real git repository e2e", () => {
     expect(readActuals()).toHaveLength(1);
   });
 });
+
+// ---- S1.2 bootstrap mode --------------------------------------------------
+
+describe("runMineGit bootstrap mode (fake git runner)", () => {
+  /** Several forgejo merge units in ONE fake world, each with its own dev window (hours). */
+  function multiUnitWorld(units: ReadonlyArray<{ n: number; pr: number; branch: string; title: string; devHours: number; mergedAt: string }>): {
+    runGit: (repoPath: string, args: string[]) => string;
+    merges: string[];
+  } {
+    const parts = units.map((u) =>
+      forgejoMergeUnit({
+        mergeSha: `m${u.n}`,
+        baseSha: `b${u.n}`,
+        tipSha: `t${u.n}`,
+        prNumber: u.pr,
+        branch: u.branch,
+        title: u.title,
+        mergedAt: u.mergedAt,
+        branchCommits: [{ sha: `c${u.n}`, at: new Date(Date.parse(u.mergedAt) - u.devHours * 3_600_000).toISOString() }],
+      }),
+    );
+    const ranges = new Map<string, string[]>();
+    for (const p of parts) for (const [k, v] of p.rangeLog) ranges.set(k, v);
+    const world: FakeGitWorld = {
+      merges: parts.flatMap((p) => p.merges),
+      nonMerges: [],
+      refs: "",
+      reflogs: new Map(),
+      prHeadRefs: new Set(),
+    };
+    return { runGit: rangeAwareRunner(world, ranges), merges: world.merges };
+  }
+
+  function readEstimateRows(): Array<Record<string, unknown>> {
+    try {
+      return readFileSync(estimatesPath(), "utf-8")
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Five plain feature units (no conventional prefix) with dev windows 3/4/5/6/12h vs the 6.0h feature medium baseline. */
+  function fiveFeatureUnits() {
+    return multiUnitWorld([
+      { n: 1, pr: 71, branch: "pm/one", title: "one", devHours: 3, mergedAt: "2026-09-15T18:00:00Z" },
+      { n: 2, pr: 72, branch: "pm/two", title: "two", devHours: 4, mergedAt: "2026-09-16T18:00:00Z" },
+      { n: 3, pr: 73, branch: "pm/three", title: "three", devHours: 5, mergedAt: "2026-09-17T18:00:00Z" },
+      { n: 4, pr: 74, branch: "pm/four", title: "four", devHours: 6, mergedAt: "2026-09-18T18:00:00Z" },
+      { n: 5, pr: 75, branch: "pm/five", title: "five", devHours: 12, mergedAt: "2026-09-19T18:00:00Z" },
+    ]);
+  }
+
+  it("bootstraps reference-class baseline pairs on an empty ledger — visible to reference_class_estimate", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    const { getCalibrationData } = await import("./feedback.js");
+    const { referenceClassEstimate } = await import("./analytics.js");
+    const { runGit } = fiveFeatureUnits();
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+
+    expect(result.bootstrap.engaged).toBe(true);
+    expect(result.bootstrap.recorded).toBe(5);
+    expect(result.bootstrap.skippedByReason).toEqual({});
+    expect(result.estimates.pending).toBe(0); // empty ledger — join mode had nothing
+    expect(result.summary).toContain("Bootstrap mode engaged");
+
+    // Estimate side: reference_class_estimate rows carrying the raw medium-scope
+    // baseline (feature = 6.0h), the audit key, and the bootstrap source stamp.
+    const rows = readEstimateRows();
+    expect(rows).toHaveLength(5);
+    for (const row of rows) {
+      expect(row["tool"]).toBe("reference_class_estimate");
+      expect(row["source"]).toBe("mine-git-bootstrap");
+      expect((row["outputs"] as Record<string, unknown>)["correctedEstimate"]).toBe(6.0);
+      expect((row["inputs"] as Record<string, unknown>)["mine_git_bootstrap_unit"]).toMatch(/^merge_commit_pr:pr-\d+@/);
+    }
+
+    // Actual side: git_derived provenance, bootstrap note prefix.
+    const actuals = readActuals();
+    expect(actuals).toHaveLength(5);
+    for (const actual of actuals) {
+      expect(actual["calibrationProvenance"]).toBe("git_derived");
+      expect((actual["notes"] as string).startsWith("mine-git bootstrap: reference-class baseline pair minted from local git history")).toBe(true);
+      expect(actual["notes"]).toContain("not a human/agent estimate");
+    }
+
+    // The cold-start corpus is visible to reference_class_estimate: with 5
+    // pairs the tool switches to its data-driven path — median(cycle/baseline)
+    // = median(0.5, 2/3, 5/6, 1, 2) = 5/6, not any shipped fallback.
+    const records = getCalibrationData(undefined, "feature", 180, "reference_class_estimate");
+    expect(records).toHaveLength(5);
+    for (const record of records) expect(record.calibrationProvenance).toBe("git_derived");
+    const estimate = referenceClassEstimate(records, "feature", 3);
+    expect(estimate.sampleSize).toBe(5);
+    expect(estimate.correctionFactor).toBeCloseTo(5 / 6, 2);
+  });
+
+  it("entries carry the estimate id, task type, baseline, and the selected window", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    const { runGit } = fiveFeatureUnits();
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+
+    const entry = result.bootstrap.entries[0];
+    expect(entry?.taskType).toBe("feature");
+    expect(entry?.baselineHours).toBe(6.0);
+    expect(entry?.hours).toBeGreaterThan(0);
+    expect(entry?.provenance).toBe("git_derived");
+    const rowIds = new Set(readEstimateRows().map((r) => r["id"]));
+    for (const e of result.bootstrap.entries) expect(rowIds.has(e.estimateId ?? "")).toBe(true);
+  });
+
+  it("does not engage when the ledger holds any estimate row (no-ledger-history gate)", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    const { runGit } = fiveFeatureUnits();
+    writeEstimates([
+      { id: "est-existing", tool: "pert_estimate", inputs: { task_type: "feature" }, outputs: { totalHours: 4 }, estimatedAt: "2026-09-15T07:00:00Z" },
+    ]);
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+
+    expect(result.bootstrap.engaged).toBe(false);
+    expect(result.bootstrap.recorded).toBe(0);
+    expect(readEstimateRows()).toHaveLength(1); // only the pre-existing row
+    expect(readActuals()).toHaveLength(0);
+  });
+
+  it("dry run previews bootstrap pairs without writing either ledger file", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    const { runGit } = fiveFeatureUnits();
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit, dryRun: true });
+
+    expect(result.bootstrap.engaged).toBe(true);
+    expect(result.bootstrap.recorded).toBe(5);
+    expect(result.bootstrap.entries.every((e) => e.estimateId === undefined)).toBe(true);
+    expect(result.summary).toContain("Dry run — nothing written.");
+    expect(readEstimateRows()).toHaveLength(0);
+    expect(readActuals()).toHaveLength(0);
+  });
+
+  it("applies the same isGitDerivedSane gate: a cycle time beyond the 10x baseline ratio is skipped", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    // Dev window 100h vs the 6.0h feature baseline -> two-sided ratio ~16.7x.
+    const { runGit } = multiUnitWorld([
+      { n: 1, pr: 81, branch: "pm/slow", title: "slow", devHours: 100, mergedAt: "2026-09-15T18:00:00Z" },
+    ]);
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+
+    expect(result.bootstrap.engaged).toBe(true);
+    expect(result.bootstrap.recorded).toBe(0);
+    expect(result.bootstrap.skippedByReason["git_derived_out_of_bounds"]).toBe(1);
+    expect(readEstimateRows()).toHaveLength(0);
+    expect(readActuals()).toHaveLength(0);
+  });
+
+  it("infers the task type from conventional-commit titles/branches and picks that class's baseline", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    const { runGit } = multiUnitWorld([
+      { n: 1, pr: 91, branch: "pm/hotfix-timeout", title: "fix: timeout on cold start", devHours: 4, mergedAt: "2026-09-15T18:00:00Z" },
+      { n: 2, pr: 92, branch: "chore/plain-merge-thing", title: "routine dependency bump", devHours: 4, mergedAt: "2026-09-16T18:00:00Z" },
+    ]);
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+
+    expect(result.bootstrap.recorded).toBe(2);
+    const byBranch = new Map(result.bootstrap.entries.map((e) => [e.unitBranch, e]));
+    // "fix:" title -> bugfix (medium baseline 12.9h from the shipped scope table).
+    expect(byBranch.get("pm/hotfix-timeout")?.taskType).toBe("bugfix");
+    expect(byBranch.get("pm/hotfix-timeout")?.baselineHours).toBeCloseTo(12.9, 5);
+    // "chore/" branch prefix -> infrastructure (medium baseline 10.3h).
+    expect(byBranch.get("chore/plain-merge-thing")?.taskType).toBe("infrastructure");
+    expect(byBranch.get("chore/plain-merge-thing")?.baselineHours).toBeCloseTo(10.3, 5);
+  });
+
+  it("is idempotent: after a bootstrap run the ledger is non-empty, so a re-run never re-mints", async () => {
+    const { runMineGit } = await import("./mine-git.js");
+    const { runGit } = fiveFeatureUnits();
+
+    const first = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+    expect(first.bootstrap.recorded).toBe(5);
+
+    const second = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-01", runGit });
+    expect(second.bootstrap.engaged).toBe(false);
+    expect(second.bootstrap.recorded).toBe(0);
+    expect(readEstimateRows()).toHaveLength(5);
+    expect(readActuals()).toHaveLength(5);
+  });
+});
+
+describe("runMineGit bootstrap — real git repository e2e", () => {
+  beforeEach(() => {
+    buildRealRepo();
+  });
+
+  afterEach(() => {
+    rmSync(GIT_REPO_DIR, { recursive: true, force: true });
+  });
+
+  it("bootstraps the real repo's history into a git_derived cold-start corpus on an empty ledger", async () => {
+    const { runMineGit, defaultGitRunner } = await import("./mine-git.js");
+    const { getFeedbackHealthReport, getCalibrationData } = await import("./feedback.js");
+
+    const result = runMineGit({ repo: GIT_REPO_DIR, since: "2026-09-19", runGit: defaultGitRunner });
+
+    expect(result.bootstrap.engaged).toBe(true);
+    // #101 merge PR (feature, dev window 3h vs 6.0h baseline) and the plain
+    // merge (chore/ branch -> infrastructure, 3h vs 10.3h baseline) bootstrap;
+    // the #102 squash has no surviving PR-head ref -> no dev window.
+    expect(result.bootstrap.recorded).toBe(2);
+    expect(result.bootstrap.skippedByReason).toEqual({ no_dev_window: 1 });
+
+    const report = getFeedbackHealthReport();
+    expect(report.byProvenance.gitDerived.matchedPairs).toBe(2);
+    expect(report.byProvenance.verified.matchedPairs).toBe(0);
+
+    const records = getCalibrationData(undefined, undefined, 180, "reference_class_estimate");
+    expect(records).toHaveLength(2);
+    for (const record of records) expect(record.calibrationProvenance).toBe("git_derived");
+  });
+});

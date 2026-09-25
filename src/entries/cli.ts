@@ -953,7 +953,7 @@ export function createCliProgram(): Command {
 	program
 		.command("mine-git")
 		.description(
-			"Mine local git history and auto-record cycle-time actuals (provenance: git_derived / git_derived_review_inclusive) for pending estimates matched via task_label/branch/issue_ref. Offline and read-only by construction.",
+			"Mine local git history and auto-record cycle-time actuals (provenance: git_derived / git_derived_review_inclusive) for pending estimates matched via task_label/branch/issue_ref. On an empty ledger, bootstraps a reference-class cold-start corpus instead (baseline-estimate vs cycle-time pairs). Offline and read-only by construction.",
 		)
 		.requiredOption("--repo <path>", "Path to a local git repository to mine (never cloned or fetched)")
 		.requiredOption("--since <date>", "Only mine work merged on/after this date (ISO or YYYY-MM-DD)")
@@ -989,8 +989,12 @@ export function createCliProgram(): Command {
 			// Standard CLI result contract (ticket 10): one output document,
 			// --format/--quiet honored, non-zero exit on write failures —
 			// automation must never record silent success over lost writes.
+			// Bootstrap write/mint failures count the same way (S1.2): a lost
+			// baseline pair is a lost ledger write, not a soft skip.
 			const writeFailed = result.skipped.filter((s) => s.reason === "write_failed");
-			const toolResult: ToolResult<unknown> = writeFailed.length > 0
+			const bootstrapWriteFailures =
+				(result.bootstrap.skippedByReason["write_failed"] ?? 0) + (result.bootstrap.skippedByReason["mint_failed"] ?? 0);
+			const toolResult: ToolResult<unknown> = writeFailed.length > 0 || bootstrapWriteFailures > 0
 				? {
 						ok: false,
 						error: {
@@ -998,9 +1002,12 @@ export function createCliProgram(): Command {
 							message:
 								`mine-git: ${writeFailed.length} matched estimate(s) could not be recorded (write failed): ` +
 								`${writeFailed.map((s) => s.estimateId).join(", ")}. ` +
-								`${result.estimates.recorded} actual(s) were recorded before the failure.`,
+								`${result.estimates.recorded} actual(s) were recorded before the failure.` +
+								(bootstrapWriteFailures > 0
+									? ` Bootstrap mode additionally failed to persist ${bootstrapWriteFailures} reference-class baseline pair(s) (write/mint failure).`
+									: ""),
 							retryHint:
-								"Re-run 'epoch mine-git --repo <path> --since <date>' (already-recorded estimates are skipped as duplicates). If failures persist, check that the Epoch data directory's feedback.jsonl is writable.",
+								"Re-run 'epoch mine-git --repo <path> --since <date>' (already-recorded estimates are skipped as duplicates). Note: bootstrap engages only on an empty ledger, so a partially-bootstrapped run will not re-mint its missed units. If failures persist, check that the Epoch data directory's estimates.jsonl and feedback.jsonl are writable.",
 						},
 					}
 				: { ok: true, data: result };

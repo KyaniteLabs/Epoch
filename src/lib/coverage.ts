@@ -55,6 +55,7 @@
 import { loadLedgerWithOverlays, LEGACY_BASIS_VERSION, CURRENT_BASIS_VERSION } from "./ledger.js";
 import { isExcluded } from "./exclusion.js";
 import { extractEstimatedHours, ESTIMATE_UNIT_TO_HOURS } from "./feedback.js";
+import { calibrationTaskCounts, type CalibrationTaskCounts } from "./calibration-provenance.js";
 
 /** Matches the "sufficient data" threshold used elsewhere (analytics.ts referenceClassEstimate, `filtered.length >= 5`). */
 export const MIN_N_FOR_QUANTILES = 5;
@@ -178,6 +179,8 @@ interface CleanPair {
   readonly actualHours: number;
   readonly expected?: number;
   readonly stdDeviation?: number;
+  /** Actual-side provenance stamp, carried so a selected population can report its trust-class counts (S1.2). */
+  readonly calibrationProvenance?: string;
 }
 
 /**
@@ -246,6 +249,7 @@ function loadCleanMatchedPairs(): CleanPair[] {
       estimatedHours,
       actualHours: rec.actual.actualHours,
       ...(expectedHours !== null && expectedHours !== undefined && stdDeviationHours !== null && stdDeviationHours !== undefined && { expected: expectedHours, stdDeviation: stdDeviationHours }),
+      ...(rec.actual.calibrationProvenance !== undefined && { calibrationProvenance: rec.actual.calibrationProvenance }),
     });
   }
 
@@ -267,6 +271,13 @@ interface RatioQuantileSelection {
   readonly quantiles: RatioQuantiles;
   readonly basisVersion: BasisVersion;
   readonly n: number;
+  /**
+   * Trust-class counts of the SELECTED era's pairs (S1.2): git-derived vs
+   * verified (vs auto wall-clock) are separate numbers, never blended — the
+   * same population whose ratios produced the quantiles, so estimate outputs
+   * can say exactly whose historical tasks calibrated them.
+   */
+  readonly provenanceCounts: CalibrationTaskCounts;
 }
 
 /**
@@ -293,19 +304,25 @@ interface RatioQuantileSelection {
  */
 export function empiricalRatioQuantilesForTaskType(taskType: string, tool: string): RatioQuantileSelection | null {
   const cellPairs = loadCleanMatchedPairs().filter((pair) => pair.tool === tool && pair.taskType === taskType);
-  const v2Ratios = cellPairs.filter((pair) => pair.basisVersion === CURRENT_BASIS_VERSION).map((pair) => pair.actualHours / pair.estimatedHours);
-  const v1Ratios = cellPairs.filter((pair) => pair.basisVersion === LEGACY_BASIS_VERSION).map((pair) => pair.actualHours / pair.estimatedHours);
+  const v2Pairs = cellPairs.filter((pair) => pair.basisVersion === CURRENT_BASIS_VERSION);
+  const v1Pairs = cellPairs.filter((pair) => pair.basisVersion === LEGACY_BASIS_VERSION);
+  const v2Ratios = v2Pairs.map((pair) => pair.actualHours / pair.estimatedHours);
+  const v1Ratios = v1Pairs.map((pair) => pair.actualHours / pair.estimatedHours);
+  // Provenance counts are computed over the SAME era-filtered pair set the
+  // quantiles come from — total always equals the era's n, never the cell's.
+  const countsOf = (pairs: readonly CleanPair[]): CalibrationTaskCounts =>
+    calibrationTaskCounts(pairs.map((pair) => ({ calibrationProvenance: pair.calibrationProvenance })));
 
   const fromV2 = v2Ratios.length >= MIN_N_FOR_V2_POPULATION ? empiricalRatioQuantiles(v2Ratios) : null;
-  if (fromV2) return { quantiles: fromV2, basisVersion: CURRENT_BASIS_VERSION, n: v2Ratios.length };
+  if (fromV2) return { quantiles: fromV2, basisVersion: CURRENT_BASIS_VERSION, n: v2Ratios.length, provenanceCounts: countsOf(v2Pairs) };
 
   const fromV1 = v1Ratios.length >= MIN_N_FOR_QUANTILES ? empiricalRatioQuantiles(v1Ratios) : null;
-  if (fromV1) return { quantiles: fromV1, basisVersion: LEGACY_BASIS_VERSION, n: v1Ratios.length };
+  if (fromV1) return { quantiles: fromV1, basisVersion: LEGACY_BASIS_VERSION, n: v1Ratios.length, provenanceCounts: countsOf(v1Pairs) };
 
   // No legacy fallback exists for this cell — a v2-only ledger may use its
   // own population at the ordinary minimum. Never reached when v1 data exists.
   const v2Only = v1Ratios.length === 0 && v2Ratios.length >= MIN_N_FOR_QUANTILES ? empiricalRatioQuantiles(v2Ratios) : null;
-  return v2Only ? { quantiles: v2Only, basisVersion: CURRENT_BASIS_VERSION, n: v2Ratios.length } : null;
+  return v2Only ? { quantiles: v2Only, basisVersion: CURRENT_BASIS_VERSION, n: v2Ratios.length, provenanceCounts: countsOf(v2Pairs) } : null;
 }
 
 function predictInterval(pair: CleanPair, quantilesByPopulation: Map<string, RatioQuantiles | null>): PredictedIntervals | null {

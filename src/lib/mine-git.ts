@@ -48,6 +48,35 @@
 // unit's title and branch) — in that precedence order, deterministically
 // tie-broken by newest merge.
 //
+// ---------------------------------------------------------------------------
+// Bootstrap mode (S1.2): no-ledger repos enter calibration as reference-class
+// baseline records instead of starving the self-improvement loop.
+//
+// When the estimates ledger is EMPTY (fresh install / first run against a
+// repo), join mode has nothing to join — and the cold-start corpus stays
+// empty forever because calibration needs matched pairs. Bootstrap mode
+// mints them from the same mined units: for each unit with a derivable
+// selected window that passes isGitDerivedSane(), it records a
+// reference_class_estimate row whose recorded estimate is the tool's own
+// medium-scope baseline for the unit's inferred task type (NO correction
+// applied — there is no data to correct with yet; that is the point), then
+// records the mined cycle-time actual against it with the same
+// git_derived / git_derived_review_inclusive provenance stamp join mode
+// uses — the same provenance bucket, so feedback_health.byProvenance
+// segments bootstrap pairs with all other git-derived pairs.
+//
+// What the resulting ratios mean, honestly: "what the shipped baseline
+// would have said for a typical task of this class" vs "how long the work
+// actually took in this repo" — exactly the reference-class correction
+// reference_class_estimate learns (median actual/baseline). The estimate
+// side is tool-minted, never presented as a human/agent estimate: every
+// row carries source "mine-git-bootstrap", an inputs.mine_git_bootstrap_unit
+// audit key, and the actual's note says both sides' derivation.
+//
+// Idempotence is structural: bootstrap only engages while the ledger is
+// empty, and the first successful run makes it non-empty. A crashed
+// partial run therefore never double-mints on re-run.
+//
 // CLI entry point: `epoch mine-git --repo <path> --since <date>`
 // (src/entries/cli.ts). Not an MCP tool — deliberate, same posture as
 // auto-actuals: --repo names a local filesystem path supplied by the calling
@@ -56,9 +85,12 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-import { getPendingEstimates, recordActualDetailed, extractEstimatedHours } from "./feedback.js";
+import { getPendingEstimates, recordActualDetailed, recordEstimate, extractEstimatedHours } from "./feedback.js";
 import { isGitDerivedSane, GIT_DERIVED_MIN_HOURS, GIT_DERIVED_MAX_HOURS, GIT_DERIVED_RATIO_LIMIT } from "./exclusion.js";
+import { readLines, ESTIMATES_FILE } from "./ledger.js";
+import { getScopeBaseline } from "./supplementary-data.js";
 import type { EstimateRecord } from "./ledger.js";
+import type { TaskType } from "../types/index.js";
 
 /** Unit separator for git --format strings — survives arbitrary subjects. */
 const SEP = "\u001f";
@@ -68,6 +100,12 @@ const PENDING_FETCH_LIMIT = 1_000_000;
 
 /** Note prefix persisted on every actual this module records. */
 export const MINE_GIT_NOTE_PREFIX = "mine-git: cycle-time actual derived from local git history";
+
+/** Note prefix persisted on every bootstrap-minted actual (S1.2). */
+export const MINE_GIT_BOOTSTRAP_NOTE_PREFIX = "mine-git bootstrap: reference-class baseline pair minted from local git history";
+
+/** Inputs key marking a bootstrap-minted estimate row (audit trail + future dedupe). */
+export const MINE_GIT_BOOTSTRAP_UNIT_KEY = "mine_git_bootstrap_unit";
 
 /**
  * Git verbs that touch the network or mutate the repository. The runner
@@ -445,6 +483,12 @@ export interface MineGitResult {
     readonly dev: CycleTimeSummary;
     readonly reviewInclusive: CycleTimeSummary;
   };
+  /**
+   * S1.2 bootstrap: engaged only when the estimates ledger was empty at run
+   * start — the minted reference-class baseline pairs that give the
+   * self-improvement loop a cold-start corpus instead of starving it.
+   */
+  readonly bootstrap: MineGitBootstrap;
   readonly recorded: readonly MineGitRecorded[];
   readonly skipped: readonly MineGitSkipped[];
   readonly unmatched: readonly MineGitUnmatched[];
@@ -484,6 +528,190 @@ function summarize(sortedAsc: readonly number[]): CycleTimeSummary {
 
 function provenanceForWindow(window: MineGitWindow): "git_derived" | "git_derived_review_inclusive" {
   return window === "dev" ? "git_derived" : "git_derived_review_inclusive";
+}
+
+// ---- Bootstrap mode (S1.2) ---------------------------------------------------
+
+export type MineGitBootstrapSkipReason =
+  | "no_dev_window"
+  | "no_open_anchor"
+  | "no_baseline"
+  | "git_derived_out_of_bounds"
+  | "mint_failed"
+  | "write_failed";
+
+/** One minted reference-class baseline pair (estimate row + git-derived actual). */
+export interface MineGitBootstrapRecorded {
+  readonly unitBranch: string;
+  readonly prNumber?: number;
+  readonly taskType: string;
+  /** The recorded baseline estimate (medium scope, no correction applied — cold start). */
+  readonly baselineHours: number;
+  readonly hours: number;
+  readonly provenance: "git_derived" | "git_derived_review_inclusive";
+  /** The OTHER window's value (surfaced in the notes; never blended into the actual). */
+  readonly otherWindowHours: number | null;
+  /** Ledger id of the minted estimate row (absent in dry runs). */
+  readonly estimateId?: string;
+}
+
+export interface MineGitBootstrap {
+  /** True only when the estimates ledger was empty at run start (the no-ledger-history gate). */
+  readonly engaged: boolean;
+  readonly unitsConsidered: number;
+  readonly recorded: number;
+  readonly skippedByReason: Readonly<Record<string, number>>;
+  readonly entries: readonly MineGitBootstrapRecorded[];
+}
+
+/**
+ * Conventional-commit / branch-prefix task-type inference for bootstrap
+ * baseline selection. Conservative by design: an unrecognized unit defaults
+ * to "feature" (the reference-class fallback everywhere else), because a
+ * misfiled unit shifts which baseline it is compared against.
+ */
+const CONVENTIONAL_TASK_TYPES: ReadonlyArray<readonly [RegExp, TaskType]> = [
+  [/^(fix|bugfix|hotfix)\b/i, "bugfix"],
+  [/^(feat|feature)\b/i, "feature"],
+  [/^(docs?|documentation)\b/i, "documentation"],
+  [/^refactor\b/i, "refactor"],
+  [/^(tests?|spec)\b/i, "testing"],
+  [/^(chore|build|ci|perf|deps|infra)\b/i, "infrastructure"],
+  [/^(migration|migrate)\b/i, "migration"],
+];
+
+function bootstrapTaskTypeForUnit(unit: GitWorkUnit): TaskType {
+  const candidates = [unit.title, unit.branch, branchTail(unit.branch)];
+  for (const [pattern, taskType] of CONVENTIONAL_TASK_TYPES) {
+    for (const candidate of candidates) {
+      if (pattern.test(candidate.trim())) return taskType;
+    }
+  }
+  return "feature";
+}
+
+/**
+ * Bootstrap baseline: the reference-class MEDIUM-scope baseline for the task
+ * type, i.e. what reference_class_estimate would raw-estimate for a typical
+ * complexity-3 task of that class (COMPLEXITY_MULTIPLIER[3] = 1.0). No
+ * correction factor is applied — the corpus being minted IS the data a
+ * future correction factor would be learned from.
+ */
+function bootstrapBaselineHours(taskType: TaskType): number | null {
+  const baselines = getScopeBaseline(taskType);
+  return baselines ? baselines.medium : null;
+}
+
+/** Deterministic audit/dedupe key for one mined unit. */
+function bootstrapUnitKey(unit: GitWorkUnit): string {
+  return `${unit.kind}:${unit.prNumber !== undefined ? `pr-${unit.prNumber}` : unit.branch}@${unit.mergeAt}`;
+}
+
+function runBootstrapMode(units: readonly GitWorkUnit[], window: MineGitWindow, dryRun: boolean): MineGitBootstrap {
+  // The no-ledger-history gate: any estimate row at all means the repo is no
+  // longer cold and bootstrap must not mint rows next to real history.
+  if (readLines<EstimateRecord>(ESTIMATES_FILE).length > 0) {
+    return { engaged: false, unitsConsidered: 0, recorded: 0, skippedByReason: {}, entries: [] };
+  }
+
+  const entries: MineGitBootstrapRecorded[] = [];
+  const skippedByReason: Record<string, number> = {};
+  const skip = (reason: MineGitBootstrapSkipReason): void => {
+    skippedByReason[reason] = (skippedByReason[reason] ?? 0) + 1;
+  };
+
+  for (const unit of units) {
+    const devWindowHours = windowHours(unit.firstCommitAt, unit.mergeAt);
+    const reviewWindowHours = windowHours(unit.openAt, unit.mergeAt);
+    const selectedHours = window === "dev" ? devWindowHours : reviewWindowHours;
+    const otherWindowHours = window === "dev" ? (reviewWindowHours ?? null) : (devWindowHours ?? null);
+
+    if (selectedHours === undefined || !Number.isFinite(selectedHours)) {
+      skip(window === "dev" ? "no_dev_window" : "no_open_anchor");
+      continue;
+    }
+
+    const taskType = bootstrapTaskTypeForUnit(unit);
+    const baselineHours = bootstrapBaselineHours(taskType);
+    if (baselineHours === null || !(baselineHours > 0)) {
+      skip("no_baseline");
+      continue;
+    }
+
+    // Same sanity gate as join mode (bounds + two-sided 10x ratio against the
+    // recorded estimate side) — the three-seam defense never widens for bootstrap.
+    if (!isGitDerivedSane(selectedHours, baselineHours)) {
+      skip("git_derived_out_of_bounds");
+      continue;
+    }
+
+    if (dryRun) {
+      entries.push({
+        unitBranch: unit.branch,
+        ...(unit.prNumber !== undefined && { prNumber: unit.prNumber }),
+        taskType,
+        baselineHours,
+        hours: selectedHours,
+        provenance: provenanceForWindow(window),
+        otherWindowHours,
+      });
+      continue;
+    }
+
+    // Estimate side: the reference-class baseline the tool would have
+    // recorded, stamped with task_type/scope and the audit key. The recorded
+    // value is correctedEstimate (extractEstimatedHours's basis for this
+    // tool) = the RAW baseline — future learned ratios therefore calibrate
+    // exactly how this repo's cycle times deviate from the shipped baseline.
+    const estimateId = recordEstimate(
+      "reference_class_estimate",
+      { task_type: taskType, complexity: 3, scope: "medium", [MINE_GIT_BOOTSTRAP_UNIT_KEY]: bootstrapUnitKey(unit) },
+      { correctedEstimate: baselineHours, correctionFactor: 1.0, baselineSource: "bootstrap_scope_medium_real_tasks", sampleSize: 0 },
+      "mine-git-bootstrap",
+    );
+    if (estimateId === null) {
+      skip("mint_failed");
+      continue;
+    }
+
+    const windowLabel =
+      window === "dev"
+        ? `dev window first-commit→merge ${round2(selectedHours)}h`
+        : `review-inclusive window open→merge ${round2(selectedHours)}h`;
+    const otherLabel = otherWindowHours !== null
+      ? `; other window (${window === "dev" ? "open→merge" : "first-commit→merge"}) ${round2(otherWindowHours)}h reported separately, not blended`
+      : "; other window not locally derivable";
+    const note =
+      `${MINE_GIT_BOOTSTRAP_NOTE_PREFIX} — ${unit.kind}${unit.prNumber !== undefined ? ` #${unit.prNumber}` : ""} branch ${unit.branch}: ` +
+      `estimate side is the tool-minted reference-class medium-scope baseline for "${taskType}" (${round2(baselineHours)}h, supplementary scope table, no correction applied — cold start), ` +
+      `not a human/agent estimate; actual side is ${windowLabel}${otherLabel}.`;
+
+    const result = recordActualDetailed(estimateId, selectedHours, note, undefined, provenanceForWindow(window));
+    if (result.ok) {
+      entries.push({
+        unitBranch: unit.branch,
+        ...(unit.prNumber !== undefined && { prNumber: unit.prNumber }),
+        taskType,
+        baselineHours,
+        hours: selectedHours,
+        provenance: provenanceForWindow(window),
+        otherWindowHours,
+        estimateId,
+      });
+    } else if (result.reason === "git_derived_out_of_bounds") {
+      skip("git_derived_out_of_bounds");
+    } else {
+      skip("write_failed");
+    }
+  }
+
+  return {
+    engaged: true,
+    unitsConsidered: units.length,
+    recorded: entries.length,
+    skippedByReason,
+    entries,
+  };
 }
 
 export interface MineGitOptions {
@@ -532,6 +760,11 @@ export function runMineGit(options: MineGitOptions): MineGitResult {
     .sort((a, b) => a - b);
 
   const pending = getPendingEstimates(PENDING_FETCH_LIMIT);
+
+  // Bootstrap (S1.2): on an empty ledger there is nothing to join, so mine
+  // the cold-start corpus instead. Mutually exclusive with join mode by
+  // construction — an empty ledger implies zero pending estimates.
+  const bootstrap = runBootstrapMode(units, window, dryRun);
 
   const recorded: MineGitRecorded[] = [];
   const skipped: MineGitSkipped[] = [];
@@ -630,6 +863,12 @@ export function runMineGit(options: MineGitOptions): MineGitResult {
 
   const matched = recorded.length + skipped.length;
   const verb = dryRun ? "would record" : "recorded";
+  const bootstrapSummary = bootstrap.engaged
+    ? ` Bootstrap mode engaged (estimates ledger empty): ${bootstrap.recorded} reference-class baseline pair(s) ${verb} ` +
+      `(estimate = reference_class_estimate medium-scope baseline for the inferred task type, no correction applied — cold start; ` +
+      `actual = ${window}-window cycle time, provenance ${provenanceForWindow(window)}; ` +
+      `git-derived and verified counts stay dual-labeled in estimate outputs, never blended).`
+    : "";
   const summary =
     `mine-git: ${units.length} closed work unit(s) since ${since} ` +
     `(${byKind.merge_commit_pr} merge-commit PR, ${byKind.squash_pr} squash PR, ${byKind.merged_branch} plain merge; ` +
@@ -639,6 +878,7 @@ export function runMineGit(options: MineGitOptions): MineGitResult {
     `Cycle-time quantiles reported per window, never blended — dev n=${devHours.length} p50=${summarize(devHours).p50 ?? "n/a"}h; ` +
     `review-inclusive n=${reviewHours.length} p50=${summarize(reviewHours).p50 ?? "n/a"}h. ` +
     `Sanity bounds [${GIT_DERIVED_MIN_HOURS}h, ${GIT_DERIVED_MAX_HOURS}h] with ${GIT_DERIVED_RATIO_LIMIT}x estimate-ratio limit.` +
+    bootstrapSummary +
     (dryRun ? " Dry run — nothing written." : "");
 
   return {
@@ -660,6 +900,7 @@ export function runMineGit(options: MineGitOptions): MineGitResult {
       unmatchedByReason,
     },
     cycleTimes: { dev: summarize(devHours), reviewInclusive: summarize(reviewHours) },
+    bootstrap,
     recorded,
     skipped,
     unmatched,
