@@ -10,7 +10,10 @@ import {
   MODEL_CALIBRATIONS,
   GENERIC_MODEL_CALIBRATION,
   resolveModelCalibration,
+  MODEL_CALIBRATIONS_REFRESHED_AT,
+  MODEL_CALIBRATION_PLACEHOLDER_ENTRIES,
 } from "./analytics.js";
+import { CANONICAL_TOOL_NAMES } from "./tool-aliases.js";
 import type { HistoricalRecord } from "./analytics.js";
 import type { LLMModel } from "../types/index.js";
 import { resetTelemetry } from "./telemetry.js";
@@ -714,6 +717,34 @@ describe("compare_models telemetry read amortization", () => {
       expect(spy).toHaveBeenCalledTimes(16); // fully served from the TTL cache
     } finally {
       spy.mockRestore();
+    }
+  });
+});
+
+describe("claim-truth: shipped reference database hygiene (smell CGO-22)", () => {
+  const shippedDb = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "..", "src", "data", "reference-database.json"), "utf-8"),
+  ) as Record<string, unknown>;
+
+  it("carries honesty stamps: sampleSizeBasis + dataNotes", () => {
+    expect(shippedDb["sampleSizeBasis"]).toBe("tool_latency_and_usage_telemetry");
+    expect(typeof shippedDb["dataNotes"]).toBe("string");
+    expect((shippedDb["dataNotes"] as string)).toContain("NOT matched estimate-actual pairs");
+  });
+
+  it("toolTaskCorrectionFactors keys are canonical tool names only — no maintainer project/session labels relapse", () => {
+    const keys = Object.keys((shippedDb["toolTaskCorrectionFactors"] ?? {}) as Record<string, unknown>);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(CANONICAL_TOOL_NAMES.has(key)).toBe(true);
+    }
+  });
+
+  it("placeholder calibration stamps point at real table entries and carry a date stamp", () => {
+    expect(MODEL_CALIBRATIONS_REFRESHED_AT).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(MODEL_CALIBRATION_PLACEHOLDER_ENTRIES.size).toBe(4);
+    for (const model of MODEL_CALIBRATION_PLACEHOLDER_ENTRIES) {
+      expect(MODEL_CALIBRATIONS[model]).toBeDefined();
     }
   });
 });
