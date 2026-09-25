@@ -10,6 +10,14 @@
 - Design decisions flagged for PM ruling: turn-PERT defaults 15/45/120 (desk-wake + busy-seat turn); non-estimation partition for v1 (ledger/record_actual pairing = open design Q); PT-default timezone.
 - Origin: CEO-directed (2026-09-17); built by Platform session 4 per CONTRIBUTING; ownership: Epoch PM / Product.
 
+### chore: repo-truth metadata pass — 0.5.2 version train
+
+- `package.json` + `server.json`: version 0.5.0 → 0.5.2 (trains the next release; publish stays gated). npm latest is 0.5.1 (2026-09-19) — 0.5.2 is the next publish slot, never skipped.
+- package description corrected "25 tools" → "26 tools" (matches `CANONICAL_TOOL_NAMES` in `src/lib/tool-aliases.ts`, the authoritative surface; `TOOL_COUNT` derives from it).
+- Hand-written 25/24-era tool-count strings corrected to 26: `src/dispatcher/tool-registry.ts` header comment, `skills/epoch/SKILL.md`, `site/` assets.
+- `docs/llms.txt` architecture table: Analytics row 5 → 6 with `wait_bound` (table previously summed to 25 while the header said 26).
+- `site/` re-synced with the live-deployed gh-pages assets (215bb6c, live-verified 2026-09-25): index.html (26 tools, Apache-2.0, 16 models, TS 6/Zod 4), llms-full.txt (wait_bound entry), new site/llms.txt, ai-plugin.json (26 tools / 6 layers), sitemap.xml (/llms.txt entry). Version stamps set to v0.5.2 to match this train.
+
 
 
 All notable changes to this project will be documented in this file.
