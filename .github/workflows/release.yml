@@ -119,8 +119,12 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Install mcp-publisher
+        # Skipped cleanly when no registry token is configured — the npm publish
+        # above is the release of record; registry metadata is additive.
+        if: env.MCP_REGISTRY_TOKEN != ''
         env:
-          MCP_PUBLISHER_VERSION: "0.3.0"
+          MCP_PUBLISHER_VERSION: "1.8.1"
+          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
         run: |
           ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
           OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -131,6 +135,9 @@ jobs:
           ./mcp-publisher --help
           rm -f mcp-publisher.tar.gz
       - name: Authenticate to MCP Registry
+        if: env.MCP_REGISTRY_TOKEN != ''
+        env:
+          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
         run: ./mcp-publisher login github-oidc
       - name: Stamp server.json version from package.json
         # Same derivation as the npm job: server.json's published version must
