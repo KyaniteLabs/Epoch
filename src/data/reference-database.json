@@ -4,6 +4,8 @@
   "source": "self-improvement",
   "sampleSize": 117791,
   "description": "Reference database built from 343 function-calling canary tests across 11 LLM providers.",
+  "dataNotes": "Honesty stamps (2026-09-25, claim-truth pass): sampleSize counts tool-usage/latency telemetry samples, NOT matched estimate-actual pairs; correction factors are seeded from a small maintainer estimate-actual history plus curated public research; maintainer project-name task_type keys were removed as unshipped contamination (they held no factors). A stratified, source-stamped cold-start rebuild is planned (roadmap upgrade #5).",
+  "sampleSizeBasis": "tool_latency_and_usage_telemetry",
   "toolExecutionBenchmarks": {
     "add_business_days": {
       "p50_ms": 0.78,
@@ -516,13 +518,7 @@
     "schedule_risk": {
       "refactor": 0.38
     },
-    "cocomo_estimate": {},
-    "repo_audit_deploy_verify": {},
-    "repo_quality_fix_deploy_verify": {},
-    "repo_deploy_truth_finish": {},
-    "elixis_user_surface_redesign": {},
-    "elixis_glm_classification_json_fix": {},
-    "receiver_smoke": {}
+    "cocomo_estimate": {}
   },
   "complexityCorrectionFactors": {
     "infrastructure": {

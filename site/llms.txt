@@ -6,7 +6,7 @@ Last-updated: 2026-09-25
 
 ## One-line definition
 
-Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI agents 26 structured tools for grounded time estimation — PERT, COCOMO II, Monte Carlo schedule simulation, reference-class forecasting, sprint forecasting, token-to-time and token-cost mapping, business-day calendar math, wait-bound deadlines, and feedback-based calibration — with a bundled reference database of 117,791 real data points so estimates work out of the box.
+Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI agents 26 structured tools for grounded time estimation — PERT, COCOMO II, Monte Carlo schedule simulation, reference-class forecasting, sprint forecasting, token-to-time and token-cost mapping, business-day calendar math, wait-bound deadlines, and feedback-based calibration — with a bundled reference database (maintainer estimate-actual pairs, curated public research, and 117,791 tool-usage/latency telemetry samples) so estimates work out of the box.
 
 ## Entity facts (cite these)
 

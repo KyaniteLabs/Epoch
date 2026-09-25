@@ -102,6 +102,18 @@ export type ModelCalibrationProvenance =
   | "calibrated_table" // stamped data/model-calibrations.json entry
   | "generic_fallback"; // GENERIC_MODEL_CALIBRATION — no model-specific data at all
 
+// S4.1 migration note (claim-truth pass #216 → model-table freshness #219):
+// the model table that used to live here as an inline constant — plus #216's
+// MODEL_CALIBRATIONS_REFRESHED_AT ("2026-07-09") and
+// MODEL_CALIBRATION_PLACEHOLDER_ENTRIES constants — now ships as stamped
+// data in data/model-calibrations.json (loaded by model-calibration-table.ts):
+//   - refreshed_at carries the same honest value-refresh date, 2026-07-09;
+//   - the 4 placeholder entries (claude-haiku-4-5 / opus-4-8 / sonnet-5 /
+//     fable-5) are stamped kind: "placeholder" with their sibling source and
+//     a "NOT primary-source verified" note (see getPlaceholderModelIds()).
+// Live telemetry (≥10 token-tool calls) and reference-db stats still outrank
+// the table at resolve time, so placeholder status never blocks better data.
+
 const REASONING_DEPTH_MULTIPLIER: Record<ReasoningDepth, number> = {
   shallow: 1.0,
   moderate: 2.5,

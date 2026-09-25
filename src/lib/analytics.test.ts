@@ -11,11 +11,16 @@ import {
   GENERIC_MODEL_CALIBRATION,
   resolveModelCalibration,
 } from "./analytics.js";
+import { CANONICAL_TOOL_NAMES } from "./tool-aliases.js";
 import type { HistoricalRecord } from "./analytics.js";
 import type { LLMModel } from "../types/index.js";
 import { resetTelemetry } from "./telemetry.js";
 import { resetSupplementaryCache } from "./supplementary-data.js";
-import { resetModelCalibrationTableCache } from "./model-calibration-table.js";
+import {
+  loadModelCalibrationTable,
+  getPlaceholderModelIds,
+  resetModelCalibrationTableCache,
+} from "./model-calibration-table.js";
 import { defined } from "../test-support.js";
 
 
@@ -732,6 +737,51 @@ describe("compare_models telemetry read amortization", () => {
       expect(spy).toHaveBeenCalledTimes(16); // fully served from the TTL cache
     } finally {
       spy.mockRestore();
+    }
+  });
+});
+
+describe("claim-truth: shipped reference database hygiene (smell CGO-22)", () => {
+  const shippedDb = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "..", "src", "data", "reference-database.json"), "utf-8"),
+  ) as Record<string, unknown>;
+
+  it("carries honesty stamps: sampleSizeBasis + dataNotes", () => {
+    expect(shippedDb["sampleSizeBasis"]).toBe("tool_latency_and_usage_telemetry");
+    expect(typeof shippedDb["dataNotes"]).toBe("string");
+    expect((shippedDb["dataNotes"] as string)).toContain("NOT matched estimate-actual pairs");
+  });
+
+  it("toolTaskCorrectionFactors keys are canonical tool names only — no maintainer project/session labels relapse", () => {
+    const keys = Object.keys((shippedDb["toolTaskCorrectionFactors"] ?? {}) as Record<string, unknown>);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(CANONICAL_TOOL_NAMES.has(key)).toBe(true);
+    }
+  });
+
+  it("placeholder calibration stamps point at real table entries and carry a date stamp", () => {
+    // Adapted for the S4.1 stamped-table migration (#219): #216's
+    // MODEL_CALIBRATIONS_REFRESHED_AT / MODEL_CALIBRATION_PLACEHOLDER_ENTRIES
+    // constants are now data — refreshed_at + kind: "placeholder" stamps in
+    // data/model-calibrations.json — so the same claim-truth guarantees are
+    // asserted directly against the stamped table (which must be the bundled
+    // one here: the temp EPOCH_DATA_DIR override never writes a table file).
+    resetModelCalibrationTableCache();
+    const loaded = defined(loadModelCalibrationTable());
+    expect(loaded.path).not.toMatch(/epoch-analytics-test-/);
+    expect(loaded.table.refreshed_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(loaded.table.refreshed_at).toBe("2026-07-09"); // honest value-refresh date of record
+    const placeholders = getPlaceholderModelIds();
+    expect(placeholders).toHaveLength(4);
+    for (const model of placeholders) {
+      const entry = defined(loaded.table.models[model]);
+      expect(entry.tokensPerSecond).toBeGreaterThan(0);
+      expect(entry.provenance.kind).toBe("placeholder");
+      // the sibling each placeholder copies must itself be a real, non-placeholder entry
+      const sibling = defined(entry.provenance.source.split(" ")[0]);
+      expect(loaded.table.models[sibling]).toBeDefined();
+      expect(defined(loaded.table.models[sibling]).provenance.kind).not.toBe("placeholder");
     }
   });
 });
