@@ -1,15 +1,15 @@
 # Epoch Receiver Watchdog
 
-The Epoch receiver on `nucbox` is intentionally bound to localhost by Docker:
+The Epoch receiver on `gpu-host` is intentionally bound to localhost by Docker:
 
 ```text
-127.0.0.1:3099 -> nucbox-epoch:3099
+127.0.0.1:3099 -> gpu-host-epoch:3099
 ```
 
 Tailnet access is provided by Tailscale Serve:
 
 ```text
-https://nucbox.tail599928.ts.net:3099 -> http://127.0.0.1:3099
+https://gpu-host..ts.net:3099 -> http://127.0.0.1:3099
 ```
 
 `scripts/epoch-receiver-watchdog.sh` keeps that contract healthy without
@@ -36,7 +36,7 @@ The timer runs every 5 minutes. The latest aggregate-only status is written to:
 
 ## Manual Install
 
-Run as root on `nucbox`:
+Run as root on `gpu-host`:
 
 ```bash
 bash scripts/install-epoch-receiver-watchdog.sh
@@ -49,7 +49,7 @@ installer with the copied watchdog path.
 
 ```bash
 curl -fsS http://127.0.0.1:3099/health
-curl -fsS https://nucbox.tail599928.ts.net:3099/health
+curl -fsS https://gpu-host..ts.net:3099/health
 tailscale serve status --json
 cat /srv/data/epoch/receiver-watchdog-status.json
 ```
