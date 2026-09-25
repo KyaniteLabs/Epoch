@@ -239,6 +239,7 @@ describe("CLI tests", () => {
 			"estimate-from-context",
 			"list-tools",
 			"auto-actuals",
+			"mine-git",
 			"self-improve",
 			"serve",
 			"telemetry",

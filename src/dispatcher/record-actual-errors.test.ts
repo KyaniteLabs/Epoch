@@ -64,6 +64,7 @@ const FAILURE_REASONS: readonly FailureReason[] = [
   "synthetic_id",
   "unknown_tool",
   "auto_wallclock_out_of_bounds",
+  "git_derived_out_of_bounds",
 ];
 
 /** Actionability spot-checks: each reason's message must say something specific. */
@@ -74,6 +75,7 @@ const REASON_SUBSTRINGS: Record<FailureReason, string> = {
   synthetic_id: "synthetic",
   unknown_tool: "unrecognized tool name",
   auto_wallclock_out_of_bounds: "sanity gate",
+  git_derived_out_of_bounds: "sanity gate",
 };
 
 beforeEach(() => {
@@ -108,7 +110,7 @@ describe("record_actual failure vocabulary (dispatcher seam)", () => {
     }
   });
 
-  it("all six failure reasons map to six DISTINCT messages", async () => {
+  it("all seven failure reasons map to seven DISTINCT messages", async () => {
     const messages: string[] = [];
     for (const reason of FAILURE_REASONS) {
       mockRecordActualDetailed.mockReturnValueOnce({ ok: false, reason });
@@ -116,8 +118,8 @@ describe("record_actual failure vocabulary (dispatcher seam)", () => {
       expect(result.ok).toBe(false);
       if (!result.ok) messages.push(result.error.message);
     }
-    expect(messages).toHaveLength(6);
-    expect(new Set(messages).size).toBe(6);
+    expect(messages).toHaveLength(7);
+    expect(new Set(messages).size).toBe(7);
   });
 
   it("an unrecognized future reason surfaces honestly with its reason string, not 'Unknown error.'", async () => {

@@ -1179,6 +1179,7 @@ update automatically to reduce estimation bias.`,
           synthetic_id: `Estimate ID "${p.estimate_id}" looks like test/synthetic data (reserved prefix), so it cannot receive actuals. Use the feedbackRef returned by a fresh estimation-tool call.`,
           unknown_tool: `Estimate ${p.estimate_id} was recorded under an unrecognized tool name, so its actual cannot join calibration. Re-run the estimation tool and record against the new feedbackRef it returns.`,
           auto_wallclock_out_of_bounds: `Auto wall-clock actual for estimate ${p.estimate_id} failed the sanity gate (outside 0.05–12h or ≥10x the estimate). Record a verified actual manually via record_actual instead.`,
+          git_derived_out_of_bounds: `Git-derived actual for estimate ${p.estimate_id} failed the sanity gate (outside 0.05–720h or ≥10x the estimate). Record a verified actual manually via record_actual instead.`,
         };
         return {
           ok: false as const,

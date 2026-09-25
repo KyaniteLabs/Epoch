@@ -5,7 +5,7 @@ import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { computeAccuracyMetrics } from "./analytics.js";
 import { readLines, dataDir, joinActualsEarliestReported, countDuplicateActuals, getLedgerCorruptLines, withLedgerWriteLock, LedgerLockTimeoutError, LedgerLockUnavailableError, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays, CURRENT_BASIS_VERSION } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
-import { isExcluded, isSyntheticId, isAutoWallclockSane, type ExclusionReason } from "./exclusion.js";
+import { isExcluded, isSyntheticId, isAutoWallclockSane, isGitDerivedSane, isGitDerivedProvenance, type ExclusionReason } from "./exclusion.js";
 import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
 
@@ -339,7 +339,7 @@ export type RecordActualResult =
   | { ok: true; flagged?: "unit_suspect" }
   | {
       ok: false;
-      reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds";
+      reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds" | "git_derived_out_of_bounds";
       /**
        * Actionable hint to append to the surfaced error message (ticket 16).
        * Currently only the unknown_tool rejection carries one — it names the
@@ -510,6 +510,15 @@ function evaluateActualForWrite(
   // share isAutoWallclockSane() as the single source of truth.
   if (calibrationProvenance === "auto_wallclock" && !isAutoWallclockSane(normalizedHours, matchedEstimatedHours)) {
     return { result: { ok: false, reason: "auto_wallclock_out_of_bounds" }, record: null };
+  }
+
+  // S1.1 mine-git write-time guard: never persist a git-derived actual
+  // (either window stamp) outside its dedicated sanity gate, regardless of
+  // caller. Same three-seam defense as auto_wallclock — the mine-git CLI's
+  // pre-filter, this guard, and isExcluded()'s calibration-math gate all
+  // share isGitDerivedSane() as the single source of truth.
+  if (isGitDerivedProvenance(calibrationProvenance) && !isGitDerivedSane(normalizedHours, matchedEstimatedHours)) {
+    return { result: { ok: false, reason: "git_derived_out_of_bounds" }, record: null };
   }
 
   const record: RecordedActualRecord = {
@@ -712,10 +721,18 @@ function classifyCalibrationRecord(
     // "prospective" (an ordinary matched actual) and "auto_wallclock" (Wave 2
     // auto-actuals — included in correction training by default per plan,
     // subject only to isExcluded()'s dedicated sanity gate) both default to
-    // "correction" usage when no explicit usage is supplied. Every other
-    // explicit provenance (backfilled_*, synthetic, smoke, unknown) defaults
-    // to "baseline" — held out of correction-factor computation.
-    const defaultUsage = explicitProvenance === "prospective" || explicitProvenance === "auto_wallclock" ? "correction" : "baseline";
+    // "correction" usage when no explicit usage is supplied. git_derived /
+    // git_derived_review_inclusive (S1.1 mine-git) follow the same rule for
+    // the same reason: honest proxies inside their dedicated sanity gates.
+    // Every other explicit provenance (backfilled_*, synthetic, smoke,
+    // unknown) defaults to "baseline" — held out of correction-factor
+    // computation.
+    const defaultUsage =
+      explicitProvenance === "prospective" ||
+      explicitProvenance === "auto_wallclock" ||
+      isGitDerivedProvenance(explicitProvenance)
+        ? "correction"
+        : "baseline";
     return {
       calibrationProvenance: explicitProvenance,
       calibrationUsage: explicitUsage ?? defaultUsage,
@@ -779,6 +796,8 @@ const VALID_PROVENANCE = new Set<CalibrationProvenance>([
   "smoke",
   "unknown",
   "auto_wallclock",
+  "git_derived",
+  "git_derived_review_inclusive",
 ]);
 
 const VALID_USAGE = new Set<CalibrationUsage>(["correction", "baseline", "exclude"]);
@@ -1128,6 +1147,15 @@ export interface FeedbackHealthReport {
   byProvenance: {
     verified: { matchedPairs: number; mdape: number | null; cappedMdape: number | null };
     auto: { matchedPairs: number; mdape: number | null; cappedMdape: number | null };
+    /**
+     * Matched pairs stamped git_derived / git_derived_review_inclusive (S1.1
+     * mine-git): cycle-time actuals mined from local git history. Segmented
+     * exactly like auto_wallclock so calendar-window noise never silently
+     * blends into verified actuals — the dev window and the review-inclusive
+     * window share this bucket (the window distinction lives on each
+     * actual's own provenance stamp).
+     */
+    gitDerived: { matchedPairs: number; mdape: number | null; cappedMdape: number | null };
   };
   selfImprovement: {
     readyTypes: string[];
@@ -1319,16 +1347,22 @@ export function getFeedbackHealthReport(): FeedbackHealthReport {
 
   const seedLabel = seedRecordsFiltered > 0 ? ` (${seedRecordsFiltered} seed records filtered)` : "";
 
-  // byProvenance (Wave 2 auto-actuals): split the same correctionMatched
-  // population used by byTool/byTaskType into verified vs auto_wallclock so
-  // drift between the two is visible without waiting for a manual audit.
+  // byProvenance (Wave 2 auto-actuals + S1.1 mine-git): split the same
+  // correctionMatched population used by byTool/byTaskType into verified vs
+  // auto_wallclock vs git-derived so drift between the buckets is visible
+  // without waiting for a manual audit.
   const autoMatched = correctionMatched.filter((r) => r.calibrationProvenance === "auto_wallclock");
-  const verifiedMatched = correctionMatched.filter((r) => r.calibrationProvenance !== "auto_wallclock");
+  const gitDerivedMatched = correctionMatched.filter((r) => isGitDerivedProvenance(r.calibrationProvenance));
+  const verifiedMatched = correctionMatched.filter(
+    (r) => r.calibrationProvenance !== "auto_wallclock" && !isGitDerivedProvenance(r.calibrationProvenance),
+  );
   const autoMetrics = autoMatched.length >= 2 ? computeAccuracyMetrics(autoMatched) : null;
   const verifiedMetrics = verifiedMatched.length >= 2 ? computeAccuracyMetrics(verifiedMatched) : null;
+  const gitDerivedMetrics = gitDerivedMatched.length >= 2 ? computeAccuracyMetrics(gitDerivedMatched) : null;
   const byProvenance: FeedbackHealthReport["byProvenance"] = {
     verified: { matchedPairs: verifiedMatched.length, mdape: verifiedMetrics?.mdape ?? null, cappedMdape: verifiedMetrics?.cappedMdape ?? null },
     auto: { matchedPairs: autoMatched.length, mdape: autoMetrics?.mdape ?? null, cappedMdape: autoMetrics?.cappedMdape ?? null },
+    gitDerived: { matchedPairs: gitDerivedMatched.length, mdape: gitDerivedMetrics?.mdape ?? null, cappedMdape: gitDerivedMetrics?.cappedMdape ?? null },
   };
 
   // Ticket 18: integrity visibility appended only when non-zero, so the

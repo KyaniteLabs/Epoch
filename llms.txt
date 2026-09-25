@@ -11,7 +11,7 @@ Epoch gives AI agents 26 structured tools for grounded time estimation, calendar
 - Sprint forecasting and critical path analysis
 - Business-day and timezone calculations
 - LLM token cost and model comparison
-- Estimate calibration from actuals (auto-closable: `epoch auto-actuals --session <id>` records provenance-labeled wall-clock actuals at session end)
+- Estimate calibration from actuals (auto-closable: `epoch auto-actuals --session <id>` records provenance-labeled wall-clock actuals at session end; `epoch mine-git --repo <path> --since <date>` joins pending estimates to closed git work via task_label/branch/issue_ref and records cycle-time actuals, windows reported separately and never blended)
 - Calibrated P80 intervals lead estimate output when >=5 matched pairs exist for the task type
 - Agent skill workflows for choosing the right Epoch MCP or CLI tool
 
