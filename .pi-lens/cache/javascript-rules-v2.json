@@ -17,7 +17,7 @@
       "post_filter": "no_terminating_statement",
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/javascript/switch-case-termination-js.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/javascript/switch-case-termination-js.yml"
     },
     {
       "id": "switch-non-case-labels-js",
@@ -32,7 +32,7 @@
       ],
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/javascript/switch-non-case-labels.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/javascript/switch-non-case-labels.yml"
     },
     {
       "id": "console-statement",
@@ -49,7 +49,7 @@
       "post_filter": "not_in_test_block  # skip test blocks — no-console-in-tests handles that case",
       "defect_class": "safety",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/console-statement.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/console-statement.yml"
     },
     {
       "id": "debugger-statement",
@@ -63,7 +63,7 @@
       ],
       "defect_class": "safety",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/debugger.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/debugger.yml"
     },
     {
       "id": "deep-nesting",
@@ -82,7 +82,7 @@
       ],
       "defect_class": "safety",
       "inline_tier": "review",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/deep-nesting.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/deep-nesting.yml"
     },
     {
       "id": "deep-promise-chain",
@@ -99,7 +99,7 @@
       ],
       "defect_class": "async-misuse",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/deep-promise-chain.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/deep-promise-chain.yml"
     },
     {
       "id": "default-not-last",
@@ -114,7 +114,7 @@
       ],
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/default-not-last.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/default-not-last.yml"
     },
     {
       "id": "duplicate-function-arg",
@@ -130,7 +130,7 @@
       "post_filter": "same_param_name",
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/duplicate-function-arg.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/duplicate-function-arg.yml"
     },
     {
       "id": "empty-switch-case",
@@ -145,7 +145,7 @@
       "post_filter": "is_empty_block",
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/empty-switch-case.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/empty-switch-case.yml"
     },
     {
       "id": "no-eval",
@@ -160,7 +160,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/eval.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/eval.yml"
     },
     {
       "id": "ts-incomplete-assertion",
@@ -176,7 +176,7 @@
       "post_filter": "incomplete_assertion",
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/incomplete-assertion.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/incomplete-assertion.yml"
     },
     {
       "id": "infinite-loop",
@@ -191,7 +191,7 @@
       "post_filter": "no_break_or_return_in_body",
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/infinite-loop.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/infinite-loop.yml"
     },
     {
       "id": "mixed-async-styles",
@@ -206,7 +206,7 @@
       "post_filter": "has_mixed_async",
       "defect_class": "async-misuse",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/mixed-async-styles.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/mixed-async-styles.yml"
     },
     {
       "id": "no-console-in-tests",
@@ -223,7 +223,7 @@
       "post_filter": "in_test_block",
       "defect_class": "safety",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/no-console-in-tests.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/no-console-in-tests.yml"
     },
     {
       "id": "self-assignment",
@@ -238,7 +238,7 @@
       ],
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/self-assignment.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/self-assignment.yml"
     },
     {
       "id": "sql-injection",
@@ -253,7 +253,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/sql-injection.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/sql-injection.yml"
     },
     {
       "id": "switch-case-termination",
@@ -269,7 +269,7 @@
       "post_filter": "no_terminating_statement",
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/switch-case-termination.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/switch-case-termination.yml"
     },
     {
       "id": "switch-non-case-labels-ts",
@@ -284,7 +284,7 @@
       ],
       "defect_class": "correctness",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/switch-non-case-labels.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/switch-non-case-labels.yml"
     },
     {
       "id": "ts-command-injection",
@@ -302,7 +302,7 @@
       "post_filter": "ts_command_injection_sink",
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-command-injection.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-command-injection.yml"
     },
     {
       "id": "ts-detached-async-call",
@@ -318,7 +318,7 @@
       "post_filter": "ts_detached_async_call",
       "defect_class": "async-misuse",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-detached-async-call.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-detached-async-call.yml"
     },
     {
       "id": "ts-dynamic-require",
@@ -333,7 +333,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-dynamic-require.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-dynamic-require.yml"
     },
     {
       "id": "ts-hallucinated-react-import",
@@ -353,7 +353,7 @@
       },
       "defect_class": "hallucination",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-hallucinated-react-import.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-hallucinated-react-import.yml"
     },
     {
       "id": "ts-insecure-random",
@@ -371,7 +371,7 @@
       "post_filter": "ts_insecure_random_source",
       "defect_class": "injection",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-insecure-random.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-insecure-random.yml"
     },
     {
       "id": "ts-nosql-injection",
@@ -385,7 +385,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-nosql-injection.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-nosql-injection.yml"
     },
     {
       "id": "ts-open-redirect",
@@ -405,7 +405,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-open-redirect.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-open-redirect.yml"
     },
     {
       "id": "ts-react-antipatterns",
@@ -419,7 +419,7 @@
       ],
       "defect_class": "logic-error",
       "inline_tier": "warning",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-react-antipatterns.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-react-antipatterns.yml"
     },
     {
       "id": "ts-ssrf",
@@ -436,7 +436,7 @@
       "post_filter": "ts_ssrf_sink",
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-ssrf.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-ssrf.yml"
     },
     {
       "id": "ts-weak-hash",
@@ -452,7 +452,7 @@
       "post_filter": "ts_weak_hash_algorithm",
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-weak-hash.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-weak-hash.yml"
     },
     {
       "id": "ts-xss-dom-sink",
@@ -470,7 +470,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-xss-dom-sink.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/ts-xss-dom-sink.yml"
     },
     {
       "id": "unsafe-regex",
@@ -486,7 +486,7 @@
       ],
       "defect_class": "injection",
       "inline_tier": "blocking",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/unsafe-regex.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/unsafe-regex.yml"
     },
     {
       "id": "variable-shadowing",
@@ -502,7 +502,7 @@
       "post_filter": "name_matches_param",
       "defect_class": "safety",
       "inline_tier": "review",
-      "filePath": "/Users/simongonzalezdecruz/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/variable-shadowing.yml"
+      "filePath": "~/.pi/agent/npm/node_modules/pi-lens/rules/tree-sitter-queries/typescript/variable-shadowing.yml"
     }
   ]
 }
