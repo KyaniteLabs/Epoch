@@ -55,6 +55,19 @@ export function scheduleRisk(params: {
   const p50 = Math.round(estimatedHours * 10) / 10;
   const p80 = Math.round(estimatedHours * (1 + 0.842 * cappedMdape / 100 * complexityFactor) * 10) / 10;
   const p95 = Math.round(estimatedHours * (1 + 1.645 * cappedMdape / 100 * complexityFactor) * 10) / 10;
+  // S3.1 two-sided intervals: the three fields above are upper-only spans
+  // (p50 is the bare estimate; p80/p95 only ever widened upward). Mirror each
+  // with a lower bound derived from the SAME z constant and the same
+  // cappedMdape × complexity dispersion, clamped at 0 — every upper bound in
+  // `twoSidedIntervals` is byte-identical to its legacy field above, so no
+  // consumer observes silent widening.
+  const lowerBound = (z: number): number => Math.round(Math.max(0, estimatedHours * (1 - z * cappedMdape / 100 * complexityFactor)) * 10) / 10;
+  const twoSidedIntervals = {
+    p50: { lower: lowerBound(0.674), upper: p50 },
+    p80: { lower: lowerBound(0.842), upper: p80 },
+    p95: { lower: lowerBound(1.645), upper: p95 },
+    source: "variance_fallback" as const,
+  };
 
   // Risk level based on cappedMdape (outlier-robust)
   let riskLevel: RiskLevel;
@@ -76,6 +89,10 @@ export function scheduleRisk(params: {
   const cappedMdapeRounded = Math.round(cappedMdape * 10) / 10;
   const taskLabel = taskType ? ` for ${taskType}` : "";
   const complexityLabel = complexity ? ` (complexity ${complexity})` : "";
+  const intervalBasisNote =
+    `Two-sided P50/P80/P95 bands from the cappedMdape dispersion (${cappedMdapeRounded}%` +
+    `${complexity && complexity >= 4 ? `, complexity cone ×${complexityFactor}` : ""}); upper bounds are exactly the legacy ` +
+    `confidenceIntervals fields, lower bounds mirror them with the same z constants clamped at 0.`;
 
   const taskTypeBreakdown = computeTaskTypeBreakdown(teamId);
 
@@ -84,6 +101,8 @@ export function scheduleRisk(params: {
     estimatedTokenCost: Math.round(p50 * 50000 * 100) / 100,
     riskLevel,
     confidenceIntervals: { p50, p80, p95 },
+    twoSidedIntervals,
+    intervalBasisNote,
     historicalAccuracy: {
       mape: mapeRounded,
       mdape: mdapeRounded,
@@ -92,7 +111,7 @@ export function scheduleRisk(params: {
     cappedMdape: cappedMdapeRounded,
     taskTypeBreakdown,
     recommendation,
-    humanReadable: buildHumanReadable(riskLevel, cappedMdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel, complexityLabel),
+    humanReadable: buildHumanReadable(riskLevel, cappedMdapeRounded, mapeRounded, p50, p80, p95, twoSidedIntervals.p80.lower, sampleSize, recommendation, taskLabel, complexityLabel),
   };
 }
 
@@ -142,10 +161,11 @@ function buildHumanReadable(
   p50: number,
   p80: number,
   p95: number,
+  p80Lower: number,
   sampleSize: number,
   recommendation: string,
   taskLabel: string,
   complexityLabel: string,
 ): string {
-  return `Schedule risk${taskLabel}${complexityLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
+  return `Schedule risk${taskLabel}${complexityLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. Two-sided P80 span: ${p80Lower}–${p80}h. ${recommendation}`;
 }

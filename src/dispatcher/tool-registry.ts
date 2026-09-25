@@ -29,7 +29,7 @@ import {
   getScopeGuide,
   inferScopeFromComplexity,
 } from "../lib/analytics.js";
-import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport, UNIT_SUSPECT_FLAG_HINT } from "../lib/feedback.js";
+import { getCalibrationData, recordActualDetailed, getPendingEstimates, batchRecordActuals, getFeedbackHealthReport, UNIT_SUSPECT_FLAG_HINT, inferTaskType } from "../lib/feedback.js";
 import { makeStorageError } from "../lib/internal/error-helpers.js";
 import {
   isPertLearnedCorrectionEnabled,
@@ -43,8 +43,8 @@ import { cocomoValidate } from "../lib/cocomo-validate.js";
 import { cocomoValidateGroundTruth } from "../lib/cocomo-ground-truth.js";
 import { getDeveloperProfileGradient } from "../lib/profiles.js";
 import { classifyContext, resolveContextEstimateInputs } from "../lib/context-estimate.js";
-import { computeIntervalCoverage, empiricalRatioQuantilesForTaskType, empiricalIntervals, pertVarianceIntervals } from "../lib/coverage.js";
-import type { PredictedIntervals } from "../lib/coverage.js";
+import { computeIntervalCoverage, empiricalRatioQuantilesForTaskType, empiricalIntervals, pertVarianceIntervals, varianceFallbackIntervals, MIN_N_FOR_QUANTILES } from "../lib/coverage.js";
+import type { PredictedIntervals, Interval } from "../lib/coverage.js";
 import {
   timeMathSchema,
   pertEstimateSchema,
@@ -202,6 +202,28 @@ const businessDayOutput = {
 
 const feedbackRefField = { type: "string", description: "Token for recording actual hours via record_actual" };
 
+// S3.1 calibrated-interval output fields, shared by cocomo_estimate /
+// sprint_forecast / critical_path / token_time_bridge (the same shape
+// pert_estimate and reference_class_estimate already emit): two-sided
+// P50/P80/P90 bands around the ledger-recorded basis, `source`-labeled, with
+// `basisNote` naming the population (and n) or the variance fallback.
+const calibratedIntervalFields = {
+  interval: {
+    type: "object",
+    description:
+      "Two-sided P50/P80/P90 prediction intervals around this tool's ledger-recorded estimate basis. `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (tool, task_type) matched pairs exist (actual/estimate ratio quantiles), else \"variance_fallback\" derived from the tool's own dispersion source — see `intervalNote`/`basisNote`.",
+    properties: {
+      p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+      p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+      p90: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } },
+      source: { type: "string", enum: ["empirical_ratio_quantile", "variance_fallback"] },
+    },
+  },
+  intervalPopulation: { type: "string", description: "Which ratio population the empirical interval used: the basis-era (tool, task_type) matched-pair cell and its n." },
+  intervalNote: { type: "string", description: "Present only when the empirical per-(tool, task_type) interval was unavailable (n<5) and the variance fallback was used instead." },
+  basisNote: { type: "string", description: "Names the recorded basis the interval is scaled on and which population (with n) or variance fallback produced it." },
+} satisfies Record<string, unknown>;
+
 const pertOutput = {
   type: "object",
   properties: {
@@ -250,6 +272,7 @@ const cocomoOutput = {
     assumptions: { type: "array", items: { type: "string" } },
     aiSpeedup: { type: "number", description: "AI speedup factor (nominal / LLM-adjusted)" },
     speedupCategory: { type: "string", enum: ["moderate", "significant", "extreme"], description: "Qualitative speedup category" },
+    ...calibratedIntervalFields,
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -269,6 +292,7 @@ const sprintOutput = {
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     velocityCv: { type: "number" },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × totalHours)" },
+    ...calibratedIntervalFields,
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -282,6 +306,7 @@ const criticalPathOutput = {
     merge_bias_adjustment: { type: "number" },
     estimatedHours: { type: "number", description: "Total duration in hours (total_duration × 8)" },
     estimatedTokenCost: { type: "number", description: "Estimated token cost (50k tokens/hour × estimatedHours)" },
+    ...calibratedIntervalFields,
   },
 } satisfies Record<string, unknown>;
 
@@ -333,8 +358,9 @@ const tokenTimeOutput = {
         toolOverheadSeconds: { type: "number" },
       },
     },
-    humanReadable: { type: "string", description: "Human-readable summary" },
+    humanReadable: { type: "string", description: "Human-readable summary. Leads with the calibrated P80 interval, then the point estimate and calibration confidence." },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" },
+    ...calibratedIntervalFields,
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -493,6 +519,92 @@ function intervalToUnit(interval: { lower: number; upper: number }, unit: string
 /** Formats an Interval as "X–Yh" (or the given unit's short label) for humanReadable text. */
 function formatInterval(interval: { lower: number; upper: number }, unitLabel: string): string {
   return `${interval.lower}–${interval.upper} ${unitLabel}`;
+}
+
+// ---- S3.1 calibrated intervals for the remaining estimation tools ----------
+//
+// Gives cocomo_estimate / sprint_forecast / critical_path / token_time_bridge
+// the same interval-first treatment pert_estimate and reference_class_estimate
+// already have (roadmap #3 / PRD S3.1): two-sided P50/P80/P90 bands from the
+// tool's OWN (task_type, basis-era) actual/estimate ratio population at
+// n >= MIN_N_FOR_QUANTILES (coverage.ts's empiricalRatioQuantilesForTaskType —
+// already tool-parameterized), and a labeled variance-derived fallback
+// otherwise. Same ticket-11 basis rule as the two existing wired tools: the
+// quantiles are applied to the ledger-RECORDED estimate basis (the value
+// feedback.ts's extractEstimatedHours reads back for this tool), never to a
+// display-only adjusted dual.
+
+/**
+ * Build the interval emission block for an estimation tool. All band math
+ * happens in HOURS (the calibration currency); `fromHours` converts each band
+ * bound to the tool's display unit for the emitted `interval` object.
+ *
+ * @param recordedHours   the ledger-RECORDED estimate for this tool, in hours
+ *                        (mirrors extractEstimatedHours's reading of this
+ *                        tool's outputs — the basis its ratio population was
+ *                        trained on).
+ * @param fallbackSigmaHours dispersion (1 sigma) of the tool's OWN variance
+ *                        source, used only when the empirical population is
+ *                        below MIN_N_FOR_QUANTILES.
+ * @param fallbackBasis   human-readable name of that variance source, quoted
+ *                        verbatim in the basisNote/intervalNote.
+ */
+interface CalibratedIntervalEmission {
+  readonly interval: PredictedIntervals;
+  readonly intervalPopulation?: string;
+  readonly intervalNote?: string;
+  readonly basisNote: string;
+}
+
+function calibratedToolIntervals(params: {
+  tool: string;
+  taskType: string | undefined;
+  recordedHours: number;
+  unitLabel: string;
+  fromHours: (hours: number) => number;
+  fallbackSigmaHours: number;
+  fallbackBasis: string;
+}): CalibratedIntervalEmission {
+  const { tool, taskType, recordedHours, unitLabel, fromHours, fallbackSigmaHours, fallbackBasis } = params;
+
+  const convert = (interval: Interval): Interval => ({ lower: round2(fromHours(interval.lower)), upper: round2(fromHours(interval.upper)) });
+
+  // Bucket selection mirrors ledger ingest (feedback.ts inferTaskType): an
+  // omitted task_type queries the same population record_actual pairs join.
+  const populationTaskType = taskType ?? inferTaskType(tool);
+  const selection = empiricalRatioQuantilesForTaskType(populationTaskType, tool);
+
+  if (selection) {
+    const hoursIntervals = empiricalIntervals(recordedHours, selection.quantiles);
+    return {
+      interval: {
+        p50: convert(hoursIntervals.p50),
+        p80: convert(hoursIntervals.p80),
+        p90: convert(hoursIntervals.p90),
+        source: "empirical_ratio_quantile",
+      },
+      intervalPopulation: `basis-v${selection.basisVersion} ${tool} "${populationTaskType}" matched pairs (n=${selection.n})`,
+      basisNote:
+        `Interval is two-sided (P50/P80/P90 bands) on the ledger-recorded basis (${round2(recordedHours)}h → ${unitLabel}), scaled by empirical ` +
+        `actual/estimate ratio quantiles from the basis-v${selection.basisVersion} (${tool}, "${populationTaskType}") population (n=${selection.n}).`,
+    };
+  }
+
+  const fallback = varianceFallbackIntervals(recordedHours, fallbackSigmaHours);
+  return {
+    interval: {
+      p50: convert(fallback.p50),
+      p80: convert(fallback.p80),
+      p90: convert(fallback.p90),
+      source: "variance_fallback",
+    },
+    intervalNote:
+      `Fewer than ${MIN_N_FOR_QUANTILES} exclusion-filtered historical "${populationTaskType}" ${tool} pairs are available yet, so this interval is the ` +
+      `variance-fallback (${fallbackBasis}), not an empirically calibrated one.`,
+    basisNote:
+      `Interval is two-sided (P50/P80/P90 bands) on the ledger-recorded basis (${round2(recordedHours)}h → ${unitLabel}) via the variance-fallback ` +
+      `(${fallbackBasis}); no empirical ratio population had n>=${MIN_N_FOR_QUANTILES} yet.`,
+  };
 }
 
 // ---- Handler wrappers (snake_case -> camelCase translation) ----------------
@@ -795,11 +907,31 @@ at 2.0 (2.0 -> 2.0x, 3 -> 2.1x, 10 -> 2.8x) — monotonic with no cliff at 2.0.`
         humanOversight: p.human_oversight,
       });
       if (!result.ok) return result;
+      // S3.1 calibrated intervals: recorded basis for cocomo_estimate is
+      // personMonthsLlmAdjusted × 160h (feedback.ts extractEstimatedHours);
+      // the empirical ratio population for this tool is keyed on exactly that
+      // value, so the interval is scaled on it too (ticket-11 same-basis
+      // rule). Variance fallback: the developer-profile estimation prior —
+      // the same dispersion risk.ts falls back to when records < 5.
+      const cocomoRecordedHours = result.data.personMonthsLlmAdjusted * 160;
+      const cocomoEmission = calibratedToolIntervals({
+        tool: "cocomo_estimate",
+        taskType: p.task_type,
+        recordedHours: cocomoRecordedHours,
+        unitLabel: "person-months",
+        fromHours: (hours) => hours / 160,
+        fallbackSigmaHours: cocomoRecordedHours * (profile.estimationMape / 100),
+        fallbackBasis: `developer-profile estimation prior at ai_native=${p.ai_native}: ${profile.estimationMape}% MAPE dispersion — the same fallback risk.ts uses below 5 records`,
+      });
       return {
         ok: true as const,
         data: {
           ...result.data,
           developerProfile: { mode: profile.mode, correctionFactor: profile.correctionFactor },
+          interval: cocomoEmission.interval,
+          ...(cocomoEmission.intervalPopulation && { intervalPopulation: cocomoEmission.intervalPopulation }),
+          ...(cocomoEmission.intervalNote && { intervalNote: cocomoEmission.intervalNote }),
+          basisNote: cocomoEmission.basisNote,
         },
       };
     },
@@ -823,11 +955,36 @@ and returns required sprints with pessimistic estimate based on velocity varianc
         hoursPerSprint: p.hours_per_sprint,
       });
       if (!result.ok) return result;
+      // S3.1 calibrated intervals: recorded basis for sprint_forecast is
+      // totalHours (feedback.ts extractEstimatedHours reads it first), so the
+      // empirical ratio population is keyed on that. Variance fallback is the
+      // tool's OWN velocity dispersion: totalHours × velocity CV (velocity
+      // uncertainty propagates multiplicatively into hours); with a single
+      // velocity point (cv=0) the ±25%-class prior matches the spread class
+      // the tool already displays for one-sprint history (0.75x–1.5x).
+      const velocityCv = result.data.velocityCv;
+      const sprintSigmaHours = result.data.totalHours * (velocityCv > 0 ? velocityCv : 0.25);
+      const sprintEmission = calibratedToolIntervals({
+        tool: "sprint_forecast",
+        taskType: p.task_type,
+        recordedHours: result.data.totalHours,
+        unitLabel: "hours",
+        fromHours: (hours) => hours,
+        fallbackSigmaHours: sprintSigmaHours,
+        fallbackBasis:
+          velocityCv > 0
+            ? `this forecast's own velocity variance (coefficient of variation ${velocityCv} across ${p.velocity_history.length} sprints)`
+            : "a ±25% single-velocity-point prior, matching the 0.75x–1.5x spread sprintForecast already displays for one-sprint history",
+      });
       return {
         ok: true as const,
         data: {
           ...result.data,
           developerProfile: { mode: profile.mode, sprintVelocityPoints: profile.sprintVelocityPoints, correctionFactor: profile.correctionFactor },
+          interval: sprintEmission.interval,
+          ...(sprintEmission.intervalPopulation && { intervalPopulation: sprintEmission.intervalPopulation }),
+          ...(sprintEmission.intervalNote && { intervalNote: sprintEmission.intervalNote }),
+          basisNote: sprintEmission.basisNote,
         },
       };
     },
@@ -843,7 +1000,35 @@ Applies merge bias: tasks with >2 predecessors get 5% duration increase per extr
     criticalPathOutput,
     (input) => {
       const p = criticalPathSchema.parse(input);
-      return criticalPath(p.tasks);
+      const result = criticalPath(p.tasks);
+      if (!result.ok) return result;
+      // S3.1 calibrated intervals: recorded basis for critical_path is
+      // estimatedHours (total_duration × 8 — feedback.ts extractEstimatedHours
+      // reads `estimatedHours` before `total_duration`). CPM inputs are point
+      // durations with no spread of their own, so the variance fallback uses
+      // the developer-profile estimation prior at the default ai_native=1.0
+      // gradient (same convention risk.ts applies to a missing ai_native) —
+      // monte_carlo_schedule remains the tool for distribution-driven spans.
+      const cpProfile = getDeveloperProfileGradient(1.0);
+      const cpEmission = calibratedToolIntervals({
+        tool: "critical_path",
+        taskType: p.task_type,
+        recordedHours: result.data.estimatedHours,
+        unitLabel: "hours",
+        fromHours: (hours) => hours,
+        fallbackSigmaHours: result.data.estimatedHours * (cpProfile.estimationMape / 100),
+        fallbackBasis: `developer-profile estimation prior at the default ai_native=1.0 gradient: ${cpProfile.estimationMape}% MAPE dispersion (critical_path takes no ai_native input; CPM durations are point values with no intrinsic spread)`,
+      });
+      return {
+        ok: true as const,
+        data: {
+          ...result.data,
+          interval: cpEmission.interval,
+          ...(cpEmission.intervalPopulation && { intervalPopulation: cpEmission.intervalPopulation }),
+          ...(cpEmission.intervalNote && { intervalNote: cpEmission.intervalNote }),
+          basisNote: cpEmission.basisNote,
+        },
+      };
     },
   ),
 
@@ -1011,14 +1196,44 @@ Use token_cost_estimate instead when dollar cost matters too.`,
     tokenTimeOutput,
     (input) => {
       const p = tokenTimeBridgeSchema.parse(input);
+      const result = tokenTimeBridge({
+        tokens: p.tokens,
+        model: p.model,
+        toolCalls: p.tool_calls,
+        reasoningDepth: p.reasoning_depth,
+      });
+      // S3.1 calibrated intervals: recorded basis for token_time_bridge is
+      // estimatedMinutes / 60 hours (feedback.ts extractEstimatedHours reads
+      // estimatedMinutes before estimatedSeconds). Variance fallback: the
+      // developer-profile estimation prior at the default ai_native=1.0
+      // gradient (this tool takes no ai_native input); the model-calibration
+      // provenance tier is already surfaced separately as `confidence`.
+      const ttbRecordedHours = result.estimatedMinutes / 60;
+      const ttbProfile = getDeveloperProfileGradient(1.0);
+      const ttbEmission = calibratedToolIntervals({
+        tool: "token_time_bridge",
+        taskType: p.task_type,
+        recordedHours: ttbRecordedHours,
+        unitLabel: "minutes",
+        fromHours: (hours) => hours * 60,
+        fallbackSigmaHours: ttbRecordedHours * (ttbProfile.estimationMape / 100),
+        fallbackBasis: `developer-profile estimation prior at the default ai_native=1.0 gradient: ${ttbProfile.estimationMape}% MAPE dispersion (calibration-data provenance is surfaced separately as confidence="${result.confidence}")`,
+      });
       return {
         ok: true as const,
-        data: tokenTimeBridge({
-          tokens: p.tokens,
-          model: p.model,
-          toolCalls: p.tool_calls,
-          reasoningDepth: p.reasoning_depth,
-        }),
+        data: {
+          ...result,
+          interval: ttbEmission.interval,
+          ...(ttbEmission.intervalPopulation && { intervalPopulation: ttbEmission.intervalPopulation }),
+          ...(ttbEmission.intervalNote && { intervalNote: ttbEmission.intervalNote }),
+          basisNote: ttbEmission.basisNote,
+          // Interval-first humanReadable (same treatment as pert_estimate):
+          // lead with the calibrated P80 band, then the point estimate.
+          humanReadable:
+            `Expected ${formatInterval(ttbEmission.interval.p80, "minutes")} (80% confidence interval); point estimate ${result.estimatedMinutes} minutes ` +
+            `for ${p.tokens.toLocaleString()} tokens with ${p.model} (${p.reasoning_depth} reasoning, ${p.tool_calls} tool calls). Confidence: ${result.confidence}.` +
+            `${ttbEmission.intervalNote ? ` ${ttbEmission.intervalNote}` : ""}${ttbEmission.intervalPopulation ? ` Interval calibrated from ${ttbEmission.intervalPopulation}.` : ""}`,
+        },
       };
     },
   ),
@@ -1101,7 +1316,7 @@ Computes confidence intervals (p50/p80/p95) based on your team's MAPE.
 Returns risk level and actionable recommendations.
 Uses industry baseline (25% MAPE) when no historical data is available.`,
     scheduleRiskSchema,
-    { type: "object", properties: { estimatedHours: { type: "number" }, estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object" }, historicalAccuracy: { type: "object", properties: { mape: { type: "number" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, taskTypeBreakdown: { type: "object", additionalProperties: { type: "object", properties: { riskLevel: { type: "string" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, description: "Risk breakdown by task type from historical data" }, recommendation: { type: "string" } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { estimatedHours: { type: "number" }, estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" }, riskLevel: { type: "string" }, confidenceIntervals: { type: "object", description: "Legacy UPPER-ONLY spans (p50 is the bare estimate; p80/p95 widen upward only) — kept byte-identical for compatibility; prefer twoSidedIntervals." }, twoSidedIntervals: { type: "object", description: "S3.1 two-sided P50/P80/P95 bands: lower bounds mirror the legacy uppers with the same z constants (clamped at 0); every upper bound equals its legacy confidenceIntervals field — no silent widening.", properties: { p50: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } }, p80: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } }, p95: { type: "object", properties: { lower: { type: "number" }, upper: { type: "number" } } }, source: { type: "string", enum: ["variance_fallback"] } } }, intervalBasisNote: { type: "string", description: "Names the dispersion basis of twoSidedIntervals (cappedMdape z-bands, complexity cone, upper bounds == legacy fields)." }, historicalAccuracy: { type: "object", properties: { mape: { type: "number" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, taskTypeBreakdown: { type: "object", additionalProperties: { type: "object", properties: { riskLevel: { type: "string" }, mdape: { type: "number" }, sampleSize: { type: "number" } } }, description: "Risk breakdown by task type from historical data" }, recommendation: { type: "string" } } } satisfies Record<string, unknown>,
     (input) => {
       const p = scheduleRiskSchema.parse(input);
       return {

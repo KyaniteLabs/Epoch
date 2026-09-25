@@ -937,7 +937,13 @@ const TOOL_TASK_TYPE_FALLBACK: Record<string, string> = {
   compare_models: "feature",
 };
 
-function inferTaskType(tool: string): string {
+/**
+ * Task-type bucket an estimate row falls into when its inputs carry no
+ * task_type. Exported so the S3.1 interval wiring (tool-registry.ts) queries
+ * the SAME per-(tool, task_type) ratio population that record_actual pairs
+ * are bucketed into at ingest — never a hand-copied table.
+ */
+export function inferTaskType(tool: string): string {
   return TOOL_TASK_TYPE_FALLBACK[tool] ?? "feature";
 }
 

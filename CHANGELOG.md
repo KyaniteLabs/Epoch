@@ -2,6 +2,14 @@
 
 ## [Unreleased] — wait_bound (26th tool)
 
+### feat: S3.1 calibrated intervals (P50/P80/P95) across estimate outputs
+
+- `cocomo_estimate`, `sprint_forecast`, `critical_path`, `token_time_bridge` now emit two-sided P50/P80/P90 prediction-interval bands (`interval` + `basisNote` + `intervalPopulation`/`intervalNote`) — the same interval-first treatment `pert_estimate`/`reference_class_estimate` already have. Bands come from each tool's OWN (tool, task_type, basis-era) actual/estimate ratio population at n>=5 via `empiricalRatioQuantilesForTaskType` (coverage.ts, already tool-parameterized), applied to the ledger-RECORDED basis (ticket-11 same-basis rule: personMonthsLlmAdjusted x 160h / totalHours / estimatedHours / estimatedMinutes per tool). The P90 band's upper edge is the P95 point of the ratio distribution (central 90% band), matching the shared `PredictedIntervals` shape.
+- Variance-derived fallback below n=5, labeled `variance-fallback` in `source`/`basisNote`: sprint_forecast uses its own velocity CV (single-point history: the +/-25% prior matching its displayed 0.75x-1.5x spread); cocomo_estimate / critical_path / token_time_bridge use the developer-profile estimation prior (the same dispersion risk.ts falls back to below 5 records).
+- `schedule_risk` gains TWO-SIDED intervals (`twoSidedIntervals` + `intervalBasisNote`): lower bounds mirror the legacy upper-only fields with the same z constants clamped at 0; every upper bound is byte-identical to its legacy `confidenceIntervals` field (no silent widening). humanReadable now surfaces the two-sided P80 span.
+- Perf: clean-pairs memo in coverage.ts (stat-validated; tolerates pure estimate-row appends, busts on any actuals/flags/labels/quarantine change; honors EPOCH_LEDGER_CACHE=0; `resetIntervalPopulationCache()` test hook) so per-call interval lookups do not re-parse large ledgers after every estimate append.
+- Accuracy roadmap item #3 (EPOCH-ACCURACY-ROADMAP-2026-09-25.md Part 2); PRD S3.1 (.omx/plans/prd-epoch-upgrade.md); suite 1799 -> 1816 (17 new tests: src/dispatcher/interval-emission.test.ts + coverage.test.ts additions).
+
 ### feat: wait-bound — deadline derivation from the mechanism a wait rides (three-clock law)
 
 - New tool `wait_bound` (CLI `wait-bound`, MCP `wait_bound`): fleet = k×cycle + PERT(turn) + 1sd; world = PERT(turn) with REQUIRED external anchor; ceo = the named ladder rung (pass/burst/sleep/cycle/season). Returns bound seconds, deadline UTC+local (PT default), envelope-ready TTL hours, law note.

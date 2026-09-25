@@ -52,7 +52,7 @@
 // decision (PRD D1).
 // ---------------------------------------------------------------------------
 
-import { loadLedgerWithOverlays, LEGACY_BASIS_VERSION, CURRENT_BASIS_VERSION } from "./ledger.js";
+import { loadLedgerWithOverlays, LEGACY_BASIS_VERSION, CURRENT_BASIS_VERSION, ledgerFileStatKey, isLedgerCacheEnabled, ESTIMATES_FILE, ACTUALS_FILE, FLAGS_FILE, LABELS_FILE, QUARANTINE_ARCHIVE_FILE } from "./ledger.js";
 import { isExcluded } from "./exclusion.js";
 import { extractEstimatedHours, ESTIMATE_UNIT_TO_HOURS } from "./feedback.js";
 
@@ -77,7 +77,7 @@ export interface Interval {
   readonly upper: number;
 }
 
-export type IntervalSource = "pert_variance" | "empirical_ratio_quantile";
+export type IntervalSource = "pert_variance" | "empirical_ratio_quantile" | "variance_fallback";
 
 export interface PredictedIntervals {
   readonly p50: Interval;
@@ -111,6 +111,26 @@ export function pertVarianceIntervals(expected: number, stdDeviation: number): P
     p80: clampedInterval(expected - Z_P80 * stdDeviation, expected + Z_P80 * stdDeviation),
     p90: clampedInterval(expected - Z_P90 * stdDeviation, expected + Z_P90 * stdDeviation),
     source: "pert_variance",
+  };
+}
+
+/**
+ * S3.1 variance-derived fallback intervals for estimation tools that have no
+ * empirical ratio population yet (n < MIN_N_FOR_QUANTILES) and no PERT spread
+ * of their own: the same two-sided normal z-band math as
+ * pertVarianceIntervals(), applied to a tool-supplied dispersion estimate
+ * (sigma) derived from that tool's OWN variance source (e.g. sprint_forecast's
+ * velocity coefficient of variation) or from the developer-profile estimation
+ * prior risk.ts already uses when records < 5. Labeled "variance_fallback" so
+ * callers can distinguish it from both empirical quantiles and a true PERT
+ * variance — never presented as calibrated.
+ */
+export function varianceFallbackIntervals(estimate: number, sigmaHours: number): PredictedIntervals {
+  return {
+    p50: clampedInterval(estimate - Z_P50 * sigmaHours, estimate + Z_P50 * sigmaHours),
+    p80: clampedInterval(estimate - Z_P80 * sigmaHours, estimate + Z_P80 * sigmaHours),
+    p90: clampedInterval(estimate - Z_P90 * sigmaHours, estimate + Z_P90 * sigmaHours),
+    source: "variance_fallback",
   };
 }
 
@@ -195,8 +215,78 @@ function pertValueToHours(value: number, unit: unknown): number | null {
   return factor === undefined ? null : value * factor;
 }
 
+// ---- Clean-pairs memo (S3.1) ------------------------------------------------
+//
+// empiricalRatioQuantilesForTaskType() now runs inside every cocomo_estimate /
+// sprint_forecast / critical_path / token_time_bridge call, and each of those
+// calls ALSO appends an estimate row — which busts ledger.ts's stat-keyed read
+// cache and would force a full multi-MB re-parse per call on large ledgers.
+// This memo caches the built CleanPair[] and validates it against file stats:
+//
+//   - actuals/flags/labels/quarantine: ANY stat change (size, mtime, ino)
+//     busts — a new actual, quarantine move, or overlay flag can change pair
+//     membership, so these must be exactly current.
+//   - estimates: pure appends are tolerated (current size >= memoized size
+//     AND same ino). An appended estimate row cannot form a matched pair
+//     without an actual, and recording that actual appends to feedback.jsonl,
+//     which busts via the actuals stat. A rewrite, truncation (size shrink),
+//     or file replacement (ino change) still busts. Ledger discipline is
+//     append-only (see ledger.ts), so the residual risk is an in-place,
+//     same-ino, non-shrinking byte edit of estimates.jsonl — accepted and
+//     resettable via resetIntervalPopulationCache().
+//
+// Honors EPOCH_LEDGER_CACHE=0 (bypass, like ledger.ts's own cache). The
+// memoized array is shared by reference: callers treat it as read-only.
+
+type LedgerStat = { size: number; mtimeMs: number; ino: string };
+
+interface CleanPairsMemo {
+  readonly pairs: CleanPair[];
+  readonly estimatesStat: LedgerStat | null;
+  readonly overlayStats: ReadonlyMap<string, LedgerStat | null>;
+}
+
+let cleanPairsMemo: CleanPairsMemo | null = null;
+
+function overlayFilenames(): readonly string[] {
+  return [ACTUALS_FILE, FLAGS_FILE, LABELS_FILE, QUARANTINE_ARCHIVE_FILE];
+}
+
+function currentOverlayStats(): Map<string, LedgerStat | null> {
+  return new Map(overlayFilenames().map((name) => [name, ledgerFileStatKey(name)]));
+}
+
+function cleanPairsMemoValid(): boolean {
+  const memo = cleanPairsMemo;
+  if (!memo) return false;
+  // Overlay-side stats must match exactly (any change can alter pairs).
+  const overlays = currentOverlayStats();
+  if (overlays.size !== memo.overlayStats.size) return false;
+  for (const [name, stat] of overlays) {
+    const memoized = memo.overlayStats.get(name);
+    if (memoized?.size !== stat?.size || memoized?.mtimeMs !== stat?.mtimeMs || memoized?.ino !== stat?.ino) return false;
+  }
+  // Estimates: tolerate pure growth on the same file; bust on rewrite,
+  // truncation, replacement, or appearance/disappearance.
+  const estimates = ledgerFileStatKey(ESTIMATES_FILE);
+  if ((estimates === null) !== (memo.estimatesStat === null)) return false;
+  if (estimates && memo.estimatesStat) {
+    if (estimates.ino !== memo.estimatesStat.ino) return false;
+    if (estimates.size < memo.estimatesStat.size) return false;
+  }
+  return true;
+}
+
+/** Test/observability hook: drop the clean-pairs memo so the next interval lookup rebuilds from disk (mirrors ledger.ts's resetLedgerReadCache discipline). */
+export function resetIntervalPopulationCache(): void {
+  cleanPairsMemo = null;
+}
+
 /** Load exclusion-filtered, overlay-merged matched pairs with enough data to predict an interval. Mirrors calibration-factors.ts's loadPertMatchedRecords() "clean path" pattern, generalized to every tool. */
 function loadCleanMatchedPairs(): CleanPair[] {
+  if (isLedgerCacheEnabled() && cleanPairsMemoValid()) {
+    return cleanPairsMemo?.pairs ?? [];
+  }
   const merged = loadLedgerWithOverlays();
   const pairs: CleanPair[] = [];
 
@@ -249,6 +339,11 @@ function loadCleanMatchedPairs(): CleanPair[] {
     });
   }
 
+  cleanPairsMemo = {
+    pairs,
+    estimatesStat: ledgerFileStatKey(ESTIMATES_FILE),
+    overlayStats: currentOverlayStats(),
+  };
   return pairs;
 }
 

@@ -425,6 +425,20 @@ export interface ScheduleRiskAssessment {
     readonly p80: number;
     readonly p95: number;
   };
+  /**
+   * S3.1 two-sided bands (additive): the legacy `confidenceIntervals` fields
+   * above are upper-only spans; each band here carries a lower bound derived
+   * from the same z constant and cappedMdape dispersion, with the upper bound
+   * byte-identical to its legacy field (no silent widening).
+   */
+  readonly twoSidedIntervals?: {
+    readonly p50: { readonly lower: number; readonly upper: number };
+    readonly p80: { readonly lower: number; readonly upper: number };
+    readonly p95: { readonly lower: number; readonly upper: number };
+    readonly source: "variance_fallback";
+  };
+  /** Names the dispersion basis of `twoSidedIntervals` (cappedMdape z-bands, complexity cone, upper==legacy). */
+  readonly intervalBasisNote?: string;
   readonly historicalAccuracy: {
     readonly mape: number;
     readonly mdape: number;

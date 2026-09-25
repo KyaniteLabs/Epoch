@@ -1,19 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../lib/feedback.js", () => ({
-  recordEstimate: vi.fn(() => "test-estimate-id"),
-  recordToolCall: vi.fn(() => "test-tool-call-id"),
-  recordActual: vi.fn(() => true),
-  getPendingEstimates: vi.fn(() => []),
-  batchRecordActuals: vi.fn(() => ({ total: 0, succeeded: 0, failed: 0, errors: [] })),
-  getFeedbackHealthReport: vi.fn(() => ({
-    totalEstimates: 0, totalActuals: 0, matchRate: 0,
-    byTool: {}, byTaskType: {},
-    selfImprovement: { readyTypes: [], callsUntilUpdate: 100 },
-  })),
-  getCalibrationData: vi.fn(() => []),
-  matchEstimatesToActuals: vi.fn(() => []),
-}));
+// Partial mock (S3.1): only the recording/reading functions the dispatch
+// pipeline needs isolated are overridden; the rest (extractEstimatedHours,
+// inferTaskType, UNIT_SUSPECT_FLAG_HINT, …) now comes from the REAL module —
+// coverage.ts's interval wiring reads the ledger through those, and a whole-
+// module factory mock leaves them undefined.
+vi.mock("../lib/feedback.js", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    recordEstimate: vi.fn(() => "test-estimate-id"),
+    recordToolCall: vi.fn(() => "test-tool-call-id"),
+    recordActual: vi.fn(() => true),
+    getPendingEstimates: vi.fn(() => []),
+    batchRecordActuals: vi.fn(() => ({ total: 0, succeeded: 0, failed: 0, errors: [] })),
+    getFeedbackHealthReport: vi.fn(() => ({
+      totalEstimates: 0, totalActuals: 0, matchRate: 0,
+      byTool: {}, byTaskType: {},
+      selfImprovement: { readyTypes: [], callsUntilUpdate: 100 },
+    })),
+    getCalibrationData: vi.fn(() => []),
+    matchEstimatesToActuals: vi.fn(() => []),
+  };
+});
 
 vi.mock("../lib/telemetry.js", () => ({
   getTelemetry: vi.fn(() => ({

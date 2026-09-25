@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   pertVarianceIntervals,
+  varianceFallbackIntervals,
+  resetIntervalPopulationCache,
   empiricalRatioQuantiles,
   empiricalIntervals,
   computeIntervalCoverage,
@@ -34,6 +36,23 @@ describe("pertVarianceIntervals", () => {
   it("clamps the lower bound at 0 for a high-variance, low-expected estimate", () => {
     const intervals = pertVarianceIntervals(1, 5);
     expect(intervals.p90.lower).toBe(0);
+  });
+});
+
+describe("varianceFallbackIntervals (S3.1)", () => {
+  it("labels the source variance_fallback and mirrors the pert-variance z-band math", () => {
+    const fallback = varianceFallbackIntervals(100, 25);
+    const pert = pertVarianceIntervals(100, 25);
+    expect(fallback.source).toBe("variance_fallback");
+    expect(fallback.p50).toEqual(pert.p50);
+    expect(fallback.p80).toEqual(pert.p80);
+    expect(fallback.p90).toEqual(pert.p90);
+  });
+
+  it("clamps the lower bound at 0 for a sigma larger than the estimate", () => {
+    const fallback = varianceFallbackIntervals(10, 100);
+    expect(fallback.p90.lower).toBe(0);
+    expect(fallback.p50.lower).toBe(0);
   });
 });
 
@@ -304,6 +323,21 @@ describe("empiricalRatioQuantilesForTaskType — tool + basis-era split (ticket 
 
   it("pins the v2 population threshold at 30 (ticket 11)", () => {
     expect(MIN_N_FOR_V2_POPULATION).toBe(30);
+  });
+
+  it("resetIntervalPopulationCache drops the clean-pairs memo so a reseeded ledger is read fresh (S3.1)", () => {
+    // Ratios whose p80 band is [0.6, 1.5] ...
+    writeCells(cell("pert_estimate", "bugfix", [0.5, 0.6, 0.7, 1.0, 1.3, 1.5, 2.0], 10));
+    const before = empiricalRatioQuantilesForTaskType("bugfix", "pert_estimate");
+    expect(before?.quantiles.p80).toEqual([0.6, 1.5]);
+
+    // ... then a same-shape reseed (same row count/lengths, only values
+    // changed) that a size-only memo would miss. The explicit reset (plus the
+    // actuals-side stat check) must force a rebuild.
+    writeCells(cell("pert_estimate", "bugfix", [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4], 10));
+    resetIntervalPopulationCache();
+    const after = empiricalRatioQuantilesForTaskType("bugfix", "pert_estimate");
+    expect(after?.quantiles.p80).toEqual([0.9, 1.3]);
   });
 
   it("never pools ratio populations across tools for the same task_type", () => {

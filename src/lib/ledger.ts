@@ -120,6 +120,22 @@ function ledgerCacheEnabled(): boolean {
   return !(raw === "0" || raw === "false");
 }
 
+/**
+ * Stat key for a ledger file, so higher layers (coverage.ts's interval-
+ * population memo) can validate their caches with the exact same stat
+ * semantics and degrade-to-null rule as the internal read cache — without
+ * violating the single-reader rule (this remains the only module that
+ * touches ledger file paths). Null when the file cannot be stat'ed.
+ */
+export function ledgerFileStatKey(filename: string): { size: number; mtimeMs: number; ino: string } | null {
+  return statKey(join(dataDir(), filename));
+}
+
+/** Whether the ledger read cache (and caches layered on it) is enabled — EPOCH_LEDGER_CACHE=0/"false" disables. */
+export function isLedgerCacheEnabled(): boolean {
+  return ledgerCacheEnabled();
+}
+
 /** Deep-freeze a parsed row (and everything reachable from it) so cache corruption fails loudly. */
 function deepFreeze<T>(value: T): T {
   if (value !== null && (typeof value === "object" || typeof value === "function")) {

@@ -22,3 +22,4 @@ rescue/
 *.generated.md
 docs/ops/audits/*
 !docs/ops/audits/.gitkeep
+package-lock.json
