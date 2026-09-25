@@ -6,13 +6,13 @@
 
 | Machine | Tailscale IP | Tailscale hostname | Status |
 |---|---:|---|---|
-| mac-mini | 100.115.175.18 | simons-mac-mini | ✅ Connected, up 49 days |
-| ubuntu-receiver | 100.113.174.74 | nucbox | ✅ Connected, up 4 days |
+| mac-mini | 100.115.175.18 | host | ✅ Connected, up 49 days |
+| ubuntu-receiver | 100.113.174.74 | gpu-host | ✅ Connected, up 4 days |
 | hermes-vps | 100.92.68.103 | srv1542844 | Not audited (out of scope) |
 
 ---
 
-## Mac mini (`100.115.175.18` / `simons-mac-mini`)
+## Mac mini (`100.115.175.18` / `host`)
 
 ### Identity
 - **Hostname:** Mac.lan
@@ -22,7 +22,7 @@
 
 ### Epoch installation
 - **Epoch CLI:** `/opt/homebrew/bin/epoch` ✅ installed
-- **Epoch repo:** `/Users/simongonzalezdecruz/workspaces/kyanite-labs/Epoch` (branch: `main`, HEAD: `646885d`)
+- **Epoch repo:** `~/workspaces/kyanite-labs/Epoch` (branch: `main`, HEAD: `646885d`)
 - **Note:** Mac mini repo is behind the branch we just pushed (expected — it's still on main)
 
 ### Epoch data files (`~/.epoch/`)
@@ -45,10 +45,10 @@
 
 ---
 
-## Ubuntu receiver (`100.113.174.74` / `nucbox`)
+## Ubuntu receiver (`100.113.174.74` / `gpu-host`)
 
 ### Identity
-- **Hostname:** nucbox
+- **Hostname:** gpu-host
 - **OS:** Ubuntu 24.04.4 LTS, kernel 6.17.0-1023-oem
 - **Hardware:** GMKtec NucBox_EVO-X2
 - **Uptime:** 4 days, 9 hours
