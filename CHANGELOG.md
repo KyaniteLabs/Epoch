@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — mine-git (S1.1) + wait_bound (26th tool)
+
+### feat: S1.1 git-mined auto-actuals — `epoch mine-git` (join mode)
+
+- New CLI `epoch mine-git --repo <path> --since <date> [--dry-run] [--window dev|review-inclusive]`: mines CLOSED work units from local git history (Forgejo/GitHub merge-commit PRs, squash-merged PRs, plain merges) and joins them to pending ledger estimates via `task_label` / `branch` / `issue_ref` (precedence: branch > issue_ref > task_label; deterministic newest-merge tie-break). Attacks the starved-loop finding the accuracy roadmap names as upgrade #1: the auto-actuals session_id join yields zero candidates in practice; this matcher joins 11/12 on the Epoch repo's own history (receipt in the PR).
+- Offline and read-only by construction: the git runner hard-rejects network/mutating verbs (fetch/clone/push/pull/remote/…) and allowlists the read-only verbs it uses; pinned by tests.
+- Two cycle-time windows computed per unit and reported separately, never blended: dev window (first-commit→merge, stamp `git_derived`) and review-inclusive (open→merge anchored on branch-reflog creation when present, stamp `git_derived_review_inclusive`). The non-recorded window rides in the actual's notes. Plain clones lack branch reflogs, so review-inclusive n is honestly 0 there — the anchor is never fabricated.
+- Sanity gates reuse the auto_wallclock pattern: bounds [0.05h, 720h] (calendar windows span nights/weekends; 30 days separates task cycles from abandoned branches) + the same two-sided 10x estimate-ratio limit — enforced at three seams (CLI pre-filter, write-time guard, calibration-math gate in `isExcluded()`). Never-overwrite-real-actual stays structural (pending-only selection + duplicate guard).
+- Provenance plumbing: `git_derived` / `git_derived_review_inclusive` added to the shared provenance unions (schemas enum, `exclusion.ts` VALID_PROVENANCE, `feedback.ts` VALID_PROVENANCE, `HistoricalRecord`), correction-eligible by default exactly like `auto_wallclock`, and segmented in `feedback_health.byProvenance` as a third bucket (`gitDerived`) so calendar-window noise never blends with verified actuals.
+- New write-time rejection reason `git_derived_out_of_bounds` (record_actual surfaces a distinct actionable message; HTTP maps it 400-class).
+- CLI-only by design (same posture as auto-actuals): no new MCP tool, so the in-flight "26 tools" public claim and the 0.5.2 truth train stay intact; the tool-count surfaces are untouched.
+
 ## [Unreleased] — wait_bound (26th tool)
 
 ### feat: wait-bound — deadline derivation from the mechanism a wait rides (three-clock law)

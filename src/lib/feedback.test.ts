@@ -1225,12 +1225,13 @@ describe("getFeedbackHealthReport", () => {
 // ---- Wave 2 auto-actuals: byProvenance segmentation (verified vs auto) ----
 
 describe("getFeedbackHealthReport byProvenance", () => {
-  it("reports zero auto and zero verified when there are no matched pairs", () => {
+  it("reports zero auto, zero verified, and zero git-derived when there are no matched pairs", () => {
     mockReadFileSync.mockReturnValue("");
     const report = getFeedbackHealthReport();
     expect(report.byProvenance).toEqual({
       verified: { matchedPairs: 0, mdape: null, cappedMdape: null },
       auto: { matchedPairs: 0, mdape: null, cappedMdape: null },
+      gitDerived: { matchedPairs: 0, mdape: null, cappedMdape: null },
     });
   });
 
