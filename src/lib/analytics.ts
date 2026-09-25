@@ -93,6 +93,33 @@ const MODEL_CALIBRATIONS: Record<string, ModelCalibration> = {
   "mistral-large": { tokensPerSecond: 42.6, reasoningOverheadMs: 730, toolCallLatencyMs: 200 },
 };
 
+/**
+ * DATA-AGE STAMP for the curated table above (claim-truth pass, 2026-09-25,
+ * smell CGO-22 / EPOCH-ACCURACY-ROADMAP-2026-09-25 finding on stale
+ * constants): the date the catalog was last refreshed. Upgrade #4 (S4.1)
+ * migrates this to per-entry stamped data with a fail-closed refresh path
+ * and a staleness tripwire; until then this constant is the honest age of
+ * record for every non-placeholder entry.
+ */
+export const MODEL_CALIBRATIONS_REFRESHED_AT = "2026-07-09";
+
+/**
+ * PROVENANCE STAMP: model entries whose figures are NOT primary-source
+ * verified — they copy a same-tier sibling's calibration as a documented
+ * placeholder pending real telemetry (see the inline comments above).
+ * Consumers (CLI `data status`, the S4.1 staleness surface, tests) read
+ * this set instead of re-deriving it from comments. Live telemetry
+ * (>=10 token-tool calls) and reference-db stats already outrank the table
+ * at resolve time, so placeholder status never blocks better data.
+ */
+export const MODEL_CALIBRATION_PLACEHOLDER_ENTRIES: ReadonlySet<string> = new Set([
+  "claude-haiku-4-5",
+  "claude-opus-4-8",
+  "claude-sonnet-5",
+  "claude-fable-5",
+]);
+
+
 const REASONING_DEPTH_MULTIPLIER: Record<ReasoningDepth, number> = {
   shallow: 1.0,
   moderate: 2.5,

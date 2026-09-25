@@ -55,7 +55,7 @@ Claude (using Epoch):
 
 Every AI agent hallucinates timelines. "This should take about 2 hours" becomes 2 days. Epoch gives AI grounded, data-driven estimates instead of guesses. It packages established estimation methods (PERT, COCOMO II, Monte Carlo, reference class forecasting) into 26 tools any AI can call -- so your assistant stops guessing and starts calculating.
 
-**Works out of the box.** Epoch ships with a bundled reference database built from 117,791 real data points across task types, complexity levels, and estimation tools. You get accurate estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
+**Works out of the box.** Epoch ships with a bundled reference database: task-type correction factors and scope baselines from the maintainer's recorded estimate-vs-actual history plus curated public research, and tool-usage/latency telemetry samples (117,791 across the bundled canary-test and session benchmarks) that keep the token-time bridge grounded. You get reasonable estimates from day one — no data collection or account setup required. If you choose to record your actuals, Epoch's self-improvement engine learns your patterns and gets even more precise over time.
 
 ## What is MCP?
 
@@ -400,7 +400,7 @@ Output: {
   accuracyTrend: "stable",
   velocityTrend: "stable",
   recommendations: [
-    "Using reference database correction factor (1.45x) — personalized from 117,791 samples.",
+    "Using reference database correction factor (1.45x) — 8 matched samples, need 5.",
     "Record actuals via POST /v1/feedback/record-actual to refine for your team's patterns."
   ]
 }
@@ -491,9 +491,9 @@ Output: {
   estimatedHours: 40,
   riskLevel: "low",
   confidenceIntervals: { p50: 40, p80: 45.1, p95: 49.9 },
-  historicalAccuracy: { mape: 15, sampleSize: 117791 },
+  historicalAccuracy: { mape: 15, sampleSize: 42 },
   recommendation: "Low risk. Estimate is within normal variance.",
-  humanReadable: "Schedule risk: low. MAPE: 15% (based on 0 historical records). Confidence intervals: p50=40h, p80=45.1h, p95=49.9h."
+  humanReadable: "Schedule risk: low. MAPE: 15% (based on 42 historical records). Confidence intervals: p50=40h, p80=45.1h, p95=49.9h."
 }
 ```
 
@@ -554,7 +554,7 @@ Tools that support `ai_native`: `pert_estimate`, `cocomo_estimate`, `sprint_fore
 
 ## Self-Improvement Engine
 
-Epoch learns your patterns the more you use it. The bundled reference database already contains 117,791 data points with correction factors tuned from real estimate-vs-actual pairs across 8 task types — **it works accurately on day one.**
+Epoch learns your patterns the more you use it. The bundled reference database combines a small set of maintainer estimate-vs-actual pairs (the seed of the correction factors), curated public research baselines, and 117,791 tool-usage/latency telemetry samples (canary-test and session benchmarks — these ground latency and token-time figures, not estimation accuracy). It gives you a sane starting point on day one — and it gets sharper as you record actuals.
 
 If you record your actuals, Epoch personalizes further:
 
@@ -595,7 +595,7 @@ Measured on the maintainers' production ledger (697 held-out matched pairs at ti
 Epoch uses a three-layer data strategy so it's accurate from the start and gets better over time:
 
 **1. Bundled reference database (works immediately, no setup):**
-Epoch ships with a pre-built reference database containing 117,791 data points across 8 task types and 5 complexity levels. Correction factors are computed from real estimate-vs-actual pairs. You get accurate estimates the moment you install it.
+Epoch ships with a pre-built reference database: correction factors seeded from the maintainer's own estimate-vs-actual history, scope baselines from curated public research, and 117,791 tool-usage/latency telemetry samples (canary tests and session benchmarks across 8 task types and 5 complexity levels). Telemetry sample counts are reported separately from matched estimate-actual pair counts everywhere Epoch shows a data size.
 
 **2. Local self-improvement (automatic, private):**
 As you use Epoch and record actuals, the self-improvement engine recalibrates correction factors from *your* data. This runs entirely locally in `~/.epoch/` — nothing leaves your machine. The engine triggers automatically every 100 tool calls or 24 hours.
