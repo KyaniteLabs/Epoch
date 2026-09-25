@@ -120,6 +120,10 @@ describe("pert_estimate handler — learned correction (feature-flagged)", () =>
       delete rest["intervalNote"];
       delete rest["intervalPopulation"];
       delete rest["humanReadable"];
+      // S1.2: calibrationCounts reports the calibration population and therefore
+      // reacts to available history exactly like the interval fields above; it is
+      // provenance, not correction output, so it joins the same omit list.
+      delete rest["calibrationCounts"];
       return rest;
     };
     expect(omitIntervalFields(withData)).toEqual(omitIntervalFields(withoutData));

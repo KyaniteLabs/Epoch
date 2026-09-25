@@ -45,6 +45,7 @@ import { getDeveloperProfileGradient } from "../lib/profiles.js";
 import { classifyContext, resolveContextEstimateInputs } from "../lib/context-estimate.js";
 import { computeIntervalCoverage, empiricalRatioQuantilesForTaskType, empiricalIntervals, pertVarianceIntervals } from "../lib/coverage.js";
 import type { PredictedIntervals } from "../lib/coverage.js";
+import { calibrationTaskCounts, calibrationProvenanceSentence } from "../lib/calibration-provenance.js";
 import {
   timeMathSchema,
   pertEstimateSchema,
@@ -202,6 +203,19 @@ const businessDayOutput = {
 
 const feedbackRefField = { type: "string", description: "Token for recording actual hours via record_actual" };
 
+/** S1.2: dual-labeled trust-class counts of the user's historical tasks behind the calibration (git-derived and verified are separate numbers, never blended). */
+const calibrationCountsField = {
+  type: "object",
+  description:
+    "How many of YOUR historical tasks calibrated this output, split by trust class — git-derived (mined cycle-time actuals) and verified (explicitly recorded actuals) are separate numbers, never blended; autoWallclock is the third class. Mirrors feedback_health.byProvenance's segmentation. Also rendered into humanReadable as the 'Calibrated on YOUR N historical tasks (...)' sentence.",
+  properties: {
+    total: { type: "number", description: "gitDerived + verified + autoWallclock (the population that calibrated the output)." },
+    gitDerived: { type: "number", description: "git_derived / git_derived_review_inclusive actuals (epoch mine-git), including bootstrap-minted baseline pairs." },
+    verified: { type: "number", description: "Every non-auto, non-git provenance — actuals a human/agent explicitly recorded." },
+    autoWallclock: { type: "number", description: "auto_wallclock session actuals." },
+  },
+};
+
 const pertOutput = {
   type: "object",
   properties: {
@@ -236,6 +250,7 @@ const pertOutput = {
     rawEstimate: { type: "number", description: "Pre-correction expected-based headline (same value as `expected`), exposed for provenance parity with reference_class_estimate." },
     correctionFactor: { type: "number", description: "Learned (pert_estimate, task_type) correction factor from computeToolTaskCorrectionFactors, independent of the ai_native developerProfile factor. 1.0 when EPOCH_PERT_LEARNED_CORRECTION is off or the cell has fewer than MIN_RECORDS_PER_FACTOR matched pairs." },
     n: { type: "number", description: "Matched-pair sample size for the (pert_estimate, task_type) correction cell. 0 when the learned-correction flag is off or no task_type was supplied." },
+    calibrationCounts: calibrationCountsField,
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -363,6 +378,7 @@ const referenceClassOutput = {
       },
     },
     intervalNote: { type: "string", description: "Present only when there wasn't enough per-task-type data (n<5) to compute an empirical interval." },
+    calibrationCounts: calibrationCountsField,
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;
@@ -728,6 +744,14 @@ Use when estimating task duration with uncertain outcomes.`,
       data.interval = interval;
       if (intervalNote) data.intervalNote = intervalNote;
       if (intervalPopulation) data.intervalPopulation = intervalPopulation;
+      // S1.2 calibration provenance counts: the sentence describes exactly the
+      // population that calibrated this output — the empirical interval's own
+      // (basis-era) cell when one was selected; otherwise the honest cold-start
+      // form (the recorded-basis point estimate and the PERT-variance interval
+      // consume no user history). The learned-factor cell (correctionFactor /
+      // n, Phase 3 contract) reports its own count separately.
+      const calibrationCounts = selection?.provenanceCounts ?? calibrationTaskCounts([]);
+      data.calibrationCounts = calibrationCounts;
       // PRD dual-field rule (ticket 11): both bases are emitted, labeled.
       data.basisNote =
         `Interval and point estimate are on the ledger-recorded basis (raw PERT expected × unit factor). ` +
@@ -735,7 +759,8 @@ Use when estimating task duration with uncertain outcomes.`,
       data.humanReadable =
         `Expected ${formatInterval(interval.p80, p.unit)} (80% confidence interval); point estimate ${result.data.expected} ${p.unit} ` +
         `(ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the correction factor).` +
-        `${intervalNote ? ` ${intervalNote}` : ""}${intervalPopulation ? ` Interval calibrated from ${intervalPopulation}.` : ""}`;
+        `${intervalNote ? ` ${intervalNote}` : ""}${intervalPopulation ? ` Interval calibrated from ${intervalPopulation}.` : ""} ` +
+        calibrationProvenanceSentence(calibrationCounts);
 
       // Cross-check with reference class for AI-native workflows
       if (p.ai_native >= 0.7 && p.task_type) {
@@ -942,6 +967,12 @@ Prioritize this over algorithmic models when historical data is available.`,
         intervalNote = `Fewer than 5 exclusion-filtered historical "${p.task_type}" reference_class_estimate pairs are available yet, so no empirical confidence interval could be computed.`;
         humanReadable = `Expected ~${result.correctedEstimate} hours (point estimate, ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the developerProfile correction). ${intervalNote}`;
       }
+      // S1.2 calibration provenance counts: computed over the SAME records
+      // population that drives correctionFactor/sampleSize above (task-type
+      // filtered, positive recorded estimate), so the counts can never
+      // disagree with the sampleSize the tool already reports.
+      const calibrationCounts = calibrationTaskCounts(records.filter((r) => r.estimatedHours > 0));
+      humanReadable += ` ${calibrationProvenanceSentence(calibrationCounts)}`;
 
       return {
         ok: true as const,
@@ -955,6 +986,7 @@ Prioritize this over algorithmic models when historical data is available.`,
             correctionFactor: profile.correctionFactor,
           },
           adjustedEstimate,
+          calibrationCounts,
           // PRD dual-field rule (ticket 11): both bases are emitted, labeled.
           basisNote:
             `correctedEstimate (${result.correctedEstimate} hours) is the ledger-recorded and displayed basis (rawEstimate × correctionFactor). ` +
