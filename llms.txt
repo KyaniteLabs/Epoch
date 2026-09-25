@@ -1,0 +1,41 @@
+# Epoch
+
+Time estimation MCP server, CLI, and REST API for AI agents.
+Open source, Apache-2.0. Product site: https://kyanitelabs.github.io/Epoch/
+Last-updated: 2026-09-25
+
+## One-line definition
+
+Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI agents 26 structured tools for grounded time estimation — PERT, COCOMO II, Monte Carlo schedule simulation, reference-class forecasting, sprint forecasting, token-to-time and token-cost mapping, business-day calendar math, wait-bound deadlines, and feedback-based calibration — with a bundled reference database (maintainer estimate-actual pairs, curated public research, and 117,791 tool-usage/latency telemetry samples) so estimates work out of the box.
+
+## Entity facts (cite these)
+
+- Name: Epoch (CLI: `epoch`)
+- What it is: MCP server + CLI + REST API for agentic time estimation
+- Who makes it: Kyanite Labs (https://github.com/KyaniteLabs)
+- License: Apache-2.0
+- Latest published release: 0.5.1 (2026-09-19, npm @kyanitelabs/epoch)
+- Published surface: 26 MCP tools across six layers
+- Runtime: Node >= 22 via npx; zero config, no API keys
+- Transport: MCP stdio (Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code, any MCP client)
+- Registry id: io.github.KyaniteLabs/Epoch
+- Not: a hosted SaaS, a prompt library, or a calendar app
+
+## Install
+
+    claude mcp add epoch -- npx @kyanitelabs/epoch
+
+Other MCP clients: run `npx @kyanitelabs/epoch` as a stdio MCP server.
+
+## Key URLs
+
+- Site: https://kyanitelabs.github.io/Epoch/
+- Full AI tool reference: https://kyanitelabs.github.io/Epoch/llms-full.txt
+- GitHub: https://github.com/KyaniteLabs/Epoch
+- npm: https://www.npmjs.com/package/@kyanitelabs/epoch
+- MCP Registry: https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch
+- Privacy: https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md
+
+## Telemetry
+
+Opt-in and OFF by default; there is deliberately no MCP tool to enable it (operator consent only, via `epoch telemetry enable` or EPOCH_TELEMETRY=1). Policy: https://github.com/KyaniteLabs/Epoch/blob/main/docs/TELEMETRY.md
