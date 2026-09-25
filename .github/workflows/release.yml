@@ -36,16 +36,36 @@ jobs:
           if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
             git fetch --quiet --unshallow origin
           fi
-          git fetch --quiet --no-tags "$CANONICAL_REMOTE" +refs/heads/main:refs/remotes/canonical/main
           tagged="$(git rev-parse "${GITHUB_SHA}^{commit}")"
-          canonical="$(git rev-parse refs/remotes/canonical/main)"
           echo "Tagged commit:   $tagged"
-          echo "Canonical main:  $canonical"
-          if git merge-base --is-ancestor "$tagged" "$canonical"; then
-            echo "OK: tag ${GITHUB_REF_NAME} is contained in canonical main; mirror is reconciled."
+          # Primary transport: anonymous git fetch of canonical (Forgejo).
+          # Fallback transport: Forgejo REST compare (some runner networks are
+          # auth-challenged on git smart-http). Both fail CLOSED: if neither
+          # transport can prove containment, publish stays blocked.
+          verdict="unproven"
+          if git fetch --quiet --no-tags "$CANONICAL_REMOTE" +refs/heads/main:refs/remotes/canonical/main 2>/tmp/gate-fetch.err; then
+            canonical="$(git rev-parse refs/remotes/canonical/main)"
+            echo "Canonical main:  $canonical (git transport)"
+            if git merge-base --is-ancestor "$tagged" "$canonical"; then
+              verdict="ok"
+            else
+              echo "::error::Mirror diverged from canonical main: tag ${GITHUB_REF_NAME} ($tagged) is not contained in canonical main ($canonical). Publish blocked."
+              exit 1
+            fi
           else
-            echo "::error::Mirror diverged from canonical main: tag ${GITHUB_REF_NAME} ($tagged) is not contained in canonical main ($canonical). Publish blocked."
-            exit 1
+            echo "git transport to canonical failed (see below); trying Forgejo REST compare."
+            cat /tmp/gate-fetch.err || true
+            canonical="$(curl -fsS --max-time 20 "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/branches/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"]["id"])')"
+            echo "Canonical main:  $canonical (API transport)"
+            if curl -fsS --max-time 20 -o /dev/null "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/compare/${canonical}...${tagged}"; then
+              verdict="ok"
+            else
+              echo "::error::API compare says tag ${GITHUB_REF_NAME} ($tagged) is not reachable from canonical main ($canonical). Publish blocked."
+              exit 1
+            fi
+          fi
+          if [[ "$verdict" == "ok" ]]; then
+            echo "OK: tag ${GITHUB_REF_NAME} is contained in canonical main; mirror is reconciled."
           fi
 
       - name: Set up pnpm
