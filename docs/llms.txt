@@ -17,7 +17,7 @@ Agent skill: skills/epoch/SKILL.md, invoked as $epoch in compatible agent hosts
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.5.0 — 26 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.5.2 — 26 structured tools for grounded time estimation
 
 ## What
 
@@ -35,7 +35,7 @@ Six layers, 26 tools:
 |-------|-------|---------|
 | Temporal (6) | get_current_time, convert_timezone, parse_duration, time_math, add_business_days, count_business_days | Time grounding, timezone, calendar math |
 | Estimation (5) | pert_estimate, cocomo_estimate, sprint_forecast, critical_path, monte_carlo_schedule | Algorithmic time/effort estimation |
-| Analytics (5) | reference_class_estimate, estimate_from_context, calibrate_estimates, token_time_bridge, token_cost_estimate | Data-driven estimation from history and free-text context |
+| Analytics (6) | reference_class_estimate, estimate_from_context, calibrate_estimates, token_time_bridge, wait_bound, token_cost_estimate | Data-driven estimation from history, free-text context, and wait-mechanism deadlines |
 | Validation (3) | cocomo_validate, cocomo_ground_truth, accuracy_trend | Model validation and accuracy tracking |
 | Risk (2) | schedule_risk, compare_models | Schedule risk and model comparison |
 | Feedback (4) | record_actual, get_pending_estimates, batch_record_actuals, feedback_health | Close the loop with real actuals — or let `epoch auto-actuals --session <id>` (CLI) close it automatically at session end with provenance-labeled wall-clock actuals |
