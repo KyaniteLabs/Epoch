@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "description": "Epoch bundled model latency/throughput calibration table (MODEL_CALIBRATIONS). Every entry is stamped data: measured_at (ISO date the entry's values were last set or measured) + provenance (kind + source). These are CALIBRATION values (tokensPerSecond, reasoningOverheadMs, toolCallLatencyMs), NOT pricing; pricing lives in data/supplementary-database.json modelCalibration. Provenance stamping landed 2026-09-24 WITHOUT changing any value; refreshed_at therefore still tracks the last VALUE refresh (2026-07-09, the Phase 5 model-catalog refresh) so age/staleness surfaces stay honest.",
+  "refreshed_at": "2026-07-09",
+  "staleness_threshold_days": 90,
+  "sources": {
+    "curatedBenchmarks": "Latency/throughput figures curated from the supplementary-DB llmBenchmarks source class (data/supplementary-database.json sources.llmBenchmarks): Artificial Analysis, BenchLM.ai, LLMversus, SaltTechno, official provider pages; table last value-refreshed at the 2026-07-09 Phase 5 model-catalog refresh. These are curated aggregates, not fresh primary-source re-measurements.",
+    "claudePhase5Placeholders": "claude-haiku-4-5, claude-opus-4-8, claude-sonnet-5, claude-fable-5 carry latency/throughput figures COPIED from a same-tier sibling entry (see each entry's provenance.source) — NOT primary-source verified, pending real telemetry. Their PRICING is primary-source verified separately (data/supplementary-database.json sources.claudeModelPricingPhase5).",
+    "publicRefreshClass": "Approved zero-cost refresh sources between releases: public benchmark/spec pages of the Artificial Analysis class plus community records conforming to data/schemas/model-calibration.schema.json. Refresh procedure: scripts/refresh-model-calibrations.mjs (fail-closed) documented in docs/MODEL-CALIBRATION-REFRESH.md."
+  },
+  "models": {
+    "claude-3.5-haiku-20241022": {
+      "tokensPerSecond": 100,
+      "reasoningOverheadMs": 145,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "claude-opus-4-20250514": {
+      "tokensPerSecond": 55,
+      "reasoningOverheadMs": 360,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "claude-sonnet-4-20250514": {
+      "tokensPerSecond": 72,
+      "reasoningOverheadMs": 205,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "claude-haiku-4-5": {
+      "tokensPerSecond": 100,
+      "reasoningOverheadMs": 145,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": {
+        "kind": "placeholder",
+        "source": "claude-3.5-haiku-20241022 (nearest fast-tier sibling)",
+        "note": "NOT primary-source verified — placeholder copy of the sibling entry's figures pending real telemetry. Pricing for this model IS primary-source verified (data/supplementary-database.json sources.claudeModelPricingPhase5)."
+      }
+    },
+    "claude-opus-4-8": {
+      "tokensPerSecond": 55,
+      "reasoningOverheadMs": 360,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": {
+        "kind": "placeholder",
+        "source": "claude-opus-4-20250514 (nearest premium-tier sibling)",
+        "note": "NOT primary-source verified — placeholder copy of the sibling entry's figures pending real telemetry. Pricing for this model IS primary-source verified (data/supplementary-database.json sources.claudeModelPricingPhase5)."
+      }
+    },
+    "claude-sonnet-5": {
+      "tokensPerSecond": 72,
+      "reasoningOverheadMs": 205,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": {
+        "kind": "placeholder",
+        "source": "claude-sonnet-4-20250514 (nearest standard-tier sibling)",
+        "note": "NOT primary-source verified — placeholder copy of the sibling entry's figures pending real telemetry. Pricing for this model IS primary-source verified (data/supplementary-database.json sources.claudeModelPricingPhase5)."
+      }
+    },
+    "claude-fable-5": {
+      "tokensPerSecond": 55,
+      "reasoningOverheadMs": 360,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": {
+        "kind": "placeholder",
+        "source": "claude-opus-4-20250514 (top-tier model; no closer existing sibling in this table)",
+        "note": "NOT primary-source verified — placeholder copy of the sibling entry's figures pending real telemetry. Pricing for this model IS primary-source verified (data/supplementary-database.json sources.claudeModelPricingPhase5)."
+      }
+    },
+    "deepseek-v3": {
+      "tokensPerSecond": 97,
+      "reasoningOverheadMs": 410,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "gemini-2.0-flash": {
+      "tokensPerSecond": 230,
+      "reasoningOverheadMs": 90,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "gemini-2.5-pro": {
+      "tokensPerSecond": 68,
+      "reasoningOverheadMs": 280,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "gpt-4-turbo": {
+      "tokensPerSecond": 27.5,
+      "reasoningOverheadMs": 1405,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "gpt-4o": {
+      "tokensPerSecond": 85,
+      "reasoningOverheadMs": 155,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "gpt-4o-mini": {
+      "tokensPerSecond": 180,
+      "reasoningOverheadMs": 130,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "llama-3.1-405b": {
+      "tokensPerSecond": 30,
+      "reasoningOverheadMs": 300,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "llama-3.1-70b": {
+      "tokensPerSecond": 100,
+      "reasoningOverheadMs": 100,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    },
+    "mistral-large": {
+      "tokensPerSecond": 42.6,
+      "reasoningOverheadMs": 730,
+      "toolCallLatencyMs": 200,
+      "measured_at": "2026-07-09",
+      "provenance": { "kind": "curated", "source": "sources.curatedBenchmarks (Artificial Analysis / BenchLM.ai / LLMversus / SaltTechno / provider pages, curated 2026-07-09)" }
+    }
+  }
+}

@@ -5,7 +5,8 @@ import type {
   ModelComparisonEntry,
   QualityTier,
 } from "../types/index.js";
-import { tokenTimeBridge, MODEL_CALIBRATIONS } from "./analytics.js";
+import { tokenTimeBridge, getModelCalibrations } from "./analytics.js";
+import { MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS } from "./model-calibration-table.js";
 import { getModelPricing, getAllModelPricing } from "./supplementary-data.js";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ export function tokenCostEstimate(params: {
       estimatedCost: 0, costBreakdown: { inputCost: 0, outputCost: 0, toolCallOverheadCost: 0 },
       timeBreakdown: timeMapping.breakdown, confidence: timeMapping.confidence, urgency: timeMapping.urgency,
       humanReadable: `Cost estimate unavailable for ${params.model} — calibration data issue.`,
+      calibration: timeMapping.calibration,
     };
   }
 
@@ -83,8 +85,14 @@ export function tokenCostEstimate(params: {
 
   const estMin = Math.round(timeMapping.estimatedMinutes * 10) / 10;
 
+  // S4.1: surface calibration staleness on cost outputs too (they consume the
+  // same table via tokenTimeBridge).
+  const stalenessSentence = timeMapping.calibration.stale
+    ? ` (calibration data ${timeMapping.calibration.ageDays}d old — >${MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS}d threshold, may be stale)`
+    : "";
+
   const humanReadable =
-    `~${estMin} min, ~$${totalCost} for ${params.tokens} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls)`;
+    `~${estMin} min, ~$${totalCost} for ${params.tokens} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls)${stalenessSentence}`;
 
   return {
     tokens: params.tokens,
@@ -101,6 +109,7 @@ export function tokenCostEstimate(params: {
     confidence: timeMapping.confidence,
     urgency: timeMapping.urgency,
     humanReadable,
+    calibration: timeMapping.calibration,
   };
 }
 
@@ -119,7 +128,7 @@ export function compareModels(params: {
 
   const entries: ModelComparisonEntry[] = [];
 
-  for (const model of Object.keys(MODEL_CALIBRATIONS)) {
+  for (const model of Object.keys(getModelCalibrations())) {
     const timeMapping = tokenTimeBridge({
       tokens: params.tokens,
       model,
@@ -140,7 +149,7 @@ export function compareModels(params: {
 
     const totalCost = round4(inputCost + outputCost + toolCallOverheadCost);
 
-    const calibration = MODEL_CALIBRATIONS[model];
+    const calibration = getModelCalibrations()[model];
     const tps = calibration?.tokensPerSecond ?? 75;
 
     entries.push({

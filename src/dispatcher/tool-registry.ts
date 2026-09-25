@@ -335,6 +335,17 @@ const tokenTimeOutput = {
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
     estimatedTokenCost: { type: "number", description: "Estimated AI token cost (50k tokens/hour × estimatedHours)" },
+    calibration: {
+      type: "object",
+      description: "S4.1 staleness surface: which calibration data the estimate used and how old it is. When the stamped table was used and its age exceeds the 90d threshold, `stale` is true and humanReadable carries a refresh note.",
+      properties: {
+        provenance: { type: "string", enum: ["telemetry", "reference_db", "calibrated_table", "generic_fallback"] },
+        measuredAt: { type: ["string", "null"], description: "ISO date (YYYY-MM-DD) the table entry's values were last set/measured; null when not table-sourced" },
+        ageDays: { type: ["number", "null"], description: "Whole days since measuredAt; null when unknown" },
+        stale: { type: "boolean", description: "True iff calibration age exceeds the 90d staleness threshold" },
+        note: { type: "string", description: "Honesty note (placeholder entries disclose their sibling-copy origin)" },
+      },
+    },
     feedbackRef: feedbackRefField,
   },
 } satisfies Record<string, unknown>;

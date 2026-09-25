@@ -7,7 +7,7 @@ import {
   referenceClassEstimate,
   computeAccuracyMetrics,
   calibrateEstimates,
-  MODEL_CALIBRATIONS,
+  getModelCalibrations,
   GENERIC_MODEL_CALIBRATION,
   resolveModelCalibration,
 } from "./analytics.js";
@@ -15,6 +15,7 @@ import type { HistoricalRecord } from "./analytics.js";
 import type { LLMModel } from "../types/index.js";
 import { resetTelemetry } from "./telemetry.js";
 import { resetSupplementaryCache } from "./supplementary-data.js";
+import { resetModelCalibrationTableCache } from "./model-calibration-table.js";
 import { defined } from "../test-support.js";
 
 
@@ -23,7 +24,7 @@ import { defined } from "../test-support.js";
 // ---------------------------------------------------------------------------
 
 describe("MODEL_CALIBRATIONS", () => {
-  it("contains all 12 models", () => {
+  it("contains all 12 original models", () => {
     const expected = [
       "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3.5-haiku-20241022",
       "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
@@ -32,22 +33,38 @@ describe("MODEL_CALIBRATIONS", () => {
       "mistral-large", "deepseek-v3",
     ];
     for (const model of expected) {
-      expect(MODEL_CALIBRATIONS[model]).toBeDefined();
-      expect(defined(MODEL_CALIBRATIONS[model]).tokensPerSecond).toBeGreaterThan(0);
+      expect(getModelCalibrations()[model]).toBeDefined();
+      expect(defined(getModelCalibrations()[model]).tokensPerSecond).toBeGreaterThan(0);
     }
   });
 
   it("LLMModel type stays in sync with the live table (16 models)", () => {
-    const keys = Object.keys(MODEL_CALIBRATIONS);
+    const table = getModelCalibrations();
+    const keys = Object.keys(table);
     expect(keys).toHaveLength(16);
-    // Compile-time sync guards (enforced by `pnpm run typecheck`): every table
-    // key must be assignable to LLMModel and vice versa. LLMModel is derived
-    // from the table (keyof typeof MODEL_CALIBRATIONS), so drift is a type
-    // error, not a silent runtime mismatch — these lines keep that contract
-    // exercised from the test suite too.
-    const fromTable: LLMModel[] = keys;
-    const sampleFromType: LLMModel = "claude-fable-5";
-    expect(fromTable).toContain(sampleFromType);
+    // The table ships as JSON data now (data/model-calibrations.json), so the
+    // LLMModel literal union in src/lib/analytics.ts can no longer be derived
+    // via keyof. This list IS the drift guard: it must match the union exactly,
+    // in both directions, or the type has drifted from the data.
+    const union: LLMModel[] = [
+      "claude-3.5-haiku-20241022",
+      "claude-opus-4-20250514",
+      "claude-sonnet-4-20250514",
+      "claude-haiku-4-5",
+      "claude-opus-4-8",
+      "claude-sonnet-5",
+      "claude-fable-5",
+      "deepseek-v3",
+      "gemini-2.0-flash",
+      "gemini-2.5-pro",
+      "gpt-4-turbo",
+      "gpt-4o",
+      "gpt-4o-mini",
+      "llama-3.1-405b",
+      "llama-3.1-70b",
+      "mistral-large",
+    ];
+    expect([...keys].sort()).toEqual([...union].sort());
   });
 });
 
@@ -69,6 +86,7 @@ beforeEach(() => {
   process.env["EPOCH_DATA_DIR"] = tempDataDir;
   resetTelemetry();
   resetSupplementaryCache();
+  resetModelCalibrationTableCache();
 });
 
 afterEach(() => {

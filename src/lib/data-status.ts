@@ -10,6 +10,13 @@ import { loadConfig, isUsableTelemetryEndpoint } from "./config.js";
 import { extractAnonymizedRecords } from "./telemetry-submit.js";
 import { loadReferenceDb } from "./self-improve.js";
 import {
+  loadModelCalibrationTable,
+  modelTableAgeDays,
+  modelEntryAgeDays,
+  isStaleAge,
+  MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS,
+} from "./model-calibration-table.js";
+import {
   getLedgerCacheStatus,
   getLedgerCorruptLines,
   getLedgerStaleRecoveryCount,
@@ -108,6 +115,27 @@ interface ReferenceDatabaseSummary {
   generatedAt: string | null;
 }
 
+/**
+ * S4.1 model-table freshness: age + provenance summary of the stamped
+ * bundled model-calibration table (data/model-calibrations.json).
+ */
+interface ModelCalibrationsSummary {
+  loaded: boolean;
+  /** Path the table was read from; "(bundled)" when the repo data/ copy was used. */
+  path: string;
+  entries: number;
+  /** Table-level last VALUE refresh date (ISO) and its age in days. */
+  refreshedAt: string | null;
+  ageDays: number | null;
+  /** True iff ageDays exceeds the 90d staleness threshold. */
+  stale: boolean;
+  stalenessThresholdDays: number;
+  /** Entries whose own measured_at exceeds the threshold (subset view). */
+  staleEntries: string[];
+  /** Entries explicitly marked as placeholder sibling-copies. */
+  placeholderEntries: string[];
+}
+
 interface RoleHints {
   hasReceiverRecords: boolean;
   likelyReceiver: boolean;
@@ -141,6 +169,8 @@ export interface EpochDataStatus {
   };
   telemetry: TelemetrySummary;
   referenceDatabase: ReferenceDatabaseSummary;
+  /** S4.1: stamped model-calibration table freshness (bundled or user override). */
+  modelCalibrations: ModelCalibrationsSummary;
   roleHints: RoleHints;
 }
 
@@ -322,6 +352,44 @@ export function getEpochDataStatus(): EpochDataStatus {
     };
   }
 
+  // Model calibration table summary (S4.1 staleness surface)
+  let modelCalibrations: ModelCalibrationsSummary;
+  const calTable = loadModelCalibrationTable();
+  if (calTable) {
+    const ageDays = modelTableAgeDays(calTable.table);
+    const staleEntries = Object.entries(calTable.table.models)
+      .filter(([, entry]) => isStaleAge(modelEntryAgeDays(entry)))
+      .map(([id]) => id)
+      .sort();
+    const placeholderEntries = Object.entries(calTable.table.models)
+      .filter(([, entry]) => entry.provenance.kind === "placeholder")
+      .map(([id]) => id)
+      .sort();
+    modelCalibrations = {
+      loaded: true,
+      path: calTable.path,
+      entries: Object.keys(calTable.table.models).length,
+      refreshedAt: calTable.table.refreshed_at,
+      ageDays,
+      stale: isStaleAge(ageDays),
+      stalenessThresholdDays: MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS,
+      staleEntries,
+      placeholderEntries,
+    };
+  } else {
+    modelCalibrations = {
+      loaded: false,
+      path: "(none found)",
+      entries: 0,
+      refreshedAt: null,
+      ageDays: null,
+      stale: false,
+      stalenessThresholdDays: MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS,
+      staleEntries: [],
+      placeholderEntries: [],
+    };
+  }
+
   // Role hints
   const roleHints: RoleHints = {
     hasReceiverRecords: receiverRecords.exists && receiverRecords.lines > 0,
@@ -348,6 +416,7 @@ export function getEpochDataStatus(): EpochDataStatus {
     writeLocks,
     telemetry,
     referenceDatabase,
+    modelCalibrations,
     roleHints,
   };
 }

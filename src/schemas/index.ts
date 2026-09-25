@@ -31,8 +31,9 @@ export const taskTypeEnum = z
 // strings by design — unknown models are accepted and fall back to the
 // documented generic default (75 tps, src/lib/analytics.ts's
 // GENERIC_MODEL_CALIBRATION) with a "pessimistic" confidence label. The
-// curated catalog itself lives in MODEL_CALIBRATIONS (src/lib/analytics.ts;
-// the LLMModel type in src/types/index.ts is derived from it), and pricing
+// stamped catalog itself lives in data/model-calibrations.json (loaded by
+// src/lib/model-calibration-table.ts; the LLMModel type in
+// src/types/index.ts is kept in sync by a drift-guard test), and pricing
 // lives in data/supplementary-database.json's `modelCalibration`/`sources`.
 
 /** AI ratio: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Booleans accepted for backward compat. */

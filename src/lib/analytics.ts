@@ -9,6 +9,13 @@ import type {
 import { loadReferenceDb, getComplexityCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
 import { getReferenceClassForCategory, getScopeBaseline, getAiNativeScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
+import {
+  getBundledModelCalibrations,
+  isStaleAge,
+  modelEntryAgeDays,
+  MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS,
+  type StampedModelCalibration,
+} from "./model-calibration-table.js";
 
 const COMPLEXITY_MULTIPLIER: Record<number, number> = {
   1: 0.7,
@@ -31,11 +38,12 @@ export function getScopeGuide(taskType: TaskType): string | null {
   return `For ${taskType} tasks: small=~${sb.small}h, medium=~${sb.medium}h, large=~${sb.large}h, xl=~${sb.xl}h`;
 }
 
-interface ModelCalibration {
-  readonly tokensPerSecond: number;
-  readonly reasoningOverheadMs: number;
-  readonly toolCallLatencyMs: number;
-}
+/**
+ * Stamped model calibration entry (S4.1 model-table freshness): the numeric
+ * fields plus `measured_at` + `provenance`. The table ships as data in
+ * data/model-calibrations.json — see model-calibration-table.ts.
+ */
+export type ModelCalibration = StampedModelCalibration;
 
 /**
  * Documented generic fallback for models with no calibration data anywhere
@@ -49,49 +57,50 @@ export const GENERIC_MODEL_CALIBRATION: ModelCalibration = {
   tokensPerSecond: 75,
   reasoningOverheadMs: 2500,
   toolCallLatencyMs: 500,
+  measured_at: "",
+  provenance: { kind: "curated", source: "documented design default (src/lib/analytics.ts GENERIC_MODEL_CALIBRATION)" },
 };
 
-/** Where a model's throughput calibration came from — drives the confidence label. */
+/**
+ * The bundled stamped calibration table (was an inline constant pre-S4.1).
+ * Loaded lazily from data/model-calibrations.json (user-dir override first);
+ * every entry carries `measured_at` + `provenance`. Four entries
+ * (claude-haiku-4-5 / opus-4-8 / sonnet-5 / fable-5) are explicitly marked
+ * `placeholder` — sibling-figure copies, NOT primary-source verified.
+ */
+export function getModelCalibrations(): Record<string, ModelCalibration> {
+  return getBundledModelCalibrations();
+}
+
+/**
+ * Static model-id union for the bundled table. The table itself ships as
+ * JSON data (runtime-loaded), so this union is kept in sync by
+ * analytics.test.ts's drift guard rather than by keyof inference.
+ */
+export type LLMModel =
+  | "claude-3.5-haiku-20241022"
+  | "claude-opus-4-20250514"
+  | "claude-sonnet-4-20250514"
+  | "claude-haiku-4-5"
+  | "claude-opus-4-8"
+  | "claude-sonnet-5"
+  | "claude-fable-5"
+  | "deepseek-v3"
+  | "gemini-2.0-flash"
+  | "gemini-2.5-pro"
+  | "gpt-4-turbo"
+  | "gpt-4o"
+  | "gpt-4o-mini"
+  | "llama-3.1-405b"
+  | "llama-3.1-70b"
+  | "mistral-large";
+
+/** Where a RESOLVED calibration came from (the resolution path, not the data stamp). */
 export type ModelCalibrationProvenance =
   | "telemetry" // locally measured (≥10 token-tool calls with model+tokens recorded)
   | "reference_db" // per-model community stats from the reference DB
-  | "calibrated_table" // curated MODEL_CALIBRATIONS entry
+  | "calibrated_table" // stamped data/model-calibrations.json entry
   | "generic_fallback"; // GENERIC_MODEL_CALIBRATION — no model-specific data at all
-
-// Model catalog refreshed 2026-07-09 (Phase 5). The 4 new claude-* entries
-// below are latency/throughput CALIBRATION values (tokensPerSecond,
-// reasoningOverheadMs, toolCallLatencyMs) — these are NOT pricing and are
-// NOT primary-source verified; they reuse the nearest existing same-tier
-// Claude model's figures as a documented placeholder pending real telemetry
-// (getModelCalibration() in this file prefers live telemetry / reference-db
-// stats over this table when enough samples exist — see lines below). Actual
-// PRICING for these models (costInput/costOutput) lives in
-// data/supplementary-database.json's `modelCalibration` and IS
-// primary-source verified — see that file's `sources` array and the
-// `LLMModel` derived union in src/types/index.ts.
-const MODEL_CALIBRATIONS: Record<string, ModelCalibration> = {
-  "claude-3.5-haiku-20241022": { tokensPerSecond: 100, reasoningOverheadMs: 145, toolCallLatencyMs: 200 },
-  "claude-opus-4-20250514": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
-  "claude-sonnet-4-20250514": { tokensPerSecond: 72, reasoningOverheadMs: 205, toolCallLatencyMs: 200 },
-  // Placeholder: same figures as claude-3.5-haiku-20241022 (nearest fast-tier sibling).
-  "claude-haiku-4-5": { tokensPerSecond: 100, reasoningOverheadMs: 145, toolCallLatencyMs: 200 },
-  // Placeholder: same figures as claude-opus-4-20250514 (nearest premium-tier sibling).
-  "claude-opus-4-8": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
-  // Placeholder: same figures as claude-sonnet-4-20250514 (nearest standard-tier sibling).
-  "claude-sonnet-5": { tokensPerSecond: 72, reasoningOverheadMs: 205, toolCallLatencyMs: 200 },
-  // Placeholder: reuses claude-opus-4-20250514's figures — Claude Fable 5 is
-  // the top-tier/most-capable model; no closer existing sibling in this table.
-  "claude-fable-5": { tokensPerSecond: 55, reasoningOverheadMs: 360, toolCallLatencyMs: 200 },
-  "deepseek-v3": { tokensPerSecond: 97, reasoningOverheadMs: 410, toolCallLatencyMs: 200 },
-  "gemini-2.0-flash": { tokensPerSecond: 230, reasoningOverheadMs: 90, toolCallLatencyMs: 200 },
-  "gemini-2.5-pro": { tokensPerSecond: 68, reasoningOverheadMs: 280, toolCallLatencyMs: 200 },
-  "gpt-4-turbo": { tokensPerSecond: 27.5, reasoningOverheadMs: 1405, toolCallLatencyMs: 200 },
-  "gpt-4o": { tokensPerSecond: 85, reasoningOverheadMs: 155, toolCallLatencyMs: 200 },
-  "gpt-4o-mini": { tokensPerSecond: 180, reasoningOverheadMs: 130, toolCallLatencyMs: 200 },
-  "llama-3.1-405b": { tokensPerSecond: 30, reasoningOverheadMs: 300, toolCallLatencyMs: 200 },
-  "llama-3.1-70b": { tokensPerSecond: 100, reasoningOverheadMs: 100, toolCallLatencyMs: 200 },
-  "mistral-large": { tokensPerSecond: 42.6, reasoningOverheadMs: 730, toolCallLatencyMs: 200 },
-};
 
 const REASONING_DEPTH_MULTIPLIER: Record<ReasoningDepth, number> = {
   shallow: 1.0,
@@ -117,8 +126,6 @@ function getUrgency(seconds: number): UrgencyCategory {
   return "long";
 }
 
-export type LLMModel = keyof typeof MODEL_CALIBRATIONS;
-
 function getMedianTps(cal: { medianTps?: number; medianTokensPerSecond?: number }): number {
   return cal.medianTps ?? cal.medianTokensPerSecond ?? 0;
 }
@@ -126,19 +133,26 @@ function getMedianTps(cal: { medianTps?: number; medianTokensPerSecond?: number 
 /**
  * Resolve a model's calibration AND its provenance. Priority:
  * live local telemetry (model+tokens recorded by token-tool calls) →
- * reference-DB per-model stats → curated table → documented generic default.
+ * reference-DB per-model stats → stamped table → documented generic default.
  *
  * The reference DB's `_default` raw-benchmark aggregate is deliberately NOT
  * consulted: for unknown models it would shadow the 75 tps design default
  * with a ~1686 tps server benchmark (~22x optimistic).
  */
-export function resolveModelCalibration(model: string): { calibration: ModelCalibration; provenance: ModelCalibrationProvenance } {
-  const tableBase = MODEL_CALIBRATIONS[model];
+export interface ResolvedModelCalibration {
+  readonly calibration: ModelCalibration;
+  readonly provenance: ModelCalibrationProvenance;
+  /** Table entry the resolution fell back to, when it used the stamped table. */
+  readonly tableEntry: ModelCalibration | null;
+}
+
+export function resolveModelCalibration(model: string): ResolvedModelCalibration {
+  const tableBase = getModelCalibrations()[model] ?? null;
 
   const telemetryStats = getTelemetry().getModelStats(model, 30);
   if (telemetryStats && telemetryStats.sampleCount >= 10) {
     const base = tableBase ?? GENERIC_MODEL_CALIBRATION;
-    return { calibration: { ...base, tokensPerSecond: telemetryStats.medianTps }, provenance: "telemetry" };
+    return { calibration: { ...base, tokensPerSecond: telemetryStats.medianTps }, provenance: "telemetry", tableEntry: tableBase };
   }
 
   const db = loadReferenceDb();
@@ -147,19 +161,15 @@ export function resolveModelCalibration(model: string): { calibration: ModelCali
     const dbTps = getMedianTps(dbCal);
     if (dbTps > 0) {
       const base = tableBase ?? GENERIC_MODEL_CALIBRATION;
-      return { calibration: { ...base, tokensPerSecond: dbTps }, provenance: "reference_db" };
+      return { calibration: { ...base, tokensPerSecond: dbTps }, provenance: "reference_db", tableEntry: tableBase };
     }
   }
 
   if (tableBase) {
-    return { calibration: tableBase, provenance: "calibrated_table" };
+    return { calibration: tableBase, provenance: "calibrated_table", tableEntry: tableBase };
   }
 
-  return { calibration: GENERIC_MODEL_CALIBRATION, provenance: "generic_fallback" };
-}
-
-function getModelCalibration(model: string): ModelCalibration {
-  return resolveModelCalibration(model).calibration;
+  return { calibration: GENERIC_MODEL_CALIBRATION, provenance: "generic_fallback", tableEntry: null };
 }
 
 function getPromptRatio(model: string): number {
@@ -199,7 +209,8 @@ export function tokenTimeBridge(params: {
   toolCalls: number;
   reasoningDepth: ReasoningDepth;
 }): TokenTimeMapping {
-  const cal = getModelCalibration(params.model);
+  const resolved = resolveModelCalibration(params.model);
+  const cal = resolved.calibration;
   const promptRatio = getPromptRatio(params.model);
 
   const generationTimeSeconds = params.tokens / cal.tokensPerSecond;
@@ -213,6 +224,29 @@ export function tokenTimeBridge(params: {
     : `${estMin} minutes`;
   const confidence = getConfidence(params.model);
 
+  // S4.1 staleness surface: age of the calibration data this estimate used.
+  // Age is only knowable for the stamped-table path (telemetry is live by
+  // construction; the reference DB and generic fallback carry no stamp here).
+  const tableEntry = resolved.tableEntry;
+  const measuredAt = tableEntry?.measured_at ?? null;
+  const ageDays = tableEntry !== null ? modelEntryAgeDays(tableEntry) : null;
+  const stale = resolved.provenance === "calibrated_table" && isStaleAge(ageDays);
+  const placeholderNote = tableEntry?.provenance.kind === "placeholder"
+    ? `placeholder figures (copied from ${tableEntry.provenance.source}) — not primary-source verified`
+    : null;
+
+  const calibrationBlock: TokenTimeMapping["calibration"] = {
+    provenance: resolved.provenance,
+    measuredAt,
+    ageDays,
+    stale,
+    ...(placeholderNote !== null ? { note: placeholderNote } : {}),
+  };
+
+  const stalenessSentence = stale
+    ? ` Calibration data is ${ageDays}d old (>${MODEL_CALIBRATION_STALENESS_THRESHOLD_DAYS}d threshold) and may be stale — refresh via scripts/refresh-model-calibrations.mjs.`
+    : "";
+
   return {
     tokens: params.tokens,
     model: params.model,
@@ -225,8 +259,9 @@ export function tokenTimeBridge(params: {
       completionTokens: Math.round(params.tokens * (1 - promptRatio)),
       toolOverheadSeconds: Math.round(toolOverheadSeconds * 100) / 100,
     },
-    humanReadable: `Approximately ${timeStr} for ${params.tokens.toLocaleString()} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls). Confidence: ${confidence}.`,
+    humanReadable: `Approximately ${timeStr} for ${params.tokens.toLocaleString()} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls). Confidence: ${confidence}.${stalenessSentence}`,
     estimatedTokenCost: Math.round((totalSeconds / 3600) * 50000 * 100) / 100,
+    calibration: calibrationBlock,
   };
 }
 
@@ -502,5 +537,3 @@ export function calibrateEstimates(
     ],
   };
 }
-
-export { MODEL_CALIBRATIONS };

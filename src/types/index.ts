@@ -187,6 +187,30 @@ export interface TokenTimeMapping {
   readonly humanReadable: string;
   /** Estimated AI token cost (50k tokens/hour × estimatedHours). */
   readonly estimatedTokenCost: number;
+  /**
+   * S4.1 staleness surface: which calibration data the estimate used, how old
+   * it is, and whether it exceeds the 90d staleness threshold.
+   */
+  readonly calibration: CalibrationAgeInfo;
+}
+
+/**
+ * Provenance + age of the calibration data behind a token-time estimate.
+ * `measuredAt`/`ageDays` are null when the path carries no stamp (live
+ * telemetry, reference DB, generic fallback); `stale` is true only for the
+ * stamped-table path whose age exceeds the 90d threshold.
+ */
+export interface CalibrationAgeInfo {
+  /** Resolution path that supplied the numbers. */
+  readonly provenance: "telemetry" | "reference_db" | "calibrated_table" | "generic_fallback";
+  /** ISO date (YYYY-MM-DD) the table entry's values were last set/measured; null when not table-sourced. */
+  readonly measuredAt: string | null;
+  /** Whole days since measuredAt; null when unknown. */
+  readonly ageDays: number | null;
+  /** True iff the calibration age exceeds the 90d staleness threshold. */
+  readonly stale: boolean;
+  /** Honesty note (e.g. placeholder entries: sibling-copy disclosure). */
+  readonly note?: string;
 }
 
 // ---- Monte Carlo Layer ----------------------------------------------------
@@ -367,6 +391,8 @@ export interface TokenCostEstimate {
   readonly confidence: ConfidenceLevel;
   readonly urgency: UrgencyCategory;
   readonly humanReadable: string;
+  /** S4.1 staleness surface — carried through from the underlying token-time mapping. */
+  readonly calibration: CalibrationAgeInfo;
 }
 
 // ---- Model Comparison (Feature 2) ----------------------------------------

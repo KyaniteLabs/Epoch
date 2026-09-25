@@ -18,6 +18,13 @@
 - `docs/llms.txt` architecture table: Analytics row 5 → 6 with `wait_bound` (table previously summed to 25 while the header said 26).
 - `site/` re-synced with the live-deployed gh-pages assets (215bb6c, live-verified 2026-09-25): index.html (26 tools, Apache-2.0, 16 models, TS 6/Zod 4), llms-full.txt (wait_bound entry), new site/llms.txt, ai-plugin.json (26 tools / 6 layers), sitemap.xml (/llms.txt entry). Version stamps set to v0.5.2 to match this train.
 
+### feat: S4.1 model-table freshness — stamped calibrations + fail-closed refresh
+
+- `MODEL_CALIBRATIONS` ships as stamped DATA (`data/model-calibrations.json`, loaded by `src/lib/model-calibration-table.ts`): every entry carries `measured_at` + `provenance` (kind + source). The 4 placeholder entries (claude-haiku-4-5 / opus-4-8 / sonnet-5 / fable-5) are explicitly marked `kind: "placeholder"` with their sibling-source note — values unchanged (last value refresh stays 2026-07-09; refresh-cadence policy: quarterly).
+- New refresh command `scripts/refresh-model-calibrations.mjs`: reads zero-cost public snapshots (Artificial-Analysis-class pages via `--input`) + community records (`data/schemas/model-calibration.schema.json` from `data/community/`), writes stamps per entry, emits a diff + source receipt, and FAILS CLOSED (non-zero exit, atomic no-partial-write) when any refreshed entry lacks provenance or freshness. Runbook: `docs/MODEL-CALIBRATION-REFRESH.md`.
+- Staleness surface: `epoch data status` prints model-table `refreshedAt`/`ageDays`/`stale` (>90d) + placeholder list; `token_time_bridge` / `token_cost_estimate` outputs carry a `calibration` block (provenance, measuredAt, ageDays, stale) and note staleness in the human-readable line when age > 90d.
+- Users can shadow the bundled table between releases via `~/.epoch/model-calibrations.json` (community refresh path; corrupt overrides are skipped, not trusted).
+
 
 
 All notable changes to this project will be documented in this file.
