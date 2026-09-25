@@ -31,6 +31,7 @@ jobs:
         # not ship.
         env:
           CANONICAL_REMOTE: https://git.kyanitelabs.tech/KyaniteLabs/Epoch.git
+          FORGEJO_RO_TOKEN: ${{ secrets.FORGEJO_RO_TOKEN }}
         run: |
           set -euo pipefail
           if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
@@ -55,9 +56,11 @@ jobs:
           else
             echo "git transport to canonical failed (see below); trying Forgejo REST compare."
             cat /tmp/gate-fetch.err || true
-            canonical="$(curl -fsS --max-time 20 "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/branches/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"]["id"])')"
+            auth_args=()
+            if [[ -n "${FORGEJO_RO_TOKEN:-}" ]]; then auth_args=(-H "Authorization: token ${FORGEJO_RO_TOKEN}"); fi
+            canonical="$(curl -fsS --max-time 20 "${auth_args[@]}" "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/branches/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"]["id"])')"
             echo "Canonical main:  $canonical (API transport)"
-            if curl -fsS --max-time 20 -o /dev/null "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/compare/${canonical}...${tagged}"; then
+            if curl -fsS --max-time 20 -o /dev/null "${auth_args[@]}" "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/compare/${canonical}...${tagged}"; then
               verdict="ok"
             else
               echo "::error::API compare says tag ${GITHUB_REF_NAME} ($tagged) is not reachable from canonical main ($canonical). Publish blocked."
