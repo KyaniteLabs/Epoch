@@ -9,7 +9,10 @@ import { assertEstimateWritten } from "../test-support.js";
 const TEST_DIR = join(tmpdir(), `epoch-tel-sub-test-${Date.now()}`);
 const ORIGINAL_FETCH = globalThis.fetch;
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Fresh ledger read cache per test: rm+recreate of the data dir can reuse the
+  // inode with an identical size/mtime, so a stale cached parse would leak across tests.
+  (await import("./ledger.js")).resetLedgerReadCache();
 	mkdirSync(TEST_DIR, { recursive: true });
 	process.env["EPOCH_DATA_DIR"] = TEST_DIR;
 	delete process.env["EPOCH_TELEMETRY"];
