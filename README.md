@@ -8,7 +8,7 @@
 
 **TL;DR:** Epoch — time estimation MCP server. Best for engineering leads, agents, and planners who need calibrated duration estimates.
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/v0/servers/io.github.KyaniteLabs%2FEpoch/versions/latest)
 
 **Epoch helps AI agents understand time.**
 
@@ -790,7 +790,7 @@ Apache License 2.0. See [LICENSE](./LICENSE) for full terms.
 
 More from [KyaniteLabs](https://kyanitelabs.tech). Related projects:
 
-- **[mcp-video](https://github.com/KyaniteLabs/mcp-video)** — guardrailed video-editing MCP server for AI agents
+- **[kinocut](https://github.com/KyaniteLabs/kinocut)** — guardrailed video-editing MCP server for AI agents (formerly mcp-video)
 - **[DialectOS](https://github.com/KyaniteLabs/DialectOS)** — Spanish dialect localization MCP server & CLI
 - **[checkyourself](https://github.com/KyaniteLabs/checkyourself)** — local-first production-readiness checks for AI-built code
 
@@ -808,7 +808,7 @@ More from [KyaniteLabs](https://kyanitelabs.tech). Related projects:
 | **Category** | time estimation MCP server |
 | **Best for** | engineering leads, agents, and planners who need calibrated duration estimates |
 | **Not** | a calendar or project tracker |
-| **Source** | [GitHub](https://github.com/KyaniteLabs/Epoch) · [Forgejo](https://git.kyanitelabs.tech/KyaniteLabs/Epoch) |
+| **Source** | [GitHub](https://github.com/KyaniteLabs/Epoch) · [Forgejo](https://git.kyanitelabs.tech/KyaniteLabs/Epoch) (private, maintainers only) |
 | **Keywords** | time estimation MCP, PERT, reference class forecasting |
 
 ## Who it's for
@@ -839,7 +839,7 @@ Treat the README status and release tags as source of truth for maturity. Valida
 
 - Maintained as of 2026 on the default branch
 - Prefer release tags when pinning dependencies
-- Report issues on the canonical remote listed above
+- Report issues on [GitHub](https://github.com/KyaniteLabs/Epoch/issues)
 
 ## Agent surface
 
@@ -849,7 +849,7 @@ Treat the README status and release tags as source of truth for maturity. Valida
 
 ## Contributing
 
-Issues and PRs welcome on the canonical remote. Keep public docs free of secrets and machine-local paths.
+Issues and PRs welcome on [GitHub](https://github.com/KyaniteLabs/Epoch). Keep public docs free of secrets and machine-local paths.
 
 ## License
 
