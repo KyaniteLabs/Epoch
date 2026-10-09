@@ -27,7 +27,10 @@ function readEstimatesCount(): number {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Fresh ledger read cache per test: rm+recreate of the data dir can reuse the
+  // inode with an identical size/mtime, so a stale cached parse would leak across tests.
+  (await import("./ledger.js")).resetLedgerReadCache();
   rmSync(TEST_DIR, { recursive: true, force: true });
   mkdirSync(TEST_DIR, { recursive: true });
   process.env["EPOCH_DATA_DIR"] = TEST_DIR;
