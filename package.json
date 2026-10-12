@@ -1,7 +1,7 @@
 {
   "name": "@kyanitelabs/epoch",
   "version": "0.5.2",
-  "mcpName": "io.github.KyaniteLabs/Epoch",
+  "mcpName": "tech.kyanitelabs/epoch",
   "description": "Time Estimation MCP Server \u2014 26 tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, context-based estimation, token-to-time mapping, cost estimation, and schedule risk. Self-improving with calibrated intervals and an auto-closing feedback loop. Built for AI agents. MCP + CLI + REST.",
   "type": "module",
   "main": "dist/index.js",
