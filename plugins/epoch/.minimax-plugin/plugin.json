@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "kyanite-epoch",
+  "displayName": "Epoch",
+  "version": "0.5.2",
+  "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk.",
+  "author": "Kyanite Labs",
+  "category": "Productivity",
+  "exampleQueries": [
+    "PERT-estimate this feature with three reference classes",
+    "Run a Monte Carlo on this sprint and report P50/P80/P95"
+  ],
+  "apps": [],
+  "mcpServers": [
+    "epoch.mcp.json"
+  ],
+  "skills": [
+    "skills/epoch/SKILL.md"
+  ]
+}
