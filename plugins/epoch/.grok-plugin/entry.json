@@ -1,0 +1,17 @@
+{
+  "status": "UNSUBMITTED",
+  "note": "Payload for a future PR to xai-org/plugin-marketplace. Do not submit without CEO gate. SHA must be re-pinned to the merged commit.",
+  "name": "epoch",
+  "version": "0.5.2",
+  "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk.",
+  "keywords": [
+    "epoch",
+    "kyanite-labs",
+    "epoch-estimate"
+  ],
+  "source": {
+    "source": "url",
+    "url": "https://github.com/KyaniteLabs/Epoch.git",
+    "sha": "PIN-AFTER-MERGE"
+  }
+}

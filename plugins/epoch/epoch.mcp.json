@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "epoch": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@kyanitelabs/epoch"
+      ]
+    }
+  }
+}

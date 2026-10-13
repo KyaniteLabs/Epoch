@@ -1,0 +1,11 @@
+{
+  "name": "epoch",
+  "version": "0.5.2",
+  "displayName": "Epoch",
+  "description": "Use Epoch for calibrated duration, cost, or schedule-risk estimates via the Epoch MCP server.",
+  "author": "Kyanite Labs",
+  "category": "Developer Tools",
+  "skills": [
+    "skills/epoch/SKILL.md"
+  ]
+}
