@@ -23,3 +23,7 @@ rescue/
 docs/ops/audits/*
 !docs/ops/audits/.gitkeep
 .ci-results/
+
+# Mutation testing (stryker)
+.stryker-tmp/
+reports/mutation/
