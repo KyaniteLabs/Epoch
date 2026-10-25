@@ -13,7 +13,7 @@ concurrency:
 jobs:
   # Full contract on Node 24, the publish runtime.
   ci:
-    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@0209ffe2feb69190760cc31491a097fea174550f
+    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@d99e9be1830d5e29d1d8f0ba1722997d3dd2184f
     with:
       image: node:24-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
   # Engines floor (>=22): build, tests with coverage thresholds, and the
