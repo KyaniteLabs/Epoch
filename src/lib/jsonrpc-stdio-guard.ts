@@ -1,4 +1,5 @@
 import { Transform } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 
 /**
  * Line-wise JSON-RPC 2.0 hygiene guard for the stdio MCP transport.
@@ -217,13 +218,22 @@ export function createStdioGuardTransform(options?: {
 			process.stdout.write(JSON.stringify(response) + "\n");
 		});
 	let partialLine = "";
+	// A multibyte UTF-8 sequence can straddle a chunk boundary; decoding per-chunk
+	// would turn each half into U+FFFD (silently corrupting served requests — the
+	// SDK's own ReadBuffer decodes whole lines, so this must too). StringDecoder
+	// buffers incomplete sequences.
+	const utf8Decoder = new StringDecoder("utf8");
 
 	const handleLine = (line: string): string | null => {
-		const decision = inspectStdioLine(line, state);
+		// Forward the BOM-stripped line: the SDK's JSON.parse throws on a leading
+		// \uFEFF and silently drops the message otherwise (a BOM'd initialize
+		// would hang the client at session startup).
+		const forwardable = line.startsWith("\uFEFF") ? line.slice(1) : line;
+		const decision = inspectStdioLine(forwardable, state);
 		if (decision.response) {
 			writeResponse(decision.response);
 		}
-		return decision.forward ? line : null;
+		return decision.forward ? forwardable : null;
 	};
 
 	return new Transform({
@@ -232,7 +242,7 @@ export function createStdioGuardTransform(options?: {
 			_encoding: BufferEncoding,
 			callback: (error: Error | null, data: Buffer | string | null) => void,
 		): void {
-			partialLine += chunk.toString("utf8");
+			partialLine += utf8Decoder.write(chunk);
 			const lines = partialLine.split("\n");
 			partialLine = lines.pop() ?? "";
 			const forwarded = lines
@@ -246,6 +256,7 @@ export function createStdioGuardTransform(options?: {
 		flush(
 			callback: (error: Error | null, data: Buffer | string | null) => void,
 		): void {
+			partialLine += utf8Decoder.end();
 			if (partialLine.length === 0) {
 				callback(null, null);
 				return;

@@ -308,3 +308,75 @@ describe("createStdioGuardTransform", () => {
 		expect(parsed.error?.code).toBe(-32700);
 	});
 });
+
+// Reviewer F1/F2 pins (2026-09-19): chunk-boundary multibyte UTF-8 must not corrupt,
+// and a BOM'd valid message must be forwarded BOM-free (not silently dropped by the SDK).
+describe("stdio guard: reviewer pins F1 (multibyte split) + F2 (BOM forward)", () => {
+	it("forwards CJK content intact when split mid-codepoint across writes", async () => {
+		const { createStdioGuardTransform } = await import("./jsonrpc-stdio-guard.js");
+		const guard = createStdioGuardTransform({});
+		const chunks: string[] = [];
+		guard.on("data", (d: Buffer) => chunks.push(d.toString("utf8")));
+		const payload =
+			JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) +
+			"\n";
+		const bytes = Buffer.from(payload, "utf8");
+		// the first payload is written whole; the CJK payload below is split
+		// mid-codepoint (after byte 1 of the 3-byte 日) across two writes:
+		const cjkPayload =
+			Buffer.from(
+				JSON.stringify({
+					jsonrpc: "2.0",
+					id: 2,
+					method: "tools/call",
+					params: { name: "x", arguments: { text: "日本語テスト" } },
+				}) + "\n",
+				"utf8",
+			);
+		const cut = cjkPayload.indexOf(Buffer.from("日", "utf8")) + 1; // middle of the codepoint
+		guard.write('{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}\n' + bytes);
+		await new Promise((r) => setImmediate(r));
+		guard.write(cjkPayload.subarray(0, cut));
+		await new Promise((r) => setImmediate(r));
+		guard.write(cjkPayload.subarray(cut));
+		guard.end();
+		await new Promise((r) => guard.on("end", r));
+		const out = chunks.join("");
+		// the forwarded line is raw bytes, so per-chunk decoding corruption
+		// would surface as U+FFFD replacement characters in the joined output:
+		expect(out).not.toContain("\uFFFD");
+		expect(out).toContain("日本語テスト");
+	});
+
+	it("forwards a BOM'd valid message with the BOM stripped", async () => {
+		const { createStdioGuardTransform } = await import("./jsonrpc-stdio-guard.js");
+		const guard = createStdioGuardTransform({});
+		const chunks: string[] = [];
+		guard.on("data", (d: Buffer) => chunks.push(d.toString("utf8")));
+		guard.write('{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}\n' + "\uFEFF" + JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list", params: {} }) + "\n");
+		guard.end();
+		await new Promise((r) => guard.on("end", r));
+		const out = chunks.join("");
+		expect(out).toContain('"id":7');
+		expect(out).not.toContain("\\uFEFF");
+		// The pin above only rules out the escaped text; also rule out the raw
+		// U+FEFF character and require every forwarded line to parse as JSON.
+		expect(out.includes("\uFEFF")).toBe(false);
+		for (const line of out.split("\n").filter((l) => l.length > 0)) {
+			expect(() => JSON.parse(line)).not.toThrow();
+		}
+	});
+
+	it("forwards a BOM'd initialize as parseable JSON (the SDK would otherwise drop it and hang the client)", async () => {
+		const { createStdioGuardTransform } = await import("./jsonrpc-stdio-guard.js");
+		const guard = createStdioGuardTransform({});
+		const chunks: string[] = [];
+		guard.on("data", (d: Buffer) => chunks.push(d.toString("utf8")));
+		guard.write("\uFEFF" + '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}\n');
+		guard.end();
+		await new Promise((r) => guard.on("end", r));
+		const lines = chunks.join("").split("\n").filter((l) => l.length > 0);
+		expect(lines).toHaveLength(1);
+		expect(JSON.parse(lines[0] ?? "").method).toBe("initialize");
+	});
+});
