@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### fix: re-land stdio JSON-RPC hygiene guard (7f0a274, #226)
 
-- Partially re-landed the 0.5.1 guard (`src/lib/jsonrpc-stdio-guard.ts`) that npm 0.5.2 shipped without: 7f0a274 restored the bulk of 22c8421 but not the reviewer F1/F2 fixes (StringDecoder for multibyte characters split across write chunks; BOM-stripped forwarding). The F1/F2 delta (6878ff4) is restored by the follow-up `fix/restore-0.5.1-guard-fixes` PR; see the 0.5.2 and 0.5.1 entries below. Ships at the next release.
+- Partially re-landed the 0.5.1 guard (`src/lib/jsonrpc-stdio-guard.ts`) that npm 0.5.2 shipped without: 7f0a274 restored 22c8421 in full, but not the later F1/F2 delta (6878ff4) (StringDecoder for multibyte characters split across write chunks; BOM-stripped forwarding). The F1/F2 delta (6878ff4) is restored by the follow-up `fix/restore-0.5.1-guard-fixes` PR; see the 0.5.2 and 0.5.1 entries below. Ships at the next release.
 
 ### feat: S1.1 git-mined auto-actuals — `epoch mine-git` (join mode)
 
