@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### fix: re-land stdio JSON-RPC hygiene guard (7f0a274, #226)
 
-- Restores the 0.5.1 guard (`src/lib/jsonrpc-stdio-guard.ts`, content of 22c8421) that npm 0.5.2 shipped without; see the 0.5.2 and 0.5.1 entries below. Ships at the next release.
+- Partially re-landed the 0.5.1 guard (`src/lib/jsonrpc-stdio-guard.ts`) that npm 0.5.2 shipped without: 7f0a274 restored the bulk of 22c8421 but not the reviewer F1/F2 fixes (StringDecoder for multibyte characters split across write chunks; BOM-stripped forwarding). The F1/F2 delta (6878ff4) is restored by the follow-up `fix/restore-0.5.1-guard-fixes` PR; see the 0.5.2 and 0.5.1 entries below. Ships at the next release.
 
 ### feat: S1.1 git-mined auto-actuals — `epoch mine-git` (join mode)
 
@@ -35,13 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### chore: repo-truth metadata pass — 0.5.2 version train
 
-- `package.json` + `server.json`: version 0.5.0 → 0.5.2 (trains the next release; publish stays gated). npm latest is 0.5.1 (2026-09-19) — 0.5.2 is the next publish slot, never skipped.
+- `package.json` + `server.json`: version 0.5.0 → 0.5.2 (trains the next release; publish stays gated). npm latest was 0.5.1 (2026-09-19) when this train was cut — historical note: 0.5.2 published 2026-09-25 (see the 0.5.2 heading); the publish-gating posture still stands for later releases.
 - package description corrected "25 tools" → "26 tools" (matches `CANONICAL_TOOL_NAMES` in `src/lib/tool-aliases.ts`, the authoritative surface; `TOOL_COUNT` derives from it).
 - Hand-written 25/24-era tool-count strings corrected to 26: `src/dispatcher/tool-registry.ts` header comment, `skills/epoch/SKILL.md`, `site/` assets.
 - `docs/llms.txt` architecture table: Analytics row 5 → 6 with `wait_bound` (table previously summed to 25 while the header said 26).
 - `site/` re-synced with the live-deployed gh-pages assets (215bb6c, live-verified 2026-09-25): index.html (26 tools, Apache-2.0, 16 models, TS 6/Zod 4), llms-full.txt (wait_bound entry), new site/llms.txt, ai-plugin.json (26 tools / 6 layers), sitemap.xml (/llms.txt entry). Version stamps set to v0.5.2 to match this train.
 
-## [0.5.1] - 2026-09-19 — stdio JSON-RPC protocol hygiene (re-landed 2026-09-25: shipped in npm 0.5.1 from a mirror-side tag, then lost when the 0.5.2 train was cut from canonical main, which had never received these commits; restored for the next release)
+### chore: claim-truth pass (CGO-22) — 450e6aa
+
+- Claim-truth corrections from the CGO-22 battery shipped in the 0.5.2 train (ancestor of the 8424a7e gitHead; entry added 2026-10-25 when the Layer 5 audit re-sorted the changelog).
+
+## [0.5.1] - 2026-09-19 — stdio JSON-RPC protocol hygiene (partially re-landed on main 2026-09-25 by 7f0a274 after being lost when the 0.5.2 train was cut from canonical main; the reviewer F1/F2 fixes are restored by the follow-up guard-fixes PR, not yet released)
 
 ### Fixed (adversarial battery 2026-09-19, defect class CGO-12)
 
