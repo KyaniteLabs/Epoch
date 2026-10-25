@@ -321,8 +321,8 @@ describe("stdio guard: reviewer pins F1 (multibyte split) + F2 (BOM forward)", (
 			JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) +
 			"\n";
 		const bytes = Buffer.from(payload, "utf8");
-		// split inside the payload at a byte boundary that cuts a multibyte seq is
-		// CJK-free here, so also test with CJK in an argument:
+		// the first payload is written whole; the CJK payload below is split
+		// mid-codepoint (after byte 1 of the 3-byte 日) across two writes:
 		const cjkPayload =
 			Buffer.from(
 				JSON.stringify({
@@ -342,7 +342,9 @@ describe("stdio guard: reviewer pins F1 (multibyte split) + F2 (BOM forward)", (
 		guard.end();
 		await new Promise((r) => guard.on("end", r));
 		const out = chunks.join("");
-		expect(out).not.toContain("\\uFFFD");
+		// the forwarded line is raw bytes, so per-chunk decoding corruption
+		// would surface as U+FFFD replacement characters in the joined output:
+		expect(out).not.toContain("\uFFFD");
 		expect(out).toContain("日本語テスト");
 	});
 
