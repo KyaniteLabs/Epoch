@@ -1,28 +1,36 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
-
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # Unique per push commit so queued main runs are never replaced; per PR otherwise.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  test:
-    name: Typecheck, lint, and test
+  # Full contract on Node 24, the publish runtime.
+  ci:
+    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@0209ffe2feb69190760cc31491a097fea174550f
+    with:
+      image: node:24-bookworm
+  # Engines floor (>=22): build, tests with coverage thresholds, and the
+  # Node-dependent data/contract scripts must also pass on Node 22.
+  node-22-floor:
+    name: node-22-floor
     runs-on: docker
+    container:
+      image: node:22-bookworm
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        run: corepack enable pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Test
-        run: pnpm test
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - run: corepack enable pnpm && pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - run: pnpm exec vitest run --coverage
+      - run: node scripts/validate-community-data.mjs
+      - run: node scripts/verify-reference-db.mjs
+      - run: pnpm run contract:llms-full
