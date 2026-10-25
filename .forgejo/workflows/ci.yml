@@ -15,14 +15,14 @@ jobs:
   ci:
     uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@0209ffe2feb69190760cc31491a097fea174550f
     with:
-      image: node:24-bookworm
+      image: node:24-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
   # Engines floor (>=22): build, tests with coverage thresholds, and the
   # Node-dependent data/contract scripts must also pass on Node 22.
   node-22-floor:
     name: node-22-floor
     runs-on: docker
     container:
-      image: node:22-bookworm
+      image: node:22-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

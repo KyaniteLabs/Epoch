@@ -29,12 +29,21 @@ concurrency:
   group: site-${{ github.ref_name }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   deploy:
     name: Deploy gh-pages from site/
     runs-on: docker
+    # Same digest-pinned image as ci.yml's node-22 floor: the deploy job runs
+    # node (stamp-release-versions) and git, so pin the environment instead of
+    # trusting whatever untagged image the runner resolves.
+    container:
+      image: node:22-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Stamp release surfaces from package.json
         # Same derivation as the npm job: site/llms-full.txt (and the other
