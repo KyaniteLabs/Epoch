@@ -76,10 +76,12 @@ describe("pertEstimate intervals", () => {
     const r = pertEstimate(5, 4, 6, "hours");
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.isError).toBe(true);
-    expect(r.error.retryHint).toBe(
-      "Provide three positive estimates where optimistic is smallest and pessimistic is largest.",
-    );
+    expect(r.error).toEqual({
+      isError: true,
+      message:
+        "PERT values must satisfy 0 < optimistic <= most_likely <= pessimistic. Got optimistic=5, most_likely=4, pessimistic=6.",
+      retryHint: "Provide three positive estimates where optimistic is smallest and pessimistic is largest.",
+    });
   });
 });
 
@@ -145,16 +147,15 @@ describe("sprintForecast arithmetic", () => {
   });
 
   it.each([
-    [{ backlogPoints: 10, velocityHistory: [] }, "Pass an array of story points completed per past sprint."],
-    [{ backlogPoints: 10, velocityHistory: [-1] }, "Provide non-negative numeric velocity values for each sprint."],
-    [{ backlogPoints: 0, velocityHistory: [5] }, "Provide a positive number for backlog_points."],
-    [{ backlogPoints: 10, velocityHistory: [0, 0] }, "Include sprints with positive velocity, or estimate velocity from team capacity."],
-  ])("returns the full error contract (%#)", (input, retryHint) => {
+    [{ backlogPoints: 10, velocityHistory: [] }, "velocity_history cannot be empty. Provide at least one sprint's velocity.", "Pass an array of story points completed per past sprint."],
+    [{ backlogPoints: 10, velocityHistory: [-1] }, "velocity_history[0] is invalid: -1. Each velocity must be a non-negative finite number.", "Provide non-negative numeric velocity values for each sprint."],
+    [{ backlogPoints: 0, velocityHistory: [5] }, "backlog_points must be positive.", "Provide a positive number for backlog_points."],
+    [{ backlogPoints: 10, velocityHistory: [0, 0] }, "Average velocity is 0 across 2 sprint(s). Cannot forecast with zero velocity — the backlog will never clear.", "Include sprints with positive velocity, or estimate velocity from team capacity."],
+  ])("returns the full error contract (%#)", (input, message, retryHint) => {
     const r = sprintForecast({ sprintLengthDays: 10, hoursPerSprint: 40, ...input });
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.isError).toBe(true);
-    expect(r.error.retryHint).toBe(retryHint);
+    expect(r.error).toEqual({ isError: true, message, retryHint });
   });
 });
 
@@ -180,7 +181,7 @@ describe("cocomoEstimate boundaries", () => {
   it.each([
     [1, 12, "extreme"],
     [1 + 0.2 / 0.15, 10, "extreme"], // exactly 10 is not "< 10"
-    [1 + 1.4 / 0.15, 5, "significant"], // exactly 5 is not "< 5"
+    [1 + 1.4 / 0.15, 5, "significant"], // raw 4.999…; the rounded speedup 5.0 is not "< 5"
     [20, 3.1, "moderate"],
   ])("iterative cycles %d → speedup %d (%s)", (iterativeCycles, aiSpeedup, speedupCategory) => {
     const r = cocomoEstimate({ kloc: 10, ...nominalCocomo, iterativeCycles });
@@ -201,14 +202,13 @@ describe("cocomoEstimate boundaries", () => {
   });
 
   it.each([
-    [0, "Provide a positive value for kloc (thousands of lines of code)."],
-    [2e9, "Provide a kloc value under 1,000,000,000."],
-  ])("returns the full error contract for kloc=%d", (kloc, retryHint) => {
+    [0, "KLOC must be positive.", "Provide a positive value for kloc (thousands of lines of code)."],
+    [2e9, "KLOC value 2000000000 is too large — computation would overflow.", "Provide a kloc value under 1,000,000,000."],
+  ])("returns the full error contract for kloc=%d", (kloc, message, retryHint) => {
     const r = cocomoEstimate({ kloc, ...nominalCocomo });
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.isError).toBe(true);
-    expect(r.error.retryHint).toBe(retryHint);
+    expect(r.error).toEqual({ isError: true, message, retryHint });
   });
 });
 
@@ -228,6 +228,22 @@ describe("criticalPath merge bias and slack", () => {
     expect(r.data.slack_per_task).toEqual({ A: 2, B: 1, C: 0, D: 0 });
     expect(r.data.critical_path).toEqual(["C", "D"]);
     expect(r.data.estimatedHours).toBe(116);
+  });
+
+  it("scales the merge bias with each extra predecessor (four → 10%)", () => {
+    // E has 4 predecessors → 5 × 1.10 = 5.5 after the longest (D, 4) → 9.5.
+    const r = criticalPath([
+      { name: "A", duration: 1, predecessors: [] },
+      { name: "B", duration: 2, predecessors: [] },
+      { name: "C", duration: 3, predecessors: [] },
+      { name: "D", duration: 4, predecessors: [] },
+      { name: "E", duration: 5, predecessors: ["A", "B", "C", "D"] },
+    ]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.total_duration).toBe(9.5);
+    expect(r.data.merge_bias_adjustment).toBe(0.1);
+    expect(r.data.slack_per_task).toEqual({ A: 3, B: 2, C: 1, D: 0, E: 0 });
   });
 
   it("applies no merge bias at exactly two predecessors", () => {
@@ -255,17 +271,16 @@ describe("criticalPath merge bias and slack", () => {
   });
 
   it.each([
-    [[], "Provide at least one task for critical path analysis."],
-    [[{ name: "A", duration: 1, predecessors: [] }, { name: "A", duration: 2, predecessors: [] }], "Each task must have a unique name."],
-    [[{ name: "A", duration: 0, predecessors: [] }], "Each task must have a positive, finite duration."],
-    [[{ name: "A", duration: 1, predecessors: ["A"] }], "Remove self-references from predecessor lists."],
-    [[{ name: "A", duration: 1, predecessors: ["Z"] }], "Ensure all predecessor names match task names exactly."],
-    [[{ name: "A", duration: 1, predecessors: ["B"] }, { name: "B", duration: 1, predecessors: ["A"] }], "Remove cycles from task predecessor chains."],
-  ])("returns the full error contract (%#)", (tasks, retryHint) => {
+    [[], "Task list must not be empty.", "Provide at least one task for critical path analysis."],
+    [[{ name: "A", duration: 1, predecessors: [] }, { name: "A", duration: 2, predecessors: [] }], 'Duplicate task name: "A".', "Each task must have a unique name."],
+    [[{ name: "A", duration: 0, predecessors: [] }], 'Task "A" has invalid duration: 0.', "Each task must have a positive, finite duration."],
+    [[{ name: "A", duration: 1, predecessors: ["A"] }], 'Task "A" references itself as a predecessor.', "Remove self-references from predecessor lists."],
+    [[{ name: "A", duration: 1, predecessors: ["Z"] }], 'Unknown predecessor "Z" in task "A".', "Ensure all predecessor names match task names exactly."],
+    [[{ name: "A", duration: 1, predecessors: ["B"] }, { name: "B", duration: 1, predecessors: ["A"] }], "Circular dependency detected in task graph.", "Remove cycles from task predecessor chains."],
+  ])("returns the full error contract (%#)", (tasks, message, retryHint) => {
     const r = criticalPath(tasks);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.isError).toBe(true);
-    expect(r.error.retryHint).toBe(retryHint);
+    expect(r.error).toEqual({ isError: true, message, retryHint });
   });
 });
