@@ -16,7 +16,8 @@ jobs:
     uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@0209ffe2feb69190760cc31491a097fea174550f
     with:
       image: node:24-bookworm
-  # Engines floor (>=22): the build and tests must also pass on Node 22.
+  # Engines floor (>=22): build, tests with coverage thresholds, and the
+  # Node-dependent data/contract scripts must also pass on Node 22.
   node-22-floor:
     name: node-22-floor
     runs-on: docker
@@ -29,4 +30,7 @@ jobs:
       - run: corepack enable pnpm && pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm run build
-      - run: pnpm exec vitest run
+      - run: pnpm exec vitest run --coverage
+      - run: node scripts/validate-community-data.mjs
+      - run: node scripts/verify-reference-db.mjs
+      - run: pnpm run contract:llms-full
