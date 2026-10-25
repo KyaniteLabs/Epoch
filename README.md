@@ -114,7 +114,7 @@ Six-layer design with 26 tools for time estimation, scheduling, cost analysis, a
 | **1. Core Temporal** | Time, timezones, duration, date math | `get_current_time`, `convert_timezone`, `parse_duration`, `time_math` |
 | **2. Calendar Math** | Business days, holidays (US/UK/FR/DE/JP) | `add_business_days`, `count_business_days` |
 | **3. Estimation** | PERT, COCOMO II, sprint, CPM, Monte Carlo | `pert_estimate`, `cocomo_estimate`, `sprint_forecast`, `critical_path`, `monte_carlo_schedule` |
-| **4. Analytics** | Reference class, context classification, calibration, token-time bridge | `reference_class_estimate`, `estimate_from_context`, `calibrate_estimates`, `token_time_bridge` |
+| **4. Analytics** | Reference class, context classification, calibration, token-time bridge, wait-mechanism deadlines | `reference_class_estimate`, `estimate_from_context`, `calibrate_estimates`, `token_time_bridge`, `wait_bound` |
 | **5. Cost & Risk** | Token cost, model comparison, accuracy trends, risk, COCOMO validation | `token_cost_estimate`, `compare_models`, `accuracy_trend`, `schedule_risk`, `cocomo_validate`, `cocomo_ground_truth` |
 | **6. Feedback** | Record actuals, track pending estimates, batch operations, health checks | `record_actual`, `get_pending_estimates`, `batch_record_actuals`, `feedback_health` |
 

@@ -1,6 +1,15 @@
 # Changelog
 
-## [Unreleased] — mine-git (S1.1) + wait_bound (26th tool)
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### fix: re-land stdio JSON-RPC hygiene guard (7f0a274, #226)
+
+- Restores the 0.5.1 guard (`src/lib/jsonrpc-stdio-guard.ts`, content of 22c8421) that npm 0.5.2 shipped without; see the 0.5.2 and 0.5.1 entries below. Ships at the next release.
 
 ### feat: S1.1 git-mined auto-actuals — `epoch mine-git` (join mode)
 
@@ -11,6 +20,27 @@
 - Provenance plumbing: `git_derived` / `git_derived_review_inclusive` added to the shared provenance unions (schemas enum, `exclusion.ts` VALID_PROVENANCE, `feedback.ts` VALID_PROVENANCE, `HistoricalRecord`), correction-eligible by default exactly like `auto_wallclock`, and segmented in `feedback_health.byProvenance` as a third bucket (`gitDerived`) so calendar-window noise never blends with verified actuals.
 - New write-time rejection reason `git_derived_out_of_bounds` (record_actual surfaces a distinct actionable message; HTTP maps it 400-class).
 - CLI-only by design (same posture as auto-actuals): no new MCP tool, so the in-flight "26 tools" public claim and the 0.5.2 truth train stay intact; the tool-count surfaces are untouched.
+
+## [0.5.2] - 2026-09-25
+
+> Published to npm 2026-09-25 from gitHead 8424a7e. This release does **not** contain the 0.5.1 stdio JSON-RPC hygiene guard: the guard commits (22c8421, 6878ff4) were never ancestors of canonical main when the 0.5.2 train was cut (`src/lib/jsonrpc-stdio-guard.ts` is absent at 8424a7e). The guard was re-landed afterwards in 7f0a274 and is listed under [Unreleased].
+
+### feat: wait-bound — deadline derivation from the mechanism a wait rides (three-clock law)
+
+- New tool `wait_bound` (CLI `wait-bound`, MCP `wait_bound`): fleet = k×cycle + PERT(turn) + 1sd; world = PERT(turn) with REQUIRED external anchor; ceo = the named ladder rung (pass/burst/sleep/cycle/season). Returns bound seconds, deadline UTC+local (PT default), envelope-ready TTL hours, law note.
+- First consumer: Kyanite org three-clock TTL law (loop-tightening v1.1 A2, CEO order 2026-09-17); bus validator enforces the ≥24h world-time rule at push time.
+- Tool surface synced: canonical set (26), registry, CLI tree, public-surface contract (43 CLI paths), docs/llms.txt + root llms.txt, README counts.
+- Design decisions flagged for PM ruling: turn-PERT defaults 15/45/120 (desk-wake + busy-seat turn); non-estimation partition for v1 (ledger/record_actual pairing = open design Q); PT-default timezone.
+- Origin: CEO-directed (2026-09-17); built by Platform session 4 per CONTRIBUTING; ownership: Epoch PM / Product.
+
+### chore: repo-truth metadata pass — 0.5.2 version train
+
+- `package.json` + `server.json`: version 0.5.0 → 0.5.2 (trains the next release; publish stays gated). npm latest is 0.5.1 (2026-09-19) — 0.5.2 is the next publish slot, never skipped.
+- package description corrected "25 tools" → "26 tools" (matches `CANONICAL_TOOL_NAMES` in `src/lib/tool-aliases.ts`, the authoritative surface; `TOOL_COUNT` derives from it).
+- Hand-written 25/24-era tool-count strings corrected to 26: `src/dispatcher/tool-registry.ts` header comment, `skills/epoch/SKILL.md`, `site/` assets.
+- `docs/llms.txt` architecture table: Analytics row 5 → 6 with `wait_bound` (table previously summed to 25 while the header said 26).
+- `site/` re-synced with the live-deployed gh-pages assets (215bb6c, live-verified 2026-09-25): index.html (26 tools, Apache-2.0, 16 models, TS 6/Zod 4), llms-full.txt (wait_bound entry), new site/llms.txt, ai-plugin.json (26 tools / 6 layers), sitemap.xml (/llms.txt entry). Version stamps set to v0.5.2 to match this train.
+
 ## [0.5.1] - 2026-09-19 — stdio JSON-RPC protocol hygiene (re-landed 2026-09-25: shipped in npm 0.5.1 from a mirror-side tag, then lost when the 0.5.2 train was cut from canonical main, which had never received these commits; restored for the next release)
 
 ### Fixed (adversarial battery 2026-09-19, defect class CGO-12)
@@ -33,35 +63,10 @@ real-server integration test (`src/entries/mcp-stdio-guard.integration.test.ts`)
 driving one hostile session end to end. Adversarial battery
 `growth/tools/mcp-stdio-battery.mjs`: 14/15 → **15/15 PASS** (zero leaks).
 
-Note: 0.5.1 also carries the `wait_bound` 26th tool from the unreleased
-section below — both ship together whenever 0.5.1 is published.
-
-## [Unreleased] — wait_bound (26th tool)
-
-### feat: wait-bound — deadline derivation from the mechanism a wait rides (three-clock law)
-
-- New tool `wait_bound` (CLI `wait-bound`, MCP `wait_bound`): fleet = k×cycle + PERT(turn) + 1sd; world = PERT(turn) with REQUIRED external anchor; ceo = the named ladder rung (pass/burst/sleep/cycle/season). Returns bound seconds, deadline UTC+local (PT default), envelope-ready TTL hours, law note.
-- First consumer: Kyanite org three-clock TTL law (loop-tightening v1.1 A2, CEO order 2026-09-17); bus validator enforces the ≥24h world-time rule at push time.
-- Tool surface synced: canonical set (26), registry, CLI tree, public-surface contract (43 CLI paths), docs/llms.txt + root llms.txt, README counts.
-- Design decisions flagged for PM ruling: turn-PERT defaults 15/45/120 (desk-wake + busy-seat turn); non-estimation partition for v1 (ledger/record_actual pairing = open design Q); PT-default timezone.
-- Origin: CEO-directed (2026-09-17); built by Platform session 4 per CONTRIBUTING; ownership: Epoch PM / Product.
-
-### chore: repo-truth metadata pass — 0.5.2 version train
-
-- `package.json` + `server.json`: version 0.5.0 → 0.5.2 (trains the next release; publish stays gated). npm latest is 0.5.1 (2026-09-19) — 0.5.2 is the next publish slot, never skipped.
-- package description corrected "25 tools" → "26 tools" (matches `CANONICAL_TOOL_NAMES` in `src/lib/tool-aliases.ts`, the authoritative surface; `TOOL_COUNT` derives from it).
-- Hand-written 25/24-era tool-count strings corrected to 26: `src/dispatcher/tool-registry.ts` header comment, `skills/epoch/SKILL.md`, `site/` assets.
-- `docs/llms.txt` architecture table: Analytics row 5 → 6 with `wait_bound` (table previously summed to 25 while the header said 26).
-- `site/` re-synced with the live-deployed gh-pages assets (215bb6c, live-verified 2026-09-25): index.html (26 tools, Apache-2.0, 16 models, TS 6/Zod 4), llms-full.txt (wait_bound entry), new site/llms.txt, ai-plugin.json (26 tools / 6 layers), sitemap.xml (/llms.txt entry). Version stamps set to v0.5.2 to match this train.
-
-
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
+Note: 0.5.1 also carries the `wait_bound` 26th tool code (npm 0.5.1 gitHead
+6878ff4 contains f38aae9), but its package metadata still said 25 tools; the
+`wait_bound` entry is recorded under 0.5.2, the first release whose metadata
+advertises 26 tools.
 
 ## [0.5.0] - 2026-08-16
 
@@ -148,7 +153,6 @@ Hotfix release (W1 of the post-audit remediation program): restores the estimate
 
 ### Added
 - New `calibration_provenance` value `auto_wallclock` and CLI subcommand `epoch auto-actuals --session <id> [--dry-run]`, which auto-records wall-clock-derived actuals (never overwriting a verified actual) for a session's un-actualed pending estimates, gated by a dedicated sanity bound ([0.05h, 12h], <10x ratio vs. estimate) shared across the CLI pre-filter, `recordActualDetailed()`'s write-time guard, and `isExcluded()`'s calibration-math guard; `feedback_health` now reports a `byProvenance` block (verified vs. auto matched-pair counts and MdAPE) so any drift introduced by auto-recorded actuals stays visible instead of silently blending into the headline metrics.
-
 
 ### Explored (no shipped change)
 - Investigated a single-file `bun build --compile` executable as a faster-startup alternative to `npx` distribution. Currently **blocked** by a Bun 1.3.14 bundler linking defect that only manifests when the CLI dispatcher and MCP entry (`@modelcontextprotocol/sdk`, which calls `z.custom()` at module top level) are bundled together — each half compiles and runs correctly in isolation. Full repro, root-cause analysis, and a ready-to-use `scripts/build-binary.sh` (for once Bun ships a fix) are in `docs/BINARY.md`. No runtime code changed.
