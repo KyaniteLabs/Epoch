@@ -7,7 +7,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ci-pr-${{ github.event.pull_request.number || github.ref }}
+  # Unique per push commit so queued main runs are never replaced; per PR otherwise.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   # Full contract on Node 24, the publish runtime.
