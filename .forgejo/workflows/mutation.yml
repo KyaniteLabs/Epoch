@@ -1,0 +1,44 @@
+name: Mutation
+# Advisory Layer 2 lane: measures whether the tests actually detect injected
+# defects in the core estimator. Not a required check (it takes ~15 min); the
+# run goes red if the mutation score drops below 80% (baseline 84.7%,
+# 2026-10-25), so a weakening of the tests is visible without blocking merges.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  mutation:
+    name: mutation-score
+    runs-on: docker
+    timeout-minutes: 45
+    container:
+      image: node:24-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install pinned pnpm and the frozen lockfile
+        run: corepack enable pnpm && pnpm install --frozen-lockfile
+      - name: Mutation score of the core estimator (break below 80%)
+        run: pnpm exec stryker run stryker.config.json
+      - name: Retain the mutation report
+        if: ${{ always() }}
+        uses: https://code.forgejo.org/forgejo/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          if-no-files-found: warn
+          retention-days: 30
