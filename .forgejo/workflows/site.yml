@@ -29,12 +29,16 @@ concurrency:
   group: site-${{ github.ref_name }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   deploy:
     name: Deploy gh-pages from site/
     runs-on: docker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Stamp release surfaces from package.json
         # Same derivation as the npm job: site/llms-full.txt (and the other
