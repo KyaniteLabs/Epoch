@@ -375,6 +375,6 @@ describe("stdio guard: reviewer pins F1 (multibyte split) + F2 (BOM forward)", (
 		await new Promise((r) => guard.on("end", r));
 		const lines = chunks.join("").split("\n").filter((l) => l.length > 0);
 		expect(lines).toHaveLength(1);
-		expect(JSON.parse(lines[0]).method).toBe("initialize");
+		expect(JSON.parse(lines[0] ?? "").method).toBe("initialize");
 	});
 });
