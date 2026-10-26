@@ -6,6 +6,9 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     coverage: {
       provider: "v8",
+      // Vitest's defaults plus json-summary, which the CI profile's Layer 3
+      // evidence step reads for before/after line coverage.
+      reporter: ["text", "html", "clover", "json", "json-summary"],
       include: [
         "src/lib/**/*.ts",
         "src/tools/**/*.ts",

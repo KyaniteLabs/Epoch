@@ -13,8 +13,13 @@ concurrency:
 jobs:
   # Full contract on Node 24, the publish runtime.
   ci:
-    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@27ac4d4580e0e5fbb596d429ceea0d310d5ca7cb
+    # contents: write is for the profile's publish-evidence job only (main
+    # pushes); the profile's required job declares contents: read.
+    permissions:
+      contents: write
+    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@a3f998bcbc152341b1793db48dface2f8abe6287
     with:
+      publish_evidence: true
       image: node:24-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
   # Engines floor (>=22): build, tests with coverage thresholds, and the
   # Node-dependent data/contract scripts must also pass on Node 22.
