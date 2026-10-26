@@ -160,12 +160,8 @@ Output: {
 **`time_math`** -- Date arithmetic operations
 
 ```
-Input:  { operation: "add_days", date: "2026-05-01", value: 7 }
-Output: {
-  result: "2026-05-08T00:00:00.000Z",
-  operation: "add_days",
-  input: "2026-05-01"
-}
+Input:  { operation: "add_days", operands: { start_date: "2026-05-01", days: 7 } }
+Output: "2026-05-08"
 ```
 
 Supported operations: `add_days`, `add_business_days`, `diff`, `convert_tz`, `parse_nl`, `format_duration`
@@ -650,6 +646,20 @@ epoch list-tools
 
 # Pretty table output
 epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 12 --pretty
+```
+
+From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`. CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples cannot drift from the code:
+
+```bash readme-test
+node dist/index.js --version
+node dist/index.js parse-duration --duration 2h30m
+# expect: "totalSeconds": 9000
+node dist/index.js count-business-days --start-date 2026-05-01 --end-date 2026-05-15 --country US
+# expect: "businessDays": 10
+node dist/index.js add-business-days --start-date 2026-05-01 --days 5 --country US
+# expect: "endDate": "2026-05-08"
+node dist/index.js time-math --operation add_days --date 2026-05-01 --days 7
+# expect: "data": "2026-05-08"
 ```
 
 ### REST API

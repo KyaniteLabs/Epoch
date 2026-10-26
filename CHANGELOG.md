@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### docs: executable README examples; `time_math` add_days example corrected
+
+- README now has a `bash readme-test` block that CI runs on every change (shared profile Layer 3 step). It checks the documented `parse_duration`, `count_business_days`, `add_business_days` and `time_math` results against the built CLI.
+- The README's `time_math` `add_days` example was wrong: it showed `value: 7` and a `{result, operation, input}` object. The tool takes `operands: {start_date, days}` and returns the date string `"2026-05-08"`.
+
 ### fix: re-land stdio JSON-RPC hygiene guard (7f0a274, #226)
 
 - Partially re-landed the 0.5.1 guard (`src/lib/jsonrpc-stdio-guard.ts`) that npm 0.5.2 shipped without: 7f0a274 restored 22c8421 in full, but not the later F1/F2 delta (6878ff4) (StringDecoder for multibyte characters split across write chunks; BOM-stripped forwarding). The F1/F2 delta (6878ff4) is restored by the follow-up `fix/restore-0.5.1-guard-fixes` PR; see the 0.5.2 and 0.5.1 entries below. Ships at the next release.
