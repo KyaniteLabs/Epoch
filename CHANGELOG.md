@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### docs: the `/v1/feedback/*` REST contract and how it differs from the feedback tools
+
+- The README now documents the four feedback REST routes as a stable surface, and how they differ from the same tools called through `POST /v1/tools/<name>` and MCP: response key casing, status codes (409 for a duplicate actual), `pending` limits and the tools' cap of 10, batch partial success versus whole-batch validation, and `intervalCoverage`. There's no behaviour change. A Layer 6 review found the routes are a diverged contract, not duplicates, so they stay as they are.
+
 ### fix: `epoch get-pending-estimates --limit` parsed in base 20
 
 - **The bug:** the option passed a bare `parseInt` to commander, which calls parsers as `fn(value, previous)`, so the default (20) became the radix. `--limit 15` asked for 25 estimates, and `--limit 9` still looked right. It now parses base 10.
