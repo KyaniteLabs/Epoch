@@ -681,6 +681,17 @@ curl http://localhost:3099/health
 curl http://localhost:3099/openapi.json
 ```
 
+#### Feedback REST routes
+
+`/v1/feedback/*` is a stable REST API for closing the estimate-to-actual loop. It is **not** an alias for the feedback tools: request validation, response shapes and status codes differ from calling the same tools through `POST /v1/tools/<name>` (or MCP or the CLI). Code against the surface you call.
+
+| Route | REST contract | Tool via `/v1/tools/<name>` |
+|---|---|---|
+| `POST /v1/feedback/record-actual` | `{estimate_id, actual_hours, notes?}`. Success is `{estimateId, actualHours, recorded, flagged?, flagHint?}` (camelCase). Status: 400 for bad input or a caller-fixable rejection (`below_threshold`, `synthetic_id`, `unknown_tool`, a failed auto or git sanity gate); **409** for a duplicate; 500 for a storage failure. | `record_actual`: success is `{recorded, estimate_id, actual_hours, message, flagged?, flagHint?}` (snake_case). Every failure is a 422 whose message names the reason. |
+| `GET /v1/feedback/pending?limit=` | `limit` defaults to 50, is clamped to 1–200, and a non-numeric value falls back to 50. Returns **every** pending estimate up to the limit, as full records. | `get_pending_estimates`: `limit` defaults to 20, max 100. Returns `{count, summary, estimates}`, where `count` covers the limit but `estimates` holds **at most 10**, the most recent. |
+| `POST /v1/feedback/batch-record-actuals` | 1–500 entries. **Partial success:** valid entries are recorded, and each invalid one is reported in `errors` by index. If none succeed, 422, or 500 when the cause is storage. | `batch_record_actuals`: Zod validates every entry first, so **one invalid entry rejects the whole batch** (422) before anything is recorded. |
+| `GET /v1/feedback/health` | The feedback health report. | `feedback_health`: the same report **plus `intervalCoverage`** (P80 prediction-interval calibration). |
+
 ## Agent-First
 
 Epoch is built for agents as first-class callers, not humans typing in a terminal as an afterthought.
