@@ -323,7 +323,7 @@ exports[`CLI -> dispatch contract > hands every tool command's options to dispat
       [
         "get_pending_estimates",
         {
-          "limit": 25,
+          "limit": 15,
         },
       ],
     ],
@@ -781,6 +781,11 @@ exports[`CLI -> dispatch contract > rejects bad option values before dispatch 1`
     "calls": [],
     "code": 1,
     "stderr": "Error: --tasks must be valid JSON: Expected property name or '}' in JSON at position 1 (line 1 column 2)",
+  },
+  "get-pending-estimates --limit abc": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --limit must be an integer, got "abc"",
   },
   "pert-estimate --most-likely 4 --pessimistic 12": {
     "calls": [],

@@ -42,6 +42,22 @@ function safeFloat(flagName: string): (value: string) => number {
 }
 
 /**
+ * Base-10 integer parser that exits on non-numbers. (Never pass a bare
+ * parseInt to commander: it calls parsers as fn(value, previous), which made
+ * the option default the radix.)
+ */
+function safeInt(flagName: string): (value: string) => number {
+	return (value: string) => {
+		const n = Number.parseInt(value, 10);
+		if (Number.isNaN(n)) {
+			process.stderr.write(`Error: --${flagName} must be an integer, got "${value}"\n`);
+			process.exit(1);
+		}
+		return n;
+	};
+}
+
+/**
  * Parse a --port value for `epoch serve`: an integer in the legal TCP range
  * (1-65535). Non-numeric, fractional, or out-of-range values exit 1 with a
  * clear message instead of crashing later inside the server's bind call.
@@ -189,9 +205,7 @@ function registerToolCommand(program: Command, spec: ToolCommandSpec): void {
 	for (const option of spec.options) {
 		const commanderOption = new Option(option.flags, option.description);
 		if (option.parse === "float") commanderOption.argParser(safeFloat(flagLabel(option)));
-		// Commander calls parsers as fn(value, previous), so a bare parseInt
-		// receives the default as its radix. Kept as-is here; see the CHANGELOG.
-		if (option.parse === "intLegacyRadix") commanderOption.argParser(parseInt);
+		if (option.parse === "int") commanderOption.argParser(safeInt(flagLabel(option)));
 		if (option.defaultValue !== undefined) commanderOption.default(option.defaultValue);
 		if (option.required) commanderOption.makeOptionMandatory();
 		command.addOption(commanderOption);

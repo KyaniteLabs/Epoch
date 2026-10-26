@@ -6,8 +6,7 @@
  *
  * Option fields:
  * - key: the tool-input field the option fills.
- * - parse: "float" rejects non-numbers before dispatch (exit 1);
- *   "intLegacyRadix" is commander's raw parseInt call (see get-pending-estimates).
+ * - parse: "float" / "int" reject non-numbers before dispatch (exit 1).
  * - after: post-parse conversion run in the action: "json" (exit 1 on bad
  *   JSON), "csvNumbers" (exit 1 on a non-number), "csvStrings" (trimmed list).
  * - include: "always" (required or defaulted), "defined" (when given), or
@@ -15,7 +14,7 @@
  * - into: nest the value under that input field instead of the top level.
  */
 
-export type ToolOptionParse = "float" | "intLegacyRadix";
+export type ToolOptionParse = "float" | "int";
 export type ToolOptionAfter = "json" | "csvNumbers" | "csvStrings";
 
 export interface ToolOptionSpec {
@@ -265,7 +264,7 @@ export const TOOL_COMMANDS: readonly ToolCommandSpec[] = [
 		tool: "get_pending_estimates",
 		description: "Lists recent estimates that have not yet received actual-hour feedback.",
 		options: [
-			{ flags: "--limit <n>", description: "Maximum estimates to return", key: "limit", defaultValue: 20, parse: "intLegacyRadix", include: "always" },
+			{ flags: "--limit <n>", description: "Maximum estimates to return", key: "limit", defaultValue: 20, parse: "int", include: "always" },
 		],
 	},
 	{

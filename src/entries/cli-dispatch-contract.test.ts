@@ -106,7 +106,7 @@ const CASES: Record<string, string[][]> = {
 		["--estimate-id", "e1", "--actual-hours", "3.5"],
 		["--estimate-id", "e1", "--actual-hours", "3.5", "--notes", "took longer"],
 	],
-	// --limit 15 records the current parse (commander passes the default as parseInt's radix).
+	// --limit 15 once dispatched 25: commander passed the default (20) to a bare parseInt as its radix.
 	"get-pending-estimates": [[], ["--limit", "5"], ["--limit", "15"]],
 	"batch-record-actuals": [["--entries", '[{"estimate_id":"e1","actual_hours":2}]']],
 	"feedback-health": [[]],
@@ -126,6 +126,7 @@ const REJECTS: string[][] = [
 	["batch-record-actuals", "--entries", "nope"],
 	["wait-bound", "--clock-class", "fleet", "--cycles-k", "NaN"],
 	["pert-estimate", "--most-likely", "4", "--pessimistic", "12"],
+	["get-pending-estimates", "--limit", "abc"],
 ];
 
 let stderr = "";
