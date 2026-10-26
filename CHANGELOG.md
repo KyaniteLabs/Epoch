@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### fix: `epoch get-pending-estimates --limit` parsed in base 20
+
+- **The bug:** the option passed a bare `parseInt` to commander, which calls parsers as `fn(value, previous)`, so the default (20) became the radix. `--limit 15` asked for 25 estimates, and `--limit 9` still looked right. It now parses base 10.
+- **Also changed:** a non-numeric `--limit` now exits 1 with `--limit must be an integer`, instead of dispatching `NaN`.
+
+### refactor: the 26 CLI tool commands are a declarative spec (Layer 6)
+
+- The CLI now builds every dispatcher tool command (`pert-estimate`, `time-math`, … `estimate-from-context`) from data in `src/entries/cli-tool-commands.ts`, using one generic builder. Before, each command had about 25 hand-written lines of option wiring and boilerplate. `src/entries/cli.ts` goes from 1528 to 857 lines.
+- **No visible change.** Every command, option, help text, default, parser, error message, and the exact input sent to each tool is unchanged. A characterization test (`cli-dispatch-contract.test.ts`), recorded from the hand-written CLI before the refactor, pins this. A second test checks that every spec entry names a registered tool.
 ### refactor: break the core import cycle (Layer 6)
 
 - `src/` now has **no import cycles**. Before, 12 files formed one cycle: `types/index.ts` re-exported two types *from* `lib/analytics`, and at runtime `analytics -> self-improve -> feedback -> analytics` closed through `computeAccuracyMetrics`.

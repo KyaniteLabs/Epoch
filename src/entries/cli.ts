@@ -10,6 +10,7 @@ import type { ToolResult } from "../types/index.js";
 import { getVersion } from "../version.js";
 import { setTransport } from "../lib/telemetry-context.js";
 import { loadConfig, saveConfig } from "../lib/config.js";
+import { TOOL_COMMANDS, type ToolCommandSpec, type ToolOptionSpec } from "./cli-tool-commands.js";
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -34,6 +35,22 @@ function safeFloat(flagName: string): (value: string) => number {
 			process.stderr.write(
 				`Error: --${flagName} must be a number, got "${value}"\n`,
 			);
+			process.exit(1);
+		}
+		return n;
+	};
+}
+
+/**
+ * Base-10 integer parser that exits on non-numbers. (Never pass a bare
+ * parseInt to commander: it calls parsers as fn(value, previous), which made
+ * the option default the radix.)
+ */
+function safeInt(flagName: string): (value: string) => number {
+	return (value: string) => {
+		const n = Number.parseInt(value, 10);
+		if (Number.isNaN(n)) {
+			process.stderr.write(`Error: --${flagName} must be an integer, got "${value}"\n`);
 			process.exit(1);
 		}
 		return n;
@@ -151,6 +168,66 @@ function emitAndExit(
 
 // ---- Program builder --------------------------------------------------------
 
+/** Long flag without dashes, as used in CLI error messages ("--most-likely" -> "most-likely"). */
+function flagLabel(option: ToolOptionSpec): string {
+	const longFlag = option.flags.split(" ")[0] ?? option.flags;
+	return longFlag.slice(2);
+}
+
+/** Apply an option's post-parse conversion; bad values exit 1 with a message. */
+function convertOptionValue(raw: string, option: ToolOptionSpec): unknown {
+	const label = flagLabel(option);
+	switch (option.after) {
+		case "json":
+			return parseJsonArg(raw, label);
+		case "csvStrings":
+			return raw.split(",").map((s) => s.trim());
+		case "csvNumbers":
+			return raw.split(",").map((s) => {
+				const n = Number.parseFloat(s.trim());
+				if (Number.isNaN(n)) {
+					process.stderr.write(`Error: --${label} contains non-numeric value "${s.trim()}"\n`);
+					process.exit(1);
+				}
+				return n;
+			});
+		default:
+			return raw;
+	}
+}
+
+/**
+ * Register one data-described tool command: build its options from the spec,
+ * map parsed option values onto the tool input, and dispatch.
+ */
+function registerToolCommand(program: Command, spec: ToolCommandSpec): void {
+	const command = program.command(spec.name).description(spec.description);
+	for (const option of spec.options) {
+		const commanderOption = new Option(option.flags, option.description);
+		if (option.parse === "float") commanderOption.argParser(safeFloat(flagLabel(option)));
+		if (option.parse === "int") commanderOption.argParser(safeInt(flagLabel(option)));
+		if (option.defaultValue !== undefined) commanderOption.default(option.defaultValue);
+		if (option.required) commanderOption.makeOptionMandatory();
+		command.addOption(commanderOption);
+	}
+	command.action(async (opts: Record<string, unknown>, cmd: Command) => {
+		const rootOpts = getRootOpts(cmd);
+		const input: Record<string, unknown> = {};
+		for (const option of spec.options) {
+			if (option.into !== undefined) input[option.into] ??= {};
+		}
+		for (const option of spec.options) {
+			const raw = opts[new Option(option.flags).attributeName()];
+			if (raw === undefined) continue;
+			if (option.include === "truthy" && !raw) continue;
+			const value = option.after ? convertOptionValue(raw as string, option) : raw;
+			const target = option.into !== undefined ? (input[option.into] as Record<string, unknown>) : input;
+			target[option.key] = value;
+		}
+		await runAndExit(spec.tool, input, resolveFormat(rootOpts), isQuiet(rootOpts));
+	});
+}
+
 export function createCliProgram(): Command {
 	const program = new Command();
 
@@ -166,742 +243,8 @@ export function createCliProgram(): Command {
 		.option("--pretty", "Alias for --format table", false)
 		.option("--quiet", "Suppress non-data output", false);
 
-	// -- Temporal tools (6) ----------------------------------------------------
-
-	program
-		.command("get-current-time")
-		.description("Returns the current time in the specified IANA timezone.")
-		.option(
-			"--timezone <tz>",
-			'IANA timezone identifier (default "UTC")',
-			"UTC",
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"get_current_time",
-				{ timezone: opts.timezone },
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("convert-timezone")
-		.description(
-			"Converts a timestamp from its embedded timezone to a target timezone.",
-		)
-		.requiredOption("--timestamp <ts>", "ISO-8601 timestamp to convert")
-		.requiredOption("--target-tz <tz>", "Target IANA timezone identifier")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"convert_timezone",
-				{
-					timestamp: opts.timestamp,
-					target_tz: opts.targetTz,
-				},
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("parse-duration")
-		.description('Parses a duration string such as "2h30m", "1d6h", "45m".')
-		.requiredOption("--duration <string>", "Duration string to parse")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"parse_duration",
-				{ duration_string: opts.duration },
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("time-math")
-		.description(
-			"Performs time arithmetic: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration.",
-		)
-		.requiredOption("--operation <op>", "Time math operation to perform")
-		.option("--date <d>", "ISO date string (add_days, diff)")
-		.option(
-			"--days <n>",
-			"Number of days (add_days, add_business_days)",
-			safeFloat("days"),
-		)
-		.option(
-			"--start-date <d>",
-			"ISO date string for start date (add_business_days)",
-		)
-		.option(
-			"--country <code>",
-			"ISO-3166-1-alpha-2 country code (add_business_days, default US)",
-		)
-		.option("--end-date <d>", "ISO date string for end date (diff)")
-		.option("--timestamp <ts>", "ISO timestamp string (convert_tz)")
-		.option("--target-tz <tz>", "IANA timezone string (convert_tz)")
-		.option(
-			"--duration-string <s>",
-			"Natural language duration string (parse_nl)",
-		)
-		.option(
-			"--milliseconds <n>",
-			"Duration in milliseconds (format_duration)",
-			safeFloat("milliseconds"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const operands: Record<string, unknown> = {};
-			if (opts.date !== undefined) operands.date = opts.date;
-			if (opts.days !== undefined) operands.days = opts.days;
-			if (opts.startDate !== undefined) operands.start_date = opts.startDate;
-			if (opts.country !== undefined) operands.country = opts.country;
-			if (opts.endDate !== undefined) operands.end_date = opts.endDate;
-			if (opts.timestamp !== undefined) operands.timestamp = opts.timestamp;
-			if (opts.targetTz !== undefined) operands.target_tz = opts.targetTz;
-			if (opts.durationString !== undefined)
-				operands.duration_string = opts.durationString;
-			if (opts.milliseconds !== undefined)
-				operands.milliseconds = opts.milliseconds;
-			await runAndExit(
-				"time_math",
-				{
-					operation: opts.operation,
-					operands,
-				},
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("add-business-days")
-		.description(
-			"Adds N business days to a start date, skipping weekends and holidays.",
-		)
-		.requiredOption("--start-date <d>", "ISO date string for the start date")
-		.requiredOption(
-			"--days <n>",
-			"Number of business days to add",
-			safeFloat("days"),
-		)
-		.option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"add_business_days",
-				{
-					start_date: opts.startDate,
-					days: opts.days,
-					country: opts.country,
-				},
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("count-business-days")
-		.description(
-			"Counts business days between two dates, skipping weekends and holidays.",
-		)
-		.requiredOption("--start-date <d>", "ISO date string for the start date")
-		.requiredOption("--end-date <d>", "ISO date string for the end date")
-		.option("--country <code>", "ISO-3166-1-alpha-2 country code", "US")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"count_business_days",
-				{
-					start_date: opts.startDate,
-					end_date: opts.endDate,
-					country: opts.country,
-				},
-				format,
-				quiet,
-			);
-		});
-
-	// -- Estimation tools (5) --------------------------------------------------
-
-	program
-		.command("pert-estimate")
-		.description(
-			"Computes a PERT three-point estimate with expected value, standard deviation, and confidence intervals.",
-		)
-		.requiredOption(
-			"--optimistic <n>",
-			"Best-case duration",
-			safeFloat("optimistic"),
-		)
-		.requiredOption(
-			"--most-likely <n>",
-			"Most probable duration",
-			safeFloat("most-likely"),
-		)
-		.requiredOption(
-			"--pessimistic <n>",
-			"Worst-case duration",
-			safeFloat("pessimistic"),
-		)
-		.option("--unit <unit>", "Time unit (hours|days|weeks|months)", "hours")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"pert_estimate",
-				{
-					optimistic: opts.optimistic,
-					most_likely: opts.mostLikely,
-					pessimistic: opts.pessimistic,
-					unit: opts.unit,
-				},
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("cocomo-estimate")
-		.description(
-			"Estimates effort using a COCOMO II model adjusted for LLM-assisted workflows.",
-		)
-		.requiredOption(
-			"--kloc <n>",
-			"Estimated thousands of lines of code",
-			safeFloat("kloc"),
-		)
-		.option(
-			"--reasoning-complexity <n>",
-			"Reasoning complexity multiplier (0.5-2.0)",
-			safeFloat("reasoning-complexity"),
-		)
-		.option(
-			"--context-completeness <n>",
-			"Context completeness multiplier (0.5-2.0)",
-			safeFloat("context-completeness"),
-		)
-		.option(
-			"--transformation-impact <n>",
-			"Transformation impact multiplier (0.5-2.0)",
-			safeFloat("transformation-impact"),
-		)
-		.option(
-			"--iterative-cycles <n>",
-			"Iteration overhead multiplier (0.5-10.0)",
-			safeFloat("iterative-cycles"),
-		)
-		.option(
-			"--human-oversight <n>",
-			"Human review overhead multiplier (0.5-2.0)",
-			safeFloat("human-oversight"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = { kloc: opts.kloc };
-			if (opts.reasoningComplexity !== undefined) {
-				input.reasoning_complexity = opts.reasoningComplexity;
-			}
-			if (opts.contextCompleteness !== undefined) {
-				input.context_completeness = opts.contextCompleteness;
-			}
-			if (opts.transformationImpact !== undefined) {
-				input.transformation_impact = opts.transformationImpact;
-			}
-			if (opts.iterativeCycles !== undefined) {
-				input.iterative_cycles = opts.iterativeCycles;
-			}
-			if (opts.humanOversight !== undefined) {
-				input.human_oversight = opts.humanOversight;
-			}
-			await runAndExit("cocomo_estimate", input, format, quiet);
-		});
-
-	program
-		.command("sprint-forecast")
-		.description(
-			"Forecasts sprints needed to clear a backlog based on historical velocity.",
-		)
-		.requiredOption(
-			"--backlog-points <n>",
-			"Total backlog story points",
-			safeFloat("backlog-points"),
-		)
-		.requiredOption(
-			"--velocity-history <csv>",
-			"Comma-separated velocity values per sprint",
-		)
-		.option(
-			"--sprint-length-days <n>",
-			"Calendar days in one sprint",
-			safeFloat("sprint-length-days"),
-		)
-		.option(
-			"--hours-per-sprint <n>",
-			"Productive engineering hours per sprint",
-			safeFloat("hours-per-sprint"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const velocityHistory = opts.velocityHistory
-				.split(",")
-				.map((s: string) => {
-					const n = Number.parseFloat(s.trim());
-					if (Number.isNaN(n)) {
-						process.stderr.write(
-							`Error: --velocity-history contains non-numeric value "${s.trim()}"\n`,
-						);
-						process.exit(1);
-					}
-					return n;
-				});
-			const input: Record<string, unknown> = {
-				backlog_points: opts.backlogPoints,
-				velocity_history: velocityHistory,
-			};
-			if (opts.sprintLengthDays !== undefined) {
-				input.sprint_length_days = opts.sprintLengthDays;
-			}
-			if (opts.hoursPerSprint !== undefined) {
-				input.hours_per_sprint = opts.hoursPerSprint;
-			}
-			await runAndExit("sprint_forecast", input, format, quiet);
-		});
-
-	program
-		.command("critical-path")
-		.description(
-			"Computes the critical path through a task graph with merge-bias adjustment.",
-		)
-		.requiredOption("--tasks <json>", "Task array as JSON")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const tasks = parseJsonArg(opts.tasks, "tasks");
-			await runAndExit("critical_path", { tasks }, format, quiet);
-		});
-
-	program
-		.command("monte-carlo-schedule")
-		.description(
-			"Runs a Monte Carlo simulation on a task list with three-point estimates.",
-		)
-		.requiredOption("--tasks <json>", "Task array as JSON")
-		.option(
-			"--iterations <n>",
-			"Number of simulation iterations",
-			safeFloat("iterations"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const tasks = parseJsonArg(opts.tasks, "tasks");
-			const input: Record<string, unknown> = { tasks };
-			if (opts.iterations !== undefined) {
-				input.iterations = opts.iterations;
-			}
-			await runAndExit("monte_carlo_schedule", input, format, quiet);
-		});
-
-	// -- Analytics tools (3) ---------------------------------------------------
-
-	program
-		.command("reference-class-estimate")
-		.description(
-			"Estimates effort using reference-class forecasting from historical data.",
-		)
-		.requiredOption(
-			"--task-type <type>",
-			"Category of work (feature|bugfix|refactor|migration|infrastructure|documentation|testing|design)",
-		)
-		.requiredOption(
-			"--complexity <n>",
-			"Complexity 1-5",
-			safeFloat("complexity"),
-		)
-		.option("--scope <scope>", "Scope band (small|medium|large|xl)")
-		.option("--team-id <id>", "Team identifier for calibration lookup")
-		.option(
-			"--ai-native <ratio>",
-			"AI-native ratio 0.0-1.0 (default: 0.0)",
-			safeFloat("ai-native"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {
-				task_type: opts.taskType,
-				complexity: opts.complexity,
-			};
-			if (opts.scope) input.scope = opts.scope;
-			if (opts.teamId) input.team_id = opts.teamId;
-			if (opts.aiNative !== undefined) input.ai_native = opts.aiNative;
-			await runAndExit("reference_class_estimate", input, format, quiet);
-		});
-
-	program
-		.command("calibrate-estimates")
-		.description("Calibrates estimation accuracy using historical team data.")
-		.requiredOption("--team-id <id>", "Team identifier")
-		.option(
-			"--period-days <n>",
-			"Lookback window in calendar days",
-			safeFloat("period-days"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = { team_id: opts.teamId };
-			if (opts.periodDays !== undefined) {
-				input.period_days = opts.periodDays;
-			}
-			await runAndExit("calibrate_estimates", input, format, quiet);
-		});
-
-	program
-		.command("wait-bound")
-		.description(
-			"Derives a deadline from the mechanism a wait actually rides (three-clock law): fleet = k x cycle + PERT(turn) + 1 sd; world = external anchor required; ceo = the named ladder rung.",
-		)
-		.requiredOption(
-			"--clock-class <class>",
-			"Clock the wait rides: fleet | world | ceo",
-		)
-		.option("--cycle-seconds <n>", "Fleet: mechanism cycle seconds (default 40)", safeFloat("cycle-seconds"))
-		.option("--cycles-k <n>", "Fleet: cycle multiplier 1..5 (default 2)", safeFloat("cycles-k"))
-		.option("--turn-optimistic-minutes <n>", "Turn PERT optimistic minutes (default 15)", safeFloat("turn-optimistic-minutes"))
-		.option("--turn-most-likely-minutes <n>", "Turn PERT most-likely minutes (default 45)", safeFloat("turn-most-likely-minutes"))
-		.option("--turn-pessimistic-minutes <n>", "Turn PERT pessimistic minutes (default 120)", safeFloat("turn-pessimistic-minutes"))
-		.option("--external-anchor <anchor>", "World (required): named external event")
-		.option("--ceo-rung <rung>", "CEO (required): pass | burst | sleep | cycle | season")
-		.option("--from-timestamp <iso>", "ISO 8601 start instant (default now)")
-		.option("--time-zone <tz>", "IANA timezone for rendered deadline (default America/Los_Angeles)")
-		.action(async (opts: Record<string, unknown>, cmd) => {
-			const rootOpts = (cmd.parent?.opts() ?? {}) as Record<string, unknown>;
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = { clock_class: opts["clockClass"] };
-			if (opts["cycleSeconds"] !== undefined) input.cycle_seconds = opts["cycleSeconds"];
-			if (opts["cyclesK"] !== undefined) input.cycles_k = opts["cyclesK"];
-			if (opts["turnOptimisticMinutes"] !== undefined) input.turn_optimistic_minutes = opts["turnOptimisticMinutes"];
-			if (opts["turnMostLikelyMinutes"] !== undefined) input.turn_most_likely_minutes = opts["turnMostLikelyMinutes"];
-			if (opts["turnPessimisticMinutes"] !== undefined) input.turn_pessimistic_minutes = opts["turnPessimisticMinutes"];
-			if (opts["externalAnchor"] !== undefined) input.external_anchor = opts["externalAnchor"];
-			if (opts["ceoRung"] !== undefined) input.ceo_rung = opts["ceoRung"];
-			if (opts["fromTimestamp"] !== undefined) input.from_timestamp = opts["fromTimestamp"];
-			if (opts["timeZone"] !== undefined) input.time_zone = opts["timeZone"];
-			await runAndExit("wait_bound", input, format, quiet);
-		});
-
-	program
-		.command("token-time-bridge")
-		.description(
-			"Estimates wall-clock time from token count and LLM model parameters.",
-		)
-		.requiredOption(
-			"--tokens <n>",
-			"Total number of tokens",
-			safeFloat("tokens"),
-		)
-		.requiredOption("--model <model>", "LLM model identifier")
-		.option(
-			"--tool-calls <n>",
-			"Number of expected tool calls",
-			safeFloat("tool-calls"),
-		)
-		.option(
-			"--reasoning-depth <depth>",
-			"Reasoning depth (shallow|moderate|deep)",
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {
-				tokens: opts.tokens,
-				model: opts.model,
-			};
-			if (opts.toolCalls !== undefined) {
-				input.tool_calls = opts.toolCalls;
-			}
-			if (opts.reasoningDepth !== undefined) {
-				input.reasoning_depth = opts.reasoningDepth;
-			}
-			await runAndExit("token_time_bridge", input, format, quiet);
-		});
-
-	// -- Token & cost tools (2) ------------------------------------------------
-
-	program
-		.command("token-cost-estimate")
-		.description(
-			"Estimates wall-clock time AND dollar cost from token count and LLM model.",
-		)
-		.requiredOption(
-			"--tokens <n>",
-			"Total number of tokens",
-			safeFloat("tokens"),
-		)
-		.requiredOption("--model <model>", "LLM model identifier")
-		.option(
-			"--tool-calls <n>",
-			"Number of expected tool calls",
-			safeFloat("tool-calls"),
-		)
-		.option(
-			"--reasoning-depth <depth>",
-			"Reasoning depth (shallow|moderate|deep)",
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {
-				tokens: opts.tokens,
-				model: opts.model,
-			};
-			if (opts.toolCalls !== undefined) input.tool_calls = opts.toolCalls;
-			if (opts.reasoningDepth !== undefined)
-				input.reasoning_depth = opts.reasoningDepth;
-			await runAndExit("token_cost_estimate", input, format, quiet);
-		});
-
-	program
-		.command("compare-models")
-		.description(
-			"Compares all LLM models side-by-side for a given token budget.",
-		)
-		.requiredOption(
-			"--tokens <n>",
-			"Token count to estimate",
-			safeFloat("tokens"),
-		)
-		.option("--tool-calls <n>", "Number of tool calls", safeFloat("tool-calls"))
-		.option(
-			"--reasoning-depth <depth>",
-			"Reasoning depth (shallow|moderate|deep)",
-		)
-		.option("--sort-by <field>", "Sort by cost or time", "cost")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = { tokens: opts.tokens };
-			if (opts.toolCalls !== undefined) input.tool_calls = opts.toolCalls;
-			if (opts.reasoningDepth !== undefined)
-				input.reasoning_depth = opts.reasoningDepth;
-			if (opts.sortBy !== undefined) input.sort_by = opts.sortBy;
-			await runAndExit("compare_models", input, format, quiet);
-		});
-
-	// -- Validation & analytics tools (3) ----------------------------------------
-
-	program
-		.command("accuracy-trend")
-		.description(
-			"Tracks estimation accuracy over time with sliding-window MAPE.",
-		)
-		.option("--team-id <id>", "Team identifier")
-		.option(
-			"--window-size <n>",
-			"Records per sliding window",
-			safeFloat("window-size"),
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {};
-			if (opts.teamId !== undefined) input.team_id = opts.teamId;
-			if (opts.windowSize !== undefined) input.window_size = opts.windowSize;
-			await runAndExit("accuracy_trend", input, format, quiet);
-		});
-
-	program
-		.command("schedule-risk")
-		.description("Assesses schedule risk using historical accuracy data.")
-		.requiredOption(
-			"--estimated-hours <n>",
-			"Estimated effort in hours",
-			safeFloat("estimated-hours"),
-		)
-		.option("--task-type <type>", "Task type for accuracy lookup")
-		.option("--team-id <id>", "Team identifier")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {
-				estimated_hours: opts.estimatedHours,
-			};
-			if (opts.taskType !== undefined) input.task_type = opts.taskType;
-			if (opts.teamId !== undefined) input.team_id = opts.teamId;
-			await runAndExit("schedule_risk", input, format, quiet);
-		});
-
-	program
-		.command("cocomo-validate")
-		.description(
-			"Validates COCOMO estimation model against 195 real historical projects.",
-		)
-		.option("--dataset-filter <datasets>", "Comma-separated dataset names")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {};
-			if (opts.datasetFilter !== undefined) {
-				input.dataset_filter = opts.datasetFilter
-					.split(",")
-					.map((s: string) => s.trim());
-			}
-			await runAndExit("cocomo_validate", input, format, quiet);
-		});
-
-	// ---- Feedback commands -----------------------------------------------------
-
-	program
-		.command("record-actual")
-		.description(
-			"Records actual hours for a previous estimate to improve future accuracy.",
-		)
-		.requiredOption("--estimate-id <id>", "ID of the estimate to update")
-		.requiredOption(
-			"--actual-hours <n>",
-			"Actual hours spent",
-			safeFloat("actual-hours"),
-		)
-		.option(
-			"--notes <text>",
-			"Optional context about what affected the actual time",
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {
-				estimate_id: opts.estimateId,
-				actual_hours: opts.actualHours,
-			};
-			if (opts.notes !== undefined) input.notes = opts.notes;
-			await runAndExit("record_actual", input, format, quiet);
-		});
-
-	program
-		.command("get-pending-estimates")
-		.description(
-			"Lists recent estimates that have not yet received actual-hour feedback.",
-		)
-		.option("--limit <n>", "Maximum estimates to return", parseInt, 20)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit(
-				"get_pending_estimates",
-				{ limit: opts.limit },
-				format,
-				quiet,
-			);
-		});
-
-	program
-		.command("batch-record-actuals")
-		.description("Record actual hours for multiple estimates at once.")
-		.requiredOption(
-			"--entries <json>",
-			"JSON array of {estimate_id, actual_hours, notes?} objects",
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const entries = parseJsonArg(opts.entries, "entries");
-			await runAndExit("batch_record_actuals", { entries }, format, quiet);
-		});
-
-	program
-		.command("feedback-health")
-		.description("Health report on the estimation feedback loop.")
-		.action(async (_opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			await runAndExit("feedback_health", {}, format, quiet);
-		});
-
-	program
-		.command("cocomo-ground-truth")
-		.description(
-			"Validate COCOMO models against real historical projects with known effort.",
-		)
-		.option(
-			"--dataset-filter <names>",
-			"Comma-separated dataset names to include",
-		)
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = {};
-			if (opts.datasetFilter !== undefined) {
-				input.dataset_filter = opts.datasetFilter
-					.split(",")
-					.map((s: string) => s.trim());
-			}
-			await runAndExit("cocomo_ground_truth", input, format, quiet);
-		});
-
-	program
-		.command("estimate-from-context")
-		.description(
-			"Classify a free-text task description and delegate to the estimation engine (registered stub — not yet implemented).",
-		)
-		.requiredOption(
-			"--context <text>",
-			"Free-text task description (issue body, diff, or PR description)",
-		)
-		.option("--task-type <type>", "Optional pre-classified task type hint")
-		.option(
-			"--complexity <n>",
-			"Optional pre-assessed complexity hint (1-5)",
-			safeFloat("complexity"),
-		)
-		.option("--team-id <id>", "Optional team identifier")
-		.action(async (opts, cmd) => {
-			const rootOpts = getRootOpts(cmd);
-			const format = resolveFormat(rootOpts);
-			const quiet = isQuiet(rootOpts);
-			const input: Record<string, unknown> = { context: opts.context };
-			if (opts.taskType !== undefined) input.task_type = opts.taskType;
-			if (opts.complexity !== undefined) input.complexity = opts.complexity;
-			if (opts.teamId !== undefined) input.team_id = opts.teamId;
-			await runAndExit("estimate_from_context", input, format, quiet);
-		});
+	// The 26 dispatcher tool commands are data (cli-tool-commands.ts).
+	for (const spec of TOOL_COMMANDS) registerToolCommand(program, spec);
 
 	program
 		.command("auto-actuals")

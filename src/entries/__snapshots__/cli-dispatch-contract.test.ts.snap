@@ -1,0 +1,811 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CLI -> dispatch contract > hands every tool command's options to dispatch unchanged 1`] = `
+{
+  "accuracy-trend": {
+    "calls": [
+      [
+        "accuracy_trend",
+        {},
+      ],
+    ],
+    "code": 0,
+  },
+  "accuracy-trend --team-id t1 --window-size 5": {
+    "calls": [
+      [
+        "accuracy_trend",
+        {
+          "team_id": "t1",
+          "window_size": 5,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "add-business-days --start-date 2026-05-01 --days 5": {
+    "calls": [
+      [
+        "add_business_days",
+        {
+          "country": "US",
+          "days": 5,
+          "start_date": "2026-05-01",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "add-business-days --start-date 2026-05-01 --days 5 --country UK": {
+    "calls": [
+      [
+        "add_business_days",
+        {
+          "country": "UK",
+          "days": 5,
+          "start_date": "2026-05-01",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "batch-record-actuals --entries [{"estimate_id":"e1","actual_hours":2}]": {
+    "calls": [
+      [
+        "batch_record_actuals",
+        {
+          "entries": [
+            {
+              "actual_hours": 2,
+              "estimate_id": "e1",
+            },
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "calibrate-estimates --team-id t1": {
+    "calls": [
+      [
+        "calibrate_estimates",
+        {
+          "team_id": "t1",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "calibrate-estimates --team-id t1 --period-days 30": {
+    "calls": [
+      [
+        "calibrate_estimates",
+        {
+          "period_days": 30,
+          "team_id": "t1",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "cocomo-estimate --kloc 15": {
+    "calls": [
+      [
+        "cocomo_estimate",
+        {
+          "kloc": 15,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "cocomo-estimate --kloc 15 --reasoning-complexity 1.2 --context-completeness 0.9 --transformation-impact 1.1 --iterative-cycles 1.3 --human-oversight 0.8": {
+    "calls": [
+      [
+        "cocomo_estimate",
+        {
+          "context_completeness": 0.9,
+          "human_oversight": 0.8,
+          "iterative_cycles": 1.3,
+          "kloc": 15,
+          "reasoning_complexity": 1.2,
+          "transformation_impact": 1.1,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "cocomo-ground-truth": {
+    "calls": [
+      [
+        "cocomo_ground_truth",
+        {},
+      ],
+    ],
+    "code": 0,
+  },
+  "cocomo-ground-truth --dataset-filter nasa93": {
+    "calls": [
+      [
+        "cocomo_ground_truth",
+        {
+          "dataset_filter": [
+            "nasa93",
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "cocomo-validate": {
+    "calls": [
+      [
+        "cocomo_validate",
+        {},
+      ],
+    ],
+    "code": 0,
+  },
+  "cocomo-validate --dataset-filter nasa93,cocomo81": {
+    "calls": [
+      [
+        "cocomo_validate",
+        {
+          "dataset_filter": [
+            "nasa93",
+            "cocomo81",
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "compare-models --tokens 50000": {
+    "calls": [
+      [
+        "compare_models",
+        {
+          "sort_by": "cost",
+          "tokens": 50000,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "compare-models --tokens 50000 --tool-calls 2 --reasoning-depth moderate --sort-by cost": {
+    "calls": [
+      [
+        "compare_models",
+        {
+          "reasoning_depth": "moderate",
+          "sort_by": "cost",
+          "tokens": 50000,
+          "tool_calls": 2,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "convert-timezone --timestamp 2026-05-01T12:00:00Z --target-tz Asia/Tokyo": {
+    "calls": [
+      [
+        "convert_timezone",
+        {
+          "target_tz": "Asia/Tokyo",
+          "timestamp": "2026-05-01T12:00:00Z",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "count-business-days --start-date 2026-05-01 --end-date 2026-05-15": {
+    "calls": [
+      [
+        "count_business_days",
+        {
+          "country": "US",
+          "end_date": "2026-05-15",
+          "start_date": "2026-05-01",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "count-business-days --start-date 2026-05-01 --end-date 2026-05-15 --country FR": {
+    "calls": [
+      [
+        "count_business_days",
+        {
+          "country": "FR",
+          "end_date": "2026-05-15",
+          "start_date": "2026-05-01",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "critical-path --tasks [{"name":"A","optimistic":1,"most_likely":2,"pessimistic":4},{"name":"B","optimistic":2,"most_likely":3,"pessimistic":5,"depends_on":["A"]}]": {
+    "calls": [
+      [
+        "critical_path",
+        {
+          "tasks": [
+            {
+              "most_likely": 2,
+              "name": "A",
+              "optimistic": 1,
+              "pessimistic": 4,
+            },
+            {
+              "depends_on": [
+                "A",
+              ],
+              "most_likely": 3,
+              "name": "B",
+              "optimistic": 2,
+              "pessimistic": 5,
+            },
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "estimate-from-context --context add a login page": {
+    "calls": [
+      [
+        "estimate_from_context",
+        {
+          "context": "add a login page",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "estimate-from-context --context add a login page --task-type feature --complexity 2 --team-id t1": {
+    "calls": [
+      [
+        "estimate_from_context",
+        {
+          "complexity": 2,
+          "context": "add a login page",
+          "task_type": "feature",
+          "team_id": "t1",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "feedback-health": {
+    "calls": [
+      [
+        "feedback_health",
+        {},
+      ],
+    ],
+    "code": 0,
+  },
+  "get-current-time": {
+    "calls": [
+      [
+        "get_current_time",
+        {
+          "timezone": "UTC",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "get-current-time --timezone Asia/Tokyo": {
+    "calls": [
+      [
+        "get_current_time",
+        {
+          "timezone": "Asia/Tokyo",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "get-pending-estimates": {
+    "calls": [
+      [
+        "get_pending_estimates",
+        {
+          "limit": 20,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "get-pending-estimates --limit 15": {
+    "calls": [
+      [
+        "get_pending_estimates",
+        {
+          "limit": 15,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "get-pending-estimates --limit 5": {
+    "calls": [
+      [
+        "get_pending_estimates",
+        {
+          "limit": 5,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "monte-carlo-schedule --tasks [{"name":"A","optimistic":1,"most_likely":2,"pessimistic":4},{"name":"B","optimistic":2,"most_likely":3,"pessimistic":5,"depends_on":["A"]}]": {
+    "calls": [
+      [
+        "monte_carlo_schedule",
+        {
+          "tasks": [
+            {
+              "most_likely": 2,
+              "name": "A",
+              "optimistic": 1,
+              "pessimistic": 4,
+            },
+            {
+              "depends_on": [
+                "A",
+              ],
+              "most_likely": 3,
+              "name": "B",
+              "optimistic": 2,
+              "pessimistic": 5,
+            },
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "monte-carlo-schedule --tasks [{"name":"A","optimistic":1,"most_likely":2,"pessimistic":4},{"name":"B","optimistic":2,"most_likely":3,"pessimistic":5,"depends_on":["A"]}] --iterations 500": {
+    "calls": [
+      [
+        "monte_carlo_schedule",
+        {
+          "iterations": 500,
+          "tasks": [
+            {
+              "most_likely": 2,
+              "name": "A",
+              "optimistic": 1,
+              "pessimistic": 4,
+            },
+            {
+              "depends_on": [
+                "A",
+              ],
+              "most_likely": 3,
+              "name": "B",
+              "optimistic": 2,
+              "pessimistic": 5,
+            },
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "parse-duration --duration 2h30m": {
+    "calls": [
+      [
+        "parse_duration",
+        {
+          "duration_string": "2h30m",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "pert-estimate --optimistic 1.5 --most-likely 3 --pessimistic 9 --unit days": {
+    "calls": [
+      [
+        "pert_estimate",
+        {
+          "most_likely": 3,
+          "optimistic": 1.5,
+          "pessimistic": 9,
+          "unit": "days",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "pert-estimate --optimistic 2 --most-likely 4 --pessimistic 12": {
+    "calls": [
+      [
+        "pert_estimate",
+        {
+          "most_likely": 4,
+          "optimistic": 2,
+          "pessimistic": 12,
+          "unit": "hours",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "record-actual --estimate-id e1 --actual-hours 3.5": {
+    "calls": [
+      [
+        "record_actual",
+        {
+          "actual_hours": 3.5,
+          "estimate_id": "e1",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "record-actual --estimate-id e1 --actual-hours 3.5 --notes took longer": {
+    "calls": [
+      [
+        "record_actual",
+        {
+          "actual_hours": 3.5,
+          "estimate_id": "e1",
+          "notes": "took longer",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "reference-class-estimate --task-type bugfix --complexity 2 --scope small --team-id t1 --ai-native 0.5": {
+    "calls": [
+      [
+        "reference_class_estimate",
+        {
+          "ai_native": 0.5,
+          "complexity": 2,
+          "scope": "small",
+          "task_type": "bugfix",
+          "team_id": "t1",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "reference-class-estimate --task-type feature --complexity 3": {
+    "calls": [
+      [
+        "reference_class_estimate",
+        {
+          "complexity": 3,
+          "task_type": "feature",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "reference-class-estimate --task-type feature --complexity 3 --scope  --team-id ": {
+    "calls": [
+      [
+        "reference_class_estimate",
+        {
+          "complexity": 3,
+          "task_type": "feature",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "schedule-risk --estimated-hours 40": {
+    "calls": [
+      [
+        "schedule_risk",
+        {
+          "estimated_hours": 40,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "schedule-risk --estimated-hours 40 --task-type  --team-id ": {
+    "calls": [
+      [
+        "schedule_risk",
+        {
+          "estimated_hours": 40,
+          "task_type": "",
+          "team_id": "",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "schedule-risk --estimated-hours 40 --task-type feature --team-id t1": {
+    "calls": [
+      [
+        "schedule_risk",
+        {
+          "estimated_hours": 40,
+          "task_type": "feature",
+          "team_id": "t1",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "sprint-forecast --backlog-points 120 --velocity-history 20, 25,30": {
+    "calls": [
+      [
+        "sprint_forecast",
+        {
+          "backlog_points": 120,
+          "velocity_history": [
+            20,
+            25,
+            30,
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "sprint-forecast --backlog-points 120 --velocity-history 20,25 --sprint-length-days 14 --hours-per-sprint 60": {
+    "calls": [
+      [
+        "sprint_forecast",
+        {
+          "backlog_points": 120,
+          "hours_per_sprint": 60,
+          "sprint_length_days": 14,
+          "velocity_history": [
+            20,
+            25,
+          ],
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "time-math --operation add_business_days --start-date 2026-05-01 --days 3 --country DE": {
+    "calls": [
+      [
+        "time_math",
+        {
+          "operands": {
+            "country": "DE",
+            "days": 3,
+            "start_date": "2026-05-01",
+          },
+          "operation": "add_business_days",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "time-math --operation add_days --date 2026-05-01 --days 7": {
+    "calls": [
+      [
+        "time_math",
+        {
+          "operands": {
+            "date": "2026-05-01",
+            "days": 7,
+          },
+          "operation": "add_days",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "time-math --operation convert_tz --timestamp 2026-05-01T12:00:00Z --target-tz UTC": {
+    "calls": [
+      [
+        "time_math",
+        {
+          "operands": {
+            "target_tz": "UTC",
+            "timestamp": "2026-05-01T12:00:00Z",
+          },
+          "operation": "convert_tz",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "time-math --operation diff --date 2026-05-01 --end-date 2026-05-09": {
+    "calls": [
+      [
+        "time_math",
+        {
+          "operands": {
+            "date": "2026-05-01",
+            "end_date": "2026-05-09",
+          },
+          "operation": "diff",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "time-math --operation format_duration --milliseconds 90061000": {
+    "calls": [
+      [
+        "time_math",
+        {
+          "operands": {
+            "milliseconds": 90061000,
+          },
+          "operation": "format_duration",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "time-math --operation parse_nl --duration-string two days": {
+    "calls": [
+      [
+        "time_math",
+        {
+          "operands": {
+            "duration_string": "two days",
+          },
+          "operation": "parse_nl",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "token-cost-estimate --tokens 50000 --model gpt-4o": {
+    "calls": [
+      [
+        "token_cost_estimate",
+        {
+          "model": "gpt-4o",
+          "tokens": 50000,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "token-cost-estimate --tokens 50000 --model gpt-4o --tool-calls 4 --reasoning-depth shallow": {
+    "calls": [
+      [
+        "token_cost_estimate",
+        {
+          "model": "gpt-4o",
+          "reasoning_depth": "shallow",
+          "tokens": 50000,
+          "tool_calls": 4,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "token-time-bridge --tokens 50000 --model gpt-4o": {
+    "calls": [
+      [
+        "token_time_bridge",
+        {
+          "model": "gpt-4o",
+          "tokens": 50000,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "token-time-bridge --tokens 50000 --model gpt-4o --tool-calls 4 --reasoning-depth deep": {
+    "calls": [
+      [
+        "token_time_bridge",
+        {
+          "model": "gpt-4o",
+          "reasoning_depth": "deep",
+          "tokens": 50000,
+          "tool_calls": 4,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "wait-bound --clock-class ceo --ceo-rung burst": {
+    "calls": [
+      [
+        "wait_bound",
+        {
+          "ceo_rung": "burst",
+          "clock_class": "ceo",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "wait-bound --clock-class fleet": {
+    "calls": [
+      [
+        "wait_bound",
+        {
+          "clock_class": "fleet",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "wait-bound --clock-class fleet --cycle-seconds 30 --cycles-k 3 --turn-optimistic-minutes 10 --turn-most-likely-minutes 20 --turn-pessimistic-minutes 60 --from-timestamp 2026-05-01T00:00:00Z --time-zone UTC": {
+    "calls": [
+      [
+        "wait_bound",
+        {
+          "clock_class": "fleet",
+          "cycle_seconds": 30,
+          "cycles_k": 3,
+          "from_timestamp": "2026-05-01T00:00:00Z",
+          "time_zone": "UTC",
+          "turn_most_likely_minutes": 20,
+          "turn_optimistic_minutes": 10,
+          "turn_pessimistic_minutes": 60,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "wait-bound --clock-class world --external-anchor vendor ships v2": {
+    "calls": [
+      [
+        "wait_bound",
+        {
+          "clock_class": "world",
+          "external_anchor": "vendor ships v2",
+        },
+      ],
+    ],
+    "code": 0,
+  },
+}
+`;
+
+exports[`CLI -> dispatch contract > rejects bad option values before dispatch 1`] = `
+{
+  "add-business-days --start-date 2026-05-01 --days x": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --days must be a number, got "x"",
+  },
+  "batch-record-actuals --entries nope": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --entries must be valid JSON: Unexpected token 'o', "nope" is not valid JSON",
+  },
+  "critical-path --tasks {not json": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --tasks must be valid JSON: Expected property name or '}' in JSON at position 1 (line 1 column 2)",
+  },
+  "get-pending-estimates --limit abc": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --limit must be an integer, got "abc"",
+  },
+  "pert-estimate --most-likely 4 --pessimistic 12": {
+    "calls": [],
+    "code": 1,
+    "stderr": "error: required option '--optimistic <n>' not specified",
+  },
+  "pert-estimate --optimistic abc --most-likely 4 --pessimistic 12": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --optimistic must be a number, got "abc"",
+  },
+  "sprint-forecast --backlog-points 10 --velocity-history 5,abc": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --velocity-history contains non-numeric value "abc"",
+  },
+  "wait-bound --clock-class fleet --cycles-k NaN": {
+    "calls": [],
+    "code": 1,
+    "stderr": "Error: --cycles-k must be a number, got "NaN"",
+  },
+}
+`;
