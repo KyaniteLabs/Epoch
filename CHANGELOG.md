@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The CLI now builds every dispatcher tool command (`pert-estimate`, `time-math`, … `estimate-from-context`) from data in `src/entries/cli-tool-commands.ts`, using one generic builder. Before, each command had about 25 hand-written lines of option wiring and boilerplate. `src/entries/cli.ts` goes from 1528 to 857 lines.
 - **No visible change.** Every command, option, help text, default, parser, error message, and the exact input sent to each tool is unchanged. A characterization test (`cli-dispatch-contract.test.ts`), recorded from the hand-written CLI before the refactor, pins this. A second test checks that every spec entry names a registered tool.
+### refactor: break the core import cycle (Layer 6)
+
+- `src/` now has **no import cycles**. Before, 12 files formed one cycle: `types/index.ts` re-exported two types *from* `lib/analytics`, and at runtime `analytics -> self-improve -> feedback -> analytics` closed through `computeAccuracyMetrics`.
+- `computeAccuracyMetrics` (a pure function) moves to a new leaf module, `src/lib/accuracy-metrics.ts`. `HistoricalRecord` and `LLMModel` are now defined in `types/`, which imports nothing from `lib/`. `analytics` re-exports all three, so every existing import path keeps working, and so does the public API.
+- `LLMModel` is documented as what it always was: `string`. The old `keyof typeof MODEL_CALIBRATIONS` resolved to `string` because the table is typed `Record<string, …>`, contrary to its comment.
 
 ### docs: executable README examples; `time_math` add_days example corrected
 

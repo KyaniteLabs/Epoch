@@ -1,5 +1,5 @@
 import type { AccuracyTrend, AccuracyWindow } from "../types/index.js";
-import { computeAccuracyMetrics } from "./analytics.js";
+import { computeAccuracyMetrics } from "./accuracy-metrics.js";
 import { getCalibrationData, minNForVerdict } from "./feedback.js";
 import { getEstimationResearch } from "./supplementary-data.js";
 

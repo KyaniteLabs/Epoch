@@ -266,17 +266,16 @@ export type TaskType =
 // ---- LLM Model Identifiers -----------------------------------------------
 
 /**
- * LLM model identifiers with latency-calibration entries in the live
- * MODEL_CALIBRATIONS table (src/lib/analytics.ts). Derived from the table via
- * an import type, so the union cannot drift from it — adding or removing a
- * calibration entry changes this type automatically.
- *
- * `model` INPUT fields stay plain strings everywhere (schemas + handlers):
- * unknown models are accepted and fall back to the documented generic default
+ * An LLM model identifier. Any string is accepted: models with an entry in
+ * the MODEL_CALIBRATIONS table (src/lib/analytics.ts) use their calibrated
+ * throughput, and unknown models fall back to the documented generic default
  * (75 tps, GENERIC_MODEL_CALIBRATION) with a "pessimistic" confidence label
- * rather than being rejected.
+ * rather than being rejected. (This was previously written as
+ * `keyof typeof MODEL_CALIBRATIONS`, which is also `string` because the table
+ * is typed `Record<string, ModelCalibration>`; defining it here keeps this
+ * types module free of imports from src/lib.)
  */
-export type { LLMModel } from "../lib/analytics.js";
+export type LLMModel = string;
 
 // ---- Token Time Reasoning Depth -------------------------------------------
 
@@ -501,4 +500,23 @@ export interface WaitBoundResult {
   readonly lawNote: string;
 }
 
-export type { HistoricalRecord } from "../lib/analytics.js";
+export interface HistoricalRecord {
+  readonly taskType: string;
+  readonly estimatedHours: number;
+  readonly actualHours: number;
+  readonly teamId?: string;
+  readonly tool?: string;
+  readonly complexity?: number;
+  readonly completedAt: string;
+  readonly calibrationProvenance?:
+    | "prospective"
+    | "backfilled_real_session"
+    | "backfilled_calibration"
+    | "synthetic"
+    | "smoke"
+    | "unknown"
+    | "auto_wallclock"
+    | "git_derived"
+    | "git_derived_review_inclusive";
+  readonly calibrationUsage?: "correction" | "baseline" | "exclude";
+}
