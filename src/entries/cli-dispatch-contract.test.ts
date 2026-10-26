@@ -68,6 +68,8 @@ const CASES: Record<string, string[][]> = {
 	"reference-class-estimate": [
 		["--task-type", "feature", "--complexity", "3"],
 		["--task-type", "bugfix", "--complexity", "2", "--scope", "small", "--team-id", "t1", "--ai-native", "0.5"],
+		// Empty strings are dropped here (truthy check), unlike most commands.
+		["--task-type", "feature", "--complexity", "3", "--scope", "", "--team-id", ""],
 	],
 	"calibrate-estimates": [["--team-id", "t1"], ["--team-id", "t1", "--period-days", "30"]],
 	"wait-bound": [
@@ -93,13 +95,19 @@ const CASES: Record<string, string[][]> = {
 		["--tokens", "50000", "--tool-calls", "2", "--reasoning-depth", "moderate", "--sort-by", "cost"],
 	],
 	"accuracy-trend": [[], ["--team-id", "t1", "--window-size", "5"]],
-	"schedule-risk": [["--estimated-hours", "40"], ["--estimated-hours", "40", "--task-type", "feature", "--team-id", "t1"]],
+	"schedule-risk": [
+		["--estimated-hours", "40"],
+		["--estimated-hours", "40", "--task-type", "feature", "--team-id", "t1"],
+		// Empty strings are kept here (!== undefined check).
+		["--estimated-hours", "40", "--task-type", "", "--team-id", ""],
+	],
 	"cocomo-validate": [[], ["--dataset-filter", "nasa93,cocomo81"]],
 	"record-actual": [
 		["--estimate-id", "e1", "--actual-hours", "3.5"],
 		["--estimate-id", "e1", "--actual-hours", "3.5", "--notes", "took longer"],
 	],
-	"get-pending-estimates": [[], ["--limit", "5"]],
+	// --limit 15 records the current parse (commander passes the default as parseInt's radix).
+	"get-pending-estimates": [[], ["--limit", "5"], ["--limit", "15"]],
 	"batch-record-actuals": [["--entries", '[{"estimate_id":"e1","actual_hours":2}]']],
 	"feedback-health": [[]],
 	"cocomo-ground-truth": [[], ["--dataset-filter", "nasa93"]],

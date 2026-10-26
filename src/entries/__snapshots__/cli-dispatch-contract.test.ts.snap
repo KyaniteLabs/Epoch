@@ -318,6 +318,17 @@ exports[`CLI -> dispatch contract > hands every tool command's options to dispat
     ],
     "code": 0,
   },
+  "get-pending-estimates --limit 15": {
+    "calls": [
+      [
+        "get_pending_estimates",
+        {
+          "limit": 25,
+        },
+      ],
+    ],
+    "code": 0,
+  },
   "get-pending-estimates --limit 5": {
     "calls": [
       [
@@ -475,12 +486,37 @@ exports[`CLI -> dispatch contract > hands every tool command's options to dispat
     ],
     "code": 0,
   },
+  "reference-class-estimate --task-type feature --complexity 3 --scope  --team-id ": {
+    "calls": [
+      [
+        "reference_class_estimate",
+        {
+          "complexity": 3,
+          "task_type": "feature",
+        },
+      ],
+    ],
+    "code": 0,
+  },
   "schedule-risk --estimated-hours 40": {
     "calls": [
       [
         "schedule_risk",
         {
           "estimated_hours": 40,
+        },
+      ],
+    ],
+    "code": 0,
+  },
+  "schedule-risk --estimated-hours 40 --task-type  --team-id ": {
+    "calls": [
+      [
+        "schedule_risk",
+        {
+          "estimated_hours": 40,
+          "task_type": "",
+          "team_id": "",
         },
       ],
     ],
