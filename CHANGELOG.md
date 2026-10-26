@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### refactor: break the core import cycle (Layer 6)
+
+- `src/` now has **no import cycles**. Before, 12 files formed one cycle: `types/index.ts` re-exported two types *from* `lib/analytics`, and at runtime `analytics -> self-improve -> feedback -> analytics` closed through `computeAccuracyMetrics`.
+- `computeAccuracyMetrics` (a pure function) moves to a new leaf module, `src/lib/accuracy-metrics.ts`. `HistoricalRecord` and `LLMModel` are now defined in `types/`, which imports nothing from `lib/`. `analytics` re-exports all three, so every existing import path keeps working, and so does the public API.
+- `LLMModel` is documented as what it always was: `string`. The old `keyof typeof MODEL_CALIBRATIONS` resolved to `string` because the table is typed `Record<string, …>`, contrary to its comment.
+
 ### docs: executable README examples; `time_math` add_days example corrected
 
 - README now has a `bash readme-test` block that CI runs on every change (shared profile Layer 3 step). It checks the documented `parse_duration`, `count_business_days`, `add_business_days` and `time_math` results against the built CLI.
