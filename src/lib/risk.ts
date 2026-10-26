@@ -1,6 +1,6 @@
 import type { TaskType, ScheduleRiskAssessment, RiskLevel } from "../types/index.js";
 import { assertNever } from "../types/index.js";
-import { computeAccuracyMetrics } from "./analytics.js";
+import { computeAccuracyMetrics } from "./accuracy-metrics.js";
 import { getCalibrationData } from "./feedback.js";
 import { getDeveloperProfileGradient } from "./profiles.js";
 

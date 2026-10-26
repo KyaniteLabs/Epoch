@@ -2,13 +2,20 @@ import type {
   TokenTimeMapping,
   ConfidenceLevel,
   UrgencyCategory,
-  AccuracyMetrics,
   ReasoningDepth,
   TaskType,
+  HistoricalRecord,
 } from "../types/index.js";
+
+import { computeAccuracyMetrics } from "./accuracy-metrics.js";
 import { loadReferenceDb, getComplexityCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
 import { getTelemetry } from "./telemetry.js";
 import { getReferenceClassForCategory, getScopeBaseline, getAiNativeScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
+
+// Kept so existing importers of analytics keep working; the definitions live in
+// types/ and accuracy-metrics.ts (leaf modules) to keep src/lib free of import cycles.
+export type { HistoricalRecord, LLMModel } from "../types/index.js";
+export { computeAccuracyMetrics };
 
 const COMPLEXITY_MULTIPLIER: Record<number, number> = {
   1: 0.7,
@@ -144,7 +151,6 @@ function getUrgency(seconds: number): UrgencyCategory {
   return "long";
 }
 
-export type LLMModel = keyof typeof MODEL_CALIBRATIONS;
 
 function getMedianTps(cal: { medianTps?: number; medianTokensPerSecond?: number }): number {
   return cal.medianTps ?? cal.medianTokensPerSecond ?? 0;
@@ -257,26 +263,6 @@ export function tokenTimeBridge(params: {
   };
 }
 
-export interface HistoricalRecord {
-  readonly taskType: string;
-  readonly estimatedHours: number;
-  readonly actualHours: number;
-  readonly teamId?: string;
-  readonly tool?: string;
-  readonly complexity?: number;
-  readonly completedAt: string;
-  readonly calibrationProvenance?:
-    | "prospective"
-    | "backfilled_real_session"
-    | "backfilled_calibration"
-    | "synthetic"
-    | "smoke"
-    | "unknown"
-    | "auto_wallclock"
-    | "git_derived"
-    | "git_derived_review_inclusive";
-  readonly calibrationUsage?: "correction" | "baseline" | "exclude";
-}
 
 function getCorrectionFactorForTaskType(taskType: TaskType, tool?: string, complexity?: number): number {
   // Priority: complexity-aware → tool-specific → task-type → industry defaults
@@ -414,65 +400,7 @@ export function referenceClassEstimate(
   };
 }
 
-export function computeAccuracyMetrics(records: HistoricalRecord[]): AccuracyMetrics {
-  if (records.length === 0) {
-    return { mape: 0, mdape: 0, cappedMdape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
-  }
 
-  const validRecords = records.filter(r => r.actualHours > 0);
-  if (validRecords.length === 0) {
-    return { mape: 0, mdape: 0, cappedMdape: 0, bias: 0, variance: 0, sample_size: 0, trend: "stable" };
-  }
-
-  const errors = validRecords.map(r => Math.abs(r.actualHours - r.estimatedHours) / r.actualHours);
-  const mape = (errors.reduce((a, b) => a + b, 0) / errors.length) * 100;
-
-  const sorted = [...errors].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  const mdape = sorted.length % 2 === 0
-    ? (((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2) * 100
-    : (sorted[mid] ?? 0) * 100;
-
-  // Capped MdAPE: clamp individual errors at 500% before taking median.
-  const CAP = 5.0;
-  const capped = errors.map(e => Math.min(e, CAP)).sort((a, b) => a - b);
-  const cappedMdape = capped.length % 2 === 0
-    ? (((capped[mid - 1] ?? 0) + (capped[mid] ?? 0)) / 2) * 100
-    : (capped[mid] ?? 0) * 100;
-
-  const biases = validRecords.map(r => r.actualHours - r.estimatedHours);
-  const bias = biases.reduce((a, b) => a + b, 0) / biases.length;
-
-  const meanBias = bias;
-  const variance = biases.reduce((sum, b) => sum + (b - meanBias) ** 2, 0) / biases.length;
-
-  let trend: AccuracyMetrics["trend"] = "stable";
-  if (validRecords.length >= 6) {
-    const half = Math.floor(validRecords.length / 2);
-    const firstHalf = validRecords.slice(0, half);
-    const secondHalf = validRecords.slice(half);
-    const mapeFirst = avgPercentageError(firstHalf);
-    const mapeSecond = avgPercentageError(secondHalf);
-    if (mapeSecond < mapeFirst * 0.85) trend = "improving";
-    else if (mapeSecond > mapeFirst * 1.15) trend = "degrading";
-  }
-
-  return {
-    mape: Math.round(mape * 10) / 10,
-    mdape: Math.round(mdape * 10) / 10,
-    cappedMdape: Math.round(cappedMdape * 10) / 10,
-    bias: Math.round(bias * 10) / 10,
-    variance: Math.round(variance * 10) / 10,
-    sample_size: validRecords.length,
-    trend,
-  };
-}
-
-function avgPercentageError(records: HistoricalRecord[]): number {
-  const valid = records.filter(r => r.actualHours > 0);
-  if (valid.length === 0) return 0;
-  return valid.reduce((sum, r) => sum + Math.abs(r.actualHours - r.estimatedHours) / r.actualHours, 0) / valid.length * 100;
-}
 
 export function calibrateEstimates(
   teamId: string,
