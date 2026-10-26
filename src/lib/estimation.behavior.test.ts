@@ -67,7 +67,7 @@ describe("pertEstimate intervals", () => {
       error: {
         isError: true,
         message: "Computation produced invalid result.",
-        retryHint: "Ensure all inputs are finite numbers and optimistic < mostLikely < pessimistic.",
+        retryHint: "Ensure all inputs are finite numbers and optimistic <= mostLikely <= pessimistic.",
       },
     });
   });
