@@ -1,0 +1,5 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`live-ledger golden (tmp data dir) > record → pending → actual → calibration chain 1`] = `"[{"actualHours":10,"calibrationUsage":"correction","estimatedHours":5,"tool":"pert_estimate"}]"`;
+
+exports[`matcher golden (in-memory fixtures) > join, exclude and classify a mixed fixture set 1`] = `"[{"actualHours":8,"calibrationProvenance":"prospective","calibrationUsage":"correction","completedAt":"2026-01-03T00:00:00Z","estimatedHours":2,"taskType":"feature","tool":"pert_estimate"},{"actualHours":6,"calibrationProvenance":"prospective","calibrationUsage":"correction","completedAt":"2026-01-10T00:00:00Z","estimatedHours":4,"taskType":"feature","tool":"pert_estimate"},{"actualHours":4,"calibrationProvenance":"prospective","calibrationUsage":"correction","completedAt":"2026-01-10T00:00:00Z","estimatedHours":4,"taskType":"feature","tool":"unknown-tool"}]"`;
