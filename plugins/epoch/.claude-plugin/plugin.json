@@ -1,0 +1,17 @@
+{
+  "name": "epoch",
+  "displayName": "Epoch",
+  "version": "0.6.0",
+  "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk. Covers PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, model-cost comparison, and estimate-vs-actual feedback via MCP or CLI.",
+  "author": {
+    "name": "Kyanite Labs",
+    "url": "https://github.com/KyaniteLabs"
+  },
+  "homepage": "https://kyanitelabs.github.io/Epoch/",
+  "repository": "https://github.com/KyaniteLabs/Epoch",
+  "license": "Apache-2.0",
+  "icon": "./icon.png",
+  "documentationUrl": "https://kyanitelabs.github.io/Epoch/",
+  "supportUrl": "https://github.com/KyaniteLabs/Epoch/issues",
+  "privacyPolicyUrl": "https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "epoch",
+  "version": "0.6.0",
+  "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk.",
+  "author": {
+    "name": "Kyanite Labs"
+  },
+  "homepage": "https://kyanitelabs.github.io/Epoch/",
+  "repository": "https://github.com/KyaniteLabs/Epoch",
+  "license": "Apache-2.0",
+  "logo": "icon.png",
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json"
+}
