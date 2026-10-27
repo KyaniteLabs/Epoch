@@ -1,5 +1,5 @@
 # Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
-# Epoch — time estimation MCP server (npm: @kyanitelabs/epoch 0.5.2)
+# Epoch — time estimation MCP server (npm: @kyanitelabs/epoch 0.6.0)
 startCommand:
   type: stdio
   configSchema:
