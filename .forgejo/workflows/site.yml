@@ -15,9 +15,9 @@ name: Site
 # 0.6.0 release, GitHub gh-pages is fast-forwarded by the "Fast-forward
 # GitHub gh-pages" step below: it builds a commit on top of GitHub's current
 # gh-pages head with the new deploy tree (git commit-tree) and pushes it
-# WITHOUT force, so it can never clobber or diverge the mirror branch. The
-# step needs the SITE_GITHUB_TOKEN secret (contents:write on the repo);
-# without it, the job deploys Forgejo gh-pages and reports the gap instead
+# WITHOUT force — a rejected push fails the job, so it can never overwrite
+# GitHub-side history. The step needs the SITE_GITHUB_TOKEN secret
+# (contents:write on the repo); without it, the job deploys Forgejo gh-pages and reports the gap instead
 # of failing.
 #
 # Triggers:
@@ -93,9 +93,13 @@ jobs:
         # pruning makes reviving it unsafe). Sync GitHub the safe way: a new
         # commit whose parent is GitHub's CURRENT gh-pages head and whose
         # tree is this deploy, pushed without --force. A non-fast-forward
-        # rejection fails the job loudly instead of clobbering anything.
-        # This also runs when Forgejo's tree was unchanged, so it heals a
-        # GitHub branch that fell behind while the mirror was dead.
+        # rejection fails the job loudly, so GitHub-side history is never
+        # overwritten. When the fetch cannot resolve GitHub's head (missing
+        # branch or network failure) the step builds a root commit; if the
+        # branch actually exists, that push is rejected and the job fails
+        # loudly rather than guessing the parent. This also runs when
+        # Forgejo's tree was unchanged, so it heals a GitHub branch that
+        # fell behind while the mirror was dead.
         env:
           SITE_GITHUB_TOKEN: ${{ secrets.SITE_GITHUB_TOKEN }}
         run: |
@@ -107,8 +111,16 @@ jobs:
             exit 0
           fi
           GH_REMOTE="https://x-access-token:${SITE_GITHUB_TOKEN}@github.com/KyaniteLabs/Epoch.git"
-          git fetch --quiet "$GH_REMOTE" gh-pages || true
-          GH_HEAD=$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' || true)
+          # GH_HEAD comes ONLY from a successful fetch. A failed fetch
+          # (missing branch, auth, network) leaves FETCH_HEAD holding the
+          # previous fetch's target — Forgejo's gh-pages or the checkout
+          # commit — and grafting onto that would create the branch with
+          # wrong history while reporting success.
+          if git fetch --quiet "$GH_REMOTE" gh-pages; then
+            GH_HEAD=$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' || true)
+          else
+            GH_HEAD=""
+          fi
           NEW_TREE=$(git write-tree)
           echo "new tree: $NEW_TREE"
           if [ -n "$GH_HEAD" ]; then
