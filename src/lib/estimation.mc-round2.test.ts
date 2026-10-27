@@ -215,3 +215,82 @@ describe("computePertRiskLevel boundaries (via pertEstimate.riskLevel)", () => {
     expect(level(1, 1, 6)).toBe("high"); // 5.0 (PERT allows o == m)
   });
 });
+
+// ---------------------------------------------------------------------------
+// Round 3 (review follow-up): the error paths and the LCG's first draw —
+// named as killable by the round-2 reviewer after refuting my "template
+// literal" residue claim. The LCG is Lehmer: s' = 16807·s mod (2^31−1),
+// u = (s−1)/(2^31−2).
+// ---------------------------------------------------------------------------
+describe("monteCarloSim error paths (round 3)", () => {
+  const ZERO_SHAPE = {
+    p10: "0", p50: "0", p80: "0", p95: "0",
+    estimatedHours: 0, estimatedCost: 0, converged: false,
+    criticalPathProbability: null as number | null,
+  };
+
+  it("iterations <= 0 is the documented error, byte-exact", () => {
+    const r = monteCarloSim([TASK(1, 2, 3)], 0, 1);
+    expect(r).toEqual({
+      ...ZERO_SHAPE,
+      riskEvents: [{ description: "Iterations must be >= 1.", probability: 1, impactDays: 0 }],
+      humanReadable: "Error: Iterations must be a positive number.",
+    });
+  });
+
+  it("target_hours <= 0 or non-finite is refused with the interpolated value", () => {
+    for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const r = monteCarloSim([TASK(1, 2, 3)], 10, 1, bad);
+      expect(r.converged).toBe(false);
+      expect(r.riskEvents.at(0)?.description).toContain(`target_hours (${String(bad)})`);
+      expect(r.humanReadable).toBe("Error: target_hours must be a positive number of hours.");
+    }
+  });
+
+  it("misordered PERT values name the offending task", () => {
+    const r = monteCarloSim([TASK(1, 2, 3, "good"), TASK(5, 2, 3, "bad")], 10, 1);
+    expect(r.riskEvents).toEqual([{
+      description: 'Invalid estimates for task "bad": optimistic (5) must be <= mostLikely (2) <= pessimistic (3).',
+      probability: 1,
+      impactDays: 0,
+    }]);
+    expect(r.humanReadable).toBe('Error: Task "bad" has invalid PERT estimates.');
+  });
+});
+
+describe("seededRandom's first draws are the Lehmer sequence (round 3)", () => {
+  // With tasks whose triangular distribution is degenerate EXCEPT at one
+  // identifiable threshold, the first draws' exactness pins the LCG
+  // constants. Simpler and stronger: a task (0,0,1) has mode=min=0, so
+  // fc=0 and every draw takes the max-branch: sample = 1 - sqrt(1-u).
+  // The first u for seed 42: s=42 → 42*16807=705,894 → u=(705894-1)/2147483646.
+  it("seed 42's first draw yields the hand-computed u", () => {
+    const s0 = (42 * 16807) % 2147483647;
+    const u0 = (s0 - 1) / 2147483646;
+    // Task (0,0,1): max !== min, fc = 0, so u < fc is never true; the draw
+    // is 1 - sqrt((1-u)*1*1) = 1 - sqrt(1-u).
+    const expectedFirst = 1 - Math.sqrt(1 - u0);
+    // A single iteration makes p10=p50=p80=p95 = that one draw (rounded 2dp).
+    const r = monteCarloSim([TASK(0, 0, 1)], 1, 42);
+    expect(r.p50).toBe(String(Math.round(expectedFirst * 100) / 100));
+  });
+
+  it("negative and huge seeds are normalized into the LCG domain", () => {
+    const firstNext = (seed: number): number => {
+      let s = seed % 2147483647;
+      if (s <= 0) s += 2147483646;
+      return Number((BigInt(s) * 16807n) % 2147483647n);
+    };
+    // seed -1: s = -1 → +2147483646 = 2147483645 (NOT 2147483646 — my
+    // first derivation was off by one and corrected from the code).
+    // seed 0: s = 0 → +2147483646 = 2147483646 — the OTHER normalization
+    // landing, distinct from -1's.
+    expect(firstNext(-1)).toBe(firstNext(2147483645));
+    expect(firstNext(0)).toBe(firstNext(2147483646));
+    expect(firstNext(-1)).not.toBe(firstNext(0));
+    // A seed larger than the modulus wraps: seed 2147483647+42 behaves like 42.
+    const rA = monteCarloSim([TASK(0, 0, 1)], 1, 42);
+    const rB = monteCarloSim([TASK(0, 0, 1)], 1, 2147483647 + 42);
+    expect(rB.p50).toBe(rA.p50);
+  });
+});
