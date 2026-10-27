@@ -66,7 +66,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 **30-second setup -- works in Claude Code, Cursor, VS Code, and Windsurf:**
 
 ```bash
-claude mcp add epoch -- npx @kyanitelabs/epoch
+claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.6.0
 ```
 
 That's it. Your AI assistant now has 26 time estimation tools.
@@ -78,7 +78,7 @@ Or add it to your project's `.mcp.json`:
   "mcpServers": {
     "epoch": {
       "command": "npx",
-      "args": ["@kyanitelabs/epoch"]
+      "args": ["-y", "@kyanitelabs/epoch@0.6.0"]
     }
   }
 }
@@ -829,7 +829,7 @@ More from [KyaniteLabs](https://kyanitelabs.tech). Related projects:
 | **Category** | time estimation MCP server |
 | **Best for** | engineering leads, agents, and planners who need calibrated duration estimates |
 | **Not** | a calendar or project tracker |
-| **Source** | [GitHub](https://github.com/KyaniteLabs/Epoch) · [Forgejo](https://git.kyanitelabs.tech/KyaniteLabs/Epoch) (private, maintainers only) |
+| **Source** | [GitHub](https://github.com/KyaniteLabs/Epoch) |
 | **Keywords** | time estimation MCP, PERT, reference class forecasting |
 
 ## Who it's for
