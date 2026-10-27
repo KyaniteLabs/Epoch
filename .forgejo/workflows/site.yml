@@ -8,8 +8,17 @@ name: Site
 # A gh-pages branch pushed only to the mirror is deleted by the next sync —
 # that mechanism froze the site for 4.5 months (D141) and 404'd it again on
 # 2026-09-25 hours after the v0.5.2 release. Deploying FROM canonical fixes
-# the class: this workflow pushes gh-pages on Forgejo, and the push-mirror
-# then carries it to GitHub Pages itself.
+# the class: this workflow pushes gh-pages on Forgejo directly.
+#
+# The push-mirror itself is DEAD (last ran 2026-09-29; it also pushes with
+# --mirror, which deletes GitHub-only refs, so it stays retired). Since the
+# 0.6.0 release, GitHub gh-pages is fast-forwarded by the "Fast-forward
+# GitHub gh-pages" step below: it builds a commit on top of GitHub's current
+# gh-pages head with the new deploy tree (git commit-tree) and pushes it
+# WITHOUT force, so it can never clobber or diverge the mirror branch. The
+# step needs the SITE_GITHUB_TOKEN secret (contents:write on the repo);
+# without it, the job deploys Forgejo gh-pages and reports the gap instead
+# of failing.
 #
 # Triggers:
 #   - push to main      : keeps the site converged with site/ between releases
@@ -51,7 +60,7 @@ jobs:
         # hand-edit. Idempotent between releases.
         run: node scripts/stamp-release-versions.mjs
 
-      - name: Publish gh-pages
+      - name: Publish gh-pages (Forgejo)
         run: |
           set -euo pipefail
           git config user.name "site-deploy-bot"
@@ -77,4 +86,44 @@ jobs:
           fi
           git commit -qm "site: deploy from $GITHUB_SHA (auto, Site workflow)"
           git push origin HEAD:refs/heads/gh-pages --force
-          echo "Deployed gh-pages from $GITHUB_SHA; push-mirror will sync GitHub Pages."
+          echo "Deployed gh-pages from $GITHUB_SHA on Forgejo."
+
+      - name: Fast-forward GitHub gh-pages
+        # The push mirror is retired (dead since 2026-09-29, and --mirror
+        # pruning makes reviving it unsafe). Sync GitHub the safe way: a new
+        # commit whose parent is GitHub's CURRENT gh-pages head and whose
+        # tree is this deploy, pushed without --force. A non-fast-forward
+        # rejection fails the job loudly instead of clobbering anything.
+        # This also runs when Forgejo's tree was unchanged, so it heals a
+        # GitHub branch that fell behind while the mirror was dead.
+        env:
+          SITE_GITHUB_TOKEN: ${{ secrets.SITE_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_GITHUB_TOKEN:-}" ]; then
+            echo "SITE_GITHUB_TOKEN is not configured on this repo."
+            echo "Forgejo gh-pages is deployed; GitHub gh-pages was NOT synced."
+            echo "Add the secret (fine-grained PAT, contents:write on KyaniteLabs/Epoch only) to complete this sync."
+            exit 0
+          fi
+          GH_REMOTE="https://x-access-token:${SITE_GITHUB_TOKEN}@github.com/KyaniteLabs/Epoch.git"
+          git fetch --quiet "$GH_REMOTE" gh-pages || true
+          GH_HEAD=$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' || true)
+          NEW_TREE=$(git write-tree)
+          echo "new tree: $NEW_TREE"
+          if [ -n "$GH_HEAD" ]; then
+            GH_TREE=$(git rev-parse "$GH_HEAD^{tree}")
+            echo "GitHub gh-pages head: $GH_HEAD (tree $GH_TREE)"
+            if [ "$NEW_TREE" = "$GH_TREE" ]; then
+              echo "GitHub gh-pages already carries this tree; nothing to push."
+              exit 0
+            fi
+            NEW_COMMIT=$(git commit-tree "$NEW_TREE" -p "$GH_HEAD" \
+              -m "site: deploy from $GITHUB_SHA (auto, Site workflow)")
+          else
+            echo "GitHub gh-pages not found; creating it."
+            NEW_COMMIT=$(git commit-tree "$NEW_TREE" \
+              -m "site: deploy from $GITHUB_SHA (auto, Site workflow)")
+          fi
+          git push "$GH_REMOTE" "${NEW_COMMIT}:refs/heads/gh-pages"
+          echo "Fast-forwarded GitHub gh-pages to $NEW_COMMIT (no force)."
