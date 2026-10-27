@@ -19,6 +19,9 @@ The first release since 0.5.2. Highlights:
 - **Docs:** the `/v1/feedback/*` REST contract is now documented.
 - **Internal Layer 6 refactors** that don't change behavior: no import cycles, a declarative CLI, and the feedback pipeline split into ledger, analytics and health modules. The tool surface and every output are unchanged.
 - **Smaller package:** the npm package leaves out `data/eval-corpus/`, about 2.8 MB of third-party GitHub issue data used only by the offline evaluation scripts. The runtime never reads it. Its data files match 0.5.2's, plus the small `eval-corpus.schema.json` (630 KB unpacked, against 3.4 MB with the corpus).
+### docs: dated licence-history note (wording only; terms unchanged)
+
+- Added [LICENSING.md](LICENSING.md) recording MIT → Apache-2.0 with dates, why the same-day BSL-1.1 detour was reverted (never published), and that npm `0.2.1–0.2.9` consumers hold MIT terms. No licence file or grant was changed.
 
 ### docs: the `/v1/feedback/*` REST contract and how it differs from the feedback tools
 

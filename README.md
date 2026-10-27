@@ -803,7 +803,7 @@ Fleet host inventories are not published in this repository. [docs/ops/machines.
 
 ## License
 
-Apache License 2.0. See [LICENSE](./LICENSE) for full terms.
+Apache License 2.0. See [LICENSE](./LICENSE) for full terms. Dated relicensing history (including npm 0.2.x MIT consumers): [LICENSING.md](./LICENSING.md).
 
 ---
 
