@@ -30,7 +30,7 @@ Epoch can contribute anonymized estimate/actual pairs (7 fields, no code, no pat
 
 ## MCP Registry
 
-Epoch is listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch) as `io.github.KyaniteLabs/Epoch`. Registry metadata is in `server.json` at the repo root.
+Epoch is listed on the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest) as `tech.kyanitelabs/epoch`. Registry metadata is in `server.json` at the repo root.
 
 ## Keywords
 time estimation MCP server, AI agent planning, PERT estimate, COCOMO II, Monte Carlo schedule, sprint forecasting, token cost estimate, model cost comparison, schedule risk analysis, business day calculator, Model Context Protocol, Claude Code time tools, Cursor MCP server.

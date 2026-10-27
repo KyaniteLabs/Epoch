@@ -8,7 +8,7 @@
 
 **TL;DR:** Epoch — time estimation MCP server. Best for engineering leads, agents, and planners who need calibrated duration estimates.
 
-[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/v0/servers/io.github.KyaniteLabs%2FEpoch/versions/latest)
+[![CI](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml/badge.svg)](https://github.com/KyaniteLabs/Epoch/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/KyaniteLabs/Epoch/blob/main/LICENSE) [![MCP](https://img.shields.io/badge/MCP-Server-green.svg)](https://modelcontextprotocol.io) [![npm version](https://img.shields.io/npm/v/@kyanitelabs/epoch.svg)](https://www.npmjs.com/package/@kyanitelabs/epoch) [![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue.svg)](https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest)
 
 **Epoch helps AI agents understand time.**
 

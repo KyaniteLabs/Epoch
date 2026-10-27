@@ -9,7 +9,7 @@ sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, llm
 
 Install: claude mcp add epoch -- npx @kyanitelabs/epoch
 npm: https://www.npmjs.com/package/@kyanitelabs/epoch
-MCP Registry: https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch
+MCP Registry: https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest
 GitHub: https://github.com/KyaniteLabs/Epoch
 Agent skill: skills/epoch/SKILL.md, invoked as $epoch in compatible agent hosts
 
