@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readLines, dataDir, withLedgerWriteLock, ESTIMATES_FILE, ACTUALS_FILE, CURRENT_BASIS_VERSION, LedgerLockTimeoutError, LedgerLockUnavailableError } from "./ledger.js";
-import { stringField } from "./feedback-analytics.js";
 import type { EstimateRecord, ActualRecord } from "./ledger.js";
 import { canonicalizeToolName } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
@@ -45,6 +44,11 @@ let dedupHitCount = 0;
 /** Number of dedup hits since process start. Exposed for tests/observability. */
 export function getDedupHitCount(): number {
   return dedupHitCount;
+}
+
+/** Coerce a parsed-JSON value to a string field (), or undefined. */
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 /** Deterministic signature over an estimate's inputs, used to match "identical" dedup calls regardless of key order. */

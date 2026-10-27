@@ -330,7 +330,7 @@ export function getCalibrationData(
 type CalibrationProvenance = NonNullable<HistoricalRecord["calibrationProvenance"]>;
 type CalibrationUsage = NonNullable<HistoricalRecord["calibrationUsage"]>;
 
-export function stringField(value: unknown): string | undefined {
+function stringField(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
