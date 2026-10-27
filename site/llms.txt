@@ -2,7 +2,7 @@
 
 Time estimation MCP server, CLI, and REST API for AI agents.
 Open source, Apache-2.0. Product site: https://kyanitelabs.github.io/Epoch/
-Last-updated: 2026-09-25
+Last-updated: 2026-10-27
 
 ## One-line definition
 
@@ -14,11 +14,11 @@ Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI a
 - What it is: MCP server + CLI + REST API for agentic time estimation
 - Who makes it: Kyanite Labs (https://github.com/KyaniteLabs)
 - License: Apache-2.0
-- Latest published release: 0.5.1 (2026-09-19, npm @kyanitelabs/epoch)
+- Latest published release: 0.5.2 (2026-09-25, npm @kyanitelabs/epoch)
 - Published surface: 26 MCP tools across six layers
 - Runtime: Node >= 22 via npx; zero config, no API keys
 - Transport: MCP stdio (Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code, any MCP client)
-- Registry id: io.github.KyaniteLabs/Epoch
+- Registry id: tech.kyanitelabs/epoch
 - Not: a hosted SaaS, a prompt library, or a calendar app
 
 ## Install
@@ -33,7 +33,7 @@ Other MCP clients: run `npx @kyanitelabs/epoch` as a stdio MCP server.
 - Full AI tool reference: https://kyanitelabs.github.io/Epoch/llms-full.txt
 - GitHub: https://github.com/KyaniteLabs/Epoch
 - npm: https://www.npmjs.com/package/@kyanitelabs/epoch
-- MCP Registry: https://registry.modelcontextprotocol.io/servers/io.github.KyaniteLabs/Epoch
+- MCP Registry: https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest
 - Privacy: https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md
 
 ## Telemetry
