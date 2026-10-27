@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-26
+
+The first release since 0.5.2. Highlights:
+- **New CLI command:** `epoch mine-git`, which turns merged git work into auto-actuals.
+- **Restored stdio JSON-RPC guard:** the full 0.5.1 guard, including its F1/F2 fixes, which 0.5.2 shipped without.
+- **Bug fix:** `--limit` on `get-pending-estimates` was parsed in base 20.
+- **Docs:** the `/v1/feedback/*` REST contract is now documented.
+- **Internal Layer 6 refactors** that don't change behavior: no import cycles, a declarative CLI, and the feedback pipeline split into ledger, analytics and health modules. The tool surface and every output are unchanged.
+- **Smaller package:** the npm package leaves out `data/eval-corpus/`, about 2.8 MB of third-party GitHub issue data used only by the offline evaluation scripts. The runtime never reads it. Its data files match 0.5.2's, plus the small `eval-corpus.schema.json` (630 KB unpacked, against 3.4 MB with the corpus).
+
 ### docs: the `/v1/feedback/*` REST contract and how it differs from the feedback tools
 
 - The README now documents the four feedback REST routes as a stable surface, and how they differ from the same tools called through `POST /v1/tools/<name>` and MCP: response key casing, status codes (409 for a duplicate actual), `pending` limits and the tools' cap of 10, batch partial success versus whole-batch validation, and `intervalCoverage`. There's no behaviour change. A Layer 6 review found the routes are a diverged contract, not duplicates, so they stay as they are.
