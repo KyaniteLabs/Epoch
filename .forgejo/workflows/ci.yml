@@ -17,7 +17,7 @@ jobs:
     # pushes); the profile's required job declares contents: read.
     permissions:
       contents: write
-    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@7b23c21d3ac3af017875c6d3c334c1e9047696bc
+    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@acc41fc663d5b1ef623a406fddff912823b29f93
     with:
       publish_evidence: true
       image: node:24-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
