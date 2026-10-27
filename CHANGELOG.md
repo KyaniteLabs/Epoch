@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### docs: dated licence-history note (wording only; terms unchanged)
+
+- Added [LICENSING.md](LICENSING.md) recording MIT → Apache-2.0 with dates, why the same-day BSL-1.1 detour was reverted (never published), and that npm `0.2.1–0.2.9` consumers hold MIT terms. No licence file or grant was changed.
+
 ### docs: the `/v1/feedback/*` REST contract and how it differs from the feedback tools
 
 - The README now documents the four feedback REST routes as a stable surface, and how they differ from the same tools called through `POST /v1/tools/<name>` and MCP: response key casing, status codes (409 for a duplicate actual), `pending` limits and the tools' cap of 10, batch partial success versus whole-batch validation, and `intervalCoverage`. There's no behaviour change. A Layer 6 review found the routes are a diverged contract, not duplicates, so they stay as they are.
