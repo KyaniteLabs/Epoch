@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.0] - 2026-10-26
 
 The first release since 0.5.2. Highlights:
+- **New MCP Registry identity:** the server is now `tech.kyanitelabs/epoch` (`mcpName` in package.json and `name` in server.json); it was `io.github.KyaniteLabs/Epoch`. Clients that look Epoch up in the registry by the old name should switch to the new one. The npm package name, `@kyanitelabs/epoch`, is unchanged.
+- **MCP SDK** `@modelcontextprotocol/sdk` raised from `^1.12.0` to `^1.31.0`.
 - **New CLI command:** `epoch mine-git`, which turns merged git work into auto-actuals.
 - **Restored stdio JSON-RPC guard:** the full 0.5.1 guard, including its F1/F2 fixes, which 0.5.2 shipped without.
 - **Bug fix:** `--limit` on `get-pending-estimates` was parsed in base 20.
