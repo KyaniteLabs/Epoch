@@ -42,8 +42,9 @@ npx -y @kyanitelabs/epoch@0.6.0 --version   # -> 0.6.0
 
 ## Links
 
-- Homepage / docs: <https://kyanitelabs.github.io/Epoch/>
+- Homepage / docs (tool-category table, worked examples): <https://kyanitelabs.github.io/Epoch/>
 - Tool reference: <https://github.com/KyaniteLabs/Epoch/blob/main/llms.txt>
+- Binary packaging notes: <https://github.com/KyaniteLabs/Epoch/blob/main/docs/BINARY.md>
 - Issues: <https://github.com/KyaniteLabs/Epoch/issues>
 - Security contact: admin@kyanitelabs.tech (see [SECURITY.md](https://github.com/KyaniteLabs/Epoch/blob/main/SECURITY.md))
 - License: Apache-2.0 ([LICENSE](LICENSE))
