@@ -14,7 +14,7 @@ Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI a
 - What it is: MCP server + CLI + REST API for agentic time estimation
 - Who makes it: Kyanite Labs (https://github.com/KyaniteLabs)
 - License: Apache-2.0
-- Latest published release: 0.5.2 (2026-09-25, npm @kyanitelabs/epoch)
+- Latest published release: 0.6.0 (2026-10-27, npm @kyanitelabs/epoch)
 - Published surface: 26 MCP tools across six layers
 - Runtime: Node >= 22 via npx; zero config, no API keys
 - Transport: MCP stdio (Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code, any MCP client)
