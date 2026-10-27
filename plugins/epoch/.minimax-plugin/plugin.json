@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "kyanite-epoch",
+  "displayName": "Epoch",
+  "version": "0.6.0",
+  "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk.",
+  "author": "Kyanite Labs",
+  "icon": "icon.png",
+  "category": "Productivity",
+  "exampleQueries": [
+    "Estimate this task with PERT: optimistic 1 hour, most likely 2 hours, pessimistic 5 hours",
+    "How many business days between June 1 and July 15 in the US?"
+  ],
+  "apps": [],
+  "mcpServers": [
+    "epoch.mcp.json"
+  ],
+  "skills": [
+    "skills/epoch/SKILL.md"
+  ]
+}

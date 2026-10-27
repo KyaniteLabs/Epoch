@@ -1,0 +1,13 @@
+{
+  "name": "kyanite-labs",
+  "owner": {
+    "name": "Kyanite Labs",
+    "email": "info@kyanitelabs.tech"
+  },
+  "plugins": [
+    {
+      "name": "epoch",
+      "source": "plugins/epoch"
+    }
+  ]
+}
