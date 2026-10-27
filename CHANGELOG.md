@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### docs: dated licence-history note (wording only; terms unchanged)
+
+- Added [LICENSING.md](LICENSING.md) recording MIT → Apache-2.0 with dates, why the same-day BSL-1.1 detour was reverted (never published), and that npm `0.2.1–0.2.9` consumers hold MIT terms. No licence file or grant was changed.
+
 ## [0.6.0] - 2026-10-26
 
 The first release since 0.5.2. Highlights:
