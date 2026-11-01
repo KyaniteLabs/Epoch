@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### fix: MCP and CLI entries now flush telemetry on SIGTERM/SIGINT/SIGHUP
+
+- **The bug:** tool-call telemetry is buffered in `TelemetryStore` (10 s flush timer) and was only flushed on process `'exit'`. The HTTP entry handles SIGINT/SIGTERM, but the MCP and CLI entries did not — and Node's default death on an unhandled SIGTERM/SIGINT/SIGHUP never fires `'exit'`, so every record still in the buffer was lost. MCP hosts stop stdio servers with SIGTERM, which is how months of tool-call telemetry silently vanished on one installation (estimates kept being written while `telemetry.jsonl` stopped growing, leaving the hourly submitter with "no new records" forever).
+- **The fix:** both entries install a shared signal handler that flushes every buffered store (telemetry is the only one; the ledgers already write synchronously) and exits with the conventional `128+signal` code (SIGTERM→143, SIGINT→130, SIGHUP→129). A second signal is never swallowed: the handler un-registers itself before flushing, so a repeated signal meets the default disposition. `epoch serve` still uses the HTTP entry's own graceful shutdown (flush, close, exit 0).
+
 ### docs: dated licence-history note (wording only; terms unchanged)
 
 - Added [LICENSING.md](LICENSING.md) recording MIT → Apache-2.0 with dates, why the same-day BSL-1.1 detour was reverted (never published), and that npm `0.2.1–0.2.9` consumers hold MIT terms. No licence file or grant was changed.

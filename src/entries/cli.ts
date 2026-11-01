@@ -10,6 +10,7 @@ import type { ToolResult } from "../types/index.js";
 import { getVersion } from "../version.js";
 import { setTransport } from "../lib/telemetry-context.js";
 import { loadConfig, saveConfig } from "../lib/config.js";
+import { installSignalFlushShutdown, uninstallSignalFlushShutdown } from "../lib/signal-shutdown.js";
 import { TOOL_COMMANDS, type ToolCommandSpec, type ToolOptionSpec } from "./cli-tool-commands.js";
 
 // ---- Helpers ----------------------------------------------------------------
@@ -822,6 +823,12 @@ export function createCliProgram(): Command {
 		)
 		.action(async (opts) => {
 			const { startHttpServer } = await import("../entries/http.js");
+			// The HTTP entry owns signal shutdown from here on (its own
+			// SIGINT/SIGTERM handlers: graceful server.close, telemetry flush,
+			// exit 0). Drop the CLI's immediate 128+n handlers so `epoch serve`
+			// keeps its documented graceful-close behavior and the two never
+			// race on the same signal.
+			uninstallSignalFlushShutdown();
 			// Pass through only what the caller supplied so the documented
 			// env-var defaults ($EPOCH_PORT/$PORT/$EPOCH_HOST) keep working.
 			startHttpServer(opts.port, opts.host);
@@ -866,6 +873,12 @@ export function maybeShowFirstRunTelemetryNudge(args: string[]): void {
 
 export function runCli(): void {
 	setTransport("cli");
+	// Same flush-on-signal contract as the MCP entry: a signal arriving while
+	// a dispatch is in flight (or right after it buffers telemetry) must not
+	// lose buffered records to Node's default signal death, which never fires
+	// 'exit' handlers. `serve` uninstalls this in favor of the HTTP entry's
+	// graceful shutdown. See signal-shutdown.ts.
+	installSignalFlushShutdown();
 	maybeShowFirstRunTelemetryNudge(process.argv.slice(2));
 	createCliProgram().parse(process.argv);
 }
