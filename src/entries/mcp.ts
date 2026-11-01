@@ -4,8 +4,16 @@ import { registerAllMcpTools } from "../dispatcher/mcp-adapter.js";
 import { getVersion } from "../version.js";
 import { setMcpClientInfo, setTransport } from "../lib/telemetry-context.js";
 import { createStdioGuardTransform } from "../lib/jsonrpc-stdio-guard.js";
+import { installSignalFlushShutdown } from "../lib/signal-shutdown.js";
 
 export function startMcpServer(): Promise<void> {
+  // MCP hosts stop stdio servers by signal (SIGTERM on shutdown/timeout).
+  // Node's default signal death skips 'exit' handlers, so buffered
+  // telemetry would be lost — flush every buffered store, then exit with
+  // the conventional 128+signal code. A second signal is never swallowed
+  // (see signal-shutdown.ts).
+  installSignalFlushShutdown();
+
   const server = new McpServer({
     name: "epoch",
     version: getVersion(),
