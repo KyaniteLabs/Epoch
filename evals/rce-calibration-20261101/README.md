@@ -1,7 +1,8 @@
 # reference_class_estimate calibration — measurement record (issue #42)
 
 Card t_6b805b34 · Seat **hml — Machine Learning**, Science & Evaluation, Kyanite Labs ·
-measured 2026-11-01 (PT) / receipts stamped 2026-11-02T03:21Z · repo HEAD at run:
+measured 2026-11-01 (PT) / receipts stamped 2026-11-02T03:21Z · replay MAPE scaling
+corrected + regenerated 2026-11-02T04:06Z (review round 1) · repo HEAD at run:
 `68404e5` (`main`) · instruments run on Node v22.23.4.
 
 This directory is the durable record of the issue #42 calibration reproduction and the
@@ -66,6 +67,17 @@ Measurement population: **772 clean matched `reference_class_estimate` pairs**
 issue's 0.545 figure was cut from the 2026-07-10 ledger state; that historical state
 was not available, so the reproduction is by family, not by exact cut.
 
+Recorded-input note (2026-11-02): after the measurement, a live process appended 22
+`monte_carlo_schedule` telemetry rows to the source copy's `estimates.jsonl`
+(2026-11-02T03:25:59Z, after the receipts above). The **recorded input is the first
+35,885 rows** of that file; the reconstruction `head -n 35885` re-hashes to
+`15e0c3d82d149931…`, matching the table above, and is what the corrected regeneration
+was run against. The appended rows carry no `reference_class_estimate` estimates:
+both instruments re-run on the truncated input reproduce the landed
+`backtest-rce-correction.json` byte-identically (including
+`feedbackHealth.totalEstimates` = 35,885), proving the reconstruction is the exact
+recorded input.
+
 ## Instruments (both land in this PR)
 
 - `scripts/backtest-rce-correction.mjs` — baseline family reproduction + recorded
@@ -93,14 +105,36 @@ $ RCE_REPLAY_OUT=results/replay-rce-rolling.json npx tsx scripts/replay-rce-roll
   → results/replay-rce-rolling.json
 $ python3 replay-rce-policies.py                                # independent stdlib cross-check (not landed)
   → agrees with the TS replay within 0.001–0.01 per cell; win60 cell exact (0.833 / 1.200)
+$
+$ # 2026-11-02T04:06Z correction round (review round 1) — regenerate against the
+$ # exact recorded input (source copy had gained 22 telemetry rows; see provenance note):
+$ head -n 35885 <ledger-copy>/estimates.jsonl > <scratch>/input/estimates.jsonl
+$ sha256sum <scratch>/input/estimates.jsonl
+  15e0c3d82d149931ed692e2527a0cccf19156aaa1e4ee22cc151f1de888764a0   # matches provenance table
+$ EPOCH_DATA_DIR=<scratch>/input RCE_REPLAY_OUT=results/replay-rce-rolling.json npx tsx scripts/replay-rce-rolling.mjs   # exit 0
+$ EPOCH_DATA_DIR=<scratch>/input npx tsx scripts/backtest-rce-correction.mjs   # exit 1 = HOLD; coherence check only
+  → backtest output identical to the landed artifact (totalEstimates 35,885)
 ```
 
 Reproduction checks performed:
 
-- Both landed JSONs are byte-identical to the recorded artifacts of the parent
-  validation run (t_02e7da03, same ledger copy) after replacing the internal
-  `sourceDataDir` path string with the provenance label — that field is the **only**
-  edit, asserted programmatically.
+- `results/backtest-rce-correction.json` is byte-identical to the recorded artifact
+  of the parent validation run (t_02e7da03, same ledger copy) after replacing the
+  internal `sourceDataDir` path string with the provenance label — that field is the
+  **only** edit, asserted programmatically. Re-verified 2026-11-02 against the
+  reconstructed 35,885-row input: identical, `feedbackHealth.totalEstimates` 35,885.
+- `results/replay-rce-rolling.json` was **regenerated 2026-11-02 with a scaling
+  correction** (review round 1): `mapeOf` in `scripts/replay-rce-rolling.mjs` applied
+  a ×100 percent conversion on top of `apeOf`, which already returns percent, so
+  `mapePercent` / `mapeFirstHalfPercent` / `mapeSecondHalfPercent` were 100× inflated
+  in the original generation (and in the parent run's bug-compatible artifact). The
+  fix drops the second conversion; the file was regenerated against the exact
+  recorded input (first 35,885 rows, digest above) and differs from the original
+  generation in **exactly those three fields per row** (each ÷100; e.g. as-landed
+  18168.781 → 181.688, wave2-none 11599.319 → 115.993), asserted programmatically —
+  every other field (medians, monthly cells, MdAPE, bias, n, trend labels) is
+  unchanged, and no figure quoted in this README used the inflated fields, so the
+  conclusions above are unaffected.
 - The frozen-holdout rerun reproduces the prior attempt exactly (corrected test
   medians 1.35–1.39 across all variants; recommendation HOLD).
 - The `recorded-ledger` and `as-landed-replay` rows cross-check the replay instrument
@@ -192,6 +226,10 @@ payoff of recency weighting under the July regime shift.
 - `results/backtest-rce-correction.json` — baseline family + feedback health + frozen
   holdout + in-sample recompute (raw instrument output; `sourceDataDir` normalized).
 - `results/replay-rce-rolling.json` — rolling-origin replay through the landed wave-2
-  machinery, full policy grid (raw instrument output; `sourceDataDir` normalized).
+  machinery, full policy grid (raw instrument output; `sourceDataDir` normalized;
+  regenerated 2026-11-02 with the `mapeOf` scaling correction — see *Reproduction
+  checks*).
 - `scripts/backtest-rce-correction.mjs`, `scripts/replay-rce-rolling.mjs` — the
-  instruments (repo `scripts/`, unchanged from the verified run).
+  instruments (repo `scripts/`). `backtest-rce-correction.mjs` unchanged from the
+  verified run; `replay-rce-rolling.mjs` carries the 2026-11-02 `mapeOf` scaling
+  fix (drop the second ×100).

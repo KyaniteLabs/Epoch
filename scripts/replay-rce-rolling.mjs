@@ -83,7 +83,8 @@ function summarize(preds, label, basis, scheme) {
   const monthly = {};
   for (const [m, v] of Object.entries(byMonth).sort()) monthly[m] = round3(median(v));
   const half = Math.floor(n / 2);
-  const mapeOf = (list) => list.reduce((s, p) => s + apeOf(p.predicted, p.actual), 0) / list.length * 100;
+  // apeOf already returns percent (x100); no second conversion here.
+  const mapeOf = (list) => list.reduce((s, p) => s + apeOf(p.predicted, p.actual), 0) / list.length;
   const m1 = mapeOf(preds.slice(0, half));
   const m2 = mapeOf(preds.slice(half));
   const trend = m2 > m1 * 1.15 ? "degrading" : m2 < m1 * 0.85 ? "improving" : "stable";
