@@ -367,3 +367,141 @@ export function composePertCorrectionFactor(
     note: `Insufficient learned-correction data for this (tool, task_type) pair (n=${learned.n} < ${MIN_RECORDS_PER_FACTOR}) and no developer-profile fallback available; using a neutral correction factor of 1.0.`,
   };
 }
+
+// ---------------------------------------------------------------------------
+// reference_class_estimate learned-correction wiring (issue #42, wave-2 recency)
+// ---------------------------------------------------------------------------
+//
+// referenceClassEstimate (analytics.ts) used to train its data-driven
+// correction factor on an inline unweighted median of actual/correctedEstimate
+// ratios — the POST-correction basis (feedback-analytics.ts's
+// extractEstimatedHours returns correctedEstimate for this tool per the
+// Ticket 11 same-basis rule). A factor trained on its own output converges to
+// sqrt(median(actual/rawEstimate)) (~0.53 on the live ledger), pinning the
+// measured median actual/predicted near 0.5 no matter how the ratios are
+// weighted. This wiring retrains through the landed wave-2 machinery on the
+// PRE-correction basis (outputs.rawEstimate — the reference_class analog of
+// loadPertMatchedRecords' outputs.expected), which is the same basis the
+// output formula multiplies the factor onto
+// (correctedEstimate = rawEstimate × factor).
+
+const REFERENCE_CLASS_TOOL = "reference_class_estimate";
+
+/**
+ * Extract PRE-correction estimated hours from a reference_class_estimate
+ * output shape. rawEstimate is the scope/complexity baseline BEFORE the
+ * correction factor is applied, so training on it is what breaks the
+ * self-referential feedback loop of the removed post-correction median.
+ * Legacy rows that predate rawEstimate in outputs fall back to
+ * correctedEstimate — their only recorded basis.
+ */
+function extractReferenceClassEstimatedHours(outputs: Record<string, unknown>): number | null {
+  if (typeof outputs["rawEstimate"] === "number") return outputs["rawEstimate"];
+  if (typeof outputs["correctedEstimate"] === "number") return outputs["correctedEstimate"];
+  return null;
+}
+
+/**
+ * Load exclusion-filtered, overlay-merged reference_class_estimate matched
+ * (estimate, actual) pairs as HistoricalRecord[] on the PRE-correction basis
+ * (outputs.rawEstimate), ready for computeToolTaskCorrectionFactors. Mirrors
+ * loadPertMatchedRecords(): loadLedgerWithOverlays() + isExcluded() (the clean
+ * path) rather than getCalibrationData()/matchEstimatesToActuals(), whose
+ * estimatedHours is the post-correction correctedEstimate for this tool.
+ */
+export function loadReferenceClassMatchedRecords(): HistoricalRecord[] {
+  const merged = loadLedgerWithOverlays();
+  const records: HistoricalRecord[] = [];
+
+  for (const rec of merged) {
+    if (rec.tool !== REFERENCE_CLASS_TOOL) continue;
+    if (!rec.actual) continue;
+    if (!(rec.actual.actualHours > 0)) continue;
+
+    const estimatedHours = extractReferenceClassEstimatedHours(rec.outputs);
+    if (estimatedHours === null || !(estimatedHours > 0)) continue;
+
+    const verdict = isExcluded({
+      id: rec.id,
+      tool: rec.tool,
+      inputs: rec.inputs,
+      estimatedAt: rec.estimatedAt,
+      estimatedHours,
+      actual: {
+        actualHours: rec.actual.actualHours,
+        notes: rec.actual.notes,
+        reportedAt: rec.actual.reportedAt,
+        completedAt: rec.actual.completedAt,
+        calibrationProvenance: rec.actual.calibrationProvenance,
+      },
+      flags: { quarantined: rec.flags.quarantined, orphan: rec.flags.orphan },
+      ...(rec.expiresAt && { expiresAt: rec.expiresAt }),
+    });
+    if (verdict.excluded) continue;
+
+    const taskType = typeof rec.inputs["task_type"] === "string" ? (rec.inputs["task_type"] as string) : "feature";
+    const complexity = typeof rec.inputs["complexity"] === "number" ? (rec.inputs["complexity"] as number) : undefined;
+
+    records.push({
+      taskType,
+      estimatedHours,
+      actualHours: rec.actual.actualHours,
+      tool: rec.tool,
+      ...(complexity !== undefined && { complexity }),
+      completedAt: rec.actual.completedAt ?? rec.actual.reportedAt ?? "",
+    });
+  }
+
+  return records;
+}
+
+/**
+ * The recency scheme used by default for the (reference_class_estimate,
+ * task_type) learned correction factor. Chosen by the rolling-origin replay
+ * of the landed wave-2 machinery over the live production ledger (772 clean
+ * matched pairs; scripts/replay-rce-rolling.mjs on card t_02e7da03 /
+ * Forgejo issue #42):
+ *
+ *  - win60, PRE-correction basis (this wiring): all-pairs median
+ *    actual/predicted 0.833 and trailing-20% 1.200 — in the [0.8, 1.2] band
+ *    on BOTH views, the only recency-grid member that qualifies (equal
+ *    weighting: 0.870 all-pairs but 1.482 trailing-20%; August monthly 0.797
+ *    vs 3.036 — the operator's median actuals drifted ~3x May→July while raw
+ *    baselines held, so recency weighting is the tiebreaker under drift).
+ *  - The removed inline post-correction median measured 0.505–0.526 under
+ *    EVERY recency scheme: weighting cannot fix a factor trained on its own
+ *    output.
+ *
+ * Re-evaluate as the ledger grows — same policy as
+ * PERT_CORRECTION_RECENCY_DEFAULT ("let the backtest decide"): re-run the
+ * rolling replay before changing this constant, keeping both the all-pairs
+ * and trailing-20% band views in sight.
+ */
+export const RCE_CORRECTION_RECENCY_DEFAULT: RecencyOptions = {
+  scheme: { kind: "window", windowDays: 60 },
+};
+
+export interface ReferenceClassToolTaskCorrection {
+  factor: number;
+  n: number;
+}
+
+/**
+ * Compute the learned (reference_class_estimate, taskType) correction factor +
+ * matched-pair count n from the clean (exclusion-filtered, overlay-merged)
+ * ledger on the pre-correction basis. n counts this task type's matched pairs
+ * regardless of whether that clears a gate — callers (referenceClassEstimate)
+ * decide whether n qualifies the factor for use. Trains with
+ * RCE_CORRECTION_RECENCY_DEFAULT (win60) unless an explicit `recency` override
+ * is supplied.
+ */
+export function getReferenceClassToolTaskCorrection(
+  taskType: string,
+  recency: RecencyOptions = RCE_CORRECTION_RECENCY_DEFAULT,
+): ReferenceClassToolTaskCorrection {
+  const records = loadReferenceClassMatchedRecords();
+  const n = records.filter((r) => r.taskType === taskType).length;
+  const factors = computeToolTaskCorrectionFactors(records, recency);
+  const factor = factors[REFERENCE_CLASS_TOOL]?.[taskType] ?? 1.0;
+  return { factor, n };
+}

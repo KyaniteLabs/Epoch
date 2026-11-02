@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resetTelemetry } from "./telemetry.js";
@@ -1171,6 +1171,52 @@ describe("analytics — tokenTimeBridge stress", () => {
 });
 
 describe("analytics — referenceClassEstimate stress", () => {
+  // Since the wave-2 recency rewiring (issue #42), referenceClassEstimate
+  // trains from the clean ledger (rawEstimate basis) instead of the records
+  // argument, so this describe isolates EPOCH_DATA_DIR and the sampleSize
+  // tests seed the temp ledger — otherwise training would read the
+  // developer's real ~/.epoch and the counts would be nondeterministic.
+  let rceTempDataDir = "";
+  let rcePreviousDataDir: string | undefined;
+
+  beforeAll(() => {
+    rceTempDataDir = mkdtempSync(join(tmpdir(), "epoch-stress-rce-"));
+    rcePreviousDataDir = process.env["EPOCH_DATA_DIR"];
+    process.env["EPOCH_DATA_DIR"] = rceTempDataDir;
+  });
+
+  afterAll(() => {
+    rmSync(rceTempDataDir, { recursive: true, force: true });
+    if (rcePreviousDataDir === undefined) {
+      delete process.env["EPOCH_DATA_DIR"];
+    } else {
+      process.env["EPOCH_DATA_DIR"] = rcePreviousDataDir;
+    }
+  });
+
+  function seedRceLedger(count: number): void {
+    writeFileSync(
+      join(rceTempDataDir, "estimates.jsonl"),
+      Array.from({ length: count }, (_, i) => JSON.stringify({
+        id: `stress-rce-${i}`,
+        tool: "reference_class_estimate",
+        inputs: { task_type: "feature", complexity: 3 },
+        outputs: { rawEstimate: 10, correctedEstimate: 15, correctionFactor: 1.5 },
+        estimatedAt: new Date(Date.now() - (i + 2) * 86_400_000).toISOString(),
+      })).join("\n") + "\n",
+      "utf-8",
+    );
+    writeFileSync(
+      join(rceTempDataDir, "feedback.jsonl"),
+      Array.from({ length: count }, (_, i) => JSON.stringify({
+        estimateId: `stress-rce-${i}`,
+        actualHours: 15,
+        reportedAt: new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
+      })).join("\n") + "\n",
+      "utf-8",
+    );
+  }
+
   const taskTypes: TaskType[] = [
     "feature",
     "bugfix",
@@ -1213,27 +1259,30 @@ describe("analytics — referenceClassEstimate stress", () => {
   });
 
   it("returns pessimistic confidence with < 5 records", () => {
-    const fewRecords = baseRecords.slice(0, 3);
-    const result = referenceClassEstimate(fewRecords, "feature", 3);
+    seedRceLedger(3);
+    const result = referenceClassEstimate([], "feature", 3);
     expect(result.sampleSize).toBe(3);
-    expect(result.confidence).toBeDefined();
+    expect(result.confidence).toBe("pessimistic");
   });
 
   it("returns optimistic or likely confidence with 5-9 records", () => {
-    const medRecords = baseRecords.slice(0, 7);
-    const result = referenceClassEstimate(medRecords, "feature", 3);
+    seedRceLedger(7);
+    const result = referenceClassEstimate([], "feature", 3);
     expect(result.sampleSize).toBe(7);
-    expect(result.confidence).toBeDefined();
+    expect(result.confidence).toBe("optimistic");
   });
 
   it("returns likely confidence with 10+ records", () => {
-    const result = referenceClassEstimate(baseRecords, "feature", 3);
+    seedRceLedger(20);
+    const result = referenceClassEstimate([], "feature", 3);
     expect(result.confidence).toBe("likely");
     expect(result.sampleSize).toBe(20);
   });
 
   it("uses reference DB correction factor when no matching records", () => {
-    const result = referenceClassEstimate([], "feature", 3);
+    // "migration" has no seeded pairs (earlier tests seed "feature" only), so
+    // this exercises the empty-cell low-n fallback on the reference DB.
+    const result = referenceClassEstimate([], "migration", 3);
     expect(result.correctionFactor).toBeGreaterThan(0);
     expect(result.sampleSize).toBe(0);
   });

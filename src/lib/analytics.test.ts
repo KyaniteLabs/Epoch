@@ -85,6 +85,55 @@ afterEach(() => {
   resetSupplementaryCache();
 });
 
+// ---------------------------------------------------------------------------
+// referenceClassEstimate — ledger-backed training fixtures (issue #42 wave-2)
+//
+// Since the wave-2 recency rewiring, referenceClassEstimate trains its
+// data-driven correction factor from the CLEAN LEDGER on the PRE-correction
+// basis (outputs.rawEstimate, via loadReferenceClassMatchedRecords) instead
+// of the records argument, so data-driven tests seed estimates.jsonl /
+// feedback.jsonl into the isolated temp EPOCH_DATA_DIR (same pattern as
+// calibration-factors.test.ts). Dates are relative to Date.now() so pairs
+// stay inside the win60 default window on every run (same convention as
+// estimate-basis.test.ts, which fixed the August 2026 CI reds).
+// ---------------------------------------------------------------------------
+
+interface RceSeedPair {
+  id: string;
+  taskType: string;
+  raw: number;
+  corrected?: number;
+  actual: number;
+  completedDaysAgo: number;
+}
+
+function seedReferenceClassLedger(pairs: RceSeedPair[]): void {
+  writeFileSync(
+    join(tempDataDir, "estimates.jsonl"),
+    pairs.map((p) => JSON.stringify({
+      id: p.id,
+      tool: "reference_class_estimate",
+      inputs: { task_type: p.taskType, complexity: 3 },
+      outputs: {
+        rawEstimate: p.raw,
+        correctedEstimate: p.corrected ?? Math.round(p.raw * 1.8 * 10) / 10,
+        correctionFactor: 1.8,
+      },
+      estimatedAt: new Date(Date.now() - (p.completedDaysAgo + 1) * 86_400_000).toISOString(),
+    })).join("\n") + "\n",
+    "utf-8",
+  );
+  writeFileSync(
+    join(tempDataDir, "feedback.jsonl"),
+    pairs.map((p) => JSON.stringify({
+      estimateId: p.id,
+      actualHours: p.actual,
+      reportedAt: new Date(Date.now() - p.completedDaysAgo * 86_400_000).toISOString(),
+    })).join("\n") + "\n",
+    "utf-8",
+  );
+}
+
 describe("tokenTimeBridge", () => {
   it("estimates time for a known model", () => {
     const result = tokenTimeBridge({
@@ -184,60 +233,105 @@ describe("tokenTimeBridge", () => {
 });
 
 describe("referenceClassEstimate", () => {
-  const records: HistoricalRecord[] = [
-    { taskType: "feature", estimatedHours: 10, actualHours: 18, completedAt: "2026-01-15" },
-    { taskType: "feature", estimatedHours: 8, actualHours: 14, completedAt: "2026-02-01" },
-    { taskType: "feature", estimatedHours: 12, actualHours: 20, completedAt: "2026-02-15" },
-    { taskType: "feature", estimatedHours: 6, actualHours: 12, completedAt: "2026-03-01" },
-    { taskType: "feature", estimatedHours: 15, actualHours: 25, completedAt: "2026-03-15" },
-    { taskType: "bugfix", estimatedHours: 4, actualHours: 5, completedAt: "2026-01-20" },
-  ];
-
   it("computes correction factor from historical data", () => {
-    const result = referenceClassEstimate(records, "feature", 3);
+    // 5 clean feature pairs (plus one bugfix pair in another cell), trained on
+    // the PRE-correction rawEstimate basis: ratios [1.8, 1.75, 1.67, 2.0, 1.67]
+    // → median 1.75 > 1.
+    seedReferenceClassLedger([
+      { id: "rce-1", taskType: "feature", raw: 10, actual: 18, completedDaysAgo: 15 },
+      { id: "rce-2", taskType: "feature", raw: 8, actual: 14, completedDaysAgo: 14 },
+      { id: "rce-3", taskType: "feature", raw: 12, actual: 20, completedDaysAgo: 13 },
+      { id: "rce-4", taskType: "feature", raw: 6, actual: 12, completedDaysAgo: 12 },
+      { id: "rce-5", taskType: "feature", raw: 15, actual: 25, completedDaysAgo: 11 },
+      { id: "rce-6", taskType: "bugfix", raw: 4, actual: 5, completedDaysAgo: 10 },
+    ]);
+    const result = referenceClassEstimate([], "feature", 3);
     expect(result.sampleSize).toBe(5);
     expect(result.correctionFactor).toBeGreaterThan(1);
     expect(result.correctedEstimate).toBeGreaterThan(result.rawEstimate);
   });
 
-  it("uses the median actual/estimated ratio as the data-driven correction factor", () => {
-    const calibratedRecords: HistoricalRecord[] = [
-      { taskType: "feature", estimatedHours: 10, actualHours: 12, completedAt: "2026-01-01" },
-      { taskType: "feature", estimatedHours: 10, actualHours: 14, completedAt: "2026-01-02" },
-      { taskType: "feature", estimatedHours: 10, actualHours: 15, completedAt: "2026-01-03" },
-      { taskType: "feature", estimatedHours: 10, actualHours: 16, completedAt: "2026-01-04" },
-      { taskType: "feature", estimatedHours: 10, actualHours: 18, completedAt: "2026-01-05" },
-    ];
+  it("uses the median actual/rawEstimate ratio as the data-driven correction factor", () => {
+    // rawEstimate 10 each, actuals 12..18 → act/raw ratios [1.2, 1.4, 1.5,
+    // 1.6, 1.8] → median 1.5 (all pairs inside the win60 default window).
+    seedReferenceClassLedger([
+      { id: "rce-m-1", taskType: "feature", raw: 10, actual: 12, completedDaysAgo: 9 },
+      { id: "rce-m-2", taskType: "feature", raw: 10, actual: 14, completedDaysAgo: 8 },
+      { id: "rce-m-3", taskType: "feature", raw: 10, actual: 15, completedDaysAgo: 7 },
+      { id: "rce-m-4", taskType: "feature", raw: 10, actual: 16, completedDaysAgo: 6 },
+      { id: "rce-m-5", taskType: "feature", raw: 10, actual: 18, completedDaysAgo: 5 },
+    ]);
 
-    const result = referenceClassEstimate(calibratedRecords, "feature", 3, "medium", false);
+    const result = referenceClassEstimate([], "feature", 3, "medium", false);
 
     expect(result.sampleSize).toBe(5);
     expect(result.correctionFactor).toBe(1.5);
     expect(result.correctedEstimate).toBeCloseTo(result.rawEstimate * 1.5, 5);
   });
 
+  it("basis regression: the data-driven factor trains on actual/rawEstimate, not actual/correctedEstimate (issue #42)", () => {
+    // raw 10 → corrected 18 (×1.8); actuals 20. act/raw = 2.0 (what the wave-2
+    // wiring trains on); act/corrected ≈ 1.11 (the removed post-correction
+    // feedback loop, which converged to ~sqrt(median(act/raw)) ≈ 0.53-era
+    // behavior on the live ledger).
+    seedReferenceClassLedger([
+      { id: "rce-basis-1", taskType: "feature", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 9 },
+      { id: "rce-basis-2", taskType: "feature", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 8 },
+      { id: "rce-basis-3", taskType: "feature", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 7 },
+      { id: "rce-basis-4", taskType: "feature", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 6 },
+      { id: "rce-basis-5", taskType: "feature", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 5 },
+    ]);
+
+    const result = referenceClassEstimate([], "feature", 3, "medium", false);
+
+    expect(result.sampleSize).toBe(5);
+    expect(result.correctionFactor).toBe(2.0); // the old post-correction training would return ~1.11
+    expect(result.correctedEstimate).toBeCloseTo(result.rawEstimate * 2.0, 5);
+  });
+
+  it("keeps the low-n fallback when the raw pair count is below the data-driven gate (gate on the raw pair count)", () => {
+    // 4 pairs clear the machinery's MIN_RECORDS_PER_FACTOR (3) but NOT
+    // referenceClassEstimate's historical >= 5 gate, so the unchanged low-n
+    // fallback applies instead of the learned factor.
+    seedReferenceClassLedger([
+      { id: "rce-gate-1", taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 9 },
+      { id: "rce-gate-2", taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 8 },
+      { id: "rce-gate-3", taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 7 },
+      { id: "rce-gate-4", taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 6 },
+    ]);
+
+    const result = referenceClassEstimate([], "feature", 3, "medium", true);
+    expect(result.sampleSize).toBe(4);
+    // AI-baseline low-n fallback is exactly 1.0 — NOT the learned 2.0 the
+    // machinery would emit for this cell.
+    expect(result.correctionFactor).toBe(1.0);
+  });
+
   it("falls back to industry correction when insufficient data", () => {
-    const result = referenceClassEstimate(records, "migration", 3);
+    const result = referenceClassEstimate([], "migration", 3);
     expect(result.sampleSize).toBe(0);
     expect(result.confidence).toBe("pessimistic");
     expect(result.correctionFactor).toBeGreaterThan(1);
   });
 
   it("adjusts for complexity levels", () => {
-    const low = referenceClassEstimate(records, "feature", 1);
-    const high = referenceClassEstimate(records, "feature", 5);
+    const low = referenceClassEstimate([], "feature", 1);
+    const high = referenceClassEstimate([], "feature", 5);
     expect(high.rawEstimate).toBeGreaterThan(low.rawEstimate);
     expect(high.correctedEstimate).toBeGreaterThan(low.correctedEstimate);
   });
 
   it("confidence improves with more data", () => {
-    const manyRecords: HistoricalRecord[] = Array.from({ length: 15 }, (_, i) => ({
-      taskType: "bugfix",
-      estimatedHours: 5,
-      actualHours: 7,
-      completedAt: `2026-${String(i % 12 + 1).padStart(2, "0")}-01`,
-    }));
-    const result = referenceClassEstimate(manyRecords, "bugfix", 3);
+    seedReferenceClassLedger(
+      Array.from({ length: 15 }, (_, i) => ({
+        id: `rce-many-${i}`,
+        taskType: "bugfix",
+        raw: 5,
+        actual: 7,
+        completedDaysAgo: i + 1,
+      })),
+    );
+    const result = referenceClassEstimate([], "bugfix", 3);
     expect(result.confidence).toBe("likely");
     expect(result.sampleSize).toBe(15);
   });
@@ -294,12 +388,21 @@ describe("referenceClassEstimate scope signal", () => {
   });
 
   it("clamps correction factor from historical data to [0.1, 3.0]", () => {
-    const extremeRecords: HistoricalRecord[] = Array.from({ length: 7 }, (_, i) => ({
-      taskType: "feature", estimatedHours: 10, actualHours: 100 + i * 10, completedAt: `2026-0${i + 1}-01`,
-    }));
-    const result = referenceClassEstimate(extremeRecords, "feature", 3);
+    // 7 pairs whose act/rawEstimate ratios (10.0–16.0) all exceed MAX_FACTOR —
+    // the learned factor clamps to 3.0 inside roundFactor.
+    seedReferenceClassLedger(
+      Array.from({ length: 7 }, (_, i) => ({
+        id: `rce-extreme-${i}`,
+        taskType: "feature",
+        raw: 10,
+        actual: 100 + i * 10,
+        completedDaysAgo: i + 1,
+      })),
+    );
+    const result = referenceClassEstimate([], "feature", 3);
     expect(result.correctionFactor).toBeGreaterThanOrEqual(0.1);
     expect(result.correctionFactor).toBeLessThanOrEqual(3.0);
+    expect(result.correctionFactor).toBe(3.0);
   });
 
   it("returns sample_size 0 when all records have actualHours===0", () => {
@@ -547,15 +650,17 @@ describe("referenceClassEstimate AI-native baselines", () => {
   });
 
   it("uses data-driven CF with AI baselines when enough records exist", () => {
-    // 5 records where actual = 0.5 * estimated → median ratio = 0.5
-    const records = Array.from({ length: 5 }, () => ({
-      taskType: "feature" as const,
-      estimatedHours: 10,
-      actualHours: 5,
-      tool: "reference_class_estimate",
-      completedAt: new Date().toISOString(),
-    }));
-    const result = referenceClassEstimate(records, "feature", 3, "medium", true);
+    // 5 ledger pairs where actual = 0.5 * rawEstimate → median act/raw ratio 0.5
+    seedReferenceClassLedger(
+      Array.from({ length: 5 }, (_, i) => ({
+        id: `rce-ai-${i}`,
+        taskType: "feature",
+        raw: 10,
+        actual: 5,
+        completedDaysAgo: i + 1,
+      })),
+    );
+    const result = referenceClassEstimate([], "feature", 3, "medium", true);
     expect(result.correctionFactor).toBeLessThan(1.0);
     expect(result.correctionFactor).toBeCloseTo(0.5, 1);
   });
