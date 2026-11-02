@@ -21,7 +21,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify mirror is reconciled with canonical main
         # This workflow triggers after the tag already exists on the mirror, so
@@ -123,7 +123,7 @@ jobs:
       # against an empty job-level value — the steps skipped even WITH a token.
       MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install mcp-publisher
         # Skipped cleanly when no registry token is configured — the npm publish
         # above is the release of record; registry metadata is additive.
