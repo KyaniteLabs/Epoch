@@ -2,7 +2,7 @@
 
 Time estimation MCP server, CLI, and REST API for AI agents.
 Open source, Apache-2.0. Product site: https://kyanitelabs.github.io/Epoch/
-Last-updated: 2026-10-27
+Last-updated: 2026-11-02
 
 ## One-line definition
 
@@ -19,6 +19,7 @@ Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI a
 - Runtime: Node >= 22 via npx; zero config, no API keys
 - Transport: MCP stdio (Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code, any MCP client)
 - Registry id: tech.kyanitelabs/epoch
+- Legacy registry id: io.github.KyaniteLabs/Epoch — version-locked-deprecated at 0.5.2 (`status=deprecated`); new installs use tech.kyanitelabs/epoch
 - Not: a hosted SaaS, a prompt library, or a calendar app
 
 ## Install
