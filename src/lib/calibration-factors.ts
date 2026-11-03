@@ -1,6 +1,9 @@
 import type { HistoricalRecord } from "../types/index.js";
 import { loadLedgerWithOverlays } from "./ledger.js";
 import { isExcluded } from "./exclusion.js";
+import { classifyCalibrationRecord } from "./feedback-analytics.js";
+import { calibrationTaskCounts } from "./calibration-provenance.js";
+import type { CalibrationTaskCounts } from "./calibration-provenance.js";
 
 export const MIN_RECORDS_FOR_DATABASE_UPDATE = 5;
 export const MIN_RECORDS_PER_FACTOR = 3;
@@ -392,24 +395,47 @@ const REFERENCE_CLASS_TOOL = "reference_class_estimate";
  * output shape. rawEstimate is the scope/complexity baseline BEFORE the
  * correction factor is applied, so training on it is what breaks the
  * self-referential feedback loop of the removed post-correction median.
- * Legacy rows that predate rawEstimate in outputs fall back to
- * correctedEstimate — their only recorded basis.
+ *
+ * The correctedEstimate fallback applies ONLY to legacy rows where the
+ * rawEstimate field is absent entirely (rows predating rawEstimate in
+ * outputs — correctedEstimate is their only recorded basis). A row whose
+ * rawEstimate field is PRESENT but invalid (null, a non-numeric string, ...)
+ * is rejected (returns null → skipped by the loader): silently training such
+ * a row on correctedEstimate would reintroduce post-correction training for
+ * modern malformed rows. Numeric-but-non-positive values (0, negative, NaN)
+ * pass through here and are skipped by the loader's estimatedHours > 0 check.
  */
 function extractReferenceClassEstimatedHours(outputs: Record<string, unknown>): number | null {
-  if (typeof outputs["rawEstimate"] === "number") return outputs["rawEstimate"];
-  if (typeof outputs["correctedEstimate"] === "number") return outputs["correctedEstimate"];
-  return null;
+  const raw = outputs["rawEstimate"];
+  if (raw === undefined) {
+    const corrected = outputs["correctedEstimate"];
+    return typeof corrected === "number" ? corrected : null;
+  }
+  return typeof raw === "number" ? raw : null;
 }
 
 /**
  * Load exclusion-filtered, overlay-merged reference_class_estimate matched
  * (estimate, actual) pairs as HistoricalRecord[] on the PRE-correction basis
  * (outputs.rawEstimate), ready for computeToolTaskCorrectionFactors. Mirrors
- * loadPertMatchedRecords(): loadLedgerWithOverlays() + isExcluded() (the clean
- * path) rather than getCalibrationData()/matchEstimatesToActuals(), whose
- * estimatedHours is the post-correction correctedEstimate for this tool.
+ * loadPertMatchedRecords(): loadLedgerWithOverlays() (the clean path) rather
+ * than getCalibrationData()/matchEstimatesToActuals(), whose estimatedHours
+ * is the post-correction correctedEstimate for this tool.
+ *
+ * An explicit `teamId` selector (the dispatcher input team_id) mirrors
+ * matchEstimatesToActuals' exact-match filter — a team-scoped request trains
+ * ONLY on that team's rows. An absent selector keeps the intended unscoped
+ * behavior: all clean history trains the factor.
+ *
+ * Exclusion and provenance stamping both go through classifyCalibrationRecord
+ * — the SAME canonical path matchEstimatesToActuals uses — instead of a
+ * hand-rolled isExcluded() call, so the two populations can never diverge on
+ * exclusion semantics (the hand-rolled call previously dropped the legacy
+ * snake_case actual-side fields from the exclusion input), and every returned
+ * record carries the canonical calibrationProvenance/calibrationUsage labels
+ * that provenance counts are derived from.
  */
-export function loadReferenceClassMatchedRecords(): HistoricalRecord[] {
+export function loadReferenceClassMatchedRecords(teamId?: string): HistoricalRecord[] {
   const merged = loadLedgerWithOverlays();
   const records: HistoricalRecord[] = [];
 
@@ -421,23 +447,15 @@ export function loadReferenceClassMatchedRecords(): HistoricalRecord[] {
     const estimatedHours = extractReferenceClassEstimatedHours(rec.outputs);
     if (estimatedHours === null || !(estimatedHours > 0)) continue;
 
-    const verdict = isExcluded({
-      id: rec.id,
-      tool: rec.tool,
-      inputs: rec.inputs,
-      estimatedAt: rec.estimatedAt,
+    if (teamId !== undefined && rec.inputs["team_id"] !== teamId) continue;
+
+    const calibration = classifyCalibrationRecord(
+      rec,
+      rec.actual,
       estimatedHours,
-      actual: {
-        actualHours: rec.actual.actualHours,
-        notes: rec.actual.notes,
-        reportedAt: rec.actual.reportedAt,
-        completedAt: rec.actual.completedAt,
-        calibrationProvenance: rec.actual.calibrationProvenance,
-      },
-      flags: { quarantined: rec.flags.quarantined, orphan: rec.flags.orphan },
-      ...(rec.expiresAt && { expiresAt: rec.expiresAt }),
-    });
-    if (verdict.excluded) continue;
+      { quarantined: rec.flags.quarantined, orphan: rec.flags.orphan },
+    );
+    if (calibration.calibrationUsage === "exclude") continue;
 
     const taskType = typeof rec.inputs["task_type"] === "string" ? (rec.inputs["task_type"] as string) : "feature";
     const complexity = typeof rec.inputs["complexity"] === "number" ? (rec.inputs["complexity"] as number) : undefined;
@@ -448,7 +466,10 @@ export function loadReferenceClassMatchedRecords(): HistoricalRecord[] {
       actualHours: rec.actual.actualHours,
       tool: rec.tool,
       ...(complexity !== undefined && { complexity }),
+      ...(teamId !== undefined && { teamId }),
       completedAt: rec.actual.completedAt ?? rec.actual.reportedAt ?? "",
+      calibrationProvenance: calibration.calibrationProvenance,
+      calibrationUsage: calibration.calibrationUsage,
     });
   }
 
@@ -484,6 +505,15 @@ export const RCE_CORRECTION_RECENCY_DEFAULT: RecencyOptions = {
 export interface ReferenceClassToolTaskCorrection {
   factor: number;
   n: number;
+  /**
+   * Provenance counts of the EXACT population that trained the factor (the
+   * same records n counts). Emitted next to a learned factor so calibration
+   * provenance prose describes the population that trained it — never a
+   * second, differently-filtered one (which is how a public
+   * "shipped baselines only" line could previously appear next to a
+   * sampleSize=6 learned factor).
+   */
+  counts: CalibrationTaskCounts;
 }
 
 /**
@@ -493,15 +523,18 @@ export interface ReferenceClassToolTaskCorrection {
  * regardless of whether that clears a gate — callers (referenceClassEstimate)
  * decide whether n qualifies the factor for use. Trains with
  * RCE_CORRECTION_RECENCY_DEFAULT (win60) unless an explicit `recency` override
- * is supplied.
+ * is supplied. An explicit `teamId` selector scopes the training population to
+ * that team's rows (mirroring matchEstimatesToActuals); omit it for the
+ * intended unscoped all-history behavior.
  */
 export function getReferenceClassToolTaskCorrection(
   taskType: string,
   recency: RecencyOptions = RCE_CORRECTION_RECENCY_DEFAULT,
+  teamId?: string,
 ): ReferenceClassToolTaskCorrection {
-  const records = loadReferenceClassMatchedRecords();
-  const n = records.filter((r) => r.taskType === taskType).length;
+  const records = loadReferenceClassMatchedRecords(teamId);
+  const cell = records.filter((r) => r.taskType === taskType);
   const factors = computeToolTaskCorrectionFactors(records, recency);
   const factor = factors[REFERENCE_CLASS_TOOL]?.[taskType] ?? 1.0;
-  return { factor, n };
+  return { factor, n: cell.length, counts: calibrationTaskCounts(cell) };
 }

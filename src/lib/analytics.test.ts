@@ -105,6 +105,7 @@ interface RceSeedPair {
   corrected?: number;
   actual: number;
   completedDaysAgo: number;
+  team?: string;
 }
 
 function seedReferenceClassLedger(pairs: RceSeedPair[]): void {
@@ -113,7 +114,7 @@ function seedReferenceClassLedger(pairs: RceSeedPair[]): void {
     pairs.map((p) => JSON.stringify({
       id: p.id,
       tool: "reference_class_estimate",
-      inputs: { task_type: p.taskType, complexity: 3 },
+      inputs: { task_type: p.taskType, complexity: 3, ...(p.team !== undefined && { team_id: p.team }) },
       outputs: {
         rawEstimate: p.raw,
         correctedEstimate: p.corrected ?? Math.round(p.raw * 1.8 * 10) / 10,
@@ -305,6 +306,57 @@ describe("referenceClassEstimate", () => {
     // AI-baseline low-n fallback is exactly 1.0 — NOT the learned 2.0 the
     // machinery would emit for this cell.
     expect(result.correctionFactor).toBe(1.0);
+  });
+
+  it("preserves an explicit team selector in the training population (security review finding 2)", () => {
+    // Six team-b pairs (ratio 2.0) and four team-a pairs (ratio 2.5).
+    seedReferenceClassLedger([
+      ...Array.from({ length: 6 }, (_, i) => ({ id: `rce-tb-${i}`, taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 12 - i, team: "team-b" })),
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `rce-ta-${i}`, taskType: "feature", raw: 10, actual: 25, completedDaysAgo: 12 - i, team: "team-a" })),
+    ]);
+
+    const teamB = referenceClassEstimate([], "feature", 3, "medium", false, "team-b");
+    expect(teamB.sampleSize).toBe(6);
+    expect(teamB.correctionFactor).toBe(2.0); // team-b's own median, not blended
+
+    const teamA = referenceClassEstimate([], "feature", 3, "medium", false, "team-a");
+    expect(teamA.sampleSize).toBe(4); // below the 5-pair gate
+    expect(teamA.correctionNote).toContain("using reference database correction factors");
+    expect(teamA.correctionFactor).not.toBe(2.5); // team-a's sub-gate cell does not leak a learned factor
+
+    // No selector: the intended unscoped behavior — all ten pairs train.
+    const unscoped = referenceClassEstimate([], "feature", 3, "medium", false);
+    expect(unscoped.sampleSize).toBe(10);
+    expect(unscoped.correctionFactor).toBe(2.0); // median of [2×6, 2.5×4] = 2.0
+  });
+
+  it("exposes the correction-source contract: counts/note/sentence all name the population that trained the factor (security review finding 1)", () => {
+    // Learned: six ratio-2.0 pairs.
+    seedReferenceClassLedger(
+      Array.from({ length: 6 }, (_, i) => ({ id: `rce-src-${i}`, taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 10 - i })),
+    );
+    const learned = referenceClassEstimate([], "feature", 3, "medium", false);
+    expect(learned.correctionNote).toContain("Based on 6 matched reference_class_estimate");
+    expect(learned.correctionNote).toContain("rawEstimate");
+    expect(learned.trainingCounts).toEqual({ total: 6, gitDerived: 0, verified: 6, autoWallclock: 0 });
+    expect(learned.trainingCounts.total).toBe(learned.sampleSize); // the invariant
+    expect(learned.provenanceSentence).toContain("Calibrated on YOUR 6 historical tasks");
+
+    // Below-gate with pairs available: the sentence names BOTH the local
+    // corpus and the shipped-baseline factor — no false "not yet calibrated".
+    seedReferenceClassLedger(
+      Array.from({ length: 3 }, (_, i) => ({ id: `rce-sub-${i}`, taskType: "feature", raw: 10, actual: 20, completedDaysAgo: 10 - i })),
+    );
+    const belowGate = referenceClassEstimate([], "feature", 3, "medium", false);
+    expect(belowGate.trainingCounts.total).toBe(3);
+    expect(belowGate.provenanceSentence).toContain("below the 5-pair learning gate");
+    expect(belowGate.provenanceSentence).toContain("shipped reference-database baselines");
+    expect(belowGate.correctionNote).toContain("using reference database correction factors");
+
+    // Genuinely empty: the canonical cold-start sentence (true of the factor).
+    const cold = referenceClassEstimate([], "migration", 3, "medium", false);
+    expect(cold.trainingCounts).toEqual({ total: 0, gitDerived: 0, verified: 0, autoWallclock: 0 });
+    expect(cold.provenanceSentence).toContain("Not yet calibrated on your historical tasks");
   });
 
   it("falls back to industry correction when insufficient data", () => {
