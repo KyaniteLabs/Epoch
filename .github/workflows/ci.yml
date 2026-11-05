@@ -61,6 +61,15 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Hermes plugin tests (Python)
+        # Native regression tests for plugins/epoch-hermes: fake-Epoch unit tests plus the
+        # auto_wallclock gate against the dist/ CLI built above. The real-Hermes multi-process
+        # e2e tests skip here (they need HERMES_AGENT_SRC); see plugins/epoch-hermes/README.md.
+        run: |
+          python3 -m venv /tmp/epoch-hermes-venv
+          /tmp/epoch-hermes-venv/bin/pip install --quiet "pytest==8.4.2"
+          /tmp/epoch-hermes-venv/bin/python -m pytest plugins/epoch-hermes/tests -q
+
       - name: Validate community data
         run: node scripts/validate-community-data.mjs
 

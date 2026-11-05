@@ -1,0 +1,42 @@
+name: epoch
+version: "0.6.0"
+manifest_version: 2
+description: "Epoch for Hermes Kanban: when a worker claims a task, post a calibrated P50/P90 (plus P80/P95) Monte Carlo estimate as a task comment; when it completes, record that run's wall-clock hours back to Epoch's local ledger (calibration_provenance auto_wallclock, so Epoch's sanity gate applies) so estimates calibrate over time. The estimate-to-run link lives in a shared bindings file under epoch_data_dir (Kanban comments are display/audit only), so dispatcher and worker profiles can differ. Also adds /epoch and an epoch_estimate tool. Disclosure: shells out to `npx -y @kyanitelabs/epoch@0.6.0` (downloads from npm on first run, needs Node >=22). Estimates and actuals stay in Epoch's local ledger; Epoch telemetry is OFF unless the operator runs `epoch telemetry enable`. No API key required."
+author: "Kyanite Labs"
+license: Apache-2.0
+homepage: https://github.com/KyaniteLabs/Epoch/tree/main/plugins/epoch-hermes
+tags: [kanban, estimation, monte-carlo, pert, planning]
+requires_env: []
+provides_tools:
+  - epoch_estimate
+provides_hooks:
+  - kanban_task_claimed
+  - kanban_task_completed
+hooks:
+  - kanban_task_claimed
+  - kanban_task_completed
+config_schema:
+  epoch_command:
+    type: str
+    default: "npx -y @kyanitelabs/epoch@0.6.0"
+    description: "Command prefix used to invoke the Epoch CLI (e.g. 'epoch' if installed globally)."
+  comment_on_claim:
+    type: bool
+    default: true
+  record_actuals:
+    type: bool
+    default: true
+  iterations:
+    type: int
+    default: 5000
+  timeout_seconds:
+    type: int
+    default: 60
+  epoch_data_dir:
+    type: str
+    default: ""
+    description: "Optional EPOCH_DATA_DIR for the Epoch ledger. Set the same path in dispatcher and worker profiles if their HOME differs."
+  shutdown_wait_seconds:
+    type: int
+    default: 20
+    description: "Bounded wait at process exit for in-flight Epoch work; unfinished jobs replay from the outbox on next load."

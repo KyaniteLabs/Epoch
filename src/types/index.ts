@@ -212,6 +212,8 @@ export interface MonteCarloResult {
   readonly p50: string;
   /** 80th-percentile completion date. */
   readonly p80: string;
+  /** 90th-percentile completion date. */
+  readonly p90: string;
   /** 95th-percentile completion date (conservative). */
   readonly p95: string;
   /** Median estimate converted to hours (p50 × 8). Enables feedback token. */
@@ -422,6 +424,7 @@ export interface ScheduleRiskAssessment {
   readonly confidenceIntervals: {
     readonly p50: number;
     readonly p80: number;
+    readonly p90: number;
     readonly p95: number;
   };
   readonly historicalAccuracy: {
