@@ -4,6 +4,10 @@
 
 # Epoch -- Time Estimation MCP Server
 
+<p align="center">
+  <img src="branding/epoch-512.png" alt="epoch icon" width="128">
+</p>
+
 > Epoch is a time estimation MCP server that helps engineering leads, agents, and planners who need calibrated duration estimates produce PERT/reference-class estimates and record actuals.
 
 **TL;DR:** Epoch — time estimation MCP server. Best for engineering leads, agents, and planners who need calibrated duration estimates.
