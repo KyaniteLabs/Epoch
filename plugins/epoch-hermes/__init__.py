@@ -16,8 +16,10 @@ Design notes (see README "How it works"):
   authoritative estimate ↔ run association lives in a shared bindings file under
   ``epoch_data_dir`` (same directory Epoch's ledger uses). Kanban comments still carry
   ``[epoch:estimate …]`` / ``[epoch:actual …]`` markers for humans, but they are display/audit
-  only — forged or quoted markers never redirect or suppress recording. Either side can
-  reconcile, in either event order, and Epoch's ledger rejects duplicate actuals.
+  only — forged or quoted markers never redirect or suppress recording. Comment delivery is
+  tracked separately from estimate/actual ledger state so a transient board failure retries the
+  missing comment without re-recording. Either side can reconcile, in either event order, and
+  Epoch's ledger rejects duplicate actuals.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
   ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
 * Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
@@ -46,7 +48,8 @@ import shlex
 import subprocess
 import threading
 import time
-from contextlib import contextmanager
+import tempfile
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -437,20 +440,41 @@ def _file_lock(path: Path):
 
 
 def _read_json_file(path: Path) -> Dict[str, Any]:
+    """Load a JSON object. Only a missing file means empty.
+
+    Matches Hermes PluginState fail-closed semantics: utf-8-sig (BOM-safe), reject malformed or
+    non-object roots, and never coerce read/parse errors into ``{}`` (callers must not overwrite
+    a corrupt store with a fresh empty one).
+    """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
         return {}
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Cannot parse epoch state {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Cannot parse epoch state {path}: root must be an object")
+    return data
 
 
 def _write_json_file(path: Path, data: Dict[str, Any]) -> None:
+    """Atomically write *data* with mode 0600 (private temps; umask must not widen access)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.stem}_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o600)
+            handle.write(json.dumps(data, ensure_ascii=False, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+        with suppress(OSError):
+            os.chmod(path, 0o600)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp_name)
+        raise
 
 
 def _bindings_update(settings: Optional[Dict[str, Any]], fn: Callable[[Dict[str, Any]], None]) -> None:
@@ -470,20 +494,52 @@ def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Option
 
 
 def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
-                     run_id: Any, ref: str) -> None:
+                     run_id: Any, ref: str, *,
+                     estimate_comment_body: Optional[str] = None) -> None:
+    """Persist the estimate↔run binding. Comment delivery is tracked separately."""
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else {}
         if cur.get("ref"):
-            return  # first writer wins; forged comments cannot overwrite
-        data[key] = {"ref": ref, "recorded": False}
+            # First writer wins on ref; still attach a pending comment body if a crash left none.
+            if estimate_comment_body and not cur.get("estimate_comment_body"):
+                cur = dict(cur)
+                cur["estimate_comment_body"] = estimate_comment_body
+                if "estimate_commented" not in cur:
+                    cur["estimate_commented"] = False
+                data[key] = cur
+            return
+        data[key] = {
+            "ref": ref,
+            "recorded": False,
+            "estimate_commented": False,
+            "actual_commented": False,
+            "estimate_comment_body": estimate_comment_body,
+        }
+
+    _bindings_update(settings, mutate)
+
+
+def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                                     board: Optional[str], run_id: Any) -> None:
+    key = _binding_key(task_id, board, run_id)
+
+    def mutate(data: Dict[str, Any]) -> None:
+        cur = data.get(key) if isinstance(data.get(key), dict) else None
+        if not cur:
+            return
+        cur = dict(cur)
+        cur["estimate_commented"] = True
+        data[key] = cur
 
     _bindings_update(settings, mutate)
 
 
 def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
-                           run_id: Any, *, status: str) -> None:
+                           run_id: Any, *, status: str,
+                           actual_comment_body: Optional[str] = None) -> None:
+    """Mark the Epoch ledger outcome. Does not imply the audit comment was delivered."""
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
@@ -493,9 +549,58 @@ def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, boa
         cur = dict(cur)
         cur["recorded"] = True
         cur["status"] = status
+        if actual_comment_body is not None:
+            cur["actual_comment_body"] = actual_comment_body
         data[key] = cur
 
     _bindings_update(settings, mutate)
+
+
+def _binding_mark_actual_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                                   board: Optional[str], run_id: Any) -> None:
+    key = _binding_key(task_id, board, run_id)
+
+    def mutate(data: Dict[str, Any]) -> None:
+        cur = data.get(key) if isinstance(data.get(key), dict) else None
+        if not cur:
+            return
+        cur = dict(cur)
+        cur["actual_commented"] = True
+        data[key] = cur
+
+    _bindings_update(settings, mutate)
+
+
+def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
+                              binding: Dict[str, Any],
+                              settings: Optional[Dict[str, Any]]) -> None:
+    """Post a pending estimate/audit comment without re-running Epoch."""
+    if binding.get("estimate_commented"):
+        return
+    body = binding.get("estimate_comment_body")
+    if not body:
+        return
+    add_comment(task_id, board, str(body))
+    _binding_mark_estimate_commented(settings, task_id, board, run_id)
+
+
+def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
+                            binding: Dict[str, Any],
+                            settings: Optional[Dict[str, Any]]) -> str:
+    """Post a pending actual/rejection comment without re-recording. Returns status string.
+
+    Once delivery has finished (or there is nothing to post), further calls return
+    ``already_recorded`` so the outbox treats the job as terminal.
+    """
+    if binding.get("actual_commented"):
+        return "already_recorded"
+    body = binding.get("actual_comment_body")
+    if not body:
+        return "already_recorded"
+    add_comment(task_id, board, str(body))
+    _binding_mark_actual_commented(settings, task_id, board, run_id)
+    status = str(binding.get("status") or "recorded")
+    return status if status != "recorded" else "recorded"
 
 
 # --------------------------------------------------------------------------- jobs
@@ -511,7 +616,9 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
 
     Idempotent via the shared bindings store (not Kanban markers). Epoch's ledger also rejects a
     second actual for the same feedbackRef (``duplicate``), so two processes racing here record
-    exactly once. Comments are display/audit only.
+    exactly once. Comments are display/audit only — delivery state is tracked separately from the
+    ledger ``recorded`` flag so a transient BoardError after persist still retries the comment
+    without re-recording.
     """
     run = _run_for(shown, run_id)
     if not _run_completed(run):
@@ -520,7 +627,7 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
     if not binding or not binding.get("ref"):
         return "no_estimate"
     if binding.get("recorded"):
-        return "already_recorded"
+        return _deliver_actual_comment(task_id, board, run_id, binding, settings)
     ref = str(binding["ref"])
     hours = (int(run["ended_at"]) - int(run["started_at"])) / 3600.0
     entry = {"estimate_id": ref, "actual_hours": round(hours, 4),
@@ -529,22 +636,27 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
     res = run_epoch(["batch-record-actuals", "--entries", json.dumps([entry])], settings)
     data = res.get("data") if isinstance(res.get("data"), dict) else {}
     if res.get("ok") and int(data.get("succeeded") or 0) >= 1:
-        _binding_mark_recorded(settings, task_id, board, run_id, status="recorded")
-        add_comment(task_id, board,
-                    f"⏱ Epoch recorded actual {_fmt_hours(hours)} (wall-clock, auto_wallclock, run {run_id}). "
-                    + format_marker("actual", run=run_id, ref=ref, hours=f"{hours:.4f}"))
+        body = (f"⏱ Epoch recorded actual {_fmt_hours(hours)} (wall-clock, auto_wallclock, run {run_id}). "
+                + format_marker("actual", run=run_id, ref=ref, hours=f"{hours:.4f}"))
+        _binding_mark_recorded(settings, task_id, board, run_id, status="recorded",
+                               actual_comment_body=body)
+        add_comment(task_id, board, body)
+        _binding_mark_actual_commented(settings, task_id, board, run_id)
         return "recorded"
     err = _error_text(res) if not res.get("ok") else "; ".join(map(str, data.get("errors") or []))
     if "reason: duplicate" in err:
         _binding_mark_recorded(settings, task_id, board, run_id, status="duplicate")
+        _binding_mark_actual_commented(settings, task_id, board, run_id)  # nothing to post
         return "duplicate"
     if "auto_wallclock_out_of_bounds" in err or "below_threshold" in err:
-        _binding_mark_recorded(settings, task_id, board, run_id, status="rejected")
-        add_comment(task_id, board,
-                    f"⏱ Epoch did not record wall-clock {_fmt_hours(hours)} for run {run_id}: it fails Epoch's "
-                    f"auto_wallclock sanity gate (0.05–12h and <10× the estimate). Record a verified "
-                    f"actual with `/epoch record-actual --estimate-id {ref} --actual-hours <h>`. "
-                    + format_marker("actual", run=run_id, ref=ref, status="rejected"))
+        body = (f"⏱ Epoch did not record wall-clock {_fmt_hours(hours)} for run {run_id}: it fails Epoch's "
+                f"auto_wallclock sanity gate (0.05–12h and <10× the estimate). Record a verified "
+                f"actual with `/epoch record-actual --estimate-id {ref} --actual-hours <h>`. "
+                + format_marker("actual", run=run_id, ref=ref, status="rejected"))
+        _binding_mark_recorded(settings, task_id, board, run_id, status="rejected",
+                               actual_comment_body=body)
+        add_comment(task_id, board, body)
+        _binding_mark_actual_commented(settings, task_id, board, run_id)
         return "rejected"
     raise RuntimeError(f"record failed: {err}")  # transient -> outbox retry
 
@@ -574,13 +686,27 @@ def claimed_job(task_id: str, board: Optional[str], run_id: Any,
         if run_id is not None and not _claim_is_live(shown, run_id):
             return "stale"
         ref = result.get("feedbackRef")
-        if ref and run_id is not None:
-            _binding_put_ref(settings, task_id, board, run_id, str(ref))
         marker = format_marker("estimate", run=run_id, ref=ref) if (ref and run_id is not None) else ""
         if want_comment:
-            add_comment(task_id, board, f"{result['summary']} {marker}".strip())
+            comment_body = f"{result['summary']} {marker}".strip()
         elif marker and want_actuals:
-            add_comment(task_id, board, f"⏱ Epoch tracking this run. {marker}")
+            comment_body = f"⏱ Epoch tracking this run. {marker}"
+        else:
+            comment_body = None
+        # Persist binding (+ pending comment body) BEFORE posting so a crash/BoardError between
+        # persist and comment still retries delivery without re-estimating.
+        if ref and run_id is not None:
+            _binding_put_ref(settings, task_id, board, run_id, str(ref),
+                             estimate_comment_body=comment_body)
+        if comment_body:
+            add_comment(task_id, board, comment_body)
+            if run_id is not None:
+                _binding_mark_estimate_commented(settings, task_id, board, run_id)
+        shown = show_task(task_id, board)
+    else:
+        # Binding already exists (prior attempt persisted ref). Retry any missing audit comment
+        # without calling Epoch again.
+        _deliver_estimate_comment(task_id, board, run_id, binding, settings)
         shown = show_task(task_id, board)
     # Completion may have fired before the estimate existed: reconcile here (idempotent).
     if want_actuals and run_id is not None and _run_completed(_run_for(shown, run_id)):
