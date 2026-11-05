@@ -224,7 +224,7 @@ describe("computePertRiskLevel boundaries (via pertEstimate.riskLevel)", () => {
 // ---------------------------------------------------------------------------
 describe("monteCarloSim error paths (round 3)", () => {
   const ZERO_SHAPE = {
-    p10: "0", p50: "0", p80: "0", p95: "0",
+    p10: "0", p50: "0", p80: "0", p90: "0", p95: "0",
     estimatedHours: 0, estimatedCost: 0, converged: false,
     criticalPathProbability: null as number | null,
   };

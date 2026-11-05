@@ -306,6 +306,7 @@ const monteCarloOutput = {
     p10: { type: "string", description: "10th percentile (optimistic)" },
     p50: { type: "string", description: "50th percentile (median)" },
     p80: { type: "string", description: "80th percentile" },
+    p90: { type: "string", description: "90th percentile" },
     p95: { type: "string", description: "95th percentile (conservative)" },
     criticalPathProbability: {
       type: ["number", "null"],
@@ -1129,7 +1130,7 @@ Industry research shows estimation accuracy does NOT improve with experience (Ca
     "schedule_risk",
     `Assess schedule risk for an estimate using historical accuracy data.
 
-Computes confidence intervals (p50/p80/p95) based on your team's MAPE.
+Computes confidence intervals (p50/p80/p90/p95) based on your team's MAPE.
 Returns risk level and actionable recommendations.
 Uses industry baseline (25% MAPE) when no historical data is available.`,
     scheduleRiskSchema,

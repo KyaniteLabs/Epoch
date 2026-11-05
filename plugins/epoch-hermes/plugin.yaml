@@ -1,7 +1,7 @@
 name: epoch
 version: "0.6.0"
 manifest_version: 2
-description: "Epoch for Hermes Kanban: when a worker claims a task, post a calibrated P50/P80/P95 Monte Carlo estimate as a task comment; when it completes, record the actual wall-clock hours back to Epoch's local ledger so estimates calibrate over time. Also adds /epoch and an epoch_estimate tool. Disclosure: shells out to `npx -y @kyanitelabs/epoch@0.6.0` (downloads from npm on first run, needs Node >=22). Estimates and actuals stay in Epoch's local ledger; Epoch telemetry is OFF unless the operator runs `epoch telemetry enable`. No API key required."
+description: "Epoch for Hermes Kanban: when a worker claims a task, post a calibrated P50/P90 (plus P80/P95) Monte Carlo estimate as a task comment; when it completes, record the actual wall-clock hours back to Epoch's local ledger so estimates calibrate over time. Also adds /epoch and an epoch_estimate tool. Disclosure: shells out to `npx -y @kyanitelabs/epoch@0.6.0` (downloads from npm on first run, needs Node >=22). Estimates and actuals stay in Epoch's local ledger; Epoch telemetry is OFF unless the operator runs `epoch telemetry enable`. No API key required."
 author: "Kyanite Labs"
 license: Apache-2.0
 homepage: https://github.com/KyaniteLabs/Epoch/tree/main/plugins/epoch-hermes

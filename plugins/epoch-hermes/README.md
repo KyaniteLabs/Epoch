@@ -1,10 +1,10 @@
 # Epoch for Hermes (native plugin)
 
-Calibrated P50/P80/P95 estimates on your Hermes Kanban board.
+Calibrated P50/P90 estimates on your Hermes Kanban board.
 
 | Surface | What it does |
 |---|---|
-| `kanban_task_claimed` hook | Estimates the task and posts a comment. A body line `epoch: 2/4/10h` (optimistic/most-likely/pessimistic) gives a Monte Carlo P50/P80/P95; otherwise a reference-class point estimate from the title. Runs on a daemon thread, never delays worker spawn. |
+| `kanban_task_claimed` hook | Estimates the task and posts a comment. A body line `epoch: 2/4/10h` (optimistic/most-likely/pessimistic) gives a Monte Carlo P50/P90 (plus P80/P95); otherwise a reference-class point estimate from the title. Runs on a daemon thread, never delays worker spawn. |
 | `kanban_task_completed` hook | Records wall-clock hours (`completed_at - started_at`) against the stored Epoch `feedbackRef`, so estimates calibrate. |
 | `/epoch <subcommand> [flags]` | Any Epoch CLI subcommand, e.g. `/epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10`. |
 | `epoch_estimate` tool | Agent-callable estimate. |

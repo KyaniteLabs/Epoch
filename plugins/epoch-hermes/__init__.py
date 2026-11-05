@@ -1,7 +1,7 @@
 """Epoch Estimator — native Hermes plugin.
 
 kanban_task_claimed   -> estimate the task (three-point hint in body, else reference class)
-                         and post P50/P80/P95 as a Kanban comment.
+                         and post P50/P90 as a Kanban comment.
 kanban_task_completed -> record actual wall-clock hours against the stored feedbackRef.
 /epoch <cli args>     -> run any Epoch CLI subcommand (e.g. /epoch pert-estimate ...).
 epoch_estimate tool   -> agent-callable Monte Carlo estimate.
@@ -104,8 +104,10 @@ def estimate(title: str, body: str = "") -> Dict[str, Any]:
             return {"summary": f"Epoch estimate failed: {res.get('error')}", "raw": res}
         d = res["data"]
         h = lambda k: f"{float(d[k]) * 8:.1f}h"  # noqa: E731
-        summary = (f"⏱ Epoch estimate — P50 {h('p50')} · P80 {h('p80')} · P95 {h('p95')} "
-                   f"(Monte Carlo, {_cfg('iterations')} runs, from hint "
+        p90 = h("p90") if d.get("p90") is not None else "n/a (Epoch < 0.7)"
+        summary = (f"⏱ Epoch estimate — P50 {h('p50')} · P90 {p90} "
+                   f"(P80 {h('p80')} · P95 {h('p95')}; "
+                   f"Monte Carlo, {_cfg('iterations')} runs, from hint "
                    f"{hint['optimistic']:g}/{hint['most_likely']:g}/{hint['pessimistic']:g}h)")
         return {"summary": summary, "feedbackRef": d.get("feedbackRef"), "method": "monte_carlo", "raw": d}
     ttype = guess_type(f"{title} {body}")
@@ -115,7 +117,7 @@ def estimate(title: str, body: str = "") -> Dict[str, Any]:
     d = res["data"]
     summary = (f"⏱ Epoch estimate — ~{d.get('correctedEstimate')}h ({ttype}, reference class; "
                f"confidence {d.get('confidence')}). Add `epoch: o/m/p` hours to the task body "
-               f"for a P50/P80/P95 range.")
+               f"for a P50/P90 range.")
     return {"summary": summary, "feedbackRef": d.get("feedbackRef"), "method": "reference_class", "raw": d}
 
 
@@ -194,7 +196,7 @@ def _slash(raw_args: str) -> str:
 
 ESTIMATE_SCHEMA = {
     "name": "epoch_estimate",
-    "description": "Calibrated time estimate for a task via Epoch. Give optimistic/most_likely/pessimistic hours for a P50/P80/P95 Monte Carlo range; otherwise Epoch uses reference-class forecasting from the title.",
+    "description": "Calibrated time estimate for a task via Epoch. Give optimistic/most_likely/pessimistic hours for a P50/P90 Monte Carlo range; otherwise Epoch uses reference-class forecasting from the title.",
     "parameters": {
         "type": "object",
         "properties": {

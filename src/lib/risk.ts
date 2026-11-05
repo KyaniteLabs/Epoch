@@ -17,7 +17,7 @@ export function scheduleRisk(params: {
     return {
       estimatedHours: 0,
       riskLevel: "critical" as RiskLevel,
-      confidenceIntervals: { p50: 0, p80: 0, p95: 0 },
+      confidenceIntervals: { p50: 0, p80: 0, p90: 0, p95: 0 },
       historicalAccuracy: { mape: 0, mdape: 0, sampleSize: 0 },
       estimatedTokenCost: 0,
       cappedMdape: 0,
@@ -54,6 +54,7 @@ export function scheduleRisk(params: {
     : 1;
   const p50 = Math.round(estimatedHours * 10) / 10;
   const p80 = Math.round(estimatedHours * (1 + 0.842 * cappedMdape / 100 * complexityFactor) * 10) / 10;
+  const p90 = Math.round(estimatedHours * (1 + 1.282 * cappedMdape / 100 * complexityFactor) * 10) / 10;
   const p95 = Math.round(estimatedHours * (1 + 1.645 * cappedMdape / 100 * complexityFactor) * 10) / 10;
 
   // Risk level based on cappedMdape (outlier-robust)
@@ -83,7 +84,7 @@ export function scheduleRisk(params: {
     estimatedHours: p50,
     estimatedTokenCost: Math.round(p50 * 50000 * 100) / 100,
     riskLevel,
-    confidenceIntervals: { p50, p80, p95 },
+    confidenceIntervals: { p50, p80, p90, p95 },
     historicalAccuracy: {
       mape: mapeRounded,
       mdape: mdapeRounded,
@@ -92,7 +93,7 @@ export function scheduleRisk(params: {
     cappedMdape: cappedMdapeRounded,
     taskTypeBreakdown,
     recommendation,
-    humanReadable: buildHumanReadable(riskLevel, cappedMdapeRounded, mapeRounded, p50, p80, p95, sampleSize, recommendation, taskLabel, complexityLabel),
+    humanReadable: buildHumanReadable(riskLevel, cappedMdapeRounded, mapeRounded, p50, p80, p90, p95, sampleSize, recommendation, taskLabel, complexityLabel),
   };
 }
 
@@ -141,11 +142,12 @@ function buildHumanReadable(
   mape: number,
   p50: number,
   p80: number,
+  p90: number,
   p95: number,
   sampleSize: number,
   recommendation: string,
   taskLabel: string,
   complexityLabel: string,
 ): string {
-  return `Schedule risk${taskLabel}${complexityLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p95=${p95}h. ${recommendation}`;
+  return `Schedule risk${taskLabel}${complexityLabel}: ${riskLevel}. MdAPE: ${mdape}% (MAPE: ${mape}%, based on ${sampleSize} historical records). Confidence intervals: p50=${p50}h, p80=${p80}h, p90=${p90}h, p95=${p95}h. ${recommendation}`;
 }
