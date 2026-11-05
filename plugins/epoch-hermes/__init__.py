@@ -18,8 +18,10 @@ Design notes (see README "How it works"):
   ``[epoch:estimate …]`` / ``[epoch:actual …]`` markers for humans, but they are display/audit
   only — forged or quoted markers never redirect or suppress recording. Comment delivery is
   tracked separately from estimate/actual ledger state so a transient board failure retries the
-  missing comment without re-recording. Either side can reconcile, in either event order, and
-  Epoch's ledger rejects duplicate actuals.
+  missing comment without re-recording. Delivery itself is claimed under the same bindings flock
+  (pid/tid + expiry) so concurrent success/duplicate recorders and concurrent claimed_job racers
+  cannot double-post; a BoardError releases the claim for retry. Either side can reconcile, in
+  either event order, and Epoch's ledger rejects duplicate actuals.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
   ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
 * Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
@@ -531,6 +533,7 @@ def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id
             return
         cur = dict(cur)
         cur["estimate_commented"] = True
+        cur.pop("estimate_delivery_in_flight", None)
         data[key] = cur
 
     _bindings_update(settings, mutate)
@@ -574,22 +577,119 @@ def _binding_mark_actual_commented(settings: Optional[Dict[str, Any]], task_id: 
             return
         cur = dict(cur)
         cur["actual_commented"] = True
+        cur.pop("actual_delivery_in_flight", None)
         data[key] = cur
 
     _bindings_update(settings, mutate)
 
 
+def _delivery_claim_expired(claim: Any) -> bool:
+    if not isinstance(claim, dict):
+        return True
+    try:
+        until = float(claim.get("until") or 0)
+    except (TypeError, ValueError):
+        return True
+    if until <= time.time():
+        return True
+    # Dead owner → reclaimable even if until is still in the future.
+    return not _pid_alive(claim.get("pid"))
+
+
+def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
+                            board: Optional[str], run_id: Any, *, kind: str) -> Optional[str]:
+    """Atomically claim the right to post the pending *kind* comment under the bindings flock.
+
+    Returns the body to post, or ``None`` when already delivered, nothing to post, or another
+    live claim still holds the slot. A BoardError after claiming must call
+    :func:`_release_comment_delivery` so a peer (or retry) can reclaim.
+    """
+    key = _binding_key(task_id, board, run_id)
+    flag = f"{kind}_commented"
+    body_key = f"{kind}_comment_body"
+    claim_key = f"{kind}_delivery_in_flight"
+    result: Dict[str, Optional[str]] = {"body": None}
+    now = time.time()
+    claim = {
+        "pid": os.getpid(),
+        "tid": threading.get_ident(),
+        "until": now + max(30.0, _lease_seconds(settings)),
+    }
+
+    def mutate(data: Dict[str, Any]) -> None:
+        cur = data.get(key) if isinstance(data.get(key), dict) else None
+        if not cur or cur.get(flag):
+            return
+        body = cur.get(body_key)
+        if not body:
+            return
+        existing = cur.get(claim_key)
+        if existing and not _delivery_claim_expired(existing):
+            same = (isinstance(existing, dict)
+                    and existing.get("pid") == claim["pid"]
+                    and existing.get("tid") == claim["tid"])
+            if not same:
+                return
+        cur = dict(cur)
+        cur[claim_key] = claim
+        data[key] = cur
+        result["body"] = str(body)
+
+    _bindings_update(settings, mutate)
+    return result["body"]
+
+
+def _release_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
+                              board: Optional[str], run_id: Any, *, kind: str) -> None:
+    """Drop an in-flight delivery claim (BoardError / crash-recovery path)."""
+    key = _binding_key(task_id, board, run_id)
+    claim_key = f"{kind}_delivery_in_flight"
+    me = (os.getpid(), threading.get_ident())
+
+    def mutate(data: Dict[str, Any]) -> None:
+        cur = data.get(key) if isinstance(data.get(key), dict) else None
+        if not cur:
+            return
+        existing = cur.get(claim_key)
+        if not isinstance(existing, dict):
+            return
+        if (existing.get("pid"), existing.get("tid")) != me and not _delivery_claim_expired(existing):
+            return
+        cur = dict(cur)
+        cur.pop(claim_key, None)
+        data[key] = cur
+
+    _bindings_update(settings, mutate)
+
+
+def _complete_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
+                               board: Optional[str], run_id: Any, *, kind: str) -> None:
+    """Mark *kind* comment delivered and clear any in-flight claim."""
+    if kind == "estimate":
+        _binding_mark_estimate_commented(settings, task_id, board, run_id)
+    else:
+        _binding_mark_actual_commented(settings, task_id, board, run_id)
+
+
 def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
                               binding: Dict[str, Any],
                               settings: Optional[Dict[str, Any]]) -> None:
-    """Post a pending estimate/audit comment without re-running Epoch."""
+    """Post a pending estimate/audit comment without re-running Epoch.
+
+    Delivery is claimed under the bindings flock so concurrent claimed_job racers cannot
+    double-post. A BoardError releases the claim for retry.
+    """
     if binding.get("estimate_commented"):
         return
-    body = binding.get("estimate_comment_body")
-    if not body:
+    body = _claim_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+    if body is None:
         return
-    add_comment(task_id, board, str(body))
-    _binding_mark_estimate_commented(settings, task_id, board, run_id)
+    try:
+        add_comment(task_id, board, body)
+    except Exception:
+        _release_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+        raise
+    _complete_comment_delivery(settings, task_id, board, run_id, kind="estimate")
 
 
 def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
@@ -598,17 +698,34 @@ def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
     """Post a pending actual/rejection comment without re-recording. Returns status string.
 
     Once delivery has finished (or there is nothing to post), further calls return
-    ``already_recorded`` so the outbox treats the job as terminal.
+    ``already_recorded`` so the outbox treats the job as terminal. Concurrent success and
+    duplicate recorders serialize on the claim so the audit comment is posted at most once
+    per successful claim cycle.
     """
     if binding.get("actual_commented"):
         return "already_recorded"
-    body = binding.get("actual_comment_body")
-    if not body:
-        return "already_recorded"
-    add_comment(task_id, board, str(body))
-    _binding_mark_actual_commented(settings, task_id, board, run_id)
-    status = str(binding.get("status") or "recorded")
-    return status if status != "recorded" else "recorded"
+    # Brief spin: another live claim may finish momentarily.
+    deadline = time.time() + 2.0
+    while True:
+        fresh = _binding_get(settings, task_id, board, run_id) or binding
+        if fresh.get("actual_commented"):
+            return "already_recorded"
+        if not fresh.get("actual_comment_body"):
+            return "already_recorded"
+        body = _claim_comment_delivery(settings, task_id, board, run_id, kind="actual")
+        if body is not None:
+            try:
+                add_comment(task_id, board, body)
+            except Exception:
+                _release_comment_delivery(settings, task_id, board, run_id, kind="actual")
+                raise
+            _complete_comment_delivery(settings, task_id, board, run_id, kind="actual")
+            status = str(fresh.get("status") or "recorded")
+            return status if status != "recorded" else "recorded"
+        if time.time() >= deadline:
+            # Still contested after wait — leave non-terminal so the outbox retries.
+            raise RuntimeError("actual comment delivery contested")
+        time.sleep(0.02)
 
 
 # --------------------------------------------------------------------------- jobs
@@ -648,8 +765,8 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
                 + format_marker("actual", run=run_id, ref=ref, hours=f"{hours:.4f}"))
         _binding_mark_recorded(settings, task_id, board, run_id, status="recorded",
                                actual_comment_body=body)
-        add_comment(task_id, board, body)
-        _binding_mark_actual_commented(settings, task_id, board, run_id)
+        fresh = _binding_get(settings, task_id, board, run_id) or {}
+        _deliver_actual_comment(task_id, board, run_id, fresh, settings)
         return "recorded"
     err = _error_text(res) if not res.get("ok") else "; ".join(map(str, data.get("errors") or []))
     if "reason: duplicate" in err:
@@ -673,8 +790,8 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
                 + format_marker("actual", run=run_id, ref=ref, status="rejected"))
         _binding_mark_recorded(settings, task_id, board, run_id, status="rejected",
                                actual_comment_body=body)
-        add_comment(task_id, board, body)
-        _binding_mark_actual_commented(settings, task_id, board, run_id)
+        fresh = _binding_get(settings, task_id, board, run_id) or {}
+        _deliver_actual_comment(task_id, board, run_id, fresh, settings)
         return "rejected"
     raise RuntimeError(f"record failed: {err}")  # transient -> outbox retry
 
@@ -712,14 +829,17 @@ def claimed_job(task_id: str, board: Optional[str], run_id: Any,
         else:
             comment_body = None
         # Persist binding (+ pending comment body) BEFORE posting so a crash/BoardError between
-        # persist and comment still retries delivery without re-estimating.
+        # persist and comment still retries delivery without re-estimating. First writer wins the
+        # ref; a concurrent racer that finished estimating late re-reads and delivers the winner's
+        # pending body (never double-posts, never redirects the run to an orphaned feedbackRef).
         if ref and run_id is not None:
             _binding_put_ref(settings, task_id, board, run_id, str(ref),
                              estimate_comment_body=comment_body)
-        if comment_body:
+            binding = _binding_get(settings, task_id, board, run_id) or {}
+            _deliver_estimate_comment(task_id, board, run_id, binding, settings)
+        elif comment_body:
+            # No run_id (cannot bind) — best-effort single post, no durable delivery flag.
             add_comment(task_id, board, comment_body)
-            if run_id is not None:
-                _binding_mark_estimate_commented(settings, task_id, board, run_id)
         shown = show_task(task_id, board)
     else:
         # Binding already exists (prior attempt persisted ref). Retry any missing audit comment

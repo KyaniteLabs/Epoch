@@ -38,7 +38,11 @@ on PATH. No API key or secret. Settings (all optional) under `plugins.entries.ep
   profiles when their `HOME` differs). Kanban comments still show
   `[epoch:estimate run=<run_id> ref=<feedbackRef>]` for humans, but forged or quoted markers are
   never trusted for recording. A late result from a reclaimed run is dropped, because the plugin
-  re-checks that the claim still owns the task before it posts.
+  re-checks that the claim still owns the task before it posts. Comment delivery is tracked
+  separately from the ledger `recorded` flag and is claimed under the same bindings flock, so
+  concurrent success/duplicate recorders and concurrent claim racers cannot double-post the audit
+  comment. A crash after the board accepts the comment but before the local delivery flag flips
+  can still retry (at-least-once for that crash window only); calibration data is never duplicated.
 - **Either event order.** If a task finishes before its estimate is ready (a short task, or a
   slow first `npx`), the claim side records the actual after it stores the binding. Epoch accepts
   one actual per estimate, and the bindings store marks the run recorded, so each run is recorded
