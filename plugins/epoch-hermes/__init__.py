@@ -20,7 +20,8 @@ Design notes (see README "How it works"):
   tracked separately from estimate/actual ledger state so a transient board failure retries the
   missing comment without re-recording. Delivery itself is claimed under the same bindings flock
   (pid/tid + expiry) so concurrent success/duplicate recorders and concurrent claimed_job racers
-  cannot double-post; a BoardError releases the claim for retry. Either side can reconcile, in
+  cannot double-post; a BoardError releases the claim for retry, and a contested live claim
+  raises so the outbox keeps the job pending. Either side can reconcile, in
   either event order, and Epoch's ledger rejects duplicate actuals.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
   ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
@@ -596,19 +597,28 @@ def _delivery_claim_expired(claim: Any) -> bool:
     return not _pid_alive(claim.get("pid"))
 
 
+# Delivery-claim outcomes. Contested must not be treated as terminal success by callers.
+_DELIVERY_CLAIMED = "claimed"
+_DELIVERY_TERMINAL = "terminal"
+_DELIVERY_CONTESTED = "contested"
+
+
 def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                            board: Optional[str], run_id: Any, *, kind: str) -> Optional[str]:
+                            board: Optional[str], run_id: Any, *, kind: str
+                            ) -> Tuple[Optional[str], str]:
     """Atomically claim the right to post the pending *kind* comment under the bindings flock.
 
-    Returns the body to post, or ``None`` when already delivered, nothing to post, or another
-    live claim still holds the slot. A BoardError after claiming must call
-    :func:`_release_comment_delivery` so a peer (or retry) can reclaim.
+    Returns ``(body, "claimed")`` on success, ``(None, "terminal")`` when already delivered or
+    nothing to post, or ``(None, "contested")`` when another live claim still holds the slot.
+    Callers must not treat contested as success — raise (or otherwise leave the outbox job
+    pending) so a peer can retry after the lease expires or is released. A BoardError after
+    claiming must call :func:`_release_comment_delivery` so a peer (or retry) can reclaim.
     """
     key = _binding_key(task_id, board, run_id)
     flag = f"{kind}_commented"
     body_key = f"{kind}_comment_body"
     claim_key = f"{kind}_delivery_in_flight"
-    result: Dict[str, Optional[str]] = {"body": None}
+    result: Dict[str, Any] = {"body": None, "status": _DELIVERY_TERMINAL}
     now = time.time()
     claim = {
         "pid": os.getpid(),
@@ -619,9 +629,11 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur or cur.get(flag):
+            result["status"] = _DELIVERY_TERMINAL
             return
         body = cur.get(body_key)
         if not body:
+            result["status"] = _DELIVERY_TERMINAL
             return
         existing = cur.get(claim_key)
         if existing and not _delivery_claim_expired(existing):
@@ -629,14 +641,16 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
                     and existing.get("pid") == claim["pid"]
                     and existing.get("tid") == claim["tid"])
             if not same:
+                result["status"] = _DELIVERY_CONTESTED
                 return
         cur = dict(cur)
         cur[claim_key] = claim
         data[key] = cur
         result["body"] = str(body)
+        result["status"] = _DELIVERY_CLAIMED
 
     _bindings_update(settings, mutate)
-    return result["body"]
+    return result["body"], result["status"]
 
 
 def _release_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
@@ -677,19 +691,35 @@ def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
     """Post a pending estimate/audit comment without re-running Epoch.
 
     Delivery is claimed under the bindings flock so concurrent claimed_job racers cannot
-    double-post. A BoardError releases the claim for retry.
+    double-post. A BoardError releases the claim for retry. Contested (another live claim)
+    raises after a brief spin so ``claimed_job`` / ``_run_job`` leave the outbox entry pending
+    — never treat a held lease as terminal success.
     """
     if binding.get("estimate_commented"):
         return
-    body = _claim_comment_delivery(settings, task_id, board, run_id, kind="estimate")
-    if body is None:
-        return
-    try:
-        add_comment(task_id, board, body)
-    except Exception:
-        _release_comment_delivery(settings, task_id, board, run_id, kind="estimate")
-        raise
-    _complete_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+    # Brief spin: another live claim may finish (or release) momentarily.
+    deadline = time.time() + 2.0
+    while True:
+        fresh = _binding_get(settings, task_id, board, run_id) or binding
+        if fresh.get("estimate_commented"):
+            return
+        if not fresh.get("estimate_comment_body"):
+            return
+        body, status = _claim_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+        if status == _DELIVERY_CLAIMED and body is not None:
+            try:
+                add_comment(task_id, board, body)
+            except Exception:
+                _release_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+                raise
+            _complete_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+            return
+        if status == _DELIVERY_TERMINAL:
+            return
+        if time.time() >= deadline:
+            # Still contested after wait — leave non-terminal so the outbox retries.
+            raise RuntimeError("estimate comment delivery contested")
+        time.sleep(0.02)
 
 
 def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
@@ -712,8 +742,9 @@ def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
             return "already_recorded"
         if not fresh.get("actual_comment_body"):
             return "already_recorded"
-        body = _claim_comment_delivery(settings, task_id, board, run_id, kind="actual")
-        if body is not None:
+        body, claim_status = _claim_comment_delivery(
+            settings, task_id, board, run_id, kind="actual")
+        if claim_status == _DELIVERY_CLAIMED and body is not None:
             try:
                 add_comment(task_id, board, body)
             except Exception:
@@ -722,6 +753,8 @@ def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
             _complete_comment_delivery(settings, task_id, board, run_id, kind="actual")
             status = str(fresh.get("status") or "recorded")
             return status if status != "recorded" else "recorded"
+        if claim_status == _DELIVERY_TERMINAL:
+            return "already_recorded"
         if time.time() >= deadline:
             # Still contested after wait — leave non-terminal so the outbox retries.
             raise RuntimeError("actual comment delivery contested")

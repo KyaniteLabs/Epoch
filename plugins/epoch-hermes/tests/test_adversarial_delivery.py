@@ -219,3 +219,108 @@ def test_adv_pending_body_ownership_first_writer_wins(plugin, board, make_ctx, t
     ctx.board = board
     plugin.record_actual_for_run(tid, None, rid, shown, s)
     assert _actual_bodies(board, tid) == [owned]
+
+
+def test_adv_contested_estimate_lease_keeps_outbox_pending(
+        plugin, board, make_ctx, tmp_path, monkeypatch):
+    """Kai contested-lease finding on ef2d8b0: a held estimate delivery lease must not let a
+    peer ``claimed_job`` return success and drop the outbox retry before the audit comment lands.
+
+    Reproduction (Notion handoff 2026-11-05T22:31Z): first worker's board post failed; a
+    one-time state-write failure prevented releasing its delivery lease. Second worker
+    (different tid) retried while the original process was still alive — on ef2d8b0 outbox
+    became ``{}``, comments ``[]``, ``estimate_commented`` False, live delivery claim remained
+    (permanent loss). After the fix the peer raises contested, outbox stays, and delivery
+    succeeds once the lease is released/expired.
+    """
+    import os
+
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    s = plugin.snapshot_settings()
+    jid = f"claimed:-:{tid}:{rid}"
+    job = {
+        "id": jid,
+        "kind": "claimed",
+        "task_id": tid,
+        "board": None,
+        "run_id": rid,
+        "settings": s,
+        "attempts": 0,
+        "created_at": time.time(),
+        "lease_until": 0,
+        "owner_pid": os.getpid(),
+    }
+    plugin._outbox_put(job)
+
+    # Worker A: claim + board fail + release fails once → stuck live lease, job stays pending.
+    real_release = plugin._release_comment_delivery
+    release_boom = {"n": 0}
+
+    def flaky_release(*a, **k):
+        release_boom["n"] += 1
+        if release_boom["n"] == 1:
+            raise OSError("simulated state-write failure on release")
+        return real_release(*a, **k)
+
+    monkeypatch.setattr(plugin, "_release_comment_delivery", flaky_release)
+    ctx.board = _FailOnceBoard(board, fail_on=1)
+    plugin._run_job(dict(job))
+    box = ctx.state.get("outbox") or {}
+    assert jid in box, f"A should leave job pending after BoardError+release fail; box={box}"
+    assert board.bodies(tid) == []
+    stuck = plugin._binding_get(s, tid, None, rid)
+    assert stuck and stuck.get("ref") and stuck.get("estimate_commented") is not True
+    claim = stuck.get("estimate_delivery_in_flight")
+    assert isinstance(claim, dict) and float(claim.get("until") or 0) > time.time(), stuck
+    assert claim.get("pid") == os.getpid()
+
+    # Worker B: different thread/tid retries while A's lease is still live.
+    monkeypatch.setattr(plugin, "_release_comment_delivery", real_release)
+    ctx.board = board
+    peer = {"status": None, "err": None}
+
+    def worker_b():
+        try:
+            # Drive via _run_job so a silent "estimated" would delete the outbox entry.
+            plugin._run_job(dict(box[jid]))
+            peer["status"] = "ran"
+        except Exception as exc:  # pragma: no cover - _run_job swallows
+            peer["err"] = exc
+
+    t = threading.Thread(target=worker_b)
+    t.start()
+    t.join(15)
+    assert t.is_alive() is False, peer
+
+    box_after = ctx.state.get("outbox") or {}
+    assert jid in box_after, (
+        f"contested peer must not drop outbox; box={box_after} bodies={board.bodies(tid)} "
+        f"binding={plugin._binding_get(s, tid, None, rid)} peer={peer}"
+    )
+    assert board.bodies(tid) == []
+    mid = plugin._binding_get(s, tid, None, rid)
+    assert mid.get("estimate_commented") is not True
+    assert isinstance(mid.get("estimate_delivery_in_flight"), dict)
+    # attempts bumped by the contested failure path
+    assert int(box_after[jid].get("attempts") or 0) >= 1
+
+    # Expire the stuck lease, then retry — comment must land and outbox clear.
+    def expire(data):
+        key = plugin._binding_key(tid, None, rid)
+        cur = data.get(key)
+        if isinstance(cur, dict) and isinstance(cur.get("estimate_delivery_in_flight"), dict):
+            cur = dict(cur)
+            inflight = dict(cur["estimate_delivery_in_flight"])
+            inflight["until"] = 0
+            cur["estimate_delivery_in_flight"] = inflight
+            data[key] = cur
+
+    plugin._bindings_update(s, expire)
+    plugin._run_job(dict(box_after[jid]))
+    bodies = _estimate_bodies(board, tid)
+    assert len(bodies) == 1, bodies
+    final = plugin._binding_get(s, tid, None, rid)
+    assert final.get("estimate_commented") is True
+    assert (ctx.state.get("outbox") or {}).get(jid) is None
