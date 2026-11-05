@@ -6,7 +6,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@kyanitelabs/epoch@0.6.0"
+        "@kyanitelabs/epoch@0.7.0"
       ]
     }
   }

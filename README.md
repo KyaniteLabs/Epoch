@@ -70,7 +70,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 **30-second setup -- works in Claude Code, Cursor, VS Code, and Windsurf:**
 
 ```bash
-claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.6.0
+claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.7.0
 ```
 
 That's it. Your AI assistant now has 26 time estimation tools.
@@ -82,7 +82,7 @@ Or add it to your project's `.mcp.json`:
   "mcpServers": {
     "epoch": {
       "command": "npx",
-      "args": ["-y", "@kyanitelabs/epoch@0.6.0"]
+      "args": ["-y", "@kyanitelabs/epoch@0.7.0"]
     }
   }
 }

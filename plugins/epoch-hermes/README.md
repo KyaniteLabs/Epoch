@@ -22,7 +22,7 @@ on PATH. No API key or secret. Settings (all optional) under `plugins.entries.ep
 
 | Setting | Default | |
 |---|---|---|
-| `epoch_command` | `npx -y @kyanitelabs/epoch@0.6.0` | Set to `epoch` if installed globally. |
+| `epoch_command` | `npx -y @kyanitelabs/epoch@0.7.0` | Set to `epoch` if installed globally. |
 | `epoch_data_dir` | unset (`~/.epoch`) | Pins Epoch's ledger (`EPOCH_DATA_DIR`). Set it to the same path in the dispatcher and worker profiles if their `HOME` differs. |
 | `comment_on_claim` | `true` | Post the estimate comment. |
 | `record_actuals` | `true` | Record wall-clock actuals on completion. |
