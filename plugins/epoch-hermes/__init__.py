@@ -11,18 +11,22 @@ epoch_estimate tool   -> agent-callable Monte Carlo estimate.
 
 Design notes (see README "How it works"):
 
-* Board-scoped correlation. ``kanban_task_claimed`` fires in the dispatcher's profile and
+* Run bindings, not comments. ``kanban_task_claimed`` fires in the dispatcher's profile and
   ``kanban_task_completed`` in the assignee's profile; ``ctx.state`` is profile-scoped, so the
-  estimate ↔ run association lives on the shared Kanban board (a task comment keyed by run id),
-  not in plugin state. Either side can reconcile, in either event order, and Epoch's ledger
-  rejects duplicate actuals, so recording is idempotent.
+  authoritative estimate ↔ run association lives in a shared bindings file under
+  ``epoch_data_dir`` (same directory Epoch's ledger uses). Kanban comments still carry
+  ``[epoch:estimate …]`` / ``[epoch:actual …]`` markers for humans, but they are display/audit
+  only — forged or quoted markers never redirect or suppress recording. Either side can
+  reconcile, in either event order, and Epoch's ledger rejects duplicate actuals.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
   ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
 * Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
   profile (HERMES_HOME override, settings, plugin state) follows the job. Settings are also
   snapshotted in the hook's own context.
 * Lifecycle: every job is written to a profile-scoped outbox before it starts and removed when it
-  reaches a terminal state. At interpreter exit the plugin waits (bounded by
+  reaches a terminal state. Outbox read-modify-write holds a cross-process lock on the plugin
+  state file (same lockfile convention as Hermes PluginState) so concurrent processes cannot
+  lose an enqueue or double-claim a lease. At interpreter exit the plugin waits (bounded by
   ``shutdown_wait_seconds``) for in-flight jobs; anything still unfinished (or killed by
   ``os._exit``) is replayed the next time the plugin loads in that profile.
 
@@ -42,7 +46,9 @@ import shlex
 import subprocess
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +69,7 @@ OUTBOX_KEY = "outbox"
 OUTBOX_MAX_ATTEMPTS = 5
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 3600
 AUTO_WALLCLOCK = "auto_wallclock"
+BINDINGS_FILE = "hermes-run-bindings.json"
 
 _NUM = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
@@ -363,13 +370,6 @@ def parse_markers(comments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     return out
 
 
-def _marker_for(shown: Dict[str, Any], kind: str, run_id: Any) -> Optional[Dict[str, str]]:
-    for mk in parse_markers(shown.get("comments") or []):
-        if mk["kind"] == kind and mk.get("run") == str(run_id):
-            return mk
-    return None
-
-
 def _run_for(shown: Dict[str, Any], run_id: Any) -> Optional[Dict[str, Any]]:
     for r in shown.get("runs") or []:
         if str(r.get("id")) == str(run_id):
@@ -390,6 +390,114 @@ def _claim_is_live(shown: Dict[str, Any], run_id: Any) -> bool:
     return _run_completed(_run_for(shown, run_id))
 
 
+
+# --------------------------------------------------------------------------- shared bindings + locks
+
+
+def _epoch_data_dir(settings: Optional[Dict[str, Any]] = None) -> Path:
+    """Directory shared by dispatcher and worker when ``epoch_data_dir`` matches (or HOME does)."""
+    configured = str(_cfg("epoch_data_dir", settings) or "").strip()
+    if configured:
+        return Path(os.path.expanduser(configured))
+    env_dir = (os.environ.get("EPOCH_DATA_DIR") or "").strip()
+    if env_dir:
+        return Path(os.path.expanduser(env_dir))
+    return Path.home() / ".epoch"
+
+
+def _binding_key(task_id: str, board: Optional[str], run_id: Any) -> str:
+    return f"{board or '-'}:{task_id}:{run_id}"
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """Exclusive cross-process lock via a sibling ``.<name>.lock`` (Hermes PluginState convention)."""
+    lock_path = path.with_name(f".{path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+b") as handle:
+        if os.name == "nt":  # pragma: no cover - Windows
+            import msvcrt
+            if handle.seek(0, os.SEEK_END) == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _read_json_file(path: Path) -> Dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json_file(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _bindings_update(settings: Optional[Dict[str, Any]], fn: Callable[[Dict[str, Any]], None]) -> None:
+    path = _epoch_data_dir(settings) / BINDINGS_FILE
+    with _file_lock(path):
+        data = _read_json_file(path)
+        fn(data)
+        _write_json_file(path, data)
+
+
+def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
+                 run_id: Any) -> Optional[Dict[str, Any]]:
+    path = _epoch_data_dir(settings) / BINDINGS_FILE
+    with _file_lock(path):
+        raw = _read_json_file(path).get(_binding_key(task_id, board, run_id))
+    return dict(raw) if isinstance(raw, dict) else None
+
+
+def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
+                     run_id: Any, ref: str) -> None:
+    key = _binding_key(task_id, board, run_id)
+
+    def mutate(data: Dict[str, Any]) -> None:
+        cur = data.get(key) if isinstance(data.get(key), dict) else {}
+        if cur.get("ref"):
+            return  # first writer wins; forged comments cannot overwrite
+        data[key] = {"ref": ref, "recorded": False}
+
+    _bindings_update(settings, mutate)
+
+
+def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
+                           run_id: Any, *, status: str) -> None:
+    key = _binding_key(task_id, board, run_id)
+
+    def mutate(data: Dict[str, Any]) -> None:
+        cur = data.get(key) if isinstance(data.get(key), dict) else None
+        if not cur:
+            return
+        cur = dict(cur)
+        cur["recorded"] = True
+        cur["status"] = status
+        data[key] = cur
+
+    _bindings_update(settings, mutate)
+
+
 # --------------------------------------------------------------------------- jobs
 
 
@@ -401,38 +509,42 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
                           shown: Dict[str, Any], settings: Optional[Dict[str, Any]]) -> str:
     """Record the wall-clock of *run_id* against its own estimate. Returns a status string.
 
-    Idempotent: an existing ``[epoch:actual run=N]`` marker short-circuits, and Epoch's ledger
-    rejects a second actual for the same feedbackRef (``duplicate``) so two processes racing here
-    record exactly once.
+    Idempotent via the shared bindings store (not Kanban markers). Epoch's ledger also rejects a
+    second actual for the same feedbackRef (``duplicate``), so two processes racing here record
+    exactly once. Comments are display/audit only.
     """
     run = _run_for(shown, run_id)
     if not _run_completed(run):
         return "run_not_completed"
-    est = _marker_for(shown, "estimate", run_id)
-    if not est or not est.get("ref"):
+    binding = _binding_get(settings, task_id, board, run_id)
+    if not binding or not binding.get("ref"):
         return "no_estimate"
-    if _marker_for(shown, "actual", run_id):
+    if binding.get("recorded"):
         return "already_recorded"
+    ref = str(binding["ref"])
     hours = (int(run["ended_at"]) - int(run["started_at"])) / 3600.0
-    entry = {"estimate_id": est["ref"], "actual_hours": round(hours, 4),
+    entry = {"estimate_id": ref, "actual_hours": round(hours, 4),
              "notes": f"hermes kanban {task_id} run {run_id} (wall-clock)",
              "calibration_provenance": AUTO_WALLCLOCK}
     res = run_epoch(["batch-record-actuals", "--entries", json.dumps([entry])], settings)
     data = res.get("data") if isinstance(res.get("data"), dict) else {}
     if res.get("ok") and int(data.get("succeeded") or 0) >= 1:
+        _binding_mark_recorded(settings, task_id, board, run_id, status="recorded")
         add_comment(task_id, board,
                     f"⏱ Epoch recorded actual {_fmt_hours(hours)} (wall-clock, auto_wallclock, run {run_id}). "
-                    + format_marker("actual", run=run_id, ref=est["ref"], hours=f"{hours:.4f}"))
+                    + format_marker("actual", run=run_id, ref=ref, hours=f"{hours:.4f}"))
         return "recorded"
     err = _error_text(res) if not res.get("ok") else "; ".join(map(str, data.get("errors") or []))
     if "reason: duplicate" in err:
+        _binding_mark_recorded(settings, task_id, board, run_id, status="duplicate")
         return "duplicate"
     if "auto_wallclock_out_of_bounds" in err or "below_threshold" in err:
+        _binding_mark_recorded(settings, task_id, board, run_id, status="rejected")
         add_comment(task_id, board,
                     f"⏱ Epoch did not record wall-clock {_fmt_hours(hours)} for run {run_id}: it fails Epoch's "
                     f"auto_wallclock sanity gate (0.05–12h and <10× the estimate). Record a verified "
-                    f"actual with `/epoch record-actual --estimate-id {est['ref']} --actual-hours <h>`. "
-                    + format_marker("actual", run=run_id, ref=est["ref"], status="rejected"))
+                    f"actual with `/epoch record-actual --estimate-id {ref} --actual-hours <h>`. "
+                    + format_marker("actual", run=run_id, ref=ref, status="rejected"))
         return "rejected"
     raise RuntimeError(f"record failed: {err}")  # transient -> outbox retry
 
@@ -446,7 +558,8 @@ def claimed_job(task_id: str, board: Optional[str], run_id: Any,
     want_actuals = bool(_cfg("record_actuals", settings))
     if not (want_comment or want_actuals):
         return "disabled"
-    if _marker_for(shown, "estimate", run_id) is None:
+    binding = _binding_get(settings, task_id, board, run_id) if run_id is not None else None
+    if not (binding and binding.get("ref")):
         task = shown.get("task") or {}
         result = estimate(task.get("title") or "", task.get("body") or "", settings=settings)
         if result.get("method") is None:
@@ -461,6 +574,8 @@ def claimed_job(task_id: str, board: Optional[str], run_id: Any,
         if run_id is not None and not _claim_is_live(shown, run_id):
             return "stale"
         ref = result.get("feedbackRef")
+        if ref and run_id is not None:
+            _binding_put_ref(settings, task_id, board, run_id, str(ref))
         marker = format_marker("estimate", run=run_id, ref=ref) if (ref and run_id is not None) else ""
         if want_comment:
             add_comment(task_id, board, f"{result['summary']} {marker}".strip())
@@ -493,15 +608,42 @@ def _job_id(kind: str, task_id: str, board: Optional[str], run_id: Any) -> str:
 
 
 def _outbox_update(fn) -> None:
+    """Apply *fn* to the outbox dict under a cross-process transaction when possible.
+
+    Hermes ``PluginState.get``/``set`` each lock individually; a get→mutate→set RMW across
+    processes can lose an enqueue or double-claim a lease. When ``ctx.state.path`` is set we hold
+    the same sibling lockfile Hermes uses and rewrite ``outbox`` in one critical section without
+    calling get/set (which would drop the lock between ops).
+    """
     if _ctx is None:
         return
     try:
+        state = _ctx.state
+        update = getattr(state, "update", None)
+        if callable(update):
+            def mutator(current):
+                box = current if isinstance(current, dict) else {}
+                fn(box)
+                return box
+            update(OUTBOX_KEY, mutator, default={})
+            return
+        path = getattr(state, "path", None)
+        if path is not None:
+            path = Path(path)
+            with _outbox_lock:
+                with _file_lock(path):
+                    data = _read_json_file(path)
+                    box = data.get(OUTBOX_KEY) if isinstance(data.get(OUTBOX_KEY), dict) else {}
+                    fn(box)
+                    data[OUTBOX_KEY] = box
+                    _write_json_file(path, data)
+            return
         with _outbox_lock:
-            box = _ctx.state.get(OUTBOX_KEY, None) or {}
+            box = state.get(OUTBOX_KEY, None) or {}
             if not isinstance(box, dict):
                 box = {}
             fn(box)
-            _ctx.state.set(OUTBOX_KEY, box)
+            state.set(OUTBOX_KEY, box)
     except Exception:
         logger.debug("epoch: outbox update failed", exc_info=True)
 

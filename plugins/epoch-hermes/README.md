@@ -32,19 +32,22 @@ on PATH. No API key or secret. Settings (all optional) under `plugins.entries.ep
 
 ## How it works
 
-- **Board-scoped, run-scoped correlation.** The dispatcher (claim) and the assignee's worker
-  (complete) usually run in different profiles, and plugin state is per profile. So the estimate
-  comment carries a marker, `[epoch:estimate run=<run_id> ref=<feedbackRef>]`, on the shared board.
-  Completion looks up the marker for its own `run_id`. A late result from a reclaimed run is
-  dropped, because the plugin re-checks that the claim still owns the task before it posts.
+- **Shared bindings, comments for display.** The dispatcher (claim) and the assignee's worker
+  (complete) usually run in different profiles, and plugin state is per profile. The authoritative
+  `run → feedbackRef` binding is written under `epoch_data_dir` (set the same path in both
+  profiles when their `HOME` differs). Kanban comments still show
+  `[epoch:estimate run=<run_id> ref=<feedbackRef>]` for humans, but forged or quoted markers are
+  never trusted for recording. A late result from a reclaimed run is dropped, because the plugin
+  re-checks that the claim still owns the task before it posts.
 - **Either event order.** If a task finishes before its estimate is ready (a short task, or a
-  slow first `npx`), the claim side records the actual after it posts the estimate. Epoch accepts
-  one actual per estimate, and an `[epoch:actual run=…]` marker short-circuits repeats, so each
-  run is recorded once.
-- **Process lifecycle.** Each job goes into a profile-local outbox before it starts. When the
-  process exits, the plugin waits up to `shutdown_wait_seconds` for in-flight work. Anything left
-  over (for example, a one-shot CLI that exits or is killed) replays the next time the plugin
-  loads in that profile, up to 5 attempts within 7 days.
+  slow first `npx`), the claim side records the actual after it stores the binding. Epoch accepts
+  one actual per estimate, and the bindings store marks the run recorded, so each run is recorded
+  once.
+- **Process lifecycle.** Each job goes into a profile-local outbox before it starts. Outbox
+  updates take a cross-process lock so concurrent Hermes processes cannot lose an enqueue or
+  double-claim a lease. When the process exits, the plugin waits up to `shutdown_wait_seconds`
+  for in-flight work. Anything left over (for example, a one-shot CLI that exits or is killed)
+  replays the next time the plugin loads in that profile, up to 5 attempts within 7 days.
 - **Public Hermes surface only.** Board reads and writes go through `ctx.dispatch_tool`
   (`kanban_show`, `kanban_comment`). Background threads run under `contextvars.copy_context()`,
   so the event's profile settings and state follow the job.

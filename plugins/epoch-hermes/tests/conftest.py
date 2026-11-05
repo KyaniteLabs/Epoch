@@ -111,6 +111,15 @@ class FakeState:
         with self._lock:
             self._bucket()[key] = json.loads(json.dumps(value))
 
+    def update(self, key, mutator, default=None):
+        """Hold the lock across get→mutate→set (what Hermes get/set alone cannot do)."""
+        with self._lock:
+            current = self._bucket().get(key, default)
+            current = json.loads(json.dumps(current))
+            updated = mutator(current)
+            self._bucket()[key] = json.loads(json.dumps(updated))
+            return json.loads(json.dumps(updated))
+
 
 class FakeCtx:
     """Profile-scoped like Hermes: config and state resolve PROFILE at access time."""
@@ -166,8 +175,13 @@ def board():
 
 
 @pytest.fixture
-def make_ctx(plugin, board):
+def make_ctx(plugin, board, tmp_path):
     def _make(settings_by_profile):
+        # Shared bindings/ledger dir across profiles in a test (set the same epoch_data_dir in
+        # dispatcher + worker). Callers may override per profile.
+        shared = str(tmp_path)
+        for settings in settings_by_profile.values():
+            settings.setdefault("epoch_data_dir", shared)
         ctx = FakeCtx(board, settings_by_profile)
         plugin.register(ctx)
         return ctx

@@ -39,7 +39,9 @@ class Env:
             cmd = f"env FAKE_EPOCH_TAG={prof} EPOCH_DATA_DIR={self.ledger} {extra} {sys.executable} {FAKE_EPOCH}"
             (home / "config.yaml").write_text(
                 "plugins:\n  enabled: [epoch]\n  entries:\n    epoch:\n      settings:\n"
-                f"        epoch_command: {json.dumps(cmd)}\n        timeout_seconds: 30\n")
+                f"        epoch_command: {json.dumps(cmd)}\n"
+                f"        epoch_data_dir: {json.dumps(str(self.ledger))}\n"
+                f"        timeout_seconds: 30\n")
 
     def env(self, prof):
         e = dict(os.environ, HERMES_AGENT_SRC=HERMES_SRC, HERMES_KANBAN_HOME=str(self.root / "kb"),
