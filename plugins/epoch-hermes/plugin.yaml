@@ -1,7 +1,8 @@
 name: epoch
 version: "0.7.0"
 manifest_version: 2
-description: "Epoch for Hermes Kanban: when a worker claims a task, post a calibrated P50/P90 (plus P80/P95) Monte Carlo estimate as a task comment; when it completes, record that run's wall-clock hours back to Epoch's local ledger (calibration_provenance auto_wallclock, so Epoch's sanity gate applies) so estimates calibrate over time. The estimate-to-run link lives in a shared bindings file under epoch_data_dir (Kanban comments are display/audit only), so dispatcher and worker profiles can differ. Also adds /epoch and an epoch_estimate tool. Disclosure: shells out to `npx -y @kyanitelabs/epoch@0.7.0` (downloads from npm on first run, needs Node >=22). Estimates and actuals stay in Epoch's local ledger; Epoch telemetry is OFF unless the operator runs `epoch telemetry enable`. No API key required."
+requires_hermes: ">=0.21.6"
+description: "Epoch for Hermes Kanban: when a worker claims a task, post a calibrated P50/P90 (plus P80/P95) Monte Carlo estimate as a task comment; when it completes, record that run's wall-clock hours back to Epoch's local ledger (calibration_provenance auto_wallclock, so Epoch's sanity gate applies) so estimates calibrate over time. The estimate-to-run link lives in a shared bindings file next to the ledger (Kanban comments are display/audit only), so dispatcher and worker profiles can differ. Also adds /epoch and an epoch_estimate tool. Disclosure — shells out to `npx -y @kyanitelabs/epoch@0.7.0` (downloads from npm on first run; needs Node >=22), passing the task's title and three-point hint to the local CLI; the child env is scrubbed (allow-listed PATH/HOME/locale/Node/npm/proxy vars only — the parent environment and its secrets are never passed through); ledger and run bindings live under <HERMES_HOME>/plugin-data/epoch/ (shared by all profiles; override with epoch_data_dir); Epoch telemetry is forced off for plugin runs (EPOCH_TELEMETRY=0); no network besides the npm download, no API key; hook work runs on a short-lived background thread; /epoch refuses serve, self-improve and telemetry/data mutations, and refuses ledger writes on gateway platforms unless opted in."
 author: "Kyanite Labs"
 license: Apache-2.0
 homepage: https://github.com/KyaniteLabs/Epoch/tree/main/plugins/epoch-hermes
@@ -35,8 +36,12 @@ config_schema:
   epoch_data_dir:
     type: str
     default: ""
-    description: "Optional EPOCH_DATA_DIR for the Epoch ledger. Set the same path in dispatcher and worker profiles if their HOME differs."
+    description: "Optional EPOCH_DATA_DIR for the Epoch ledger + run bindings. Default: <HERMES_HOME root>/plugin-data/epoch (shared by every profile). Set e.g. ~/.epoch to reuse a standalone Epoch ledger."
   shutdown_wait_seconds:
     type: int
     default: 20
     description: "Bounded wait at process exit for in-flight Epoch work; unfinished jobs replay from the outbox on next load."
+  allow_write_slash_on_gateway:
+    type: bool
+    default: false
+    description: "Allow /epoch ledger-writing commands (record-actual, batch-record-actuals, auto-actuals, mine-git, calibrate-estimates) from gateway platforms such as Telegram or Discord."

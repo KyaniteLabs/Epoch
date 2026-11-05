@@ -81,11 +81,12 @@ def test_e2e_dispatcher_and_worker_profiles(tmp_path):
     tid = env.run("A", "create", "Fix crash", "epoch: 1/2/3h")["task_id"]
     rid = env.run("A", "claim", tid)["run_id"]  # process exits right after the claim
     est = [c for c in env.calls() if c["argv"][0] == "monte-carlo-schedule"]
-    assert [(c["tag"], c["hermes_home"]) for c in est] == [("A", str(tmp_path / "A"))]
+    # profile A's settings ran it; HERMES_HOME itself is scrubbed from the child env
+    assert [(c["tag"], c["hermes_home"]) for c in est] == [("A", None)]
     env.run("A", "backdate", rid, 2 * 3600)
     env.run("B", "complete", tid, rid)
     recs = _records(env)
-    assert [(c["tag"], c["hermes_home"]) for c in recs] == [("B", str(tmp_path / "B"))]
+    assert [(c["tag"], c["hermes_home"]) for c in recs] == [("B", None)]
     entry = recs[0]["entries"][0]
     assert entry["estimate_id"] == est[0]["ref"]
     assert entry["calibration_provenance"] == "auto_wallclock"

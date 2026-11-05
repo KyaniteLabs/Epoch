@@ -25,7 +25,9 @@ opts = {argv[i]: argv[i + 1] for i in range(1, len(argv) - 1) if argv[i].startsw
 def log(extra=None):
     with open(os.path.join(data_dir, "calls.jsonl"), "a") as f:
         f.write(json.dumps({"argv": argv, "tag": os.environ.get("FAKE_EPOCH_TAG"),
-                            "hermes_home": os.environ.get("HERMES_HOME"), **(extra or {})}) + "\n")
+                            "hermes_home": os.environ.get("HERMES_HOME"),
+                            "env_keys": sorted(os.environ), "telemetry": os.environ.get("EPOCH_TELEMETRY"),
+                            **(extra or {})}) + "\n")
 
 
 mode = os.environ.get("FAKE_EPOCH_MODE", "")
