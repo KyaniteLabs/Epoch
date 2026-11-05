@@ -6,7 +6,9 @@ kanban_task_claimed   -> estimate the task (explicit three-point hint, else refe
 kanban_task_completed -> find the estimate marker for the *same run* on the board and record
                          that run's wall-clock hours to Epoch with
                          ``calibration_provenance: auto_wallclock`` (so Epoch's sanity gates apply).
-/epoch <cli args>     -> run any Epoch CLI subcommand (e.g. /epoch pert-estimate ...).
+/epoch <cli args>     -> run an Epoch CLI subcommand (e.g. /epoch pert-estimate ...); serve,
+                         self-improve and telemetry/data mutations are refused, ledger writes
+                         are refused on gateway platforms unless opted in.
 epoch_estimate tool   -> agent-callable Monte Carlo estimate.
 
 Design notes (see README "How it works"):
@@ -23,6 +25,9 @@ Design notes (see README "How it works"):
   cannot double-post; a BoardError releases the claim for retry, and a contested live claim
   raises so the outbox keeps the job pending. Either side can reconcile, in
   either event order, and Epoch's ledger rejects duplicate actuals.
+* The Epoch child gets a scrubbed environment (allow-listed PATH/HOME/locale/Node/npm/proxy
+  vars only), ``EPOCH_DATA_DIR`` pinned to the ledger dir and ``EPOCH_TELEMETRY=0``. The ledger
+  defaults to ``<HERMES_HOME root>/plugin-data/epoch`` so every profile shares it.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
   ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
 * Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
@@ -66,6 +71,7 @@ DEFAULTS: Dict[str, Any] = {
     "iterations": 5000,
     "timeout_seconds": 60,
     "shutdown_wait_seconds": 20,
+    "allow_write_slash_on_gateway": False,
 }
 
 # Hours bounds for a three-point estimate (explicit or hint). 2000h ≈ one person-year.
@@ -136,6 +142,38 @@ def snapshot_settings() -> Dict[str, Any]:
 
 # --------------------------------------------------------------------------- Epoch CLI
 
+# Only what ``npx``/Node need to resolve, download (proxy/cache) and run Epoch. The parent
+# environment (API keys, tokens, Hermes secrets) is never handed to the child.
+_ENV_ALLOW = (
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+    "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA",
+    "USERPROFILE", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
+    "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS", "NVM_DIR", "NVM_BIN", "VOLTA_HOME", "FNM_DIR",
+    "npm_config_cache", "NPM_CONFIG_CACHE", "npm_config_registry", "NPM_CONFIG_REGISTRY",
+    "npm_config_prefix", "NPM_CONFIG_PREFIX", "npm_config_userconfig", "NPM_CONFIG_USERCONFIG",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    "SSL_CERT_FILE", "SSL_CERT_DIR",
+)
+
+
+def _scrubbed_env(settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """Minimal env for the Epoch child — never the full ``os.environ``.
+
+    Pins ``EPOCH_DATA_DIR`` to the resolved ledger dir and forces Epoch telemetry off for every
+    plugin-driven run (``EPOCH_TELEMETRY=0`` overrides any ``epoch telemetry enable``).
+    """
+    env = {k: os.environ[k] for k in _ENV_ALLOW if os.environ.get(k)}
+    data_dir = _epoch_data_dir(settings)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    env["EPOCH_DATA_DIR"] = str(data_dir)
+    env["EPOCH_TELEMETRY"] = "0"
+    env["NO_COLOR"] = "1"
+    env["NO_UPDATE_NOTIFIER"] = "1"
+    env["npm_config_update_notifier"] = "false"
+    env["npm_config_fund"] = "false"
+    return env
+
+
 
 def _error_text(res: Dict[str, Any]) -> str:
     err = res.get("error")
@@ -154,10 +192,10 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
         cmd = shlex.split(str(_cfg("epoch_command", settings))) + [str(a) for a in args]
     except ValueError as exc:
         return {"ok": False, "error": f"invalid epoch_command: {exc}"}
-    env = None
-    data_dir = str(_cfg("epoch_data_dir", settings) or "").strip()
-    if data_dir:
-        env = dict(os.environ, EPOCH_DATA_DIR=os.path.expanduser(data_dir))
+    try:
+        env = _scrubbed_env(settings)
+    except OSError as exc:
+        return {"ok": False, "error": f"epoch data dir unavailable: {exc}"}
     try:
         timeout = float(_cfg("timeout_seconds", settings))
     except (TypeError, ValueError):
@@ -332,11 +370,11 @@ def _kanban(tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
         raise BoardError("plugin not registered")
     data = _load_tool_json(_ctx.dispatch_tool(tool, args))
     if "error" in data and str(data["error"]).startswith("Unknown tool"):
-        # One-shot CLI processes may not have imported the kanban tool module yet; importing it
-        # registers the public tools (it is the same module Hermes loads for agents).
+        # One-shot CLI processes may not have discovered the built-in tools yet; the public
+        # ``tools.registry.discover_builtin_tools`` registers them (kanban_* included).
         try:
-            import importlib
-            importlib.import_module("tools.kanban_tools")
+            from tools.registry import discover_builtin_tools
+            discover_builtin_tools()
         except Exception as exc:  # pragma: no cover - depends on host install
             raise BoardError(f"{tool} unavailable: {exc}") from None
         data = _load_tool_json(_ctx.dispatch_tool(tool, args))
@@ -400,15 +438,35 @@ def _claim_is_live(shown: Dict[str, Any], run_id: Any) -> bool:
 # --------------------------------------------------------------------------- shared bindings + locks
 
 
+PLUGIN_NAME = "epoch"
+
+
+def _hermes_root() -> Path:
+    """Root Hermes home (``<root>`` even when a profile sets ``HERMES_HOME=<root>/profiles/<n>``).
+
+    Root, not profile: the claim hook fires in the dispatcher's profile and the completion hook in
+    the worker's, so the ledger + run bindings must be one directory both resolve.
+    """
+    try:
+        from hermes_constants import get_default_hermes_root
+        return Path(get_default_hermes_root())
+    except Exception:
+        raw = (os.environ.get("HERMES_HOME") or "").strip()
+        if not raw:
+            return Path.home() / ".hermes"
+        home = Path(os.path.expanduser(raw))
+        return home.parent.parent if home.parent.name == "profiles" else home
+
+
 def _epoch_data_dir(settings: Optional[Dict[str, Any]] = None) -> Path:
-    """Directory shared by dispatcher and worker when ``epoch_data_dir`` matches (or HOME does)."""
+    """Ledger + bindings dir: ``epoch_data_dir`` > ``EPOCH_DATA_DIR`` > ``<HERMES_HOME>/plugin-data/epoch``."""
     configured = str(_cfg("epoch_data_dir", settings) or "").strip()
     if configured:
         return Path(os.path.expanduser(configured))
     env_dir = (os.environ.get("EPOCH_DATA_DIR") or "").strip()
     if env_dir:
         return Path(os.path.expanduser(env_dir))
-    return Path.home() / ".epoch"
+    return _hermes_root() / "plugin-data" / PLUGIN_NAME
 
 
 def _binding_key(task_id: str, board: Optional[str], run_id: Any) -> str:
@@ -1108,6 +1166,64 @@ def _on_completed(task_id: str = "", board: Optional[str] = None, run_id: Any = 
         logger.debug("epoch: completed hook failed for %s", task_id, exc_info=True)
 
 
+# /epoch policy. Never via slash: long-running server, self-modification, telemetry/data
+# mutations (only their read-only ``status`` / ``where`` views). On gateway platforms (Telegram,
+# Discord, …) commands that write the ledger or read the local repo are refused unless
+# ``allow_write_slash_on_gateway: true``.
+_SLASH_BLOCKED = frozenset({"serve", "self-improve"})
+_SLASH_READONLY_SUBS = {"telemetry": frozenset({"status"}), "data": frozenset({"where", "status"})}
+_SLASH_WRITE = frozenset({"record-actual", "batch-record-actuals", "auto-actuals", "mine-git",
+                          "calibrate-estimates"})
+_LOCAL_PLATFORMS = frozenset({"", "cli", "local", "tui", "desktop", "acp"})
+_GLOBAL_VALUE_FLAGS = frozenset({"--format"})
+
+
+def _session_platform() -> str:
+    try:
+        from gateway.session_context import get_session_env
+        plat = get_session_env("HERMES_SESSION_PLATFORM", "") or ""
+    except Exception:
+        plat = os.environ.get("HERMES_SESSION_PLATFORM") or ""
+    return str(os.environ.get("HERMES_PLATFORM") or plat or "").strip().lower()
+
+
+def _on_gateway() -> bool:
+    return _session_platform() not in _LOCAL_PLATFORMS
+
+
+def _subcommand(args: List[str]) -> Tuple[Optional[str], Optional[str]]:
+    """(command, its first positional) skipping Epoch's global flags."""
+    words: List[str] = []
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+            continue
+        if a.startswith("-"):
+            skip = a in _GLOBAL_VALUE_FLAGS and not words
+            continue
+        words.append(a)
+        if len(words) == 2:
+            break
+    return (words[0] if words else None), (words[1] if len(words) > 1 else None)
+
+
+def _slash_refusal(args: List[str]) -> Optional[str]:
+    cmd, sub = _subcommand(args)
+    if cmd is None:
+        return None
+    if cmd in _SLASH_BLOCKED:
+        return f"/epoch {cmd} is not available from Hermes; run `epoch {cmd}` in a terminal."
+    if cmd in _SLASH_READONLY_SUBS and sub not in _SLASH_READONLY_SUBS[cmd]:
+        allowed = ", ".join(sorted(_SLASH_READONLY_SUBS[cmd]))
+        return (f"/epoch {cmd} {sub or ''}".rstrip() + f" is not available from Hermes (only {cmd} "
+                f"{allowed}); run `epoch {cmd} …` in a terminal. Plugin runs force telemetry off.")
+    if cmd in _SLASH_WRITE and _on_gateway() and not _cfg("allow_write_slash_on_gateway"):
+        return (f"/epoch {cmd} writes the local Epoch ledger and is disabled on gateway platforms. "
+                "Run it from the Hermes CLI, or set allow_write_slash_on_gateway: true.")
+    return None
+
+
 def _slash(raw_args: str) -> str:
     try:
         args = shlex.split(raw_args or "")
@@ -1115,6 +1231,9 @@ def _slash(raw_args: str) -> str:
         return f"Could not parse arguments: {exc}"
     if not args:
         return "Usage: /epoch <epoch-cli-subcommand> [flags]  e.g. /epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10"
+    refusal = _slash_refusal(args)
+    if refusal:
+        return refusal
     res = run_epoch(args)
     data = res.get("data") if isinstance(res.get("data"), dict) else None
     if res.get("ok") and data and data.get("humanReadable"):

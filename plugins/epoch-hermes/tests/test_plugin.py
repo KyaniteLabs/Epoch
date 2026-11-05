@@ -364,3 +364,83 @@ def test_plugin_imports_no_private_hermes_modules():
     src = (PLUGIN_DIR / "__init__.py").read_text()
     assert not re.search(r"^\s*(from|import)\s+hermes_cli", src, re.M)
     assert "kanban_db" not in src
+
+
+# ---------------------------------------------------------------- catalog gates (0.7.0)
+
+
+def test_child_env_is_scrubbed_and_telemetry_forced_off(plugin, make_ctx, tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-leak")
+    monkeypatch.setenv("EPOCH_TEST_SECRET", "nope")
+    monkeypatch.setenv("EPOCH_TELEMETRY", "1")
+    ledger = tmp_path / "ledger"
+    make_ctx({"default": {"epoch_command": f"{sys.executable} {Path(__file__).parent / 'fake_epoch.py'}",
+                          "epoch_data_dir": str(ledger)}})
+    plugin.run_epoch(["reference-class-estimate", "--task-type", "feature", "--complexity", "3"])
+    (call,) = calls(ledger)
+    assert "OPENAI_API_KEY" not in call["env_keys"]
+    assert "EPOCH_TEST_SECRET" not in call["env_keys"]
+    assert "HERMES_HOME" not in call["env_keys"]
+    assert call["telemetry"] == "0"
+    assert set(call["env_keys"]) <= set(plugin._ENV_ALLOW) | {
+        "EPOCH_DATA_DIR", "EPOCH_TELEMETRY", "NO_COLOR", "NO_UPDATE_NOTIFIER",
+        "npm_config_update_notifier", "npm_config_fund", "LC_CTYPE"}
+
+
+def test_scrubbed_env_keeps_path_and_pins_data_dir(plugin, make_ctx, tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_x")
+    make_ctx({"default": {"epoch_data_dir": str(tmp_path / "d")}})
+    env = plugin._scrubbed_env(plugin.snapshot_settings())
+    assert env["PATH"] == "/usr/bin:/bin" and "GITHUB_TOKEN" not in env
+    assert env["EPOCH_DATA_DIR"] == str(tmp_path / "d") and (tmp_path / "d").is_dir()
+
+
+@pytest.mark.parametrize("hermes_home,expected", [
+    ("{root}", "{root}/plugin-data/epoch"),
+    ("{root}/profiles/coder", "{root}/plugin-data/epoch"),  # profiles share one ledger
+])
+def test_default_ledger_is_hermes_plugin_data(plugin, make_ctx, tmp_path, monkeypatch, hermes_home, expected):
+    root = tmp_path / "hh"
+    monkeypatch.delenv("EPOCH_DATA_DIR", raising=False)
+    monkeypatch.setenv("HERMES_HOME", hermes_home.format(root=root))
+    monkeypatch.setitem(sys.modules, "hermes_constants", None)  # exercise the no-Hermes fallback
+    make_ctx({"default": {"epoch_data_dir": ""}})
+    assert plugin._epoch_data_dir(plugin.snapshot_settings()) == Path(expected.format(root=root))
+
+
+@pytest.mark.parametrize("raw,blocked", [
+    ("serve", True), ("self-improve --apply", True), ("telemetry enable", True),
+    ("telemetry share-data", True), ("--format table telemetry submit", True), ("data delete-data", True),
+    ("telemetry status", False), ("data where", False),
+    ("pert-estimate --optimistic 1 --most-likely 2 --pessimistic 4", False),
+])
+def test_slash_refuses_unsafe_subcommands(plugin, make_ctx, tmp_path, raw, blocked):
+    make_ctx({"default": {"epoch_command": f"{sys.executable} {Path(__file__).parent / 'fake_epoch.py'}",
+                          "epoch_data_dir": str(tmp_path)}})
+    plugin._slash(raw)
+    assert (calls(tmp_path) == []) is blocked
+
+
+def test_slash_ledger_writes_refused_on_gateway_unless_opted_in(plugin, make_ctx, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_PLATFORM", "telegram")
+    cmd = f"{sys.executable} {Path(__file__).parent / 'fake_epoch.py'}"
+    make_ctx({"default": {"epoch_command": cmd, "epoch_data_dir": str(tmp_path)}})
+    out = plugin._slash("record-actual --estimate-id x --actual-hours 2")
+    assert "disabled on gateway" in out and calls(tmp_path) == []
+    make_ctx({"default": {"epoch_command": cmd, "epoch_data_dir": str(tmp_path),
+                          "allow_write_slash_on_gateway": True}})
+    plugin._slash("record-actual --estimate-id x --actual-hours 2")
+    assert [c["argv"][0] for c in calls(tmp_path)] == ["record-actual"]
+    monkeypatch.setenv("HERMES_PLATFORM", "cli")
+    make_ctx({"default": {"epoch_command": cmd, "epoch_data_dir": str(tmp_path)}})
+    plugin._slash("record-actual --estimate-id x --actual-hours 2")
+    assert len(calls(tmp_path)) == 2
+
+
+def test_manifest_matches_catalog_gates():
+    text = (PLUGIN_DIR / "plugin.yaml").read_text()  # CI venv has no PyYAML
+    assert re.search(r'^requires_hermes: ">=0\.21\.6"$', text, re.M)
+    assert re.search(r"^  allow_write_slash_on_gateway:$", text, re.M)
+    desc = re.search(r'^description: "(.*)"$', text, re.M).group(1)
+    assert "plugin-data/epoch" in desc and "scrubbed" in desc
