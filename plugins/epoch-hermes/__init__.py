@@ -538,8 +538,13 @@ def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id
 
 def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
                            run_id: Any, *, status: str,
-                           actual_comment_body: Optional[str] = None) -> None:
-    """Mark the Epoch ledger outcome. Does not imply the audit comment was delivered."""
+                           actual_comment_body: Optional[str] = None,
+                           keep_existing: bool = False) -> None:
+    """Mark the Epoch ledger outcome. Does not imply the audit comment was delivered.
+
+    With ``keep_existing`` (duplicate path) a status/body already stored by the recorder that
+    actually appended to the ledger wins; only a missing body is filled in.
+    """
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
@@ -547,10 +552,13 @@ def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, boa
         if not cur:
             return
         cur = dict(cur)
+        had = bool(cur.get("recorded"))
         cur["recorded"] = True
-        cur["status"] = status
-        if actual_comment_body is not None:
+        if not (keep_existing and had and cur.get("status")):
+            cur["status"] = status
+        if actual_comment_body is not None and not (keep_existing and cur.get("actual_comment_body")):
             cur["actual_comment_body"] = actual_comment_body
+        cur.setdefault("actual_commented", False)
         data[key] = cur
 
     _bindings_update(settings, mutate)
@@ -645,8 +653,18 @@ def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
         return "recorded"
     err = _error_text(res) if not res.get("ok") else "; ".join(map(str, data.get("errors") or []))
     if "reason: duplicate" in err:
-        _binding_mark_recorded(settings, task_id, board, run_id, status="duplicate")
-        _binding_mark_actual_commented(settings, task_id, board, run_id)  # nothing to post
+        # The ledger already holds this run's actual, but that says nothing about whether the
+        # audit comment was delivered: a concurrent recorder may have stored its body and then hit
+        # a BoardError, or this process may have crashed after the CLI append and before the
+        # binding commit. Keep any pending body (else store a truthful already-recorded notice)
+        # and mark delivery complete only after a successful post.
+        notice = (f"⏱ Epoch already has an actual recorded for run {run_id} (wall-clock "
+                  f"{_fmt_hours(hours)} observed; ledger rejected a duplicate). "
+                  + format_marker("actual", run=run_id, ref=ref, status="duplicate"))
+        _binding_mark_recorded(settings, task_id, board, run_id, status="duplicate",
+                               actual_comment_body=notice, keep_existing=True)
+        fresh = _binding_get(settings, task_id, board, run_id) or {}
+        _deliver_actual_comment(task_id, board, run_id, fresh, settings)
         return "duplicate"
     if "auto_wallclock_out_of_bounds" in err or "below_threshold" in err:
         body = (f"⏱ Epoch did not record wall-clock {_fmt_hours(hours)} for run {run_id}: it fails Epoch's "
