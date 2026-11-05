@@ -5,12 +5,12 @@ description: Use Epoch for calibrated time estimates, business-day math, and sch
 
 # Epoch
 
-Use Epoch when a task needs grounded time, cost, schedule, or calibration answers instead of a guessed duration. Epoch is a time estimation MCP server and CLI (`npx @kyanitelabs/epoch`) with 26 tools (canonical set defined in `src/lib/tool-aliases.ts`) covering temporal math, calendar math, estimation, analytics, cost and risk, and feedback. Estimates lead with a calibrated P80 interval when enough matched history exists. At session end, `epoch auto-actuals --session <id>` records wall-clock actuals for the session's unfinished estimates, provenance-labeled `auto_wallclock` so they never silently blend with verified actuals.
+Use Epoch when a task needs grounded time, cost, schedule, or calibration answers instead of a guessed duration. Epoch is a time estimation MCP server and CLI (`npx -y @kyanitelabs/epoch@0.6.0`) with 26 tools (canonical set defined in `src/lib/tool-aliases.ts`) covering temporal math, calendar math, estimation, analytics, cost and risk, and feedback. Estimates lead with a calibrated P80 interval when enough matched history exists. At session end, `epoch auto-actuals --session <id>` records wall-clock actuals for the session's unfinished estimates, provenance-labeled `auto_wallclock` so they never silently blend with verified actuals.
 
 ## Start Here
 
 - Read `../../README.md` for the tool-category table, MCP setup, and worked examples.
-- Use the MCP server when the host can call tools directly: `npx @kyanitelabs/epoch` (or `claude mcp add epoch -- npx @kyanitelabs/epoch`).
+- Use the MCP server when the host can call tools directly: `npx -y @kyanitelabs/epoch@0.6.0` over stdio.
 - Use the CLI for terminal workflows: `epoch <command>`, or `node dist/index.js <command>` from a built checkout.
 - Depth: `../../docs/TELEMETRY.md` and `../../docs/PRIVACY.md` describe what is stored locally; `../../docs/BINARY.md` covers the packaged binary; `../../llms.txt` is the pinned tool reference.
 
