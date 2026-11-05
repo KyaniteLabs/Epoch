@@ -40,6 +40,16 @@ human-only decision, never the agent's. Details:
 npx -y @kyanitelabs/epoch@0.6.0 --version   # -> 0.6.0
 ```
 
+## Limit Epoch tools in Hermes
+
+Use Hermes `tools.include` to expose only these example tools:
+
+```yaml
+mcp_servers:
+  epoch:
+    tools: { include: [pert_estimate, cocomo_estimate] }
+```
+
 ## Links
 
 - Homepage / docs (tool-category table, worked examples): <https://kyanitelabs.github.io/Epoch/>

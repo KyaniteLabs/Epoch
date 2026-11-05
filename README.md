@@ -66,7 +66,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 **30-second setup -- works in Claude Code, Cursor, VS Code, and Windsurf:**
 
 ```bash
-claude mcp add epoch -- npx @kyanitelabs/epoch
+claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.6.0
 ```
 
 That's it. Your AI assistant now has 26 time estimation tools.
@@ -82,6 +82,16 @@ Or add it to your project's `.mcp.json`:
     }
   }
 }
+```
+
+## Limit Epoch tools in Hermes
+
+Use Hermes `tools.include` to expose only these example tools:
+
+```yaml
+mcp_servers:
+  epoch:
+    tools: { include: [pert_estimate, cocomo_estimate] }
 ```
 
 ## Agent Skill
