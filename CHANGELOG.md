@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-05
+
+### feat: P90 percentile + native Hermes plugin
+
+- `monte_carlo_schedule` now returns `p90` (alongside p10/p50/p80/p95) and names it in `humanReadable`.
+- `schedule_risk` `confidenceIntervals` now include `p90` (z = 1.282).
+- New `plugins/epoch-hermes/`: native Hermes plugin posting P50/P90 on Kanban claim and recording actuals on completion.
+
+
 ### fix: MCP and CLI entries now flush telemetry on SIGTERM/SIGINT/SIGHUP
 
 - **The bug:** tool-call telemetry is buffered in `TelemetryStore` (10 s flush timer) and was only flushed on process `'exit'`. The HTTP entry handles SIGINT/SIGTERM, but the MCP and CLI entries did not — and Node's default death on an unhandled SIGTERM/SIGINT/SIGHUP never fires `'exit'`, so every record still in the buffer was lost. MCP hosts stop stdio servers with SIGTERM, which is how months of tool-call telemetry silently vanished on one installation (estimates kept being written while `telemetry.jsonl` stopped growing, leaving the hourly submitter with "no new records" forever).
