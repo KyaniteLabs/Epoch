@@ -84,6 +84,16 @@ Or add it to your project's `.mcp.json`:
 }
 ```
 
+## Limit Epoch tools in Hermes
+
+Use Hermes `tools.include` to expose only these example tools:
+
+```yaml
+mcp_servers:
+  epoch:
+    tools: { include: [pert_estimate, cocomo_estimate] }
+```
+
 ## Agent Skill
 
 Epoch also ships a public agent skill at [`skills/epoch/SKILL.md`](skills/epoch/SKILL.md). Use `$epoch` in compatible agent hosts when you want the agent to choose the right Epoch MCP or CLI workflow for time estimates, business-day math, model-cost comparison, schedule risk, and estimate-vs-actual feedback.
