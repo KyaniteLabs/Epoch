@@ -1,0 +1,366 @@
+"""Native regression tests for Kai's REQUEST CHANGES findings on Epoch PR #273.
+
+Each test names the finding it pins. Run: ``python -m pytest plugins/epoch-hermes/tests``.
+"""
+from __future__ import annotations
+
+import json
+import re
+import sys
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from conftest import PROFILE, PLUGIN_DIR, calls, fake_cmd
+
+
+def _run_in_profile(profile, fn, *args, **kw):
+    tok = PROFILE.set(profile)
+    try:
+        return fn(*args, **kw)
+    finally:
+        PROFILE.reset(tok)
+
+
+def _record_calls(tmp):
+    return [c for c in calls(tmp) if c["argv"][0] == "batch-record-actuals"]
+
+
+def _estimate_calls(tmp):
+    return [c for c in calls(tmp) if c["argv"][0] in ("monte-carlo-schedule", "reference-class-estimate")]
+
+
+# ---------------------------------------------------------------- finding 1: profile context
+
+
+def test_f1_background_job_keeps_the_hook_profile(plugin, board, make_ctx, tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(a, "default")},
+                    "coder": {"epoch_command": fake_cmd(b, "coder")}})
+    tid = board.create("Fix crash", "epoch: 1/2/4h")
+    rid = board.claim(tid)
+    _run_in_profile("coder", ctx.hooks["kanban_task_claimed"], task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    # settings: the coder profile's epoch_command ran, never the default one
+    assert [c["tag"] for c in _estimate_calls(b)] == ["coder"]
+    assert _estimate_calls(a) == []
+    # board/state: every board call and outbox write happened under the originating profile
+    assert {p for p, _, _ in ctx.dispatch_calls} == {"coder"}
+    assert ctx.state_store.get("coder", {}).get("outbox") == {}
+    assert "default" not in ctx.state_store or not ctx.state_store["default"].get("outbox")
+
+
+def test_f1_settings_snapshot_taken_in_hook_context(plugin, make_ctx, tmp_path):
+    make_ctx({"default": {"iterations": 111}, "coder": {"iterations": 222}})
+    assert _run_in_profile("coder", plugin.snapshot_settings)["iterations"] == 222
+    assert _run_in_profile("default", plugin.snapshot_settings)["iterations"] == 111
+
+
+# ---------------------------------------------------------------- finding 2: event order
+
+
+@pytest.mark.parametrize("order", ["claim_then_complete", "complete_before_estimate"])
+def test_f2_actual_recorded_in_both_event_orders(plugin, board, make_ctx, tmp_path, order):
+    gate = tmp_path / "release"
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path, "d", FAKE_EPOCH_BLOCK_FILE=gate)}})
+    tid = board.create("Add feature", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    if order == "claim_then_complete":
+        gate.touch()
+        ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)
+        assert plugin.wait_for_inflight(15)
+        board.complete(tid, rid, seconds=2 * 3600)
+        ctx.hooks["kanban_task_completed"](task_id=tid, run_id=rid)
+    else:
+        ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)  # estimate blocks on gate
+        time.sleep(0.3)
+        board.complete(tid, rid, seconds=2 * 3600)
+        ctx.hooks["kanban_task_completed"](task_id=tid, run_id=rid)  # finds no estimate yet
+        time.sleep(0.3)
+        gate.touch()
+    assert plugin.wait_for_inflight(15)
+    recs = _record_calls(tmp_path)
+    assert len(recs) == 1, recs
+    assert recs[0]["entries"][0]["actual_hours"] == 2.0
+    bodies = board.bodies(tid)
+    assert sum("[epoch:actual" in b for b in bodies) == 1
+    assert sum("[epoch:estimate" in b for b in bodies) == 1
+
+
+def test_f2_repeated_completion_is_idempotent(plugin, board, make_ctx, tmp_path):
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    board.complete(tid, rid, seconds=3600)
+    for _ in range(3):
+        ctx.hooks["kanban_task_completed"](task_id=tid, run_id=rid)
+        assert plugin.wait_for_inflight(15)
+    assert sum("[epoch:actual" in b for b in board.bodies(tid)) == 1
+    assert len(_record_calls(tmp_path)) == 1  # later calls short-circuit on the board marker
+
+
+def test_f2_concurrent_recorders_record_once(plugin, board, make_ctx, tmp_path):
+    """Both sides reach record at once: Epoch's duplicate rejection keeps it to one actual."""
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    board.complete(tid, rid, seconds=3600)
+    shown = json.loads(board.dispatch("kanban_show", {"task_id": tid}))
+    s = plugin.snapshot_settings()
+    out = []
+    ts = [threading.Thread(target=lambda: out.append(plugin.record_actual_for_run(tid, None, rid, shown, s)))
+          for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sorted(out) == ["duplicate", "recorded"]
+    assert sum("[epoch:actual" in b for b in board.bodies(tid)) == 1
+
+
+# ---------------------------------------------------------------- finding 3: explicit > hints
+
+
+@pytest.mark.parametrize("where", ["title", "body"])
+def test_f3_explicit_triple_overrides_text_hints(plugin, make_ctx, tmp_path, where):
+    make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    title, body = ("Task epoch: 1/2/3h", "") if where == "title" else ("Task", "epoch: 1/2/3h")
+    out = json.loads(plugin._tool({"title": title, "body": body,
+                                   "optimistic": 10, "most_likely": 20, "pessimistic": 30}))
+    assert out["method"] == "monte_carlo"
+    task = json.loads(_estimate_calls(tmp_path)[-1]["argv"][2])[0]
+    assert (task["optimistic"], task["most_likely"], task["pessimistic"]) == (1.25, 2.5, 3.75)
+    assert "explicit 10/20/30h" in out["summary"]
+
+
+@pytest.mark.parametrize("where", ["title", "body"])
+def test_f3_hint_in_title_or_body_is_used(plugin, make_ctx, tmp_path, where):
+    make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    title, body = ("Task epoch: 2/4/8h", "") if where == "title" else ("Task", "notes\nestimate: 1-2-3 d")
+    r = plugin.estimate(title, body)
+    task = json.loads(_estimate_calls(tmp_path)[-1]["argv"][2])[0]
+    expected = (0.25, 0.5, 1.0) if where == "title" else (1.0, 2.0, 3.0)
+    assert (task["optimistic"], task["most_likely"], task["pessimistic"]) == expected
+    assert r["method"] == "monte_carlo"
+
+
+@pytest.mark.parametrize("args,needle", [
+    ({"optimistic": -1, "most_likely": 2, "pessimistic": 3}, "must be > 0"),
+    ({"optimistic": 1, "most_likely": 2}, "missing pessimistic"),
+    ({"optimistic": 5, "most_likely": 2, "pessimistic": 3}, "optimistic <= most_likely"),
+    ({"optimistic": 1, "most_likely": 2, "pessimistic": float("inf")}, "finite"),
+    ({"optimistic": 1, "most_likely": 2, "pessimistic": 1e9}, "exceeds"),
+    ({"optimistic": "x", "most_likely": 2, "pessimistic": 3}, "must be a number"),
+    ({"optimistic": True, "most_likely": 2, "pessimistic": 3}, "must be a number"),
+])
+def test_f3_invalid_explicit_triple_is_rejected_not_downgraded(plugin, make_ctx, tmp_path, args, needle):
+    make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    out = json.loads(plugin._tool({"title": "t", **args}))
+    assert needle in out["error"]
+    assert _estimate_calls(tmp_path) == []  # never silently fell back to reference class
+
+
+@pytest.mark.parametrize("hint", ["estimate: 1..2/3/4h", "epoch: 5/2/1h", "epoch: 0/1/2", "epoch: 1/2"])
+def test_f3_malformed_hint_fails_visibly(plugin, make_ctx, tmp_path, hint):
+    make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    r = plugin.estimate("Add widget", hint)  # must not raise
+    assert r["method"] == "reference_class"
+    assert r["hint_error"] and "Ignored" in r["summary"]
+    out = json.loads(plugin._tool({"title": "Add widget", "body": hint}))
+    assert out["hint_error"]
+
+
+def test_f3_prose_without_numbers_is_not_a_hint(plugin):
+    assert plugin.find_hint("Estimate: TBD", "epoch: later") == (None, None)
+
+
+# ---------------------------------------------------------------- finding 4: cross-profile
+
+
+def test_f4_dispatcher_and_assignee_profiles_share_board_correlation(plugin, board, make_ctx, tmp_path):
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path, "dispatcher")},
+                    "coder": {"epoch_command": fake_cmd(tmp_path, "worker")}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    _run_in_profile("default", ctx.hooks["kanban_task_claimed"], task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    board.complete(tid, rid, seconds=5400)
+    _run_in_profile("coder", ctx.hooks["kanban_task_completed"], task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    recs = _record_calls(tmp_path)
+    assert [r["tag"] for r in recs] == ["worker"]
+    est_ref = _estimate_calls(tmp_path)[0]["ref"]
+    assert recs[0]["entries"][0]["estimate_id"] == est_ref
+    # neither profile's private state carries the association
+    for prof in ("default", "coder"):
+        assert not any(k.startswith("ref:") for k in ctx.state_store.get(prof, {}))
+
+
+# ---------------------------------------------------------------- finding 5: stale reclaim
+
+
+def test_f5_late_result_from_reclaimed_run_is_dropped(plugin, board, make_ctx, tmp_path):
+    gate = tmp_path / "release-old"
+    old_cmd = fake_cmd(tmp_path, "old", FAKE_EPOCH_BLOCK_FILE=gate)
+    ctx = make_ctx({"old": {"epoch_command": old_cmd}, "new": {"epoch_command": fake_cmd(tmp_path, "new")}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    r1 = board.claim(tid)
+    _run_in_profile("old", ctx.hooks["kanban_task_claimed"], task_id=tid, run_id=r1)  # paused
+    time.sleep(0.3)
+    board.reclaim(tid, r1)
+    board.now += 600
+    r2 = board.claim(tid)
+    _run_in_profile("new", ctx.hooks["kanban_task_claimed"], task_id=tid, run_id=r2)
+    deadline = time.time() + 10
+    while not any(f"run={r2}" in b for b in board.bodies(tid)) and time.time() < deadline:
+        time.sleep(0.05)
+    gate.touch()  # old estimator finishes late
+    assert plugin.wait_for_inflight(15)
+    estimates = [b for b in board.bodies(tid) if "[epoch:estimate" in b]
+    assert len(estimates) == 1 and f"run={r2}" in estimates[0]
+    board.complete(tid, r2, seconds=1800)
+    _run_in_profile("new", ctx.hooks["kanban_task_completed"], task_id=tid, run_id=r2)
+    assert plugin.wait_for_inflight(15)
+    recs = _record_calls(tmp_path)
+    new_ref = next(c["ref"] for c in _estimate_calls(tmp_path) if c["tag"] == "new")
+    assert len(recs) == 1 and recs[0]["entries"][0]["estimate_id"] == new_ref
+    assert recs[0]["entries"][0]["actual_hours"] == 0.5  # run 2's own time basis, not task age
+
+
+def test_f5_completion_of_old_run_never_uses_new_runs_estimate(plugin, board, make_ctx, tmp_path):
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    r1 = board.claim(tid)
+    board.reclaim(tid, r1)
+    r2 = board.claim(tid)
+    ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=r2)
+    assert plugin.wait_for_inflight(15)
+    ctx.hooks["kanban_task_completed"](task_id=tid, run_id=r1)
+    assert plugin.wait_for_inflight(15)
+    assert _record_calls(tmp_path) == []
+
+
+# ---------------------------------------------------------------- finding 6: lifecycle
+
+
+def test_f6_unfinished_job_survives_in_outbox_and_replays(plugin, board, make_ctx, tmp_path):
+    gate = tmp_path / "never-yet"
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path, FAKE_EPOCH_BLOCK_FILE=gate),
+                                "timeout_seconds": 30}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(0.3) is False  # bounded wait gives up...
+    box = ctx.state.get("outbox")
+    assert list(box) == [f"claimed:-:{tid}:{rid}"]  # ...but the job is durable
+    # Simulate a fresh process loading the plugin later: lease expired, replay finishes the job.
+    gate.touch()
+    plugin.wait_for_inflight(15)  # let the abandoned thread end (a killed process would not)
+    box[f"claimed:-:{tid}:{rid}"]["lease_until"] = 0
+    ctx.state.set("outbox", box)
+    from conftest import load_plugin
+    fresh = load_plugin()
+    fresh.register(ctx)
+    assert fresh.wait_for_inflight(15)
+    assert sum("[epoch:estimate" in b for b in board.bodies(tid)) == 1  # no duplicate post
+    assert ctx.state.get("outbox") == {}
+
+
+def test_f6_failed_jobs_retry_then_expire(plugin, board, make_ctx, tmp_path):
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path, FAKE_EPOCH_MODE="nonzero")}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    assert ctx.state.get("outbox")[f"claimed:-:{tid}:{rid}"]["attempts"] == 1
+    assert sum("will retry" in b for b in board.bodies(tid)) == 1
+    for _ in range(plugin.OUTBOX_MAX_ATTEMPTS + 1):
+        plugin.replay_outbox()
+        plugin.wait_for_inflight(15)
+    assert ctx.state.get("outbox") == {}
+    assert sum("will retry" in b for b in board.bodies(tid)) == 1  # said once, not per retry
+
+
+def test_f6_atexit_wait_is_registered(plugin, make_ctx):
+    import atexit
+    make_ctx({"default": {}})
+    assert plugin._atexit_registered is True
+
+
+# ---------------------------------------------------------------- finding 7: provenance
+
+
+@pytest.mark.parametrize("seconds,status", [
+    (2 * 3600, "recorded"),      # normal
+    (60, "rejected"),            # < 0.05h
+    (13 * 3600, "rejected"),     # > 12h
+    (int(0.15 * 3600), "rejected"),  # >= 10x off a 2h estimate (0.15h)
+])
+def test_f7_wallclock_actuals_carry_auto_wallclock_provenance(plugin, board, make_ctx, tmp_path, seconds, status):
+    ctx = make_ctx({"default": {"epoch_command": fake_cmd(tmp_path)}})
+    tid = board.create("t", "epoch: 1/2/3h")
+    rid = board.claim(tid)
+    ctx.hooks["kanban_task_claimed"](task_id=tid, run_id=rid)
+    assert plugin.wait_for_inflight(15)
+    board.complete(tid, rid, seconds=seconds)
+    shown = json.loads(board.dispatch("kanban_show", {"task_id": tid}))
+    assert plugin.completed_job(tid, None, rid, plugin.snapshot_settings()) == status
+    rec = _record_calls(tmp_path)[-1]
+    assert rec["argv"][0] == "batch-record-actuals"
+    entry = rec["entries"][0]
+    assert entry["calibration_provenance"] == "auto_wallclock"
+    assert entry["actual_hours"] == round(seconds / 3600, 4)  # no 0.01h clamp
+    assert not any(a == "record-actual" for c in calls(tmp_path) for a in c["argv"][:1])
+    if status == "rejected":
+        assert any("sanity gate" in b for b in board.bodies(tid))
+        # rejected runs are marked so they are not retried forever
+        assert plugin.completed_job(tid, None, rid, plugin.snapshot_settings()) == "already_recorded"
+
+
+# ---------------------------------------------------------------- finding 8: README
+
+
+def test_f8_readme_install_command_uses_owner_repo_subdir():
+    readme = (PLUGIN_DIR / "README.md").read_text()
+    assert "--subdir" not in readme
+    assert "hermes plugins install KyaniteLabs/Epoch/plugins/epoch-hermes" in readme
+
+
+# ---------------------------------------------------------------- CLI error paths
+
+
+@pytest.mark.parametrize("mode,needle", [("nonzero", "exited 3"), ("garbage", "no JSON envelope")])
+def test_run_epoch_error_paths(plugin, make_ctx, tmp_path, mode, needle):
+    make_ctx({"default": {"epoch_command": fake_cmd(tmp_path, FAKE_EPOCH_MODE=mode)}})
+    res = plugin.run_epoch(["reference-class-estimate"])
+    assert res["ok"] is False and needle in res["error"]
+
+
+def test_run_epoch_timeout(plugin, make_ctx, tmp_path):
+    make_ctx({"default": {"epoch_command": fake_cmd(tmp_path, FAKE_EPOCH_MODE="timeout"),
+                          "timeout_seconds": 1}})
+    res = plugin.run_epoch(["reference-class-estimate"])
+    assert res == {"ok": False, "error": "epoch timed out after 1s"}
+
+
+def test_run_epoch_missing_binary(plugin, make_ctx):
+    make_ctx({"default": {"epoch_command": "definitely-not-a-real-epoch-binary"}})
+    assert "not runnable" in plugin.run_epoch(["x"])["error"]
+
+
+def test_epoch_data_dir_setting_pins_the_ledger(plugin, make_ctx, tmp_path):
+    ledger = tmp_path / "shared-ledger"
+    make_ctx({"default": {"epoch_command": f"{sys.executable} {Path(__file__).parent / 'fake_epoch.py'}",
+                          "epoch_data_dir": str(ledger)}})
+    plugin.run_epoch(["reference-class-estimate", "--task-type", "feature", "--complexity", "3"])
+    assert (ledger / "calls.jsonl").exists()
+
+
+def test_plugin_imports_no_private_hermes_modules():
+    src = (PLUGIN_DIR / "__init__.py").read_text()
+    assert not re.search(r"^\s*(from|import)\s+hermes_cli", src, re.M)
+    assert "kanban_db" not in src

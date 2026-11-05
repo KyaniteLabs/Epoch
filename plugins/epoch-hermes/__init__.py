@@ -1,41 +1,83 @@
 """Epoch Estimator — native Hermes plugin.
 
-kanban_task_claimed   -> estimate the task (three-point hint in body, else reference class)
-                         and post P50/P90 as a Kanban comment.
-kanban_task_completed -> record actual wall-clock hours against the stored feedbackRef.
+kanban_task_claimed   -> estimate the task (explicit three-point hint, else reference class),
+                         post P50/P90 as a Kanban comment that carries a machine-readable
+                         ``[epoch:estimate run=<run_id> ref=<feedbackRef>]`` marker.
+kanban_task_completed -> find the estimate marker for the *same run* on the board and record
+                         that run's wall-clock hours to Epoch with
+                         ``calibration_provenance: auto_wallclock`` (so Epoch's sanity gates apply).
 /epoch <cli args>     -> run any Epoch CLI subcommand (e.g. /epoch pert-estimate ...).
 epoch_estimate tool   -> agent-callable Monte Carlo estimate.
 
-Hooks fire in the dispatcher/worker after the DB commit; all Epoch work runs on a
-daemon thread so a slow `npx` never delays worker spawn. Every path is best-effort
-and never raises into Hermes.
+Design notes (see README "How it works"):
+
+* Board-scoped correlation. ``kanban_task_claimed`` fires in the dispatcher's profile and
+  ``kanban_task_completed`` in the assignee's profile; ``ctx.state`` is profile-scoped, so the
+  estimate ↔ run association lives on the shared Kanban board (a task comment keyed by run id),
+  not in plugin state. Either side can reconcile, in either event order, and Epoch's ledger
+  rejects duplicate actuals, so recording is idempotent.
+* Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
+  ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
+* Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
+  profile (HERMES_HOME override, settings, plugin state) follows the job. Settings are also
+  snapshotted in the hook's own context.
+* Lifecycle: every job is written to a profile-scoped outbox before it starts and removed when it
+  reaches a terminal state. At interpreter exit the plugin waits (bounded by
+  ``shutdown_wait_seconds``) for in-flight jobs; anything still unfinished (or killed by
+  ``os._exit``) is replayed the next time the plugin loads in that profile.
+
+Every path is best-effort and never raises into Hermes.
 """
 
 from __future__ import annotations
 
+import atexit
+import contextvars
 import json
 import logging
+import math
+import os
 import re
 import shlex
 import subprocess
 import threading
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-DEFAULTS = {
+DEFAULTS: Dict[str, Any] = {
     "epoch_command": "npx -y @kyanitelabs/epoch@0.6.0",
+    "epoch_data_dir": "",
     "comment_on_claim": True,
     "record_actuals": True,
     "iterations": 5000,
     "timeout_seconds": 60,
+    "shutdown_wait_seconds": 20,
 }
 
-# "epoch: 2/4/10" or "estimate: 2-4-10 h" (optimistic/most-likely/pessimistic, hours)
-_HINT_RE = re.compile(
-    r"(?:epoch|estimate)\s*:\s*([\d.]+)\s*[/\-,]\s*([\d.]+)\s*[/\-,]\s*([\d.]+)\s*(h|hours?|d|days?)?",
+# Hours bounds for a three-point estimate (explicit or hint). 2000h ≈ one person-year.
+MAX_ESTIMATE_HOURS = 2000.0
+WORKDAY_HOURS = 8.0
+OUTBOX_KEY = "outbox"
+OUTBOX_MAX_ATTEMPTS = 5
+OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 3600
+AUTO_WALLCLOCK = "auto_wallclock"
+
+_NUM = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
+# Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
+_HINT_STRICT_RE = re.compile(
+    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*(h|hrs?|hours?|d|days?)?\s*(?:$|[\s.;)\]])",
     re.IGNORECASE,
 )
+_HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-10h")
+    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(h|hrs?|hours?|d|days?)?\s*(?:$|[\s.;)\]])",
+    re.IGNORECASE,
+)
+# Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
+_HINT_ATTEMPT_RE = re.compile(r"\b(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)", re.IGNORECASE)
+_MARKER_RE = re.compile(r"\[epoch:(estimate|actual)((?:\s+[a-z_]+=[^\s\]]+)*)\s*\]")
+
 _TYPE_WORDS = {
     "bugfix": ("bug", "fix", "regression", "crash"),
     "refactor": ("refactor", "cleanup", "rename"),
@@ -47,9 +89,26 @@ _TYPE_WORDS = {
 }
 
 _ctx = None
+_inflight: Dict[str, threading.Thread] = {}
+_inflight_lock = threading.Lock()
+_outbox_lock = threading.Lock()
+_atexit_registered = False
 
 
-def _cfg(key: str) -> Any:
+class EstimateInputError(ValueError):
+    """A three-point estimate (explicit or textual) failed validation."""
+
+
+class BoardError(RuntimeError):
+    """A kanban tool call through ``ctx.dispatch_tool`` returned an error."""
+
+
+# --------------------------------------------------------------------------- settings
+
+
+def _cfg(key: str, settings: Optional[Dict[str, Any]] = None) -> Any:
+    if settings is not None and key in settings:
+        return settings[key]
     try:
         val = _ctx.get_config(key, None) if _ctx is not None else None
     except Exception:
@@ -57,31 +116,123 @@ def _cfg(key: str) -> Any:
     return DEFAULTS[key] if val is None else val
 
 
-def run_epoch(args: list[str]) -> Dict[str, Any]:
-    """Run the Epoch CLI and return its parsed {ok, data} envelope (or an error dict)."""
-    cmd = shlex.split(str(_cfg("epoch_command"))) + args
+def snapshot_settings() -> Dict[str, Any]:
+    """Resolve every setting in the *current* context (the hook's profile)."""
+    return {k: _cfg(k) for k in DEFAULTS}
+
+
+# --------------------------------------------------------------------------- Epoch CLI
+
+
+def _error_text(res: Dict[str, Any]) -> str:
+    err = res.get("error")
+    if isinstance(err, dict):
+        return str(err.get("message") or err)
+    return str(err) if err is not None else "unknown error"
+
+
+def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Run the Epoch CLI and return its parsed ``{ok, data|error}`` envelope.
+
+    Never raises: timeouts, missing binaries, non-zero exits and unparseable output all come back
+    as ``{"ok": False, "error": "..."}``.
+    """
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=int(_cfg("timeout_seconds")))
-    except FileNotFoundError as exc:
+        cmd = shlex.split(str(_cfg("epoch_command", settings))) + [str(a) for a in args]
+    except ValueError as exc:
+        return {"ok": False, "error": f"invalid epoch_command: {exc}"}
+    env = None
+    data_dir = str(_cfg("epoch_data_dir", settings) or "").strip()
+    if data_dir:
+        env = dict(os.environ, EPOCH_DATA_DIR=os.path.expanduser(data_dir))
+    try:
+        timeout = float(_cfg("timeout_seconds", settings))
+    except (TypeError, ValueError):
+        timeout = float(DEFAULTS["timeout_seconds"])
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+    except (FileNotFoundError, PermissionError) as exc:
         return {"ok": False, "error": f"epoch not runnable: {exc}"}
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "epoch timed out"}
-    out = proc.stdout.strip()
+        return {"ok": False, "error": f"epoch timed out after {timeout:g}s"}
+    except OSError as exc:
+        return {"ok": False, "error": f"epoch failed to start: {exc}"}
+    out = (proc.stdout or "").strip()
     start = out.find("{")
-    try:
-        return json.loads(out[start:]) if start >= 0 else {"ok": False, "error": proc.stderr.strip()[-500:]}
-    except json.JSONDecodeError:
-        return {"ok": False, "error": out[-500:] or proc.stderr.strip()[-500:]}
+    parsed: Any = None
+    if start >= 0:
+        try:
+            parsed = json.loads(out[start:])
+        except json.JSONDecodeError:
+            parsed = None
+    if isinstance(parsed, dict) and "ok" in parsed:
+        return parsed
+    tail = (proc.stderr or "").strip()[-500:] or out[-500:]
+    if proc.returncode != 0:
+        return {"ok": False, "error": f"epoch exited {proc.returncode}: {tail}"}
+    return {"ok": False, "error": f"epoch returned no JSON envelope: {tail}"}
+
+
+# --------------------------------------------------------------------------- estimates
+
+
+def validate_triple(o: Any, m: Any, p: Any, *, source: str = "estimate") -> Tuple[float, float, float]:
+    """Return a validated (optimistic, most_likely, pessimistic) triple in hours."""
+    vals = []
+    for name, v in (("optimistic", o), ("most_likely", m), ("pessimistic", p)):
+        if isinstance(v, bool):
+            raise EstimateInputError(f"{source}: {name} must be a number, got {v!r}")
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            raise EstimateInputError(f"{source}: {name} must be a number, got {v!r}") from None
+        if not math.isfinite(f):
+            raise EstimateInputError(f"{source}: {name} must be finite, got {v!r}")
+        if f <= 0:
+            raise EstimateInputError(f"{source}: {name} must be > 0 hours, got {f:g}")
+        if f > MAX_ESTIMATE_HOURS:
+            raise EstimateInputError(f"{source}: {name} {f:g}h exceeds the {MAX_ESTIMATE_HOURS:g}h bound")
+        vals.append(f)
+    if not (vals[0] <= vals[1] <= vals[2]):
+        raise EstimateInputError(
+            f"{source}: need optimistic <= most_likely <= pessimistic, got "
+            f"{vals[0]:g}/{vals[1]:g}/{vals[2]:g}")
+    return vals[0], vals[1], vals[2]
 
 
 def parse_hint(text: str) -> Optional[Dict[str, float]]:
-    m = _HINT_RE.search(text or "")
+    """Parse the first ``epoch:``/``estimate:`` hint in *text* (hours).
+
+    Returns ``None`` when there is no hint attempt; raises :class:`EstimateInputError` when there is
+    one but it is malformed or out of bounds (callers surface that visibly).
+    """
+    m = _HINT_ATTEMPT_RE.search(text or "")
     if not m:
         return None
-    o, ml, p = (float(x) for x in m.groups()[:3])
-    unit = (m.group(4) or "h").lower()
-    scale = 8.0 if unit.startswith("d") else 1.0  # Epoch MC takes days; normalise below
-    return {"optimistic": o * scale, "most_likely": ml * scale, "pessimistic": p * scale}
+    raw = m.group(1).strip()
+    sm = _HINT_STRICT_RE.match(raw) or _HINT_DASH_RE.match(raw)
+    if not sm:
+        raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r} (expected e.g. 'epoch: 2/4/10h')")
+    unit = (sm.group(4) or "h").lower()
+    scale = WORKDAY_HOURS if unit.startswith("d") else 1.0
+    try:
+        o, ml, p = (float(x) * scale for x in sm.groups()[:3])
+    except ValueError:
+        raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r}") from None
+    o, ml, p = validate_triple(o, ml, p, source=f"hint {m.group(0).strip()[:60]!r}")
+    return {"optimistic": o, "most_likely": ml, "pessimistic": p}
+
+
+def find_hint(title: str, body: str) -> Tuple[Optional[Dict[str, float]], Optional[str]]:
+    """(hint, problem). Title is checked first, then body; the first hint attempt wins."""
+    for text in (title or "", body or ""):
+        try:
+            hint = parse_hint(text)
+        except EstimateInputError as exc:
+            return None, str(exc)
+        if hint is not None:
+            return hint, None
+    return None, None
 
 
 def guess_type(text: str) -> str:
@@ -92,99 +243,437 @@ def guess_type(text: str) -> str:
     return "feature"
 
 
-def estimate(title: str, body: str = "") -> Dict[str, Any]:
-    """Return {'summary', 'feedbackRef', 'method', 'raw'} for a task."""
-    hint = parse_hint(f"{title}\n{body}")
+def _monte_carlo(title: str, triple: Dict[str, float], source: str,
+                 settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    # Epoch monte_carlo_schedule works in days (8h workday); the triple is in hours.
+    task = {"name": (title or "task")[:80], **{k: round(v / WORKDAY_HOURS, 6) for k, v in triple.items()}}
+    iterations = int(_cfg("iterations", settings))
+    res = run_epoch(["monte-carlo-schedule", "--tasks", json.dumps([task]),
+                     "--iterations", str(iterations)], settings)
+    if not res.get("ok") or not isinstance(res.get("data"), dict):
+        return {"summary": f"⏱ Epoch estimate failed: {_error_text(res)}", "raw": res, "method": None}
+    d = res["data"]
+
+    def h(k: str) -> str:
+        try:
+            return f"{float(d[k]) * WORKDAY_HOURS:.1f}h"
+        except (KeyError, TypeError, ValueError):
+            return "n/a"
+
+    p90 = h("p90") if d.get("p90") is not None else "n/a (Epoch < 0.7)"
+    summary = (f"⏱ Epoch estimate — P50 {h('p50')} · P90 {p90} "
+               f"(P80 {h('p80')} · P95 {h('p95')}; Monte Carlo, {iterations} runs, from {source} "
+               f"{triple['optimistic']:g}/{triple['most_likely']:g}/{triple['pessimistic']:g}h)")
+    return {"summary": summary, "feedbackRef": d.get("feedbackRef"), "method": "monte_carlo",
+            "triple": triple, "raw": d}
+
+
+def estimate(title: str, body: str = "", *, explicit: Optional[Dict[str, Any]] = None,
+             settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return ``{'summary', 'feedbackRef', 'method', ...}`` for a task.
+
+    Precedence: a validated *explicit* triple (structured values, never re-parsed from text) >
+    the first hint in title, then body > reference-class forecast. A malformed hint does not
+    silently vanish: the fallback summary names the problem (``hint_error``).
+    """
+    if explicit is not None:
+        o, m, p = validate_triple(explicit.get("optimistic"), explicit.get("most_likely"),
+                                  explicit.get("pessimistic"), source="explicit estimate")
+        return _monte_carlo(title, {"optimistic": o, "most_likely": m, "pessimistic": p},
+                            "explicit", settings)
+    hint, problem = find_hint(title, body)
     if hint:
-        # Epoch monte_carlo_schedule works in days (8h workday); hint is in hours.
-        task = {"name": title[:80] or "task", **{k: round(v / 8.0, 4) for k, v in hint.items()}}
-        res = run_epoch(["monte-carlo-schedule", "--tasks", json.dumps([task]),
-                         "--iterations", str(int(_cfg("iterations")))])
-        if not res.get("ok"):
-            return {"summary": f"Epoch estimate failed: {res.get('error')}", "raw": res}
-        d = res["data"]
-        h = lambda k: f"{float(d[k]) * 8:.1f}h"  # noqa: E731
-        p90 = h("p90") if d.get("p90") is not None else "n/a (Epoch < 0.7)"
-        summary = (f"⏱ Epoch estimate — P50 {h('p50')} · P90 {p90} "
-                   f"(P80 {h('p80')} · P95 {h('p95')}; "
-                   f"Monte Carlo, {_cfg('iterations')} runs, from hint "
-                   f"{hint['optimistic']:g}/{hint['most_likely']:g}/{hint['pessimistic']:g}h)")
-        return {"summary": summary, "feedbackRef": d.get("feedbackRef"), "method": "monte_carlo", "raw": d}
+        return _monte_carlo(title, hint, "hint", settings)
     ttype = guess_type(f"{title} {body}")
-    res = run_epoch(["reference-class-estimate", "--task-type", ttype, "--complexity", "3"])
-    if not res.get("ok"):
-        return {"summary": f"Epoch estimate failed: {res.get('error')}", "raw": res}
+    res = run_epoch(["reference-class-estimate", "--task-type", ttype, "--complexity", "3"], settings)
+    note = f" Ignored {problem}." if problem else ""
+    if not res.get("ok") or not isinstance(res.get("data"), dict):
+        return {"summary": f"⏱ Epoch estimate failed: {_error_text(res)}.{note}", "raw": res,
+                "method": None, "hint_error": problem}
     d = res["data"]
     summary = (f"⏱ Epoch estimate — ~{d.get('correctedEstimate')}h ({ttype}, reference class; "
-               f"confidence {d.get('confidence')}). Add `epoch: o/m/p` hours to the task body "
+               f"confidence {d.get('confidence')}).{note} Add `epoch: o/m/p` hours to the task body "
                f"for a P50/P90 range.")
-    return {"summary": summary, "feedbackRef": d.get("feedbackRef"), "method": "reference_class", "raw": d}
+    return {"summary": summary, "feedbackRef": d.get("feedbackRef"), "method": "reference_class",
+            "raw": d, "hint_error": problem}
 
 
-def _with_task(task_id: str, board: Optional[str], fn) -> None:
-    from hermes_cli import kanban_db
+# --------------------------------------------------------------------------- board (public tools)
+
+
+def _load_tool_json(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
     try:
-        from hermes_cli.kanban_db_connect import connect_closing
-    except ImportError:  # older Hermes
-        connect_closing = kanban_db.connect_closing
-    with connect_closing(board=board) as conn:
-        task = kanban_db.get_task(conn, task_id)
-        if task is not None:
-            fn(conn, task)
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        raise BoardError(f"unparseable tool result: {str(raw)[:200]}") from None
+    if not isinstance(data, dict):
+        raise BoardError(f"unexpected tool result: {str(raw)[:200]}")
+    return data
 
 
-def _claimed_worker(task_id: str, board: Optional[str]) -> None:
+def _kanban(tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Call a Hermes kanban tool through the public ``ctx.dispatch_tool`` surface."""
+    if _ctx is None:
+        raise BoardError("plugin not registered")
+    data = _load_tool_json(_ctx.dispatch_tool(tool, args))
+    if "error" in data and str(data["error"]).startswith("Unknown tool"):
+        # One-shot CLI processes may not have imported the kanban tool module yet; importing it
+        # registers the public tools (it is the same module Hermes loads for agents).
+        try:
+            import importlib
+            importlib.import_module("tools.kanban_tools")
+        except Exception as exc:  # pragma: no cover - depends on host install
+            raise BoardError(f"{tool} unavailable: {exc}") from None
+        data = _load_tool_json(_ctx.dispatch_tool(tool, args))
+    if "error" in data:
+        raise BoardError(f"{tool}: {data['error']}")
+    return data
+
+
+def _board_args(task_id: str, board: Optional[str], **extra: Any) -> Dict[str, Any]:
+    args: Dict[str, Any] = {"task_id": task_id, **extra}
+    if board:
+        args["board"] = board
+    return args
+
+
+def show_task(task_id: str, board: Optional[str]) -> Dict[str, Any]:
+    return _kanban("kanban_show", _board_args(task_id, board))
+
+
+def add_comment(task_id: str, board: Optional[str], body: str) -> None:
+    _kanban("kanban_comment", _board_args(task_id, board, body=body))
+
+
+def format_marker(kind: str, **fields: Any) -> str:
+    parts = " ".join(f"{k}={str(v).replace(' ', '_').replace(']', '')}" for k, v in fields.items()
+                     if v is not None)
+    return f"[epoch:{kind} {parts}]"
+
+
+def parse_markers(comments: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    for c in comments or []:
+        for m in _MARKER_RE.finditer(str((c or {}).get("body") or "")):
+            fields = dict(kv.split("=", 1) for kv in m.group(2).split())
+            fields["kind"] = m.group(1)
+            out.append(fields)
+    return out
+
+
+def _marker_for(shown: Dict[str, Any], kind: str, run_id: Any) -> Optional[Dict[str, str]]:
+    for mk in parse_markers(shown.get("comments") or []):
+        if mk["kind"] == kind and mk.get("run") == str(run_id):
+            return mk
+    return None
+
+
+def _run_for(shown: Dict[str, Any], run_id: Any) -> Optional[Dict[str, Any]]:
+    for r in shown.get("runs") or []:
+        if str(r.get("id")) == str(run_id):
+            return r
+    return None
+
+
+def _run_completed(run: Optional[Dict[str, Any]]) -> bool:
+    return bool(run and run.get("outcome") == "completed" and run.get("started_at") is not None
+                and run.get("ended_at") is not None)
+
+
+def _claim_is_live(shown: Dict[str, Any], run_id: Any) -> bool:
+    """The claim for *run_id* still owns the task, or that run already completed."""
+    task = shown.get("task") or {}
+    if str(task.get("current_run_id")) == str(run_id):
+        return True
+    return _run_completed(_run_for(shown, run_id))
+
+
+# --------------------------------------------------------------------------- jobs
+
+
+def _fmt_hours(hours: float) -> str:
+    return f"{hours:.2f}h" if hours >= 0.1 else f"{hours * 60:.1f}min"
+
+
+def record_actual_for_run(task_id: str, board: Optional[str], run_id: Any,
+                          shown: Dict[str, Any], settings: Optional[Dict[str, Any]]) -> str:
+    """Record the wall-clock of *run_id* against its own estimate. Returns a status string.
+
+    Idempotent: an existing ``[epoch:actual run=N]`` marker short-circuits, and Epoch's ledger
+    rejects a second actual for the same feedbackRef (``duplicate``) so two processes racing here
+    record exactly once.
+    """
+    run = _run_for(shown, run_id)
+    if not _run_completed(run):
+        return "run_not_completed"
+    est = _marker_for(shown, "estimate", run_id)
+    if not est or not est.get("ref"):
+        return "no_estimate"
+    if _marker_for(shown, "actual", run_id):
+        return "already_recorded"
+    hours = (int(run["ended_at"]) - int(run["started_at"])) / 3600.0
+    entry = {"estimate_id": est["ref"], "actual_hours": round(hours, 4),
+             "notes": f"hermes kanban {task_id} run {run_id} (wall-clock)",
+             "calibration_provenance": AUTO_WALLCLOCK}
+    res = run_epoch(["batch-record-actuals", "--entries", json.dumps([entry])], settings)
+    data = res.get("data") if isinstance(res.get("data"), dict) else {}
+    if res.get("ok") and int(data.get("succeeded") or 0) >= 1:
+        add_comment(task_id, board,
+                    f"⏱ Epoch recorded actual {_fmt_hours(hours)} (wall-clock, auto_wallclock, run {run_id}). "
+                    + format_marker("actual", run=run_id, ref=est["ref"], hours=f"{hours:.4f}"))
+        return "recorded"
+    err = _error_text(res) if not res.get("ok") else "; ".join(map(str, data.get("errors") or []))
+    if "reason: duplicate" in err:
+        return "duplicate"
+    if "auto_wallclock_out_of_bounds" in err or "below_threshold" in err:
+        add_comment(task_id, board,
+                    f"⏱ Epoch did not record wall-clock {_fmt_hours(hours)} for run {run_id}: it fails Epoch's "
+                    f"auto_wallclock sanity gate (0.05–12h and <10× the estimate). Record a verified "
+                    f"actual with `/epoch record-actual --estimate-id {est['ref']} --actual-hours <h>`. "
+                    + format_marker("actual", run=run_id, ref=est["ref"], status="rejected"))
+        return "rejected"
+    raise RuntimeError(f"record failed: {err}")  # transient -> outbox retry
+
+
+def claimed_job(task_id: str, board: Optional[str], run_id: Any,
+                settings: Optional[Dict[str, Any]] = None, *, attempt: int = 0) -> str:
+    shown = show_task(task_id, board)
+    if run_id is not None and not _claim_is_live(shown, run_id):
+        return "stale"
+    want_comment = bool(_cfg("comment_on_claim", settings))
+    want_actuals = bool(_cfg("record_actuals", settings))
+    if not (want_comment or want_actuals):
+        return "disabled"
+    if _marker_for(shown, "estimate", run_id) is None:
+        task = shown.get("task") or {}
+        result = estimate(task.get("title") or "", task.get("body") or "", settings=settings)
+        if result.get("method") is None:
+            # Epoch failed (e.g. slow first-run npx timed out). Say so once, visibly, then leave
+            # the job in the outbox so a later load retries it.
+            if attempt == 0 and want_comment:
+                add_comment(task_id, board, f"{result['summary']} (will retry)")
+            raise RuntimeError(result["summary"])
+        # The estimate may have taken a while (first-run npx): re-check that this claim still owns
+        # the task before publishing, so a late result from a reclaimed run never lands.
+        shown = show_task(task_id, board)
+        if run_id is not None and not _claim_is_live(shown, run_id):
+            return "stale"
+        ref = result.get("feedbackRef")
+        marker = format_marker("estimate", run=run_id, ref=ref) if (ref and run_id is not None) else ""
+        if want_comment:
+            add_comment(task_id, board, f"{result['summary']} {marker}".strip())
+        elif marker and want_actuals:
+            add_comment(task_id, board, f"⏱ Epoch tracking this run. {marker}")
+        shown = show_task(task_id, board)
+    # Completion may have fired before the estimate existed: reconcile here (idempotent).
+    if want_actuals and run_id is not None and _run_completed(_run_for(shown, run_id)):
+        return "estimated+" + record_actual_for_run(task_id, board, run_id, shown, settings)
+    return "estimated"
+
+
+def completed_job(task_id: str, board: Optional[str], run_id: Any,
+                  settings: Optional[Dict[str, Any]] = None, *, attempt: int = 0) -> str:
+    if run_id is None or not _cfg("record_actuals", settings):
+        return "skipped"
+    shown = show_task(task_id, board)
+    # No estimate marker yet means the claim side has not published; it reconciles after posting.
+    return record_actual_for_run(task_id, board, run_id, shown, settings)
+
+
+_JOBS = {"claimed": claimed_job, "completed": completed_job}
+
+
+# --------------------------------------------------------------------------- outbox + lifecycle
+
+
+def _job_id(kind: str, task_id: str, board: Optional[str], run_id: Any) -> str:
+    return f"{kind}:{board or '-'}:{task_id}:{run_id}"
+
+
+def _outbox_update(fn) -> None:
+    if _ctx is None:
+        return
     try:
-        from hermes_cli import kanban_db
+        with _outbox_lock:
+            box = _ctx.state.get(OUTBOX_KEY, None) or {}
+            if not isinstance(box, dict):
+                box = {}
+            fn(box)
+            _ctx.state.set(OUTBOX_KEY, box)
+    except Exception:
+        logger.debug("epoch: outbox update failed", exc_info=True)
 
-        def go(conn, task):
-            result = estimate(task.title or "", task.body or "")
-            if result.get("feedbackRef") and _ctx is not None:
-                _ctx.state.set(f"ref:{task_id}", result["feedbackRef"])
-            if _cfg("comment_on_claim"):
-                kanban_db.add_comment(conn, task_id, "epoch", result["summary"])
-        _with_task(task_id, board, go)
+
+def _outbox_put(job: Dict[str, Any]) -> None:
+    _outbox_update(lambda box: box.__setitem__(job["id"], job))
+
+
+def _outbox_done(job_id: str) -> None:
+    _outbox_update(lambda box: box.pop(job_id, None))
+
+
+def _run_job(job: Dict[str, Any]) -> None:
+    fn = _JOBS.get(job.get("kind"))
+    try:
+        if fn is None:
+            _outbox_done(job["id"])
+            return
+        status = fn(job["task_id"], job.get("board"), job.get("run_id"), job.get("settings"),
+                    attempt=int(job.get("attempts") or 0))
+        logger.debug("epoch: %s -> %s", job["id"], status)
+        _outbox_done(job["id"])
+    except Exception:
+        logger.debug("epoch: job %s failed; left in outbox for retry", job.get("id"), exc_info=True)
+        def bump(box):
+            if job["id"] in box:
+                box[job["id"]]["attempts"] = int(box[job["id"]].get("attempts", 0)) + 1
+                box[job["id"]]["lease_until"] = 0
+        _outbox_update(bump)
+    finally:
+        with _inflight_lock:
+            _inflight.pop(job["id"], None)
+
+
+def _start(job: Dict[str, Any]) -> threading.Thread:
+    """Run *job* on a background thread that inherits the caller's ContextVars (profile)."""
+    run_ctx = contextvars.copy_context()
+    t = threading.Thread(target=run_ctx.run, args=(_run_job, job), daemon=True,
+                         name=f"epoch-{job['kind']}")
+    with _inflight_lock:
+        _inflight[job["id"]] = t
+    t.start()
+    return t
+
+
+def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Optional[threading.Thread]:
+    settings = snapshot_settings()  # resolved in the hook's own profile context
+    job = {"id": _job_id(kind, task_id, board, run_id), "kind": kind, "task_id": task_id,
+           "board": board, "run_id": run_id, "settings": settings, "created_at": time.time(),
+           "attempts": 0, "lease_until": time.time() + _lease_seconds(settings),
+           "owner_pid": os.getpid()}
+    with _inflight_lock:
+        if job["id"] in _inflight:
+            return None
+    _outbox_put(job)
+    return _start(job)
+
+
+def _lease_seconds(settings: Optional[Dict[str, Any]]) -> float:
+    try:
+        return 3 * float(_cfg("timeout_seconds", settings)) + 30
+    except (TypeError, ValueError):
+        return 210.0
+
+
+def _pid_alive(pid: Any) -> bool:
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def replay_outbox() -> List[threading.Thread]:
+    """Restart unfinished jobs from this profile's outbox.
+
+    A job is taken over when its lease expired or the process that owned it is gone (e.g. a
+    one-shot CLI that hard-exited mid-estimate). Jobs owned by a live process are left alone.
+    """
+    started: List[threading.Thread] = []
+    if _ctx is None:
+        return started
+    now = time.time()
+    picked: List[Dict[str, Any]] = []
+
+    def pick(box):
+        for jid, job in list(box.items()):
+            if not isinstance(job, dict):
+                box.pop(jid, None)
+                continue
+            too_old = now - float(job.get("created_at") or 0) > OUTBOX_MAX_AGE_SECONDS
+            if too_old or int(job.get("attempts") or 0) >= OUTBOX_MAX_ATTEMPTS:
+                box.pop(jid, None)
+                continue
+            with _inflight_lock:
+                busy = jid in _inflight
+            leased = float(job.get("lease_until") or 0) > now and _pid_alive(job.get("owner_pid"))
+            if busy or leased:
+                continue
+            job["lease_until"] = now + _lease_seconds(job.get("settings"))
+            job["owner_pid"] = os.getpid()
+            picked.append(dict(job))
+
+    _outbox_update(pick)
+    for job in picked:
+        started.append(_start(job))
+    return started
+
+
+def wait_for_inflight(timeout: Optional[float] = None) -> bool:
+    """Join in-flight jobs up to *timeout* seconds total. True when none remain."""
+    if timeout is None:
+        try:
+            timeout = float(_cfg("shutdown_wait_seconds"))
+        except (TypeError, ValueError):
+            timeout = float(DEFAULTS["shutdown_wait_seconds"])
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        with _inflight_lock:
+            threads = list(_inflight.values())
+        if not threads:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        threads[0].join(remaining)
+
+
+def _atexit_wait() -> None:
+    try:
+        if not wait_for_inflight():
+            logger.info("epoch: unfinished jobs left in outbox; they resume on next load")
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- hooks / surfaces
+
+
+def _on_claimed(task_id: str = "", board: Optional[str] = None, run_id: Any = None, **_: Any) -> None:
+    try:
+        if task_id:
+            _enqueue("claimed", task_id, board, run_id)
     except Exception:
         logger.debug("epoch: claimed hook failed for %s", task_id, exc_info=True)
 
 
-def _completed_worker(task_id: str, board: Optional[str]) -> None:
+def _on_completed(task_id: str = "", board: Optional[str] = None, run_id: Any = None, **_: Any) -> None:
     try:
-        ref = _ctx.state.get(f"ref:{task_id}") if _ctx is not None else None
-        if not ref:
-            return
-        from hermes_cli import kanban_db
-
-        def go(conn, task):
-            if not (task.started_at and task.completed_at):
-                return
-            hours = max(0.01, (task.completed_at - task.started_at) / 3600.0)
-            res = run_epoch(["record-actual", "--estimate-id", str(ref), "--actual-hours", f"{hours:.2f}",
-                             "--notes", f"hermes kanban {task_id} (wall-clock)"])
-            if res.get("ok"):
-                kanban_db.add_comment(conn, task_id, "epoch", f"⏱ Epoch recorded actual {hours:.2f}h.")
-                _ctx.state.set(f"ref:{task_id}", None)
-        _with_task(task_id, board, go)
+        if task_id and _cfg("record_actuals"):
+            _enqueue("completed", task_id, board, run_id)
     except Exception:
         logger.debug("epoch: completed hook failed for %s", task_id, exc_info=True)
 
 
-def _spawn(fn, *args) -> None:
-    threading.Thread(target=fn, args=args, daemon=True, name="epoch-hook").start()
-
-
-def _on_claimed(task_id: str = "", board: Optional[str] = None, **_: Any) -> None:
-    if task_id:
-        _spawn(_claimed_worker, task_id, board)
-
-
-def _on_completed(task_id: str = "", board: Optional[str] = None, **_: Any) -> None:
-    if task_id and _cfg("record_actuals"):
-        _spawn(_completed_worker, task_id, board)
-
-
 def _slash(raw_args: str) -> str:
-    args = shlex.split(raw_args or "")
+    try:
+        args = shlex.split(raw_args or "")
+    except ValueError as exc:
+        return f"Could not parse arguments: {exc}"
     if not args:
         return "Usage: /epoch <epoch-cli-subcommand> [flags]  e.g. /epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10"
     res = run_epoch(args)
@@ -196,31 +685,42 @@ def _slash(raw_args: str) -> str:
 
 ESTIMATE_SCHEMA = {
     "name": "epoch_estimate",
-    "description": "Calibrated time estimate for a task via Epoch. Give optimistic/most_likely/pessimistic hours for a P50/P90 Monte Carlo range; otherwise Epoch uses reference-class forecasting from the title.",
+    "description": "Calibrated time estimate for a task via Epoch. Give all three of optimistic/most_likely/pessimistic hours (0 < o <= m <= p) for a P50/P90 Monte Carlo range; they override any 'epoch:' hint in title/body. Otherwise Epoch uses a hint from the title/body, then reference-class forecasting.",
     "parameters": {
         "type": "object",
         "properties": {
             "title": {"type": "string"},
             "body": {"type": "string"},
-            "optimistic": {"type": "number", "description": "hours"},
-            "most_likely": {"type": "number", "description": "hours"},
-            "pessimistic": {"type": "number", "description": "hours"},
+            "optimistic": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
+            "most_likely": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
+            "pessimistic": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
         },
         "required": ["title"],
     },
 }
 
+_TRIPLE = ("optimistic", "most_likely", "pessimistic")
+
 
 def _tool(args: Dict[str, Any], **_: Any) -> str:
-    body = args.get("body") or ""
-    if all(args.get(k) is not None for k in ("optimistic", "most_likely", "pessimistic")):
-        body += f"\nepoch: {args['optimistic']}/{args['most_likely']}/{args['pessimistic']}h"
-    r = estimate(args.get("title", ""), body)
-    return json.dumps({"summary": r["summary"], "feedbackRef": r.get("feedbackRef"), "method": r.get("method")})
+    args = args or {}
+    given = [k for k in _TRIPLE if args.get(k) is not None]
+    try:
+        if given and len(given) != 3:
+            missing = [k for k in _TRIPLE if k not in given]
+            raise EstimateInputError(f"explicit estimate needs all of optimistic/most_likely/pessimistic; missing {', '.join(missing)}")
+        explicit = {k: args[k] for k in _TRIPLE} if given else None
+        r = estimate(str(args.get("title") or ""), str(args.get("body") or ""), explicit=explicit)
+    except EstimateInputError as exc:
+        return json.dumps({"error": str(exc)})
+    out = {"summary": r["summary"], "feedbackRef": r.get("feedbackRef"), "method": r.get("method")}
+    if r.get("hint_error"):
+        out["hint_error"] = r["hint_error"]
+    return json.dumps(out)
 
 
 def register(ctx) -> None:
-    global _ctx
+    global _ctx, _atexit_registered
     _ctx = ctx
     ctx.register_hook("kanban_task_claimed", _on_claimed)
     ctx.register_hook("kanban_task_completed", _on_completed)
@@ -228,3 +728,10 @@ def register(ctx) -> None:
                          args_hint="<subcommand> [flags]")
     ctx.register_tool(name="epoch_estimate", toolset="epoch", schema=ESTIMATE_SCHEMA, handler=_tool,
                       description=ESTIMATE_SCHEMA["description"], emoji="⏱")
+    if not _atexit_registered:
+        atexit.register(_atexit_wait)
+        _atexit_registered = True
+    try:
+        replay_outbox()
+    except Exception:
+        logger.debug("epoch: outbox replay failed", exc_info=True)
