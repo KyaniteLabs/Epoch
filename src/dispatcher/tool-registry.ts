@@ -929,13 +929,24 @@ Prioritize this over algorithmic models when historical data is available.`,
     (input) => {
       const p = referenceClassEstimateSchema.parse(input);
       const profile = getDeveloperProfileGradient(p.ai_native);
-      const records = getCalibrationData(
-        p.team_id,
-        p.task_type,
-        90,
-        "reference_class_estimate",
-      );
-      const result = referenceClassEstimate(records, p.task_type, p.complexity, p.scope, p.ai_native >= 0.7);
+      // Issue #42 wave-2 rework (security review round 2): correctionFactor,
+      // its counts, and every source note below derive from ONE population —
+      // the raw-basis (outputs.rawEstimate) training set
+      // loadReferenceClassMatchedRecords loads inside referenceClassEstimate,
+      // now scoped by the caller's explicit team_id (previously the selector
+      // was dropped after the rewiring: a team-a request could learn its
+      // factor from team-b rows). The former 90-day
+      // getCalibrationData(p.team_id, ...) population feeds none of the
+      // correction outputs anymore and could contradict them (sampleSize=6
+      // with calibrationCounts.total=0 and a "shipped baselines only" line
+      // while a learned factor was in use), so it is no longer read here.
+      const result = referenceClassEstimate([], p.task_type, p.complexity, p.scope, p.ai_native >= 0.7, p.team_id);
+      // Internal correction-provenance contract fields are lifted out here so
+      // they never reach the public output surface (no key-set change); the
+      // note text names the correction source ("learned ... rawEstimate
+      // basis" vs "reference database correction factors") alongside the gate
+      // that picked it.
+      const { trainingCounts, provenanceSentence, correctionNote, ...resultPublic } = result;
       const scopeGuide = getScopeGuide(p.task_type);
       const adjustedEstimate = Math.round(result.rawEstimate * profile.correctionFactor * 100) / 100;
 
@@ -968,17 +979,17 @@ Prioritize this over algorithmic models when historical data is available.`,
         intervalNote = `Fewer than 5 exclusion-filtered historical "${p.task_type}" reference_class_estimate pairs are available yet, so no empirical confidence interval could be computed.`;
         humanReadable = `Expected ~${result.correctedEstimate} hours (point estimate, ledger-recorded basis; adjustedEstimate ${adjustedEstimate} applies the developerProfile correction). ${intervalNote}`;
       }
-      // S1.2 calibration provenance counts: computed over the SAME records
-      // population that drives correctionFactor/sampleSize above (task-type
-      // filtered, positive recorded estimate), so the counts can never
-      // disagree with the sampleSize the tool already reports.
-      const calibrationCounts = calibrationTaskCounts(records.filter((r) => r.estimatedHours > 0));
-      humanReadable += ` ${calibrationProvenanceSentence(calibrationCounts)}`;
+      // S1.2 calibration provenance counts: now computed over the SAME raw-basis
+      // training population that drives correctionFactor/sampleSize above (see
+      // referenceClassEstimate's internal correction-provenance contract), so
+      // the counts can never disagree with the sampleSize the tool reports.
+      const calibrationCounts = trainingCounts;
+      humanReadable += ` ${provenanceSentence}`;
 
       return {
         ok: true as const,
         data: {
-          ...result,
+          ...resultPublic,
           ...(scopeGuide ? { scopeGuide } : {}),
           developerProfile: {
             mode: profile.mode,
@@ -992,9 +1003,9 @@ Prioritize this over algorithmic models when historical data is available.`,
           basisNote:
             `correctedEstimate (${result.correctedEstimate} hours) is the ledger-recorded and displayed basis (rawEstimate × correctionFactor). ` +
             `adjustedEstimate (${adjustedEstimate} hours) additionally applies the developerProfile factor (${profile.correctionFactor}) and is display-only — it is never recorded or calibrated against.`,
-          note: records.length >= 5
-            ? `Based on ${records.length} historical records for "${p.task_type}" tasks.`
-            : "Using reference database correction factors. Submit actuals via /v1/feedback/record-actual to improve accuracy.",
+          // The note text is assembled inside referenceClassEstimate, next to
+          // the gate it describes, and names the correction source honestly.
+          note: correctionNote,
           humanReadable,
           ...(interval ? { interval } : {}),
           ...(intervalNote ? { intervalNote } : {}),

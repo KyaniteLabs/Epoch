@@ -18,6 +18,9 @@ import {
 	getPertToolTaskCorrection,
 	composePertCorrectionFactor,
 	PERT_CORRECTION_RECENCY_DEFAULT,
+	loadReferenceClassMatchedRecords,
+	getReferenceClassToolTaskCorrection,
+	RCE_CORRECTION_RECENCY_DEFAULT,
 	weightedMedian,
 } from "./calibration-factors.js";
 import type { HistoricalRecord } from "../types/index.js";
@@ -573,5 +576,386 @@ describe("loadPertMatchedRecords / getPertToolTaskCorrection (ledger integration
 
 		const withExponential = getPertToolTaskCorrection("bugfix", { scheme: { kind: "exponential", halfLifeDays: 7 }, asOf: "2026-06-01T00:00:00.000Z" });
 		expect(withExponential.factor).toBeGreaterThan(withDefault.factor); // pulled toward the recent, higher-ratio pair
+	});
+});
+
+// ---------------------------------------------------------------------------
+// reference_class_estimate learned-correction wiring (issue #42, wave-2 recency)
+//
+// Mirrors the PERT suite above through the reference_class path: the loader
+// trains on the PRE-correction basis (outputs.rawEstimate), the default
+// recency scheme is win60, and the machinery's gates apply unchanged.
+// Fixture dates are relative to Date.now() so pairs stay inside the win60
+// default window on every run (same convention as estimate-basis.test.ts).
+// ---------------------------------------------------------------------------
+
+describe("loadReferenceClassMatchedRecords / getReferenceClassToolTaskCorrection (ledger integration)", () => {
+	let previousDataDir: string | undefined;
+	let tempDataDir: string;
+
+	beforeEach(() => {
+		previousDataDir = process.env["EPOCH_DATA_DIR"];
+		tempDataDir = mkdtempSync(join(tmpdir(), "epoch-rce-correction-test-"));
+		process.env["EPOCH_DATA_DIR"] = tempDataDir;
+	});
+
+	afterEach(() => {
+		if (previousDataDir === undefined) {
+			delete process.env["EPOCH_DATA_DIR"];
+		} else {
+			process.env["EPOCH_DATA_DIR"] = previousDataDir;
+		}
+		rmSync(tempDataDir, { recursive: true, force: true });
+	});
+
+	function writeJsonl(filename: string, records: unknown[]): void {
+		writeFileSync(
+			join(tempDataDir, filename),
+			records.map((r) => JSON.stringify(r)).join("\n") + "\n",
+			"utf-8",
+		);
+	}
+
+	function daysAgo(days: number): string {
+		return new Date(Date.now() - days * 86_400_000).toISOString();
+	}
+
+	function seedReferenceClassPairs(
+		pairs: Array<{
+			id: string;
+			raw?: number;
+			corrected?: number;
+			actual: number;
+			completedDaysAgo: number;
+			taskType?: string;
+			team?: string;
+			provenance?: string;
+			notes?: string;
+			outputs?: Record<string, unknown>;
+		}>,
+	): void {
+		writeJsonl("estimates.jsonl", pairs.map((p) => ({
+			id: p.id,
+			tool: "reference_class_estimate",
+			inputs: {
+				task_type: p.taskType ?? "bugfix",
+				complexity: 3,
+				...(p.team !== undefined && { team_id: p.team }),
+			},
+			outputs: p.outputs ?? {
+				rawEstimate: p.raw,
+				correctedEstimate: p.corrected ?? Math.round((p.raw ?? 0) * 1.8 * 10) / 10,
+				correctionFactor: 1.8,
+			},
+			estimatedAt: daysAgo(p.completedDaysAgo + 1),
+		})));
+		writeJsonl("feedback.jsonl", pairs.map((p) => ({
+			estimateId: p.id,
+			actualHours: p.actual,
+			reportedAt: daysAgo(p.completedDaysAgo),
+			...(p.provenance !== undefined && { calibrationProvenance: p.provenance }),
+			...(p.notes !== undefined && { notes: p.notes }),
+		})));
+	}
+
+	it("returns an empty list when no ledger files exist", () => {
+		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+	});
+
+	it("loads matched reference_class pairs and computes the learned factor + n on the PRE-correction (rawEstimate) basis", () => {
+		seedReferenceClassPairs([
+			{ id: "rce-1", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 5 },
+			{ id: "rce-2", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 4 },
+			{ id: "rce-3", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 3 },
+		]);
+
+		const records = loadReferenceClassMatchedRecords();
+		expect(records).toHaveLength(3);
+		// estimatedHours is the raw basis, NOT the recorded correctedEstimate (18).
+		expect(records.every((r) => r.estimatedHours === 10)).toBe(true);
+		expect(records.every((r) => r.taskType === "bugfix" && r.tool === "reference_class_estimate")).toBe(true);
+
+		const correction = getReferenceClassToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(3);
+		// median of act/rawEstimate ratios [2.0, 2.0, 2.0] = 2.0
+		expect(correction.factor).toBeCloseTo(2.0, 1);
+	});
+
+	it("basis regression: the learned factor reflects act/rawEstimate ratios, not act/correctedEstimate (the removed feedback loop)", () => {
+		// raw 10 → corrected 18 (×1.8); actuals 20. act/raw = 2.0 (what the wave-2
+		// wiring trains on); act/corrected = 1.11 (what the removed inline
+		// post-correction median trained on — a factor fed its own output).
+		seedReferenceClassPairs([
+			{ id: "rce-basis-1", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 9 },
+			{ id: "rce-basis-2", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 8 },
+			{ id: "rce-basis-3", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 7 },
+			{ id: "rce-basis-4", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 6 },
+			{ id: "rce-basis-5", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 5 },
+		]);
+
+		const correction = getReferenceClassToolTaskCorrection("bugfix");
+		expect(correction.factor).toBe(2.0); // the old post-correction training would return ~1.11
+	});
+
+	it("falls back to correctedEstimate as the basis only for legacy rows without rawEstimate", () => {
+		writeJsonl("estimates.jsonl", [1, 2, 3].map((i) => ({
+			id: `rce-legacy-${i}`,
+			tool: "reference_class_estimate",
+			inputs: { task_type: "bugfix", complexity: 3 },
+			outputs: { correctedEstimate: 10 }, // legacy shape: no rawEstimate recorded
+			estimatedAt: daysAgo(4 + i),
+		})));
+		writeJsonl("feedback.jsonl", [1, 2, 3].map((i) => ({
+			estimateId: `rce-legacy-${i}`,
+			actualHours: 20,
+			reportedAt: daysAgo(3 + i),
+		})));
+
+		const records = loadReferenceClassMatchedRecords();
+		expect(records).toHaveLength(3);
+		expect(records.every((r) => r.estimatedHours === 10)).toBe(true);
+		expect(getReferenceClassToolTaskCorrection("bugfix").factor).toBeCloseTo(2.0, 1);
+	});
+
+	it("excludes records for tools other than reference_class_estimate", () => {
+		writeJsonl("estimates.jsonl", [
+			{ id: "pe-1", tool: "pert_estimate", inputs: { task_type: "bugfix" }, outputs: { expected: 10, unit: "hours" }, estimatedAt: daysAgo(4) },
+		]);
+		writeJsonl("feedback.jsonl", [
+			{ estimateId: "pe-1", actualHours: 20, reportedAt: daysAgo(3) },
+		]);
+
+		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+	});
+
+	it("excludes synthetic-id records via the shared exclusion predicate", () => {
+		seedReferenceClassPairs([
+			{ id: "seed-rce-1", raw: 10, actual: 20, completedDaysAgo: 5 },
+		]);
+
+		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+	});
+
+	it("excludes quarantine-flagged overlay records", () => {
+		seedReferenceClassPairs([
+			{ id: "rce-q1", raw: 10, actual: 20, completedDaysAgo: 5 },
+		]);
+		writeJsonl("estimates.flags.jsonl", [
+			{ id: "rce-q1", seq: 1, recordedAt: daysAgo(4), quarantined: true, reason: "test" },
+		]);
+
+		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+	});
+
+	it("defaults to factor 1.0 with n=0 for an unknown task type", () => {
+		expect(getReferenceClassToolTaskCorrection("nonexistent-type")).toEqual({
+			factor: 1.0,
+			n: 0,
+			counts: { total: 0, gitDerived: 0, verified: 0, autoWallclock: 0 },
+		});
+	});
+
+	it("rejects present-but-malformed rawEstimate values — the correctedEstimate fallback is reserved for legacy absent-field rows (security review finding 3)", () => {
+		// rawEstimate present but invalid (string / null / zero / negative):
+		// none of these may silently train on correctedEstimate — that would
+		// reintroduce post-correction training for modern malformed rows. The
+		// old code produced a learned factor of ~1.11 (median 20/18) here.
+		const malformed = [
+			{ id: "rce-bad-str", outputs: { rawEstimate: "bad", correctedEstimate: 18, correctionFactor: 1.8 } },
+			{ id: "rce-bad-null", outputs: { rawEstimate: null, correctedEstimate: 18, correctionFactor: 1.8 } },
+			{ id: "rce-bad-zero", outputs: { rawEstimate: 0, correctedEstimate: 18, correctionFactor: 1.8 } },
+			{ id: "rce-bad-neg", outputs: { rawEstimate: -5, correctedEstimate: 18, correctionFactor: 1.8 } },
+			{ id: "rce-bad-nan", outputs: { rawEstimate: NaN, correctedEstimate: 18, correctionFactor: 1.8 } },
+		];
+		seedReferenceClassPairs(malformed.map((m, i) => ({
+			id: m.id,
+			actual: 20,
+			completedDaysAgo: 5 - i,
+			outputs: m.outputs,
+		})));
+
+		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+		const correction = getReferenceClassToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(0);
+		expect(correction.factor).toBe(1.0);
+		expect(correction.counts).toEqual({ total: 0, gitDerived: 0, verified: 0, autoWallclock: 0 });
+
+		// Control: alongside five valid pairs, the malformed rows neither
+		// train nor corrupt — the factor stays the valid pairs' median (2.0),
+		// not the post-correction ~1.11 the malformed rows would produce.
+		seedReferenceClassPairs([
+			...malformed.map((m, i) => ({ id: m.id, actual: 20, completedDaysAgo: 15 - i, outputs: m.outputs })),
+			{ id: "rce-ok-1", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 5 },
+			{ id: "rce-ok-2", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 4 },
+			{ id: "rce-ok-3", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 3 },
+			{ id: "rce-ok-4", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 2 },
+			{ id: "rce-ok-5", raw: 10, corrected: 18, actual: 20, completedDaysAgo: 1 },
+		]);
+		const mixed = getReferenceClassToolTaskCorrection("bugfix");
+		expect(mixed.n).toBe(5);
+		expect(mixed.factor).toBe(2.0); // old code: ~1.11 (trained on 18s)
+		expect(mixed.counts.total).toBe(5);
+	});
+
+	it("preserves the explicit team selector through the loader and the trainer (security review finding 2)", () => {
+		seedReferenceClassPairs([
+			// six team-b pairs, ratio 2.0 (raw 10 → actual 20), recent
+			...[1, 2, 3, 4, 5, 6].map((i) => ({ id: `rce-tb-${i}`, raw: 10, actual: 20, completedDaysAgo: 10 - i, team: "team-b" })),
+			// three team-a pairs, ratio 3.0 (raw 10 → actual 30), recent
+			...[1, 2, 3].map((i) => ({ id: `rce-ta-${i}`, raw: 10, actual: 30, completedDaysAgo: 10 - i, team: "team-a" })),
+			// three unscoped pairs, ratio 1.0
+			...[1, 2, 3].map((i) => ({ id: `rce-no-team-${i}`, raw: 10, actual: 10, completedDaysAgo: 10 - i })),
+		]);
+
+		const teamB = loadReferenceClassMatchedRecords("team-b");
+		expect(teamB).toHaveLength(6);
+		expect(teamB.every((r) => r.teamId === "team-b" && r.estimatedHours === 10)).toBe(true);
+
+		const teamA = loadReferenceClassMatchedRecords("team-a");
+		expect(teamA).toHaveLength(3);
+
+		// No selector: the intended unscoped behavior — every clean row trains.
+		expect(loadReferenceClassMatchedRecords()).toHaveLength(12);
+
+		// Team selectors never cross: team-a's factor reflects team-a's ratio
+		// 3.0 (clamped by roundFactor), not team-b's 2.0 — and vice versa.
+		expect(getReferenceClassToolTaskCorrection("bugfix", undefined, "team-a")).toEqual({
+			factor: 3.0,
+			n: 3,
+			counts: { total: 3, gitDerived: 0, verified: 3, autoWallclock: 0 },
+		});
+		expect(getReferenceClassToolTaskCorrection("bugfix", undefined, "team-b").factor).toBeCloseTo(2.0, 1);
+		expect(getReferenceClassToolTaskCorrection("bugfix", undefined, "team-c")).toEqual({
+			factor: 1.0,
+			n: 0,
+			counts: { total: 0, gitDerived: 0, verified: 0, autoWallclock: 0 },
+		});
+		// Unscoped median of [2×6, 3×3, 1×3] = 2.0 over n=12.
+		const unscoped = getReferenceClassToolTaskCorrection("bugfix");
+		expect(unscoped.n).toBe(12);
+		expect(unscoped.factor).toBeCloseTo(2.0, 1);
+		expect(unscoped.counts.total).toBe(12);
+	});
+
+	it("stamps canonical provenance so counts describe the population that trained the factor (security review finding 1)", () => {
+		seedReferenceClassPairs([
+			{ id: "rce-prov-git-1", raw: 10, actual: 20, completedDaysAgo: 7, provenance: "git_derived" },
+			{ id: "rce-prov-git-2", raw: 10, actual: 20, completedDaysAgo: 6, provenance: "git_derived" },
+			{ id: "rce-prov-git-3", raw: 10, actual: 20, completedDaysAgo: 5, provenance: "git_derived" },
+			{ id: "rce-prov-git-4", raw: 10, actual: 20, completedDaysAgo: 4, provenance: "git_derived" },
+			{ id: "rce-prov-auto-1", raw: 10, actual: 8, completedDaysAgo: 3, provenance: "auto_wallclock" },
+			{ id: "rce-prov-auto-2", raw: 10, actual: 8, completedDaysAgo: 3, provenance: "auto_wallclock" },
+			{ id: "rce-prov-none-1", raw: 10, actual: 20, completedDaysAgo: 2 }, // unstamped → prospective
+			{ id: "rce-prov-none-2", raw: 10, actual: 20, completedDaysAgo: 1 }, // unstamped → prospective
+		]);
+
+		const records = loadReferenceClassMatchedRecords();
+		expect(records.filter((r) => r.calibrationProvenance === "git_derived")).toHaveLength(4);
+		expect(records.filter((r) => r.calibrationProvenance === "auto_wallclock")).toHaveLength(2);
+		expect(records.filter((r) => r.calibrationProvenance === "prospective")).toHaveLength(2);
+		expect(records.every((r) => r.calibrationUsage === "correction")).toBe(true);
+
+		// counts.total === n: the counts describe exactly the population that
+		// trained the factor — the invariant the dispatcher's public
+		// calibrationCounts/sampleSize pair now rests on.
+		const correction = getReferenceClassToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(8);
+		expect(correction.counts).toEqual({ total: 8, gitDerived: 4, verified: 2, autoWallclock: 2 });
+	});
+
+	it("baseline-usage rows train the factor and are counted as part of the training population (documented population difference vs getCalibrationData)", () => {
+		// The raw-basis loader applies isExcluded() only — it deliberately does
+		// NOT filter by calibrationUsage (same discipline as
+		// loadPertMatchedRecords and the validated 772-pair replay). Rows the
+		// old 90-day getCalibrationData(..., "correction") population held out
+		// as usage="baseline" (e.g. "ingested from" backfills) therefore DO
+		// train the factor here, and the counts must say so.
+		seedReferenceClassPairs([
+			...[1, 2, 3, 4, 5].map((i) => ({ id: `rce-corr-${i}`, raw: 10, actual: 20, completedDaysAgo: 10 - i })),
+			{ id: "rce-base-1", raw: 10, actual: 40, completedDaysAgo: 3, notes: "ingested from external tracker" },
+			{ id: "rce-base-2", raw: 10, actual: 40, completedDaysAgo: 2, notes: "ingested from external tracker" },
+		]);
+
+		const correction = getReferenceClassToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(7); // the old counts source would have said 5
+		expect(correction.counts).toEqual({ total: 7, gitDerived: 0, verified: 7, autoWallclock: 0 });
+		// median of [2×5, 4×2] = 2.0 — both baseline rows trained the factor.
+		expect(correction.factor).toBe(2.0);
+	});
+
+	it("RCE_CORRECTION_RECENCY_DEFAULT is win60 — the only recency-grid member in band on BOTH the all-pairs and trailing-20% views (issue #42 replay)", () => {
+		// Locks in the current default so a future change to the constant is a
+		// deliberate, reviewed decision (re-run the rolling replay on the live
+		// ledger before changing this — win60 measured 0.833 all-pairs / 1.200
+		// trailing-20%, both in the [0.8, 1.2] band; every scheme on the
+		// post-correction basis measured 0.505–0.526), not an accidental drift.
+		expect(RCE_CORRECTION_RECENCY_DEFAULT).toEqual({ scheme: { kind: "window", windowDays: 60 } });
+	});
+
+	it("win60 default shifts the factor toward in-window pairs when enough of them exist (vs unweighted all-history)", () => {
+		seedReferenceClassPairs([
+			// 3 old pairs (ratio 1.0, ~8 months old — outside the 60d window)
+			{ id: "rce-old-1", raw: 10, actual: 10, completedDaysAgo: 242 },
+			{ id: "rce-old-2", raw: 10, actual: 10, completedDaysAgo: 241 },
+			{ id: "rce-old-3", raw: 10, actual: 10, completedDaysAgo: 240 },
+			// 3 recent pairs (ratio 2.0, inside the window)
+			{ id: "rce-new-1", raw: 10, actual: 20, completedDaysAgo: 5 },
+			{ id: "rce-new-2", raw: 10, actual: 20, completedDaysAgo: 4 },
+			{ id: "rce-new-3", raw: 10, actual: 20, completedDaysAgo: 3 },
+		]);
+
+		const win60 = getReferenceClassToolTaskCorrection("bugfix"); // the default
+		const unweighted = getReferenceClassToolTaskCorrection("bugfix", { scheme: { kind: "none" } });
+		// The window holds 3 pairs (>= MIN_RECORDS_PER_FACTOR), so no min-n
+		// fallback: the factor is the median of the recent ratio-2.0 pairs only.
+		expect(win60.factor).toBeCloseTo(2.0, 1);
+		// Unweighted median of [1, 1, 1, 2, 2, 2] = 1.5.
+		expect(unweighted.factor).toBeCloseTo(1.5, 1);
+		expect(win60.factor).toBeGreaterThan(unweighted.factor);
+	});
+
+	it("win60 falls back to all-history when the window itself has fewer than MIN_RECORDS_PER_FACTOR pairs", () => {
+		seedReferenceClassPairs([
+			// Only old pairs exist; the 60d window around "now" contains none of
+			// them (0 < MIN_RECORDS_PER_FACTOR), so the cell falls back to its
+			// all-history median.
+			{ id: "rce-old-1", raw: 10, actual: 10, completedDaysAgo: 242 },
+			{ id: "rce-old-2", raw: 10, actual: 10, completedDaysAgo: 241 },
+			{ id: "rce-old-3", raw: 10, actual: 10, completedDaysAgo: 240 },
+		]);
+
+		const win60 = getReferenceClassToolTaskCorrection("bugfix");
+		const unweighted = getReferenceClassToolTaskCorrection("bugfix", { scheme: { kind: "none" } });
+		expect(win60.factor).toBe(unweighted.factor);
+		expect(win60.factor).toBeCloseTo(1.0, 1);
+	});
+
+	it("exponential decay shifts the factor toward recent pairs (explicit recency override)", () => {
+		seedReferenceClassPairs([
+			{ id: "rce-old-1", raw: 10, actual: 10, completedDaysAgo: 151 },
+			{ id: "rce-old-2", raw: 10, actual: 10, completedDaysAgo: 150 },
+			{ id: "rce-new-1", raw: 10, actual: 30, completedDaysAgo: 1 },
+		]);
+
+		const unweighted = getReferenceClassToolTaskCorrection("bugfix", { scheme: { kind: "none" } });
+		const weighted = getReferenceClassToolTaskCorrection("bugfix", {
+			scheme: { kind: "exponential", halfLifeDays: 7 },
+			asOf: daysAgo(0),
+		});
+		expect(unweighted.factor).toBeCloseTo(1.0, 1); // median of [1, 1, 3] = 1
+		expect(weighted.factor).toBeGreaterThan(unweighted.factor); // pulled toward the recent ratio-3.0 pair
+	});
+
+	it("low-n gate is evaluated on the raw pair count: below MIN_RECORDS_PER_FACTOR there is no learned factor", () => {
+		seedReferenceClassPairs([
+			{ id: "rce-1", raw: 10, actual: 20, completedDaysAgo: 5 },
+			{ id: "rce-2", raw: 10, actual: 20, completedDaysAgo: 4 },
+		]);
+
+		const correction = getReferenceClassToolTaskCorrection("bugfix");
+		expect(correction.n).toBe(2);
+		expect(correction.n).toBeLessThan(MIN_RECORDS_PER_FACTOR);
+		// No cell emitted → neutral default; callers gate on n before use.
+		expect(correction.factor).toBe(1.0);
 	});
 });
