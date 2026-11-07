@@ -17,7 +17,7 @@ jobs:
     name: Publish server.json to MCP Registry
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install mcp-publisher
         env:
           MCP_PUBLISHER_VERSION: "1.8.1"
