@@ -11,6 +11,7 @@ import type {
 } from "../types/index.js";
 import { assertNever } from "../types/index.js";
 import { getUrgencyCategory } from "./internal/urgency.js";
+import { captureHistogram } from "./monte-carlo-histogram.js";
 
 function toHours(value: number, unit: TimeUnit): number {
   switch (unit) {
@@ -582,7 +583,7 @@ export function monteCarloSim(
     ? ` Probability of completing within ${targetHours} hours (criticalPathProbability): ${Math.round(criticalPathProbability * 100)}%.`
     : "";
 
-  return {
+  const result: MonteCarloResult = {
     p10: String(Math.round(p(0.1) * 100) / 100),
     p50: String(Math.round(p50Val * 100) / 100),
     p80: String(Math.round(p(0.8) * 100) / 100),
@@ -596,6 +597,8 @@ export function monteCarloSim(
     riskEvents,
     humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. P90: ${String(Math.round(p(0.9) * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days.${probabilityLine}`,
   };
+  captureHistogram(result, durations, p50Val, p(0.9));
+  return result;
 }
 
 function seededRandom(seed: number): () => number {

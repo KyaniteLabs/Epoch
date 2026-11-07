@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ToolResult } from "../types/index.js";
+import { renderHistogram } from "../lib/monte-carlo-histogram.js";
 
 // ---- JSON Formatter ---------------------------------------------------------
 
@@ -20,6 +21,10 @@ export function formatTable(result: ToolResult<unknown>, toolName: string): stri
 
   const lines: string[] = [`=== ${toolName} ===`];
   formatValue(lines, result.data, 0);
+  if (toolName === "monte_carlo_schedule") {
+    const histogram = renderHistogram(result.data);
+    if (histogram) lines.push(histogram);
+  }
   return lines.join("\n");
 }
 
