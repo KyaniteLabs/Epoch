@@ -2,7 +2,23 @@
 // Epoch MCP Server — Dispatcher: Tests
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// Dispatch persists successful estimates: never write the operator's real ledger.
+const previousDataDir = process.env["EPOCH_DATA_DIR"];
+let testDataDir: string;
+beforeAll(() => {
+  testDataDir = mkdtempSync(join(tmpdir(), "epoch-dispatch-"));
+  process.env["EPOCH_DATA_DIR"] = testDataDir;
+});
+afterAll(() => {
+  if (previousDataDir === undefined) delete process.env["EPOCH_DATA_DIR"];
+  else process.env["EPOCH_DATA_DIR"] = previousDataDir;
+  rmSync(testDataDir, { recursive: true, force: true });
+});
 import { dispatch, listTools, TOOL_NAMES } from "./index.js";
 import { defined } from "../test-support.js";
 
