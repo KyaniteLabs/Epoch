@@ -18,7 +18,7 @@ import { Command } from "commander";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createCliProgram, maybeShowFirstRunTelemetryNudge } from "./cli.js";
+import { createCliProgram, maybeShowFirstRunTelemetryNudge, parseStrictNumber, chartAsciiFromEnv } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
 import { assertEstimateWritten } from "../test-support.js";
 
@@ -398,6 +398,29 @@ describe("CLI tests", () => {
 			});
 		});
 
+		it("dispatches monte-carlo-schedule with --seed and --target-hours", async () => {
+			mockDispatchSuccess({ p50: "3" });
+			const program = createCliProgram();
+			await runWithCapture(program, [
+				"monte-carlo-schedule",
+				"--tasks",
+				'[{"name":"a","optimistic":1,"most_likely":2,"pessimistic":3}]',
+				"--iterations",
+				"100",
+				"--seed",
+				"7",
+				"--target-hours",
+				"24",
+			]);
+
+			expect(dispatch).toHaveBeenCalledWith("monte_carlo_schedule", {
+				tasks: [{ name: "a", optimistic: 1, most_likely: 2, pessimistic: 3 }],
+				iterations: 100,
+				seed: 7,
+				target_hours: 24,
+			});
+		});
+
 		it("dispatches parse-duration with duration_string", async () => {
 			mockDispatchSuccess({ totalSeconds: 9000 });
 			const program = createCliProgram();
@@ -600,6 +623,32 @@ describe("CLI tests", () => {
 			expect(output).toContain("--host");
 			expect(output.toLowerCase()).not.toContain("listening");
 			expect(capture.exitCode).toBe(0);
+		});
+
+		it("rejects numeric flags with trailing garbage or hex instead of truncating them", async () => {
+			for (const bad of ["12abc", "0x10", "", "Infinity"]) {
+				const program = createCliProgram();
+				const capture = await runWithCapture(program, [
+					"pert-estimate",
+					"--optimistic",
+					bad,
+					"--most-likely",
+					"2",
+					"--pessimistic",
+					"3",
+				]);
+				expect(capture.stderr.join(""), `value ${JSON.stringify(bad)}`).toContain("--optimistic must be a number");
+				expect(capture.exitCode).toBe(1);
+			}
+		});
+
+		it("parseStrictNumber accepts whole decimal numbers only", () => {
+			expect(parseStrictNumber(" 12 ")).toBe(12);
+			expect(parseStrictNumber("1e3")).toBe(1000);
+			expect(parseStrictNumber("-.5")).toBe(-0.5);
+			expect(parseStrictNumber("12abc")).toBeNaN();
+			expect(parseStrictNumber("0x10")).toBeNaN();
+			expect(parseStrictNumber("")).toBeNaN();
 		});
 
 		it("rejects a non-numeric --port with a clear error", async () => {
@@ -1169,5 +1218,23 @@ describe("CLI tests", () => {
 			const { loadConfig } = await import("../lib/config.js");
 			expect(loadConfig().telemetry.nudgeShown).toBe(true);
 		});
+	});
+});
+
+describe("chartAsciiFromEnv", () => {
+	it("uses Unicode blocks by default and ASCII for dumb terminals", () => {
+		expect(chartAsciiFromEnv({ LANG: "en_US.UTF-8" })).toBe(false);
+		expect(chartAsciiFromEnv({ TERM: "dumb" })).toBe(true);
+	});
+	it("uses ASCII in CJK locales, where block glyphs are ambiguous-width and overflow", () => {
+		for (const LANG of ["ja_JP.UTF-8", "zh_CN.UTF-8", "ko_KR.UTF-8", "zh_TW", "ja"]) {
+			expect(chartAsciiFromEnv({ LANG }), LANG).toBe(true);
+		}
+		expect(chartAsciiFromEnv({ LANG: "jam_JM.UTF-8" })).toBe(false);
+		expect(chartAsciiFromEnv({ LANG: "en_US.UTF-8", LC_ALL: "ja_JP.UTF-8" })).toBe(true);
+	});
+	it("EPOCH_CHART_ASCII forces either way", () => {
+		expect(chartAsciiFromEnv({ EPOCH_CHART_ASCII: "1", LANG: "en_US.UTF-8" })).toBe(true);
+		expect(chartAsciiFromEnv({ EPOCH_CHART_ASCII: "0", LANG: "ja_JP.UTF-8", TERM: "dumb" })).toBe(false);
 	});
 });

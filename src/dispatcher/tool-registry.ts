@@ -22,6 +22,7 @@ import {
   criticalPath,
   monteCarloSim,
 } from "../lib/estimation.js";
+import { histogramDistribution } from "../lib/monte-carlo-histogram.js";
 import {
   referenceClassEstimate,
   calibrateEstimates,
@@ -329,6 +330,21 @@ const monteCarloOutput = {
     estimatedHours: { type: "number", description: "Median estimate in hours (p50 × 8)" },
     estimatedCost: { type: "number", description: "Estimated AI token cost at p50 (50k tokens/hour × estimatedHours)" },
     feedbackRef: feedbackRefField,
+    distribution: {
+      type: "object",
+      description: "Only when distribution: true was requested. The histogram behind the terminal chart: 21 ascending bin edges and 20 counts (days), with the bins holding P50 and P90.",
+      properties: {
+        unit: { type: "string", enum: ["days"] },
+        iterations: { type: "number" },
+        seed: { type: "number" },
+        edges: { type: "array", items: { type: "number" } },
+        counts: { type: "array", items: { type: "number" } },
+        min: { type: "number" },
+        max: { type: "number" },
+        p50Bin: { type: "number" },
+        p90Bin: { type: "number" },
+      },
+    },
   },
 } satisfies Record<string, unknown>;
 
@@ -911,7 +927,38 @@ criticalPathProbability = P(total <= target_hours); without it that field is nul
         mostLikely: t.most_likely,
         pessimistic: t.pessimistic,
       }));
-      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed, p.target_hours) };
+      // Overflow guard: each field is finite on its own, but a schedule whose
+      // summed pessimistic durations overflow to Infinity used to come back as
+      // ok:true with p50 "-Infinity" / estimatedHours null — and was recorded
+      // to the ledger with a feedbackRef. Reject it as a tool error instead.
+      let pessimisticSum = 0;
+      for (const t of tasks) pessimisticSum += t.pessimistic;
+      if (!Number.isFinite(pessimisticSum)) {
+        return {
+          ok: false as const,
+          error: {
+            isError: true as const,
+            message: "Summed task durations overflow a finite number of days; the simulation cannot produce meaningful percentiles.",
+            retryHint: "Use realistic durations in days (for example optimistic 1, most_likely 3, pessimistic 8).",
+          },
+        };
+      }
+      const data = monteCarloSim(tasks, p.iterations, p.seed, p.target_hours);
+      if (!Number.isFinite(data.estimatedHours) || !Number.isFinite(data.estimatedCost)) {
+        return {
+          ok: false as const,
+          error: {
+            isError: true as const,
+            message: "Simulation produced a non-finite estimate (durations too large to convert to hours).",
+            retryHint: "Use realistic durations in days (for example optimistic 1, most_likely 3, pessimistic 8).",
+          },
+        };
+      }
+      if (p.distribution === true) {
+        const distribution = histogramDistribution(data);
+        if (distribution) return { ok: true as const, data: Object.assign(data, { distribution }) };
+      }
+      return { ok: true as const, data };
     },
   ),
 
@@ -1194,7 +1241,7 @@ Pairs with any estimation tool. The estimate_id comes from the estimate response
 Actuals feed into the self-improvement loop — after enough samples, correction factors
 update automatically to reduce estimation bias.`,
     recordActualSchema,
-    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" }, flagged: { type: "string", enum: ["unit_suspect"], description: "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months." }, flagHint: { type: "string", description: "Actionable hint accompanying a flagged record." } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" }, flagged: { type: "string", enum: ["unit_suspect"], description: "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months." }, flagHint: { type: "string", description: "Actionable hint accompanying a flagged record." }, estimateFound: { type: "boolean", description: "false when no estimate with this id exists in the ledger (orphan actual); absent when it was found." } } } satisfies Record<string, unknown>,
     (input) => {
       const p = recordActualSchema.parse(input);
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes, p.unit, p.calibration_provenance);
@@ -1239,9 +1286,12 @@ update automatically to reduce estimation bias.`,
             flagged: "unit_suspect" as const,
             flagHint: UNIT_SUSPECT_FLAG_HINT,
           }),
+          ...(result.orphan === true && { estimateFound: false }),
             message: result.flagged === "unit_suspect"
               ? "Actual recorded, but flagged unit_suspect: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — suspected unit mismatch (check hours vs days/weeks/person-months)."
-              : "Actual recorded. Correction factors update after more feedback accumulates.",
+              : result.orphan === true
+                ? `Actual recorded, but no estimate with id ${p.estimate_id} exists in this ledger, so it cannot calibrate anything yet. Check the feedbackRef for typos.`
+                : "Actual recorded. Correction factors update after more feedback accumulates.",
         },
       };
     },

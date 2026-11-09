@@ -209,10 +209,11 @@ suite("entry signal shutdown (integration, real processes)", () => {
 			await callOneTool(session);
 			expect(existsSync(join(dataDir, "telemetry.jsonl"))).toBe(false);
 
-			// Two immediate SIGTERMs: the handler un-registers itself before
-			// flushing, so the second either coalesces (clean exit 143) or
-			// meets the restored default disposition (killed by SIGTERM).
-			// Either way the signal was honored — never absorbed.
+			// Two immediate SIGTERMs: the handler flushes synchronously first,
+			// so the second coalesces into the same exit (143). SIGTERM death
+			// stays accepted for runner wrappers that relay signals. Either
+			// way the signal was honored — never absorbed — and the record
+			// must land.
 			session.kill("SIGTERM");
 			session.kill("SIGTERM");
 			const exit = await Promise.race([

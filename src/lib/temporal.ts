@@ -32,6 +32,9 @@ function isValidTimezone(tz: string): boolean {
 	}
 }
 
+/** True when an ISO-8601 string carries an explicit offset (Z or ±hh[:mm]) after its time part. */
+const EXPLICIT_OFFSET = /T[^Z+-]*(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+
 function parseTimestamp(ts: string): Date | ToolError {
 	const parsed = parseISO(ts);
 	if (isNaN(parsed.getTime())) {
@@ -40,7 +43,21 @@ function parseTimestamp(ts: string): Date | ToolError {
 			"Provide a valid ISO-8601 date string.",
 		);
 	}
-	return parsed;
+	if (EXPLICIT_OFFSET.test(ts.trim())) return parsed;
+	// No offset: the contract says such input is UTC. parseISO reads it in
+	// the HOST's local zone, so the same call answered 18:00Z on a Pacific
+	// host and 01:00Z on a Tokyo host. Re-read the wall-clock fields as UTC.
+	return new Date(
+		Date.UTC(
+			parsed.getFullYear(),
+			parsed.getMonth(),
+			parsed.getDate(),
+			parsed.getHours(),
+			parsed.getMinutes(),
+			parsed.getSeconds(),
+			parsed.getMilliseconds(),
+		),
+	);
 }
 
 // ---- Public API -----------------------------------------------------------

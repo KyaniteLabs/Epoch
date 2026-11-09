@@ -67,8 +67,16 @@ export function registerAllMcpTools(server: McpServer): void {
         const result = await dispatch(name, input);
 
         if (result.ok) {
+          // structuredContent hands agents the parsed object (MCP 2025-06-18+); the text
+          // block stays for clients that only read content. Spec: it must be an object.
+          const data = result.data;
+          const structured =
+            data !== null && typeof data === "object" && !Array.isArray(data)
+              ? { structuredContent: data as Record<string, unknown> }
+              : {};
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(result.data) }],
+            content: [{ type: "text" as const, text: JSON.stringify(data) }],
+            ...structured,
           };
         }
 

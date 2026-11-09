@@ -76,15 +76,14 @@ describe("installSignalFlushShutdown", () => {
     expect(exits).toEqual([130, 129]);
   });
 
-  it("drops every registration BEFORE flushing — a second signal is never swallowed", () => {
+  it("flushes BEFORE dropping registrations, then exits — a double signal cannot lose the flush", () => {
     const handlerRef = { current: null as NodeJS.SignalsListener | null };
+    const seenDuringFlush: boolean[] = [];
     const flush = vi.fn(() => {
-      // A second signal could land while this flush runs. By then our
-      // listeners must already be gone, so the default disposition
-      // (terminate) applies instead of another pass through the handler.
-      for (const signal of FLUSH_SIGNALS) {
-        expect(process.listeners(signal)).not.toContain(handlerRef.current);
-      }
+      // While flushing, our handler is still registered: a second signal is
+      // queued behind this synchronous handler instead of meeting the
+      // default disposition and killing the process mid-write.
+      seenDuringFlush.push(process.listeners("SIGTERM").includes(handlerRef.current as NodeJS.SignalsListener));
     });
     const exit = vi.fn();
 
@@ -92,10 +91,11 @@ describe("installSignalFlushShutdown", () => {
 
     handlerRef.current("SIGINT");
 
+    expect(seenDuringFlush).toEqual([true]);
     expect(flush).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledWith(130);
-    // And the handler is not re-entrant through process after completion.
+    // And the handler is gone once it has run.
     expect(process.listeners("SIGTERM")).not.toContain(handlerRef.current);
     expect(process.listeners("SIGINT")).not.toContain(handlerRef.current);
     expect(process.listeners("SIGHUP")).not.toContain(handlerRef.current);

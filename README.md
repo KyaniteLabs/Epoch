@@ -340,6 +340,8 @@ Output: {
 
 (`criticalPathProbability` is `null` unless a `target_hours` deadline is supplied — then it is the real P(total ≤ target); `riskEvents[].impactDays` is per-task expected overrun, sorted by impact.)
 
+Run it with `--pretty` to see a terminal histogram of the simulated totals. Pass `distribution: true` (CLI `--distribution`) to get the same bins as JSON for an agent or UI to draw. See [docs/MONTE-CARLO-HISTOGRAM.md](docs/MONTE-CARLO-HISTOGRAM.md).
+
 ### Layer 4 -- Analytics
 
 **`reference_class_estimate`** -- Reference class forecasting with planning fallacy correction

@@ -1,15 +1,72 @@
 # Monte Carlo terminal histogram
 
-Use the existing table format (or `--pretty`) to see the distribution of actual completed simulation totals:
+Use the table format (or `--pretty`) to see the distribution of the actual simulated totals:
 
 ```sh
-epoch --format table monte-carlo-schedule \
-  --tasks '[{"name":"work","optimistic":1,"most_likely":3,"pessimistic":9}]' \
-  --iterations 1000
+epoch --pretty monte-carlo-schedule \
+  --tasks '[{"name":"api","optimistic":1,"most_likely":3,"pessimistic":9},{"name":"ui","optimistic":2,"most_likely":4,"pessimistic":12}]' \
+  --iterations 5000 --seed 42
 ```
 
-The histogram has 20 equal-width bins spanning the observed minimum and maximum in **8-hour working days**. Intervals include the lower endpoint and exclude the upper endpoint, except the final bin includes the maximum. Each row gives its exact endpoints and count; bars scale to the largest count (32 blocks maximum). No smoothing, fitted curve, or percentile-derived synthetic samples are used.
+```text
+8h days · 5,000 runs · seed 42
+[ 3.81,  4.59)  23 █▊
+[ 4.59,  5.36)  83 ██████▍
+[ 5.36,  6.14) 170 ████████████▉
+[ 6.14,  6.92) 286 █████████████████████▊
+[ 6.92,  7.70) 401 ██████████████████████████████▌
+[ 7.70,  8.48) 458 ██████████████████████████████████▉
+[ 8.48,  9.26) 496 █████████████████████████████████████▊
+[ 9.26, 10.04) 539 █████████████████████████████████████████
+[10.04, 10.81) 525 ███████████████████████████████████████▉  ◀ P50 10.09
+[10.81, 11.59) 459 ██████████████████████████████████▉
+[11.59, 12.37) 436 █████████████████████████████████▏
+[12.37, 13.15) 331 █████████████████████████▏
+[13.15, 13.93) 258 ███████████████████▋
+[13.93, 14.71) 206 ███████████████▋                          ◀ P90 14.03
+[14.71, 15.49) 141 ██████████▊
+[15.49, 16.27)  95 ███████▎
+[16.27, 17.04)  50 ███▊
+[17.04, 17.82)  27 ██
+[17.82, 18.60)  10 ▊
+[18.60, 19.38]   6 ▌
+Bins [lo, hi); the last includes max.
+Simulated spread, not observed outcomes.
+```
 
-Median (p50) and p90 markers show the unrounded nearest-rank observed values. The existing string percentile fields above the chart remain rounded exactly as before. Counts sum to completed iterations. One completed iteration prints only its exact value instead of a distribution. For repeated identical totals, all counts occupy the first of 20 zero-width bins; this degenerate case is explicitly labelled.
+## How to read it
 
-JSON remains the default. JSON, MCP and HTTP responses keep their existing fields and types; histogram metadata is process-local, weakly keyed by the simulation result, and is not serialized. A saved JSON result cannot reconstruct a histogram. Raw samples are not retained after the simulation returns. Exporting samples or bins is not part of this feature.
+- **Header**: unit (8-hour working days), the number of simulated runs and the seed, so the chart can be reproduced with `--seed`.
+- **Rows**: 20 equal-width bins spanning the observed minimum and maximum. Each row is `[lower, upper)` (the last bin also includes the maximum), then the exact count, then a bar scaled to the largest count with 1/8-block resolution. Any non-empty bin shows at least a sliver. Edges are printed with the fewest decimals that keep neighbouring bins distinct.
+- **Markers**: `◀ P50` and `◀ P90` sit in the bin holding the nearest-rank median and 90th percentile, and show the same rounded strings as the `p50` / `p90` fields above the chart. When both fall in one bin they share the row. Markers line up in a single column.
+- No smoothing, fitted curve or synthetic samples. Counts sum to the completed iterations.
+
+## Edge cases
+
+- **One iteration**: `No distribution: one iteration (X days).`
+- **Identical totals** (for example optimistic = most likely = pessimistic): one labelled point-mass line instead of 20 empty bins.
+
+## Width and glyphs
+
+The chart fits the terminal: the live TTY width, else `$COLUMNS`, else 80 columns, clamped to 40–160. Bars use Unicode block elements. Plain ASCII (`#` bars, `<` markers) is used when `TERM=dumb` or the locale is Japanese, Chinese or Korean: those terminals often draw block elements double-width, which would push an 80-column chart to about 129 columns. `EPOCH_CHART_ASCII=1` or `=0` forces either style.
+
+## For agents and UIs: the chart as data
+
+Pass `distribution: true` (CLI `--distribution`) and the JSON result gains a `distribution` object holding the same bins the terminal chart draws:
+
+```json
+"distribution": {
+  "unit": "days", "iterations": 5000, "seed": 42,
+  "edges": [3.81, 4.59, "…21 ascending edges…", 19.38],
+  "counts": [23, 83, "…20 counts summing to iterations…", 6],
+  "min": 3.81, "max": 19.38, "p50Bin": 8, "p90Bin": 13
+}
+```
+
+Bin `i` covers `[edges[i], edges[i+1])` and the last bin also includes `max`. `p50Bin` and `p90Bin` are the rows the terminal chart marks. Edges are rounded to 4 decimals.
+
+MCP clients also get every successful tool result as `structuredContent` (MCP 2025-06-18+), alongside the unchanged JSON text block, so an agent can read `distribution` without parsing text.
+
+## Contract
+
+JSON remains the default. Without `distribution: true`, JSON, MCP and HTTP responses keep their existing fields and types; the flag only adds the one field. Histogram metadata is process-local and weakly keyed by the simulation result, so a saved JSON result cannot rebuild a histogram unless it was requested with `distribution`. Raw samples are not retained after the simulation returns.

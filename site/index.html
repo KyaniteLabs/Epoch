@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Epoch — Time Estimation for AI Agents | 26 MCP Tools</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230B0F14'/%3E%3Ccircle cx='12' cy='12' r='7' fill='none' stroke='%2300E5A0' stroke-width='2'/%3E%3Cpath d='M12 8v4l3 2' fill='none' stroke='%2300E5A0' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
   <meta name="description" content="Stop guessing timelines. Get data-driven estimates your AI can actually use. 26 MCP tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, and cost estimation. 30-second install.">
 
   <!-- Open Graph -->
@@ -172,9 +173,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>document.documentElement.classList.add("js")</script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwindcss.config = {
+    tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
@@ -212,6 +214,7 @@
     }
 
     * { box-sizing: border-box; }
+
 
     body {
       background: var(--bg);
@@ -476,12 +479,13 @@
       font-weight: 500;
     }
 
-    .reveal {
+    /* Hidden-until-scrolled only when JS runs; without JS every section shows. */
+    .js .reveal {
       opacity: 0;
       transform: translateY(30px);
       transition: opacity 0.6s ease-out, transform 0.6s ease-out;
     }
-    .reveal.visible {
+    .js .reveal.visible {
       opacity: 1;
       transform: translateY(0);
     }
@@ -545,7 +549,7 @@
     @media (prefers-reduced-motion: reduce) {
       .card-hover:hover { transform: none; }
       .cta-primary:hover { transform: none; }
-      .reveal { opacity: 1; transform: none; transition: none; }
+      .js .reveal { opacity: 1; transform: none; transition: none; }
       * { animation-duration: 0ms !important; transition-duration: 0ms !important; }
     }
 
@@ -568,6 +572,17 @@
       top: 0;
     }
 
+    /* The rings sit partly off-canvas; clip them here so the page never scrolls sideways (body overflow-x alone does not stop iOS panning). */
+    body { position: relative; }
+    .deco-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    /* Phones: stack each tool's description under its name instead of scrolling the table sideways. */
+    @media (max-width: 640px) {
+      .tool-table thead { display: none; }
+      .tool-table .tool-table-row td { display: block; }
+      .tool-table .tool-table-row td:first-child { padding-bottom: 0.15rem; }
+      .tool-table .tool-table-row td:nth-child(2) { padding-top: 0; }
+      .tool-table .tool-table-row td:nth-child(3) { display: none; }
+    }
     .deco-ring {
       position: absolute;
       border-radius: 50%;
@@ -579,9 +594,11 @@
 <body class="antialiased">
   <a href="#main" class="skip-link">Skip to content</a>
 
-  <div class="deco-ring" style="width:600px;height:600px;top:-200px;right:-200px;"></div>
-  <div class="deco-ring" style="width:400px;height:400px;top:1200px;left:-150px;"></div>
-  <div class="deco-ring" style="width:500px;height:500px;top:3000px;right:-180px;"></div>
+  <div class="deco-wrap" aria-hidden="true">
+    <div class="deco-ring" style="width:600px;height:600px;top:-200px;right:-200px;"></div>
+    <div class="deco-ring" style="width:400px;height:400px;top:1200px;left:-150px;"></div>
+    <div class="deco-ring" style="width:500px;height:500px;top:3000px;right:-180px;"></div>
+  </div>
 
   <!-- Navigation -->
   <nav class="fixed top-0 w-full z-50" style="background: rgba(5,5,16,0.85); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid var(--border);">
@@ -777,7 +794,7 @@
           <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Live Demo</p>
           <h2 class="text-4xl md:text-5xl font-bold mb-6">See it in action</h2>
           <p class="text-muted max-w-xl mx-auto leading-relaxed">
-            A real interaction. No cherry-picking, no edits.
+            An illustrative exchange. Run the same tools yourself for real numbers.
           </p>
         </div>
 
@@ -929,7 +946,7 @@
             <div class="text-sm text-muted font-medium">Statement Coverage</div>
           </div>
           <div class="text-center p-8 rounded-2xl card-hover">
-            <div class="metric-value mb-3">24</div>
+            <div class="metric-value mb-3">26</div>
             <div class="text-sm text-muted font-medium">MCP Tools</div>
           </div>
           <div class="text-center p-8 rounded-2xl card-hover">
@@ -952,7 +969,7 @@
           </div>
           <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-            30 Test Files
+            80+ Test Files
           </div>
         </div>
       </div>
@@ -1072,8 +1089,8 @@
             Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations.
           </p>
         </div>
-        <div class="rounded-2xl overflow-hidden reveal" style="background: var(--surface); border: 1px solid var(--border);">
-          <table class="w-full text-sm">
+        <div class="rounded-2xl overflow-hidden overflow-x-auto reveal" style="background: var(--surface); border: 1px solid var(--border);">
+          <table class="tool-table w-full text-sm">
             <thead>
               <tr style="background: var(--surface2);">
                 <th class="px-5 py-4 font-mono font-semibold text-accent text-left">Tool</th>
@@ -1092,15 +1109,21 @@
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_estimate</td><td class="px-5 py-3 text-muted">COCOMO II with 5 LLM-adapted cost drivers</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">sprint_forecast</td><td class="px-5 py-3 text-muted">Sprint velocity forecasting with variance-based pessimistic estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">critical_path</td><td class="px-5 py-3 text-muted">CPM with forward/backward pass and merge bias</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-5 py-3 text-muted">Monte Carlo simulation with seeded PRNG, P10-P95 percentiles</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-5 py-3 text-muted">Monte Carlo simulation with seeded PRNG: P10–P95 percentiles and an optional histogram</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">reference_class_estimate</td><td class="px-5 py-3 text-muted">Reference class forecasting with industry correction factors</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">estimate_from_context</td><td class="px-5 py-3 text-muted">Classify a free-text task and route it to reference class estimation</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">calibrate_estimates</td><td class="px-5 py-3 text-muted">Team-specific correction factor calibration from historical data</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-5 py-3 text-muted">Map token budgets to wall-clock time for 16 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-5 py-3 text-muted">Map token budgets to wall-clock time for 16 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">wait_bound</td><td class="px-5 py-3 text-muted">Derive a wait deadline from the mechanism the wait rides</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_cost_estimate</td><td class="px-5 py-3 text-muted">Token cost estimation with input/output breakdown</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">compare_models</td><td class="px-5 py-3 text-muted">Side-by-side comparison across 16 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">accuracy_trend</td><td class="px-5 py-3 text-muted">Sliding-window MAPE tracking over time</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">schedule_risk</td><td class="px-5 py-3 text-muted">Confidence intervals using team MdAPE</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_validate</td><td class="px-5 py-3 text-muted">Validate COCOMO II estimates against reference data</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_ground_truth</td><td class="px-5 py-3 text-muted">Benchmark COCOMO variants against real historical projects</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">record_actual</td><td class="px-5 py-3 text-muted">Submit actual hours for a previous estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">get_pending_estimates</td><td class="px-5 py-3 text-muted">List estimates still waiting for actual hours</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">batch_record_actuals</td><td class="px-5 py-3 text-muted">Record actual hours for many estimates at once</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">feedback_health</td><td class="px-5 py-3 text-muted">Comprehensive feedback data quality report</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
             </tbody>
           </table>
