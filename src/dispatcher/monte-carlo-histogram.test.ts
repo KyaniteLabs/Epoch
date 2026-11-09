@@ -127,4 +127,19 @@ describe("Monte Carlo terminal histogram", () => {
     const data = monteCarloSim(tasks, 50, 7);
     expect(formatTable({ ok: true, data }, "monte_carlo_schedule")).toContain("seed 7");
   });
+
+  it("puts each marker on the row whose printed range contains the printed value", () => {
+    const wide = [{ name: "a", optimistic: 1, mostLikely: 3, pessimistic: 9 }, { name: "b", optimistic: 0.5, mostLikely: 4, pessimistic: 30 }];
+    for (const iterations of [10, 999, 5000]) for (const seed of [0, 1, 7, 42, 123456]) {
+      const data = monteCarloSim(wide, iterations, seed) as unknown as Record<string, string>;
+      const rows = binRows(renderHistogram(data, { columns: 120 }) ?? "");
+      for (const label of ["P50", "P90"]) {
+        const row = rows.find(line => line.includes(label)) ?? "";
+        const [, lo, hi] = /^\[\s*([\d.]+),\s*([\d.]+)/.exec(row) ?? [];
+        const value = Number(data[label.toLowerCase()]);
+        expect(value, `${label} seed ${seed} x${iterations}: ${row}`).toBeGreaterThanOrEqual(Number(lo));
+        expect(value, `${label} seed ${seed} x${iterations}: ${row}`).toBeLessThanOrEqual(Number(hi));
+      }
+    }
+  });
 });

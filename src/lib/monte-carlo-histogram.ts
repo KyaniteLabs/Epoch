@@ -105,8 +105,17 @@ export function renderHistogram(result: unknown, options: HistogramRenderOptions
   const edgeWidth = Math.max(...edges.map((e) => e.length));
   const maxCount = Math.max(...h.counts);
   const countWidth = String(maxCount).length;
-  const medianBin = binIndex(h.median, h.min, h.max);
-  const p90Bin = binIndex(h.p90, h.min, h.max);
+  // Place each marker by the value the reader sees (the 2-dp field) against the
+  // edges the reader sees, so "P50 9.79" never lands on a row printed "[9.8, ...".
+  const shown = edges.map(Number);
+  const displayedBin = (label: string, raw: number): number => {
+    const value = Number(label.slice(4));
+    if (!Number.isFinite(value)) return binIndex(raw, h.min, h.max);
+    for (let i = HISTOGRAM_BINS - 1; i > 0; i--) if (value >= (shown[i] ?? Infinity)) return i;
+    return 0;
+  };
+  const medianBin = displayedBin(p50Label, h.median);
+  const p90Bin = displayedBin(p90Label, h.p90);
   const pointer = ascii ? "<" : "◀";
   const markerFor = (i: number): string => {
     const labels = [...(i === medianBin ? [p50Label] : []), ...(i === p90Bin ? [p90Label] : [])];
