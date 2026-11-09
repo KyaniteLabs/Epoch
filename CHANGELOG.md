@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Hermes plugin demo: `python plugins/epoch-hermes/scripts/demo.py` posts a P50/P90 Kanban comment through the claim and complete hooks and finishes in under 90 seconds, without a Hermes gateway or `npx`. Catalog PR text for Simon is in `docs/catalog-pr.md`.
+
 ## [0.8.0] - 2026-11-09
 
 The Monte Carlo chart release: see the spread of a schedule in the terminal, or hand the same bins to an agent.

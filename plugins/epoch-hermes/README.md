@@ -85,6 +85,16 @@ These are renders of verbatim comment text from a real run (epoch-hermes 0.7.0 p
   (`kanban_show`, `kanban_comment`). Background threads run under `contextvars.copy_context()`,
   so the event's profile settings and state follow the job.
 
+## Demo
+
+```bash
+python plugins/epoch-hermes/scripts/demo.py
+```
+
+Drives the real `kanban_task_claimed` and `kanban_task_completed` hooks against an in-memory board and prints the P50/P90 card plus the wall-clock actual. It finishes in under 90 seconds. `HERMES_HOME` and the ledger are temporary directories created for that run. The script does not install Hermes, run `hermes update`, restart a gateway, or call `npx`. With `dist/index.js` built it uses that local CLI; otherwise it uses `tests/fake_epoch.py` and says so. Set `EPOCH_DEMO_COMMAND` to a local `epoch` binary to override.
+
+The catalog PR text for Simon is [`docs/catalog-pr.md`](../../docs/catalog-pr.md). The plugin does not need a credential: Kanban goes through `ctx.dispatch_tool`, and `requires_env` is empty.
+
 ## Tests
 
 ```bash
