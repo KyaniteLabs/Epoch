@@ -1859,7 +1859,7 @@ describe("recordActualDetailed unit_suspect flag", () => {
   it("does not flag when there is no matching estimate to compare against", () => {
     mockReadFileSync.mockReturnValue("");
     const result = recordActualDetailed("no-such-estimate", 100);
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, orphan: true }) // no matching estimate in the ledger;
   });
 
   it("evaluates the ratio against the normalized (unit-converted) hours, catching a person-months-as-hours mistake", () => {
@@ -1931,7 +1931,7 @@ describe("recordActualDetailed auto_wallclock sanity gate", () => {
   it("does not apply the auto_wallclock gate to actuals without that provenance (existing behavior preserved)", () => {
     mockReadFileSync.mockReturnValue("");
     const result = recordActualDetailed("est-1", 20); // would fail the auto_wallclock bounds, but no provenance was given
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, orphan: true }) // no matching estimate in the ledger;
     expect(mockAppendFileSync).toHaveBeenCalledOnce();
   });
 });
@@ -1999,7 +1999,7 @@ describe("recordActualDetailed dry-run ledger consistency (ticket 16)", () => {
       });
 
       const result = recordActualDetailed("est-1", 8);
-      expect(result).toEqual({ ok: true });
+      expect(result).toEqual({ ok: true, orphan: true }) // no matching estimate in the ledger;
       expect(mockAppendFileSync).toHaveBeenCalledOnce();
       expect((defined(mockAppendFileSync.mock.calls[0])[0] as string).endsWith("feedback.dry-run.jsonl")).toBe(true);
     });

@@ -1221,7 +1221,7 @@ Pairs with any estimation tool. The estimate_id comes from the estimate response
 Actuals feed into the self-improvement loop — after enough samples, correction factors
 update automatically to reduce estimation bias.`,
     recordActualSchema,
-    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" }, flagged: { type: "string", enum: ["unit_suspect"], description: "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months." }, flagHint: { type: "string", description: "Actionable hint accompanying a flagged record." } } } satisfies Record<string, unknown>,
+    { type: "object", properties: { recorded: { type: "boolean" }, message: { type: "string" }, flagged: { type: "string", enum: ["unit_suspect"], description: "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months." }, flagHint: { type: "string", description: "Actionable hint accompanying a flagged record." }, estimateFound: { type: "boolean", description: "false when no estimate with this id exists in the ledger (orphan actual); absent when it was found." } } } satisfies Record<string, unknown>,
     (input) => {
       const p = recordActualSchema.parse(input);
       const result = recordActualDetailed(p.estimate_id, p.actual_hours, p.notes, p.unit, p.calibration_provenance);
@@ -1266,9 +1266,12 @@ update automatically to reduce estimation bias.`,
             flagged: "unit_suspect" as const,
             flagHint: UNIT_SUSPECT_FLAG_HINT,
           }),
+          ...(result.orphan === true && { estimateFound: false }),
             message: result.flagged === "unit_suspect"
               ? "Actual recorded, but flagged unit_suspect: the estimate and actual differ by more than 10x (either direction — the detection is symmetric) — suspected unit mismatch (check hours vs days/weeks/person-months)."
-              : "Actual recorded. Correction factors update after more feedback accumulates.",
+              : result.orphan === true
+                ? `Actual recorded, but no estimate with id ${p.estimate_id} exists in this ledger, so it cannot calibrate anything yet. Check the feedbackRef for typos.`
+                : "Actual recorded. Correction factors update after more feedback accumulates.",
         },
       };
     },

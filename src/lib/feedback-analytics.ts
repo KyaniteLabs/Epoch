@@ -72,7 +72,17 @@ export function minNForVerdict(): number {
 }
 
 export type RecordActualResult =
-  | { ok: true; flagged?: "unit_suspect" }
+  | {
+      ok: true;
+      flagged?: "unit_suspect";
+      /**
+       * True when no estimate with this id exists in the estimates ledger.
+       * The actual is still stored (estimates may live in another data dir or
+       * arrive later), but callers must say so instead of a bare success: a
+       * typo'd feedbackRef otherwise looked identical to a real pairing.
+       */
+      orphan?: true;
+    }
   | {
       ok: false;
       reason: "below_threshold" | "duplicate" | "write_failed" | "synthetic_id" | "unknown_tool" | "auto_wallclock_out_of_bounds" | "git_derived_out_of_bounds";
@@ -263,7 +273,7 @@ export function recordActualDetailed(
         // Dry-run mode: write to separate file so tests never touch production data
         const written = appendLine(actualsSource, record);
         if (!written) return { ok: false, reason: "write_failed" };
-        return result;
+        return matchedEstimate ? result : { ...result, orphan: true };
       },
       "recordActual",
     );

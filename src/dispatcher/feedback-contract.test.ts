@@ -122,6 +122,26 @@ describe("feedback contract matrix — every estimation tool's feedbackRef is ac
       expect(second.error.message).toContain("already exists");
     }
   });
+
+  it("an actual for an unknown estimate id is recorded but flagged estimateFound=false (no silent orphan)", async () => {
+    const known = await dispatch("estimate_from_context", { context: "Fix a typo in the README." });
+    expect(known.ok).toBe(true);
+    if (known.ok) {
+      const ref = (known.data as Record<string, unknown>)["feedbackRef"] as string;
+      const matched = await dispatch("record_actual", { estimate_id: ref, actual_hours: 1 });
+      expect(matched.ok).toBe(true);
+      if (matched.ok) expect((matched.data as Record<string, unknown>)["estimateFound"]).toBeUndefined();
+    }
+
+    const orphan = await dispatch("record_actual", { estimate_id: "est_does_not_exist_typo", actual_hours: 2 });
+    expect(orphan.ok).toBe(true);
+    if (orphan.ok) {
+      const data = orphan.data as Record<string, unknown>;
+      expect(data["recorded"]).toBe(true);
+      expect(data["estimateFound"]).toBe(false);
+      expect(String(data["humanReadable"] ?? data["message"] ?? JSON.stringify(data))).toContain("no estimate with id");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
