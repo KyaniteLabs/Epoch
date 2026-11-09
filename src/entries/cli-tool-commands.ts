@@ -149,6 +149,8 @@ export const TOOL_COMMANDS: readonly ToolCommandSpec[] = [
 		options: [
 			{ flags: "--tasks <json>", description: "Task array as JSON", key: "tasks", required: true, after: "json", include: "always" },
 			{ flags: "--iterations <n>", description: "Number of simulation iterations", key: "iterations", parse: "float" },
+			{ flags: "--seed <n>", description: "Integer seed for reproducible results (default: 42)", key: "seed", parse: "int" },
+			{ flags: "--target-hours <h>", description: "Deadline in working hours; reports P(total <= target)", key: "target_hours", parse: "float" },
 		],
 	},
 	{

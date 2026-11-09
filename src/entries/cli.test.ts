@@ -398,6 +398,29 @@ describe("CLI tests", () => {
 			});
 		});
 
+		it("dispatches monte-carlo-schedule with --seed and --target-hours", async () => {
+			mockDispatchSuccess({ p50: "3" });
+			const program = createCliProgram();
+			await runWithCapture(program, [
+				"monte-carlo-schedule",
+				"--tasks",
+				'[{"name":"a","optimistic":1,"most_likely":2,"pessimistic":3}]',
+				"--iterations",
+				"100",
+				"--seed",
+				"7",
+				"--target-hours",
+				"24",
+			]);
+
+			expect(dispatch).toHaveBeenCalledWith("monte_carlo_schedule", {
+				tasks: [{ name: "a", optimistic: 1, most_likely: 2, pessimistic: 3 }],
+				iterations: 100,
+				seed: 7,
+				target_hours: 24,
+			});
+		});
+
 		it("dispatches parse-duration with duration_string", async () => {
 			mockDispatchSuccess({ totalSeconds: 9000 });
 			const program = createCliProgram();
