@@ -172,9 +172,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>document.documentElement.classList.add("js")</script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwindcss.config = {
+    tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
@@ -476,12 +477,13 @@
       font-weight: 500;
     }
 
-    .reveal {
+    /* Hidden-until-scrolled only when JS runs; without JS every section shows. */
+    .js .reveal {
       opacity: 0;
       transform: translateY(30px);
       transition: opacity 0.6s ease-out, transform 0.6s ease-out;
     }
-    .reveal.visible {
+    .js .reveal.visible {
       opacity: 1;
       transform: translateY(0);
     }
@@ -545,7 +547,7 @@
     @media (prefers-reduced-motion: reduce) {
       .card-hover:hover { transform: none; }
       .cta-primary:hover { transform: none; }
-      .reveal { opacity: 1; transform: none; transition: none; }
+      .js .reveal { opacity: 1; transform: none; transition: none; }
       * { animation-duration: 0ms !important; transition-duration: 0ms !important; }
     }
 
@@ -1072,7 +1074,7 @@
             Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations.
           </p>
         </div>
-        <div class="rounded-2xl overflow-hidden reveal" style="background: var(--surface); border: 1px solid var(--border);">
+        <div class="rounded-2xl overflow-hidden overflow-x-auto reveal" style="background: var(--surface); border: 1px solid var(--border);">
           <table class="w-full text-sm">
             <thead>
               <tr style="background: var(--surface2);">
