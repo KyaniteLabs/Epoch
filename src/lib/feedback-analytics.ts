@@ -376,8 +376,14 @@ function provenanceForExclusionReason(reason: ExclusionReason | undefined): Cali
  * below-threshold/explicit-exclude) is delegated entirely to the shared
  * isExcluded() predicate (src/lib/exclusion.ts) — this function only remains
  * responsible for the baseline-vs-correction split of records that survive it.
+ *
+ * Exported (issue #42 wave-2 rework) so the raw-basis training loaders in
+ * calibration-factors.ts can stamp the SAME canonical provenance onto their
+ * records that getCalibrationData() populations carry — provenance counts
+ * emitted next to a learned factor must describe the population that trained
+ * it, not a second, differently-filtered one.
  */
-function classifyCalibrationRecord(
+export function classifyCalibrationRecord(
   est: EstimateRecord,
   act: ActualRecord,
   estimatedHours: number | null,

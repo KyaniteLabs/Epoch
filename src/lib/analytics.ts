@@ -9,6 +9,9 @@ import type {
 
 import { computeAccuracyMetrics } from "./accuracy-metrics.js";
 import { loadReferenceDb, getComplexityCorrectionFactor, getGlobalCorrectionFactor } from "./self-improve.js";
+import { getReferenceClassToolTaskCorrection } from "./calibration-factors.js";
+import { calibrationProvenanceSentence } from "./calibration-provenance.js";
+import type { CalibrationTaskCounts } from "./calibration-provenance.js";
 import { getTelemetry } from "./telemetry.js";
 import { getReferenceClassForCategory, getScopeBaseline, getAiNativeScopeBaseline, type ScopeSignal } from "./supplementary-data.js";
 
@@ -300,12 +303,40 @@ function mapToCanaryKey(taskType: string): string {
   return mapping[taskType] ?? taskType;
 }
 
+/**
+ * Historical referenceClassEstimate data-driven gate: the
+ * (reference_class_estimate, task_type) cell needs at least this many clean
+ * matched pairs on the PRE-correction basis before the learned factor
+ * replaces the fallback. Preserves the pre-wave-2 `filtered.length >= 5`
+ * gate — and the rolling-origin replay's INLINE_GATE that validated the win60
+ * default — while computeToolTaskCorrectionFactors' own
+ * MIN_RECORDS_PER_FACTOR gate applies inside the machinery.
+ */
+const REFERENCE_CLASS_DATA_DRIVEN_MIN_RECORDS = 5;
+
 export function referenceClassEstimate(
-  records: HistoricalRecord[],
+  /**
+   * Unused for training since the issue #42 / wave-2 recency rewiring (hence
+   * the underscore): these records' estimatedHours is the post-correction
+   * correctedEstimate basis (Ticket 11 same-basis rule), which fed the
+   * learned factor its own output. The training population now loads the
+   * PRE-correction (outputs.rawEstimate) basis from the clean path inside
+   * getReferenceClassToolTaskCorrection(). Kept in the signature so existing
+   * callers and the tool surface stay unchanged.
+   */
+  _records: HistoricalRecord[],
   taskType: TaskType,
   complexity: number,
   scope?: ScopeSignal,
   aiNative?: boolean,
+  /**
+   * Explicit team selector (dispatcher input team_id). Scopes the raw-basis
+   * training population inside getReferenceClassToolTaskCorrection to that
+   * team's rows — the same team semantics the pre-wave-2
+   * getCalibrationData(teamId, ...) call applied. Absent/undefined keeps the
+   * intended unscoped behavior (all clean history trains the factor).
+   */
+  teamId?: string,
 ): {
   rawEstimate: number;
   correctedEstimate: number;
@@ -324,9 +355,28 @@ export function referenceClassEstimate(
    * is derived downstream and never recorded.
    */
   basisNote: string;
+  /**
+   * ---- Internal correction-provenance contract (issue #42 wave-2 rework,
+   * security review round 2) ----
+   *
+   * The three fields below are consumed by the dispatcher's
+   * reference_class_estimate handler and are NOT part of the public tool
+   * surface (the handler destructures them out before spreading). They make
+   * the handler's public calibrationCounts / note / humanReadable
+   * provenance sentence derive from the EXACT raw-basis population that
+   * trained correctionFactor, so counts.total always equals the reported
+   * sampleSize and the source prose can never misidentify the correction
+   * source again (the old 90-day getCalibrationData population could be
+   * empty while a learned factor was in use, producing a public "shipped
+   * baselines only" line next to sampleSize=6).
+   */
+  /** Provenance counts of the population that trained the factor (all-zeros below the learning gate only when it is empty). */
+  trainingCounts: CalibrationTaskCounts;
+  /** humanReadable sentence naming the population that stands behind the factor. */
+  provenanceSentence: string;
+  /** Text for the handler's public `note` key, naming the correction source honestly. */
+  correctionNote: string;
 } {
-  const filtered = records.filter(r => r.taskType === taskType && r.estimatedHours > 0);
-
   let correctionFactor: number;
   let sampleSize: number;
 
@@ -343,22 +393,59 @@ export function referenceClassEstimate(
     ? getAiNativeScopeBaseline(taskType) ?? getScopeBaseline(taskType)
     : getScopeBaseline(taskType);
 
-  if (filtered.length >= 5) {
-    const ratios = filtered.map(r => r.actualHours / r.estimatedHours);
-    ratios.sort((a, b) => a - b);
-    const mid = Math.floor(ratios.length / 2);
-    const rawMedian = ratios.length % 2 === 0
-      ? ((ratios[mid - 1] ?? 0) + (ratios[mid] ?? 0)) / 2
-      : (ratios[mid] ?? 1.8);
+  // Issue #42 / wave-2 recency wiring: the data-driven factor is trained by
+  // the landed wave-2 machinery (computeToolTaskCorrectionFactors via
+  // getReferenceClassToolTaskCorrection) on the PRE-correction basis
+  // (outputs.rawEstimate, clean path loadLedgerWithOverlays + isExcluded,
+  // RCE_CORRECTION_RECENCY_DEFAULT = win60) — NOT on the caller's records,
+  // whose estimatedHours is the post-correction correctedEstimate (Ticket 11
+  // same-basis rule). The old inline unweighted median over
+  // actual/correctedEstimate trained the factor on its own output
+  // (converging to ~sqrt(median(actual/rawEstimate)) ≈ 0.53 on the live
+  // ledger), pinning median actual/predicted near 0.5 under every recency
+  // scheme; on the pre-correction basis the rolling replay measured 0.833
+  // all-pairs / 1.200 trailing-20% with win60 (both in the [0.8, 1.2] band).
+  const learned = getReferenceClassToolTaskCorrection(taskType, undefined, teamId);
+  let correctionSource: "learned" | "reference_database";
+  if (learned.n >= REFERENCE_CLASS_DATA_DRIVEN_MIN_RECORDS) {
     // Use data-driven CF when we have enough records, regardless of baseline source.
     // Only fall back to 1.0 for AI baselines when there's insufficient local data
     // (to avoid applying a CF derived from human-baseline estimates to AI baselines).
-    correctionFactor = Math.min(3.0, Math.max(0.1, rawMedian));
-    sampleSize = filtered.length;
+    // The learned factor is already clamped to [0.1, 3.0] by roundFactor.
+    correctionFactor = learned.factor;
+    sampleSize = learned.n;
+    correctionSource = "learned";
   } else {
     correctionFactor = usingAiBaselines ? 1.0 : getCorrectionFactorForTaskType(taskType, "reference_class_estimate", complexity);
-    sampleSize = filtered.length;
+    sampleSize = learned.n;
+    correctionSource = "reference_database";
   }
+
+  // Correction-source provenance (security review round 2): counts, sentence,
+  // and note all derive from the SAME raw-basis training population that
+  // produced correctionFactor above — counts.total always equals sampleSize.
+  // Below the learning gate with 0 < n < gate pairs available, the sentence
+  // says plainly that those pairs exist but the factor rests on shipped
+  // reference-database baselines (the canonical cold-start sentence is only
+  // used when the population is genuinely empty, where it is true).
+  const counts = learned.counts;
+  const countsSplit = counts.autoWallclock > 0
+    ? `${counts.gitDerived} git-derived, ${counts.autoWallclock} auto wall-clock, ${counts.verified} verified`
+    : `${counts.gitDerived} git-derived, ${counts.verified} verified`;
+  const provenanceSentence =
+    correctionSource === "learned"
+      ? calibrationProvenanceSentence(counts)
+      : counts.total > 0
+        ? `${counts.total} matched "${taskType}" pair${counts.total === 1 ? "" : "s"} (${countsSplit}) exist but sit below the ` +
+          `${REFERENCE_CLASS_DATA_DRIVEN_MIN_RECORDS}-pair learning gate — the correction factor rests on shipped reference-database baselines.`
+        : calibrationProvenanceSentence(counts);
+  const correctionNote =
+    correctionSource === "learned"
+      ? `Based on ${learned.n} matched reference_class_estimate "${taskType}" pairs on the pre-correction (rawEstimate) basis; ` +
+        "the factor is recency-weighted over the trailing 60-day window with an all-history fallback."
+      : `Insufficient matched reference_class_estimate history for "${taskType}" (n=${learned.n} < ` +
+        `${REFERENCE_CLASS_DATA_DRIVEN_MIN_RECORDS}); using reference database correction factors. ` +
+        "Submit actuals via /v1/feedback/record-actual to improve accuracy.";
   const cMul = COMPLEXITY_MULTIPLIER[Math.max(1, Math.min(5, complexity))] ?? 1.0;
 
   if (scopeBaseline) {
@@ -394,9 +481,14 @@ export function referenceClassEstimate(
     estimatedTokenCost: Math.round(correctedEstimate * 50000 * 100) / 100,
     basisNote:
       `correctedEstimate (${correctedEstimate} hours) is the ledger-recorded and displayed basis ` +
-      "(rawEstimate x correctionFactor from historical actual/estimated ratios); it is the value " +
+      "(rawEstimate x correctionFactor, where the factor is the median of historical actual/rawEstimate " +
+      "ratios — the pre-correction basis — over the trailing 60-day window with a min-n fallback to all " +
+      "history); it is the value " +
       "feedback.ts's extractEstimatedHours records for reference-class tools and the value empirical " +
       "ratio quantiles are calibrated against.",
+    trainingCounts: counts,
+    provenanceSentence,
+    correctionNote,
   };
 }
 
