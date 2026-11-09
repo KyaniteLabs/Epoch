@@ -70,6 +70,37 @@ describe("convertTimezone", () => {
 		expect(result.data.utcOffset).toBe("+09:00");
 	});
 
+	it("treats a timestamp without an offset as UTC, independent of the host zone", () => {
+		const original = process.env["TZ"];
+		try {
+			for (const hostTz of ["America/Los_Angeles", "Asia/Tokyo", "UTC"]) {
+				process.env["TZ"] = hostTz;
+				const naive = convertTimezone("2026-11-09T10:00:00", "UTC");
+				expect(naive.ok).toBe(true);
+				if (!naive.ok) return;
+				expect(naive.data.iso).toBe("2026-11-09T10:00:00Z");
+				const dateOnly = convertTimezone("2026-11-09", "Asia/Tokyo");
+				expect(dateOnly.ok).toBe(true);
+				if (!dateOnly.ok) return;
+				expect(dateOnly.data.iso).toBe("2026-11-09T09:00:00+09:00");
+			}
+		} finally {
+			if (original === undefined) delete process.env["TZ"];
+			else process.env["TZ"] = original;
+		}
+	});
+
+	it("keeps explicit offsets authoritative", () => {
+		const result = convertTimezone("2026-11-09T10:00:00+05:30", "UTC");
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.data.iso).toBe("2026-11-09T04:30:00Z");
+		const compact = convertTimezone("2026-11-09T10:00:00-0800", "UTC");
+		expect(compact.ok).toBe(true);
+		if (!compact.ok) return;
+		expect(compact.data.iso).toBe("2026-11-09T18:00:00Z");
+	});
+
 	it("returns an error for invalid timestamp", () => {
 		const result = convertTimezone("not-a-date", "UTC");
 		expect(result.ok).toBe(false);
