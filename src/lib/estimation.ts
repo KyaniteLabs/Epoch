@@ -597,7 +597,7 @@ export function monteCarloSim(
     riskEvents,
     humanReadable: `Monte Carlo simulation (${iterations} iterations): Optimistic (p10): ${String(Math.round(p(0.1) * 100) / 100)} days. Median (p50): ${String(Math.round(p50Val * 100) / 100)} days. P90: ${String(Math.round(p(0.9) * 100) / 100)} days. Conservative (p95): ${String(Math.round(p(0.95) * 100) / 100)} days.${probabilityLine}`,
   };
-  captureHistogram(result, durations, p50Val, p(0.9));
+  captureHistogram(result, durations, p50Val, p(0.9), seed ?? 42);
   return result;
 }
 

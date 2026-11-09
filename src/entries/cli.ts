@@ -144,6 +144,19 @@ function isQuiet(rootOpts: Record<string, unknown>): boolean {
 	return rootOpts.quiet === true;
 }
 
+/**
+ * Chart sizing for table output: the live TTY width, else $COLUMNS, else the
+ * renderer's 80-column default; plain ASCII on TERM=dumb or EPOCH_CHART_ASCII=1.
+ */
+function terminalChartOptions(): { columns?: number; ascii: boolean } {
+	const envColumns = Number(process.env["COLUMNS"]);
+	const columns = process.stdout.isTTY && process.stdout.columns > 0
+		? process.stdout.columns
+		: Number.isFinite(envColumns) && envColumns > 0 ? envColumns : undefined;
+	const ascii = process.env["TERM"] === "dumb" || process.env["EPOCH_CHART_ASCII"] === "1";
+	return columns === undefined ? { ascii } : { columns, ascii };
+}
+
 /** Run dispatch, format, and exit with the appropriate code. */
 async function runAndExit(
 	toolName: string,
@@ -174,7 +187,7 @@ function emitAndExit(
 	}
 
 	const output =
-		format === "table" ? formatTable(result, toolName) : formatJson(result);
+		format === "table" ? formatTable(result, toolName, terminalChartOptions()) : formatJson(result);
 
 	if (!quiet || format === "json") {
 		process.stdout.write(output + "\n");
