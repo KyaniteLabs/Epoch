@@ -10,11 +10,12 @@
 // writes — the submitter reported "no new records" forever after).
 //
 // Installing this handler turns a termination signal into:
-//   1. remove our own listeners (a second signal must meet the DEFAULT
-//      disposition and kill the process — never be swallowed),
-//   2. synchronously flush every buffered store (telemetry is the only
+//   1. synchronously flush every buffered store (telemetry is the only
 //      buffered store; the ledgers already write synchronously),
-//   3. exit with the conventional 128+signal code.
+//   2. remove our own listeners,
+//   3. exit with the conventional 128+signal code. A second signal that
+//      lands during the flush coalesces into this same exit; it is never
+//      swallowed because the process is already exiting.
 //
 // The HTTP entry is intentionally NOT routed through this module: it keeps
 // its own graceful shutdown (server.close + flush + exit 0) and the CLI
@@ -61,19 +62,24 @@ export function installSignalFlushShutdown(options: SignalFlushOptions = {}): No
   const exit = options.exit ?? ((code: number) => process.exit(code));
 
   const handler: NodeJS.SignalsListener = (signal) => {
-    // 1. Drop our registrations FIRST: if a second signal lands while we are
-    //    still flushing, it meets the default disposition (terminate) here
-    //    instead of queuing another pass through this handler.
-    uninstallSignalFlushShutdown();
-    // 2. Best-effort synchronous flush. resetTelemetry() clears the flush
-    //    interval and appends the buffer; a failed append keeps the batch
-    //    buffered (Ticket 19 semantics) but the exit code below still holds.
+    // 1. Flush FIRST. The flush is synchronous (appendFileSync of a small
+    //    buffer), and Node delivers JS signal handlers on the event loop, so
+    //    a second signal arriving now is queued behind this handler and never
+    //    runs: it coalesces into the exit below. The previous order
+    //    (uninstall, then flush) restored the default disposition before the
+    //    write, so a quick double SIGTERM / double Ctrl-C killed the process
+    //    mid-flush and lost the very records this module exists to keep
+    //    (signal-flush.integration.test flaked on exactly that race).
+    //    A genuinely wedged flush is still escapable with SIGKILL.
     try {
       flush();
     } catch {
       // Flushing is best-effort on the shutdown path; the exit code still
       // reflects the signal that caused the shutdown.
     }
+    // 2. Drop our registrations so nothing re-enters this handler if the
+    //    injected exit seam returns (tests) or exit is slow.
+    uninstallSignalFlushShutdown();
     // 3. Conventional exit code: 128 + signal number.
     exit(SIGNAL_EXIT_CODES[signal as FlushSignal] ?? 128);
   };
