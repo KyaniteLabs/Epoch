@@ -403,6 +403,7 @@ export const monteCarloSchema = z.object({
     .describe("Task list with PERT-style three-point estimates and dependency edges."),
   iterations: z
     .coerce.number()
+    .int({ error: "iterations must be a whole number (1.5 iterations is not a simulation)." })
     .min(1)
     .max(100000)
     .describe("Number of Monte Carlo simulation iterations (1–100,000). Higher = more stable percentiles.")

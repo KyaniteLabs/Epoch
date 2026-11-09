@@ -342,6 +342,16 @@ describe("input safety bounds (W1)", () => {
     expect(elapsedMs).toBeLessThan(500);
   });
 
+  it("rejects fractional monte_carlo_schedule iterations instead of running ceil(1.5) silently", async () => {
+    const result = await dispatch("monte_carlo_schedule", {
+      tasks: [{ name: "A", optimistic: 1, most_likely: 2, pessimistic: 3 }],
+      iterations: 1.5,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toMatch(/whole number/);
+  });
+
   it("rejects monte_carlo_schedule whose summed durations overflow instead of returning -Infinity as success", async () => {
     const result = await dispatch("monte_carlo_schedule", {
       tasks: [

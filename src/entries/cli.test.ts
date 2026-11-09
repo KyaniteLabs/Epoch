@@ -18,7 +18,7 @@ import { Command } from "commander";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createCliProgram, maybeShowFirstRunTelemetryNudge } from "./cli.js";
+import { createCliProgram, maybeShowFirstRunTelemetryNudge, parseStrictNumber } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
 import { assertEstimateWritten } from "../test-support.js";
 
@@ -600,6 +600,32 @@ describe("CLI tests", () => {
 			expect(output).toContain("--host");
 			expect(output.toLowerCase()).not.toContain("listening");
 			expect(capture.exitCode).toBe(0);
+		});
+
+		it("rejects numeric flags with trailing garbage or hex instead of truncating them", async () => {
+			for (const bad of ["12abc", "0x10", "", "Infinity"]) {
+				const program = createCliProgram();
+				const capture = await runWithCapture(program, [
+					"pert-estimate",
+					"--optimistic",
+					bad,
+					"--most-likely",
+					"2",
+					"--pessimistic",
+					"3",
+				]);
+				expect(capture.stderr.join(""), `value ${JSON.stringify(bad)}`).toContain("--optimistic must be a number");
+				expect(capture.exitCode).toBe(1);
+			}
+		});
+
+		it("parseStrictNumber accepts whole decimal numbers only", () => {
+			expect(parseStrictNumber(" 12 ")).toBe(12);
+			expect(parseStrictNumber("1e3")).toBe(1000);
+			expect(parseStrictNumber("-.5")).toBe(-0.5);
+			expect(parseStrictNumber("12abc")).toBeNaN();
+			expect(parseStrictNumber("0x10")).toBeNaN();
+			expect(parseStrictNumber("")).toBeNaN();
 		});
 
 		it("rejects a non-numeric --port with a clear error", async () => {

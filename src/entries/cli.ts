@@ -28,11 +28,26 @@ function parseJsonArg(raw: string, flagName: string): unknown {
 	}
 }
 
-/** Safe parseFloat that exits on NaN instead of propagating silently. */
+/**
+ * Whole-string decimal number grammar. parseFloat/parseInt stop at the first
+ * bad character, so "--iterations 12abc" ran 12 iterations and "--days 0x10"
+ * became 0 — both exit 0 with a silently different input. Hex, empty and
+ * trailing-garbage values are now rejected.
+ */
+const DECIMAL_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+const DECIMAL_INTEGER = /^[+-]?\d+$/;
+
+/** Strict decimal parse; returns NaN for anything that is not a whole decimal number. */
+export function parseStrictNumber(value: string): number {
+	const trimmed = value.trim();
+	return DECIMAL_NUMBER.test(trimmed) ? Number(trimmed) : Number.NaN;
+}
+
+/** Strict float parser that exits on anything but a whole decimal number. */
 function safeFloat(flagName: string): (value: string) => number {
 	return (value: string) => {
-		const n = Number.parseFloat(value);
-		if (Number.isNaN(n)) {
+		const n = parseStrictNumber(value);
+		if (!Number.isFinite(n)) {
 			process.stderr.write(
 				`Error: --${flagName} must be a number, got "${value}"\n`,
 			);
@@ -43,14 +58,15 @@ function safeFloat(flagName: string): (value: string) => number {
 }
 
 /**
- * Base-10 integer parser that exits on non-numbers. (Never pass a bare
+ * Base-10 integer parser that exits on non-integers. (Never pass a bare
  * parseInt to commander: it calls parsers as fn(value, previous), which made
  * the option default the radix.)
  */
 function safeInt(flagName: string): (value: string) => number {
 	return (value: string) => {
-		const n = Number.parseInt(value, 10);
-		if (Number.isNaN(n)) {
+		const trimmed = value.trim();
+		const n = DECIMAL_INTEGER.test(trimmed) ? Number(trimmed) : Number.NaN;
+		if (!Number.isSafeInteger(n)) {
 			process.stderr.write(`Error: --${flagName} must be an integer, got "${value}"\n`);
 			process.exit(1);
 		}
@@ -185,8 +201,8 @@ function convertOptionValue(raw: string, option: ToolOptionSpec): unknown {
 			return raw.split(",").map((s) => s.trim());
 		case "csvNumbers":
 			return raw.split(",").map((s) => {
-				const n = Number.parseFloat(s.trim());
-				if (Number.isNaN(n)) {
+				const n = parseStrictNumber(s);
+				if (!Number.isFinite(n)) {
 					process.stderr.write(`Error: --${label} contains non-numeric value "${s.trim()}"\n`);
 					process.exit(1);
 				}
