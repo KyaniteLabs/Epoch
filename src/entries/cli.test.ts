@@ -18,7 +18,7 @@ import { Command } from "commander";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createCliProgram, maybeShowFirstRunTelemetryNudge, parseStrictNumber } from "./cli.js";
+import { createCliProgram, maybeShowFirstRunTelemetryNudge, parseStrictNumber, chartAsciiFromEnv } from "./cli.js";
 import { dispatch } from "../dispatcher/index.js";
 import { assertEstimateWritten } from "../test-support.js";
 
@@ -1218,5 +1218,23 @@ describe("CLI tests", () => {
 			const { loadConfig } = await import("../lib/config.js");
 			expect(loadConfig().telemetry.nudgeShown).toBe(true);
 		});
+	});
+});
+
+describe("chartAsciiFromEnv", () => {
+	it("uses Unicode blocks by default and ASCII for dumb terminals", () => {
+		expect(chartAsciiFromEnv({ LANG: "en_US.UTF-8" })).toBe(false);
+		expect(chartAsciiFromEnv({ TERM: "dumb" })).toBe(true);
+	});
+	it("uses ASCII in CJK locales, where block glyphs are ambiguous-width and overflow", () => {
+		for (const LANG of ["ja_JP.UTF-8", "zh_CN.UTF-8", "ko_KR.UTF-8", "zh_TW", "ja"]) {
+			expect(chartAsciiFromEnv({ LANG }), LANG).toBe(true);
+		}
+		expect(chartAsciiFromEnv({ LANG: "jam_JM.UTF-8" })).toBe(false);
+		expect(chartAsciiFromEnv({ LANG: "en_US.UTF-8", LC_ALL: "ja_JP.UTF-8" })).toBe(true);
+	});
+	it("EPOCH_CHART_ASCII forces either way", () => {
+		expect(chartAsciiFromEnv({ EPOCH_CHART_ASCII: "1", LANG: "en_US.UTF-8" })).toBe(true);
+		expect(chartAsciiFromEnv({ EPOCH_CHART_ASCII: "0", LANG: "ja_JP.UTF-8", TERM: "dumb" })).toBe(false);
 	});
 });

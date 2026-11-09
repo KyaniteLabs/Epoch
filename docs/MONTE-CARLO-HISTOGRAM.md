@@ -48,7 +48,7 @@ Simulated spread, not observed outcomes.
 
 ## Width and glyphs
 
-The chart fits the terminal: the live TTY width, else `$COLUMNS`, else 80 columns, clamped to 40–160. Bars use Unicode block elements; set `TERM=dumb` or `EPOCH_CHART_ASCII=1` for plain ASCII (`#` bars, `<` markers). Counts precede the bars, so East Asian terminals that render block elements double-width only shift the marker column, never the numbers.
+The chart fits the terminal: the live TTY width, else `$COLUMNS`, else 80 columns, clamped to 40–160. Bars use Unicode block elements. Plain ASCII (`#` bars, `<` markers) is used when `TERM=dumb` or the locale is Japanese, Chinese or Korean: those terminals often draw block elements double-width, which would push an 80-column chart to about 129 columns. `EPOCH_CHART_ASCII=1` or `=0` forces either style.
 
 ## Contract
 

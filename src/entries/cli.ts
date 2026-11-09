@@ -148,12 +148,27 @@ function isQuiet(rootOpts: Record<string, unknown>): boolean {
  * Chart sizing for table output: the live TTY width, else $COLUMNS, else the
  * renderer's 80-column default; plain ASCII on TERM=dumb or EPOCH_CHART_ASCII=1.
  */
+/**
+ * ASCII glyphs when the terminal cannot be trusted with block elements:
+ * TERM=dumb, or a CJK locale, where terminals commonly draw East Asian
+ * "ambiguous" characters (█ ▏ ◀ ·) two columns wide and the chart overflows
+ * (80 columns renders as ~129). EPOCH_CHART_ASCII=1/0 forces either way.
+ */
+export function chartAsciiFromEnv(env: NodeJS.ProcessEnv): boolean {
+	const forced = env["EPOCH_CHART_ASCII"];
+	if (forced === "1") return true;
+	if (forced === "0") return false;
+	if (env["TERM"] === "dumb") return true;
+	const locale = env["LC_ALL"] || env["LC_CTYPE"] || env["LANG"] || "";
+	return /^(ja|zh|ko)([_.@-]|$)/i.test(locale);
+}
+
 function terminalChartOptions(): { columns?: number; ascii: boolean } {
 	const envColumns = Number(process.env["COLUMNS"]);
 	const columns = process.stdout.isTTY && process.stdout.columns > 0
 		? process.stdout.columns
 		: Number.isFinite(envColumns) && envColumns > 0 ? envColumns : undefined;
-	const ascii = process.env["TERM"] === "dumb" || process.env["EPOCH_CHART_ASCII"] === "1";
+	const ascii = chartAsciiFromEnv(process.env);
 	return columns === undefined ? { ascii } : { columns, ascii };
 }
 
