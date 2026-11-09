@@ -22,6 +22,7 @@ import {
   criticalPath,
   monteCarloSim,
 } from "../lib/estimation.js";
+import { histogramDistribution } from "../lib/monte-carlo-histogram.js";
 import {
   referenceClassEstimate,
   calibrateEstimates,
@@ -329,6 +330,21 @@ const monteCarloOutput = {
     estimatedHours: { type: "number", description: "Median estimate in hours (p50 × 8)" },
     estimatedCost: { type: "number", description: "Estimated AI token cost at p50 (50k tokens/hour × estimatedHours)" },
     feedbackRef: feedbackRefField,
+    distribution: {
+      type: "object",
+      description: "Only when distribution: true was requested. The histogram behind the terminal chart: 21 ascending bin edges and 20 counts (days), with the bins holding P50 and P90.",
+      properties: {
+        unit: { type: "string", enum: ["days"] },
+        iterations: { type: "number" },
+        seed: { type: "number" },
+        edges: { type: "array", items: { type: "number" } },
+        counts: { type: "array", items: { type: "number" } },
+        min: { type: "number" },
+        max: { type: "number" },
+        p50Bin: { type: "number" },
+        p90Bin: { type: "number" },
+      },
+    },
   },
 } satisfies Record<string, unknown>;
 
@@ -937,6 +953,10 @@ criticalPathProbability = P(total <= target_hours); without it that field is nul
             retryHint: "Use realistic durations in days (for example optimistic 1, most_likely 3, pessimistic 8).",
           },
         };
+      }
+      if (p.distribution === true) {
+        const distribution = histogramDistribution(data);
+        if (distribution) return { ok: true as const, data: Object.assign(data, { distribution }) };
       }
       return { ok: true as const, data };
     },

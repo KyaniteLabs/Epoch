@@ -409,6 +409,10 @@ export const monteCarloSchema = z.object({
     .describe("Number of Monte Carlo simulation iterations (1–100,000). Higher = more stable percentiles.")
     .default(10000),
   seed: z.number().int().optional().describe("Optional seed for reproducible results."),
+  distribution: z
+    .boolean()
+    .optional()
+    .describe("When true, also return the simulated distribution (20 bin edges and counts in days, plus the P50/P90 bins) so a client can draw the chart."),
   task_type: taskTypeEnum
     .describe("Optional task type for feedback matching. Enables per-task-type accuracy tracking.")
     .optional(),

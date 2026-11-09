@@ -35,6 +35,43 @@ export function captureHistogram(
   histograms.set(result, { count: sorted.length, min, max, median, p90, seed, counts });
 }
 
+/** The chart's data, for agents and UIs that draw it themselves (opt-in on monte_carlo_schedule). */
+export interface Distribution {
+  readonly unit: "days";
+  readonly iterations: number;
+  readonly seed: number;
+  /** HISTOGRAM_BINS + 1 bin edges, ascending; bin i covers [edges[i], edges[i + 1]). */
+  readonly edges: readonly number[];
+  /** Runs per bin; sums to iterations. */
+  readonly counts: readonly number[];
+  readonly min: number;
+  readonly max: number;
+  /** Bin index holding P50 / P90, so a renderer marks the same rows the terminal chart does. */
+  readonly p50Bin: number;
+  readonly p90Bin: number;
+}
+
+const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+
+export function histogramDistribution(result: unknown): Distribution | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const h = histograms.get(result);
+  if (!h) return undefined;
+  const width = (h.max - h.min) / HISTOGRAM_BINS;
+  const edges = Array.from({ length: HISTOGRAM_BINS + 1 }, (_, i) => round4(i === HISTOGRAM_BINS ? h.max : h.min + width * i));
+  return {
+    unit: "days",
+    iterations: h.count,
+    seed: h.seed,
+    edges,
+    counts: [...h.counts],
+    min: round4(h.min),
+    max: round4(h.max),
+    p50Bin: binIndex(h.median, h.min, h.max),
+    p90Bin: binIndex(h.p90, h.min, h.max),
+  };
+}
+
 function binIndex(value: number, min: number, max: number): number {
   return max === min ? 0 : Math.min(HISTOGRAM_BINS - 1, Math.floor((value - min) / (max - min) * HISTOGRAM_BINS));
 }

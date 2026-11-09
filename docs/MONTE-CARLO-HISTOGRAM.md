@@ -50,6 +50,23 @@ Simulated spread, not observed outcomes.
 
 The chart fits the terminal: the live TTY width, else `$COLUMNS`, else 80 columns, clamped to 40–160. Bars use Unicode block elements. Plain ASCII (`#` bars, `<` markers) is used when `TERM=dumb` or the locale is Japanese, Chinese or Korean: those terminals often draw block elements double-width, which would push an 80-column chart to about 129 columns. `EPOCH_CHART_ASCII=1` or `=0` forces either style.
 
+## For agents and UIs: the chart as data
+
+Pass `distribution: true` (CLI `--distribution`) and the JSON result gains a `distribution` object holding the same bins the terminal chart draws:
+
+```json
+"distribution": {
+  "unit": "days", "iterations": 5000, "seed": 42,
+  "edges": [3.81, 4.59, "…21 ascending edges…", 19.38],
+  "counts": [23, 83, "…20 counts summing to iterations…", 6],
+  "min": 3.81, "max": 19.38, "p50Bin": 8, "p90Bin": 13
+}
+```
+
+Bin `i` covers `[edges[i], edges[i+1])` and the last bin also includes `max`. `p50Bin` and `p90Bin` are the rows the terminal chart marks. Edges are rounded to 4 decimals.
+
+MCP clients also get every successful tool result as `structuredContent` (MCP 2025-06-18+), alongside the unchanged JSON text block, so an agent can read `distribution` without parsing text.
+
 ## Contract
 
-JSON remains the default. JSON, MCP and HTTP responses keep their existing fields and types. Histogram metadata is process-local, weakly keyed by the simulation result, and never serialized, so a saved JSON result cannot reconstruct a histogram. Raw samples are not retained after the simulation returns.
+JSON remains the default. Without `distribution: true`, JSON, MCP and HTTP responses keep their existing fields and types; the flag only adds the one field. Histogram metadata is process-local and weakly keyed by the simulation result, so a saved JSON result cannot rebuild a histogram unless it was requested with `distribution`. Raw samples are not retained after the simulation returns.
