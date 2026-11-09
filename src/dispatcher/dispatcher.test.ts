@@ -342,6 +342,28 @@ describe("input safety bounds (W1)", () => {
     expect(elapsedMs).toBeLessThan(500);
   });
 
+  it("rejects monte_carlo_schedule whose summed durations overflow instead of returning -Infinity as success", async () => {
+    const result = await dispatch("monte_carlo_schedule", {
+      tasks: [
+        { name: "A", optimistic: 1e308, most_likely: 1.5e308, pessimistic: 1.7e308 },
+        { name: "B", optimistic: 1e308, most_likely: 1.5e308, pessimistic: 1.7e308 },
+      ],
+      iterations: 50,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.isError).toBe(true);
+    expect(result.error.message).toMatch(/overflow/);
+  });
+
+  it("rejects monte_carlo_schedule whose hours conversion overflows (1e306 days x 8 h)", async () => {
+    const result = await dispatch("monte_carlo_schedule", {
+      tasks: [{ name: "A", optimistic: 1e306, most_likely: 1e306, pessimistic: 1e306 }],
+      iterations: 10,
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("accepts monte_carlo_schedule under the iterations × tasks product cap", async () => {
     const tasks = Array.from({ length: 10 }, (_, i) => ({
       name: `T${i}`,

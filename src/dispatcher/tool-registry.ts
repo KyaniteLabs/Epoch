@@ -911,7 +911,34 @@ criticalPathProbability = P(total <= target_hours); without it that field is nul
         mostLikely: t.most_likely,
         pessimistic: t.pessimistic,
       }));
-      return { ok: true as const, data: monteCarloSim(tasks, p.iterations, p.seed, p.target_hours) };
+      // Overflow guard: each field is finite on its own, but a schedule whose
+      // summed pessimistic durations overflow to Infinity used to come back as
+      // ok:true with p50 "-Infinity" / estimatedHours null — and was recorded
+      // to the ledger with a feedbackRef. Reject it as a tool error instead.
+      let pessimisticSum = 0;
+      for (const t of tasks) pessimisticSum += t.pessimistic;
+      if (!Number.isFinite(pessimisticSum)) {
+        return {
+          ok: false as const,
+          error: {
+            isError: true as const,
+            message: "Summed task durations overflow a finite number of days; the simulation cannot produce meaningful percentiles.",
+            retryHint: "Use realistic durations in days (for example optimistic 1, most_likely 3, pessimistic 8).",
+          },
+        };
+      }
+      const data = monteCarloSim(tasks, p.iterations, p.seed, p.target_hours);
+      if (!Number.isFinite(data.estimatedHours) || !Number.isFinite(data.estimatedCost)) {
+        return {
+          ok: false as const,
+          error: {
+            isError: true as const,
+            message: "Simulation produced a non-finite estimate (durations too large to convert to hours).",
+            retryHint: "Use realistic durations in days (for example optimistic 1, most_likely 3, pessimistic 8).",
+          },
+        };
+      }
+      return { ok: true as const, data };
     },
   ),
 
