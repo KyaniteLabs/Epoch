@@ -391,6 +391,29 @@ function dateToKey(d: Date): string {
   return format(d, "yyyy-MM-dd");
 }
 
+/** Days since 1970-01-01 for a calendar date (DST- and host-zone-free). */
+function civilDayNumber(year: number, monthIndex: number, day: number): number {
+  const t = new Date(0);
+  t.setUTCFullYear(year, monthIndex, day);
+  return Math.round(t.getTime() / 86_400_000);
+}
+
+/** Day number of a local-midnight Date's calendar date. */
+function dayNumber(d: Date): number {
+  return civilDayNumber(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** Day number of a "yyyy-MM-dd" key. */
+function keyDayNumber(key: string): number {
+  return civilDayNumber(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)));
+}
+
+/** 1970-01-01 was a Thursday (4); Saturday=6 and Sunday=0 are the weekend. */
+function isWeekdayNumber(n: number): boolean {
+  const dow = (((n + 4) % 7) + 7) % 7;
+  return dow !== 0 && dow !== 6;
+}
+
 // ---- HolidayRegistry class ------------------------------------------------
 
 /**
@@ -400,6 +423,18 @@ function dateToKey(d: Date): string {
  * shifts previously saved forecasts.
  */
 export const CALENDAR_VERSION = "2026.08";
+
+/**
+ * ISO 3166-1 alpha-2 aliases for registered codes. The registry predates the
+ * ISO code for the United Kingdom ("GB"); without this alias a caller using
+ * the standard code silently fell back to weekends-only counting.
+ */
+const COUNTRY_ALIASES: Readonly<Record<string, string>> = { GB: "UK" };
+
+function canonicalCountry(country: string): string {
+  const code = country.toUpperCase();
+  return COUNTRY_ALIASES[code] ?? code;
+}
 
 export class HolidayRegistry {
   private readonly registry = new Map<string, HolidayFn>();
@@ -417,7 +452,7 @@ export class HolidayRegistry {
 
   /** Returns true if the country code has a registered holiday function. */
   hasCountry(country: string): country is SupportedCountry {
-    return this.registry.has(country.toUpperCase());
+    return this.registry.has(canonicalCountry(country));
   }
 
   /** Lists all supported country codes. */
@@ -432,7 +467,7 @@ export class HolidayRegistry {
    * instead of rebuilding it for every day visited.
    */
   holidayDateKeys(country: string, year: number): Set<string> {
-    const code = country.toUpperCase();
+    const code = canonicalCountry(country);
     const cacheKey = `${code}:${year}`;
     const cached = this.keySetCache.get(cacheKey);
     if (cached) return cached;
@@ -451,7 +486,7 @@ export class HolidayRegistry {
    * (Not memoized — the bulk accessor; use holidayDateKeys on hot paths.)
    */
   holidays(country: string, year: number): readonly Date[] {
-    const fn = this.registry.get(country.toUpperCase());
+    const fn = this.registry.get(canonicalCountry(country));
     return fn ? fn(year) : [];
   }
 
@@ -544,26 +579,31 @@ export function countBusinessDays(
   // Fallback: unknown countries get weekend-only counting (no holiday awareness)
   const knownCountry = holidayRegistry.hasCountry(code);
 
-  // Iterate day-by-day from start (exclusive) to end (inclusive)
-  const holidaysSkipped: string[] = [];
+  // Closed form over (start, end]: weekdays by whole weeks plus a <7-day
+  // remainder, minus weekday holidays in range. The previous day-by-day walk
+  // called date-fns format() per visited day — ~10 s for a 0001..9999 range,
+  // blocking the event loop (HTTP /health stalled for the whole call).
+  const first = dayNumber(startParsed) + 1;
+  const last = dayNumber(endParsed);
   let businessDays = 0;
-
-  const current = new Date(startParsed);
-  current.setDate(current.getDate() + 1);
-
-  const endTime = endParsed.getTime();
-
-  while (current.getTime() <= endTime) {
-    const year = current.getFullYear();
-    const holidayKeys = knownCountry ? holidayRegistry.holidayDateKeys(code, year) : new Set<string>();
-
-    if (!isWeekend(current) && !holidayKeys.has(dateToKey(current))) {
-      businessDays++;
-    } else if (holidayKeys.has(dateToKey(current)) && !isWeekend(current)) {
-      holidaysSkipped.push(dateToKey(current));
+  if (last >= first) {
+    const span = last - first + 1;
+    const fullWeeks = Math.floor(span / 7);
+    businessDays = fullWeeks * 5;
+    for (let n = first + fullWeeks * 7; n <= last; n++) {
+      if (isWeekdayNumber(n)) businessDays++;
     }
-
-    current.setDate(current.getDate() + 1);
+    if (knownCountry) {
+      for (let year = startParsed.getFullYear(); year <= endParsed.getFullYear(); year++) {
+        for (const key of holidayRegistry.holidayDateKeys(code, year)) {
+          // Same semantics as the walk: a date is checked against its OWN
+          // year's set, so only count keys that belong to that year.
+          if (Number(key.slice(0, 4)) !== year) continue;
+          const n = keyDayNumber(key);
+          if (n >= first && n <= last && isWeekdayNumber(n)) businessDays--;
+        }
+      }
+    }
   }
 
   return {
