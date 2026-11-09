@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     globals: true,
     include: ["src/**/*.test.ts"],
+    // Hermetic HOME per worker: tests must never touch the real ~/.epoch.
+    setupFiles: ["src/test-setup.ts"],
     coverage: {
       provider: "v8",
       // Vitest's defaults plus json-summary, which the CI profile's Layer 3
