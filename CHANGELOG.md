@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-09
+
+The Monte Carlo chart release: see the spread of a schedule in the terminal, or hand the same bins to an agent.
+
+### feat: Monte Carlo histogram
+
+- `monte_carlo_schedule` in table/`--pretty` output draws a 20-bin histogram of the real simulated totals, with P50/P90 markers that match the reported values. It fits the terminal width and falls back to ASCII on dumb terminals and CJK locales (`EPOCH_CHART_ASCII` overrides). See [docs/MONTE-CARLO-HISTOGRAM.md](docs/MONTE-CARLO-HISTOGRAM.md).
+- New opt-in `distribution: true` (CLI `--distribution`) returns the chart's bin edges, counts and P50/P90 bins as JSON, for agents and UIs that draw it themselves.
+- MCP tool results now also carry `structuredContent`, so agents read the parsed object directly. The JSON text block is unchanged.
+- CLI `monte-carlo-schedule` exposes `--seed` and `--target-hours`.
+
+### fix
+
+- Iteration counts like `12abc`, `0x10` or `1.5` are rejected instead of silently truncated.
+- Overflowing schedules are rejected instead of returning `-Infinity` as a success.
+- `convert_timezone` reads timestamps without an offset as UTC, not the host's local time.
+- `record_actual` flags actuals recorded against an unknown estimate id.
+- A second SIGTERM during shutdown no longer drops the last telemetry record.
+- Site: the Tailwind theme applies, content shows without JavaScript, and the tool table scrolls on phones.
+
+### perf
+
+- `count_business_days` is closed-form: the full year 1–9999 range went from 10.1 s to 0.48 s. `GB` is accepted as an alias for `UK`.
+- date-fns is bundled into `dist`, cutting cold start from 0.95 s to 0.24 s.
+
+### test
+
+- Each test worker gets its own `HOME`, so the suite never writes the real ledger.
+
 ## [0.7.0] - 2026-11-05
 
 ### feat: P90 percentile + native Hermes plugin
