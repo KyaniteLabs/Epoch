@@ -2,6 +2,7 @@ import type { HistoricalRecord } from "../types/index.js";
 import { loadLedgerWithOverlays } from "./ledger.js";
 import { isExcluded } from "./exclusion.js";
 import { classifyCalibrationRecord } from "./feedback-analytics.js";
+import { canonicalizeToolName } from "./tool-aliases.js";
 import { calibrationTaskCounts } from "./calibration-provenance.js";
 import type { CalibrationTaskCounts } from "./calibration-provenance.js";
 
@@ -440,7 +441,8 @@ export function loadReferenceClassMatchedRecords(teamId?: string): HistoricalRec
   const records: HistoricalRecord[] = [];
 
   for (const rec of merged) {
-    if (rec.tool !== REFERENCE_CLASS_TOOL) continue;
+    // Same alias/camelCase normalisation the old matchEstimatesToActuals path used.
+    if (canonicalizeToolName(rec.tool) !== REFERENCE_CLASS_TOOL) continue;
     if (!rec.actual) continue;
     if (!(rec.actual.actualHours > 0)) continue;
 
@@ -455,7 +457,10 @@ export function loadReferenceClassMatchedRecords(teamId?: string): HistoricalRec
       estimatedHours,
       { quarantined: rec.flags.quarantined, orphan: rec.flags.orphan },
     );
-    if (calibration.calibrationUsage === "exclude") continue;
+    // Train ONLY on correction-usage rows (same population as getCalibrationData's
+    // default). "baseline" rows (backfilled/synthetic/unknown/completed-before-
+    // estimated) are held out of correction-factor computation; "exclude" too.
+    if (calibration.calibrationUsage !== "correction") continue;
 
     const taskType = typeof rec.inputs["task_type"] === "string" ? (rec.inputs["task_type"] as string) : "feature";
     const complexity = typeof rec.inputs["complexity"] === "number" ? (rec.inputs["complexity"] as number) : undefined;

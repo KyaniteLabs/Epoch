@@ -632,11 +632,12 @@ describe("loadReferenceClassMatchedRecords / getReferenceClassToolTaskCorrection
 			provenance?: string;
 			notes?: string;
 			outputs?: Record<string, unknown>;
+			tool?: string;
 		}>,
 	): void {
 		writeJsonl("estimates.jsonl", pairs.map((p) => ({
 			id: p.id,
-			tool: "reference_class_estimate",
+			tool: p.tool ?? "reference_class_estimate",
 			inputs: {
 				task_type: p.taskType ?? "bugfix",
 				complexity: 3,
@@ -745,6 +746,40 @@ describe("loadReferenceClassMatchedRecords / getReferenceClassToolTaskCorrection
 		]);
 
 		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+	});
+
+	it("does not train on baseline-usage (backfilled) rows or count them as verified", () => {
+		seedReferenceClassPairs(
+			[1, 2, 3, 4, 5, 6].map((i) => ({
+				id: `rce-bf-${i}`,
+				raw: 10,
+				actual: 25,
+				completedDaysAgo: 10 - i,
+				provenance: "backfilled_calibration",
+			})),
+		);
+
+		expect(loadReferenceClassMatchedRecords()).toEqual([]);
+		expect(getReferenceClassToolTaskCorrection("bugfix")).toEqual({
+			factor: 1.0,
+			n: 0,
+			counts: { total: 0, gitDerived: 0, verified: 0, autoWallclock: 0 },
+		});
+	});
+
+	it("normalises legacy/camelCase tool spellings like the old matching path", () => {
+		seedReferenceClassPairs(
+			[1, 2, 3].map((i) => ({
+				id: `rce-alias-${i}`,
+				tool: "referenceClassEstimate",
+				raw: 10,
+				actual: 20,
+				completedDaysAgo: 10 - i,
+			})),
+		);
+
+		expect(loadReferenceClassMatchedRecords()).toHaveLength(3);
+		expect(getReferenceClassToolTaskCorrection("bugfix").n).toBe(3);
 	});
 
 	it("defaults to factor 1.0 with n=0 for an unknown task type", () => {
@@ -863,13 +898,9 @@ describe("loadReferenceClassMatchedRecords / getReferenceClassToolTaskCorrection
 		expect(correction.counts).toEqual({ total: 8, gitDerived: 4, verified: 2, autoWallclock: 2 });
 	});
 
-	it("baseline-usage rows train the factor and are counted as part of the training population (documented population difference vs getCalibrationData)", () => {
-		// The raw-basis loader applies isExcluded() only — it deliberately does
-		// NOT filter by calibrationUsage (same discipline as
-		// loadPertMatchedRecords and the validated 772-pair replay). Rows the
-		// old 90-day getCalibrationData(..., "correction") population held out
-		// as usage="baseline" (e.g. "ingested from" backfills) therefore DO
-		// train the factor here, and the counts must say so.
+	it("baseline-usage rows (e.g. 'ingested from' backfills) are held out of the training population and counts", () => {
+		// Only usage="correction" rows train the factor, matching the
+		// getCalibrationData(..., "correction") population; counts.total === n.
 		seedReferenceClassPairs([
 			...[1, 2, 3, 4, 5].map((i) => ({ id: `rce-corr-${i}`, raw: 10, actual: 20, completedDaysAgo: 10 - i })),
 			{ id: "rce-base-1", raw: 10, actual: 40, completedDaysAgo: 3, notes: "ingested from external tracker" },
@@ -877,9 +908,8 @@ describe("loadReferenceClassMatchedRecords / getReferenceClassToolTaskCorrection
 		]);
 
 		const correction = getReferenceClassToolTaskCorrection("bugfix");
-		expect(correction.n).toBe(7); // the old counts source would have said 5
-		expect(correction.counts).toEqual({ total: 7, gitDerived: 0, verified: 7, autoWallclock: 0 });
-		// median of [2×5, 4×2] = 2.0 — both baseline rows trained the factor.
+		expect(correction.n).toBe(5);
+		expect(correction.counts).toEqual({ total: 5, gitDerived: 0, verified: 5, autoWallclock: 0 });
 		expect(correction.factor).toBe(2.0);
 	});
 

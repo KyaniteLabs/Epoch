@@ -140,11 +140,10 @@ describe("reference_class_estimate — correction-training provenance coherence 
     expect((data["humanReadable"] as string)).toContain("Calibrated on YOUR 6 historical tasks (0 git-derived, 6 verified).");
   });
 
-  it("excluded-from-old-counts populations (baseline-usage backfills) are counted when they trained the factor", async () => {
+  it("baseline-usage backfills are held out of training and counts (correction-usage population only)", async () => {
     // Five ordinary pairs (ratio 2.0) plus two "ingested from" backfills
-    // (usage=baseline): the old getCalibrationData(..., "correction") counts
-    // source held the backfills out, but the raw-basis trainer includes them
-    // — so the counts must report 7, not 5.
+    // (usage=baseline, actual ratio 4.0). Backfills must neither train the
+    // factor nor be counted as verified: n=5, total=5.
     seedPairs([
       ...Array.from({ length: 5 }, (_, i) => ({ id: `rce-corr-${i + 1}`, raw: 10, corrected: 18, actual: 20, completedDaysAgo: 8 - i })),
       { id: "rce-backfill-1", raw: 10, corrected: 18, actual: 40, completedDaysAgo: 2, notes: "ingested from external tracker" },
@@ -153,9 +152,8 @@ describe("reference_class_estimate — correction-training provenance coherence 
 
     const data = await dispatchRce({ task_type: "bugfix", complexity: 3 });
 
-    expect(data["sampleSize"]).toBe(7);
-    expect(data["calibrationCounts"]).toEqual({ total: 7, gitDerived: 0, verified: 7, autoWallclock: 0 });
-    // median of [2×5, 4×2] = 2.0 — the backfills trained the factor too.
+    expect(data["sampleSize"]).toBe(5);
+    expect(data["calibrationCounts"]).toEqual({ total: 5, gitDerived: 0, verified: 5, autoWallclock: 0 });
     expect(data["correctionFactor"]).toBe(2);
   });
 });
