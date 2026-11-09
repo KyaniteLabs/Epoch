@@ -1,0 +1,340 @@
+{
+  "ok": true,
+  "tool": "reference_class_estimate",
+  "sourceDataDir": "production-ledger-copy (private; file digests + provenance in README.md of this directory)",
+  "copiedFiles": 6,
+  "totalMatchedPairs": 772,
+  "baseline": {
+    "matchedPairs": 772,
+    "excludedByPredicate": 39,
+    "completedAtRange": [
+      "2026-05-02T12:00:00Z",
+      "2026-08-08T15:06:22.892Z"
+    ],
+    "medianActualOverCorrected_all": 0.5,
+    "medianActualOverRaw_all": 0.283,
+    "medianActualOverCorrected_verifiedOnly": 0.5,
+    "medianActualOverCorrected_recordedFactorApplied": 0.522,
+    "medianActualOverCorrected_completedOnOrBefore_issueDate": {
+      "issueDate": "2026-07-12",
+      "n": 734,
+      "value": 0.5
+    },
+    "medianActualOverCorrected_completedAfter_issueDate": {
+      "issueDate": "2026-07-12",
+      "n": 38,
+      "value": 0.8
+    },
+    "medianOfTaskTypeMedians": 0.509,
+    "byTaskType": {
+      "bugfix": {
+        "n": 58,
+        "medianActualOverPredicted": 0.5
+      },
+      "design": {
+        "n": 28,
+        "medianActualOverPredicted": 0.548
+      },
+      "documentation": {
+        "n": 46,
+        "medianActualOverPredicted": 0.588
+      },
+      "feature": {
+        "n": 486,
+        "medianActualOverPredicted": 0.509
+      },
+      "infrastructure": {
+        "n": 67,
+        "medianActualOverPredicted": 0.714
+      },
+      "refactor": {
+        "n": 28,
+        "medianActualOverPredicted": 0.417
+      },
+      "testing": {
+        "n": 59,
+        "medianActualOverPredicted": 0.5
+      }
+    },
+    "byMonth": {
+      "2026-05": {
+        "n": 541,
+        "medianActualOverPredicted": 0.5
+      },
+      "2026-06": {
+        "n": 157,
+        "medianActualOverPredicted": 0.6
+      },
+      "2026-07": {
+        "n": 60,
+        "medianActualOverPredicted": 0.833
+      },
+      "2026-08": {
+        "n": 14,
+        "medianActualOverPredicted": 1.125
+      }
+    }
+  },
+  "feedbackHealth": {
+    "totalEstimates": 35885,
+    "matchedPairs": 1922,
+    "matchRate": 6.2,
+    "overallTrendSource": null,
+    "rceByTool": {
+      "estimates": 13877,
+      "actuals": 812,
+      "matchedPairs": 662,
+      "mape": 197.8,
+      "mdape": 94.6,
+      "cappedMdape": 94.6,
+      "bias": -0.4,
+      "trend": "degrading",
+      "recommendation": "Good coverage (662 pairs, capped MdAPE: 94.6%, well-calibrated). Review outliers."
+    },
+    "byProvenance": {
+      "verified": {
+        "matchedPairs": 1905,
+        "mdape": 76,
+        "cappedMdape": 76
+      },
+      "auto": {
+        "matchedPairs": 17,
+        "mdape": 326.6,
+        "cappedMdape": 326.6
+      },
+      "gitDerived": {
+        "matchedPairs": 0,
+        "mdape": null,
+        "cappedMdape": null
+      }
+    }
+  },
+  "recencyBacktest": {
+    "method": "chronological holdout mirroring scripts/backtest-pert-correction.mjs (clean path: loadLedgerWithOverlays + isExcluded)",
+    "primarySplit": {
+      "fraction": "80/20",
+      "trainPairs": 617,
+      "testPairs": 155,
+      "asOf": "2026-06-03T09:11:46.087Z",
+      "variants": [
+        {
+          "label": "unweighted",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.73,
+            "medianActualOverPredicted": 1.35
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        },
+        {
+          "label": "exponential_halfLife_30d",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.8,
+            "medianActualOverPredicted": 1.39
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        },
+        {
+          "label": "exponential_halfLife_45d",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.73,
+            "medianActualOverPredicted": 1.35
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        },
+        {
+          "label": "exponential_halfLife_90d",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.73,
+            "medianActualOverPredicted": 1.35
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        },
+        {
+          "label": "window_60d",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.73,
+            "medianActualOverPredicted": 1.35
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        },
+        {
+          "label": "window_90d",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.73,
+            "medianActualOverPredicted": 1.35
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        },
+        {
+          "label": "window_180d",
+          "testSetComposition": {
+            "learnedFactorApplied": 155,
+            "lowNFallback": 0
+          },
+          "current": {
+            "mdapePercent": 80,
+            "medianActualOverPredicted": 0.75
+          },
+          "corrected": {
+            "mdapePercent": 72.73,
+            "medianActualOverPredicted": 1.35
+          },
+          "guards": {
+            "correctedMdapeLeCurrentMdape": true,
+            "taskBandMedianRatioInBand_0_8_to_1_2": false,
+            "tier1MedianRatioInBand_0_7_to_1_3": false,
+            "bothPass": false
+          }
+        }
+      ],
+      "leaderboardByMdape": [
+        {
+          "label": "unweighted",
+          "mdapePercent": 72.73,
+          "medianActualOverPredicted": 1.35,
+          "bothGuardsPass": false
+        },
+        {
+          "label": "exponential_halfLife_45d",
+          "mdapePercent": 72.73,
+          "medianActualOverPredicted": 1.35,
+          "bothGuardsPass": false
+        },
+        {
+          "label": "exponential_halfLife_90d",
+          "mdapePercent": 72.73,
+          "medianActualOverPredicted": 1.35,
+          "bothGuardsPass": false
+        },
+        {
+          "label": "window_60d",
+          "mdapePercent": 72.73,
+          "medianActualOverPredicted": 1.35,
+          "bothGuardsPass": false
+        },
+        {
+          "label": "window_90d",
+          "mdapePercent": 72.73,
+          "medianActualOverPredicted": 1.35,
+          "bothGuardsPass": false
+        },
+        {
+          "label": "window_180d",
+          "mdapePercent": 72.73,
+          "medianActualOverPredicted": 1.35,
+          "bothGuardsPass": false
+        },
+        {
+          "label": "exponential_halfLife_30d",
+          "mdapePercent": 72.8,
+          "medianActualOverPredicted": 1.39,
+          "bothGuardsPass": false
+        }
+      ]
+    },
+    "winner": null,
+    "overfittingSanityCheck": null,
+    "recommendation": "HOLD \u2014 no recency-weighted variant cleared both guards on the primary split; do not change the reference_class default yet."
+  },
+  "postChange": {
+    "schemeLabel": "unweighted",
+    "inSample": true,
+    "note": "In-sample recompute over the same live-ledger pairs (factor trained on all clean history up to the last pair). Out-of-sample evidence is in recencyBacktest.",
+    "learnedApplied": 772,
+    "lowNFallback": 0,
+    "factors": {
+      "infrastructure": 0.37,
+      "feature": 0.3,
+      "testing": 0.28,
+      "design": 0.33,
+      "bugfix": 0.25,
+      "refactor": 0.17,
+      "documentation": 0.3
+    },
+    "medianActualOverPredicted_allPairs": 0.992,
+    "medianActualOverPredicted_trailing20pct": 1.389,
+    "band": {
+      "lo": 0.8,
+      "hi": 1.2,
+      "allPairsInBand": true
+    }
+  }
+}
