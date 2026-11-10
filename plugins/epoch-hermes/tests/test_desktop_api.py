@@ -110,6 +110,22 @@ def test_tasks_lists_open_cards_with_hints(env):
     assert r["tasks"][0]["id"] == a  # cards with a hint lead
 
 
+def test_tasks_are_not_hidden_behind_done_cards(env):
+    from hermes_cli import kanban_db as kdb
+    from hermes_cli import kanban_db_connect as kbc
+    conn = kbc.connect()
+    try:
+        for i in range(env.api.MAX_TASKS + 5):
+            done = kdb.create_task(conn, title=f"old {i}")
+            conn.execute("UPDATE tasks SET status = 'done' WHERE id = ?", (tid(done),))
+        conn.commit()
+    finally:
+        conn.close()
+    fresh = tid(env.card("Newest open card epoch: 1/2/3h"))
+    ids = [t["id"] for t in env.client.get("/api/plugins/epoch/tasks").json()["tasks"]]
+    assert fresh in ids and len(ids) == 1
+
+
 def test_forecast_runs_in_a_throwaway_data_dir(env):
     a = tid(env.card("Ship export epoch: 8/16/40h"))
     r = env.client.get("/api/plugins/epoch/forecast", params={"board": "default", "task_id": a}).json()

@@ -115,7 +115,12 @@ def list_open_tasks(mod, boards: Optional[List[str]] = None) -> Dict[str, Any]:
             continue
         with closing(conn):
             try:
-                rows = kanban_db.list_tasks(conn, limit=MAX_TASKS)
+                # Ask per open status: one LIMIT over the whole board returns its oldest rows,
+                # done cards included, and a busy board's newer open cards fall off the end.
+                open_statuses = [s for s in sorted(getattr(kanban_db, "VALID_STATUSES", ()) or ())
+                                 if s not in OPEN_STATUSES_LAST]
+                rows = ([t for s in open_statuses for t in kanban_db.list_tasks(conn, status=s, limit=MAX_TASKS)]
+                        if open_statuses else kanban_db.list_tasks(conn))
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{board}: {type(exc).__name__}")
                 continue
