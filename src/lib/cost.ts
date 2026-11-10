@@ -58,6 +58,7 @@ export function tokenCostEstimate(params: {
   const timeMapping = tokenTimeBridge(params);
   const pricing = getModelPricing(params.model);
 
+  const pricingSource = pricing ? "table" : "fallback";
   const costInput = pricing?.costInput ?? FALLBACK_COST_INPUT;
   const costOutput = pricing?.costOutput ?? FALLBACK_COST_OUTPUT;
 
@@ -69,6 +70,7 @@ export function tokenCostEstimate(params: {
       estimatedSeconds: 0, estimatedMinutes: 0,
       estimatedCost: 0, costBreakdown: { inputCost: 0, outputCost: 0, toolCallOverheadCost: 0 },
       timeBreakdown: timeMapping.breakdown, confidence: timeMapping.confidence, urgency: timeMapping.urgency,
+      pricingSource,
       humanReadable: `Cost estimate unavailable for ${params.model} — calibration data issue.`,
     };
   }
@@ -83,8 +85,12 @@ export function tokenCostEstimate(params: {
 
   const estMin = Math.round(timeMapping.estimatedMinutes * 10) / 10;
 
+  const fallbackNote =
+    pricingSource === "fallback"
+      ? ` [WARNING: "${params.model}" is not in the pricing table; generic $${FALLBACK_COST_INPUT}/$${FALLBACK_COST_OUTPUT} per 1M tokens applied, so this cost may be off by an order of magnitude]`
+      : "";
   const humanReadable =
-    `~${estMin} min, ~$${totalCost} for ${params.tokens} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls)`;
+    `~${estMin} min, ~$${totalCost} for ${params.tokens} tokens with ${params.model} (${params.reasoningDepth} reasoning, ${params.toolCalls} tool calls)${fallbackNote}`;
 
   return {
     tokens: params.tokens,
@@ -100,6 +106,7 @@ export function tokenCostEstimate(params: {
     timeBreakdown: timeMapping.breakdown,
     confidence: timeMapping.confidence,
     urgency: timeMapping.urgency,
+    pricingSource,
     humanReadable,
   };
 }
