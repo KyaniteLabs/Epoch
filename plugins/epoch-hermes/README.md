@@ -59,6 +59,20 @@ On completion, that run's wall-clock actual is recorded back to the ledger:
 These are renders of verbatim comment text from a real run (epoch-hermes 0.7.0 plus
 `npx @kyanitelabs/epoch@0.7.0` on a Hermes Kanban board).
 
+### Desktop pane
+
+Hermes Desktop gets an **Epoch** page (sidebar: Epoch). Pick an open Kanban card with an
+`epoch: o/m/p` hint and it draws the Monte Carlo spread: a histogram, a "chance done by" curve or
+50 equally likely outcomes, with P10–P95 markers, the P50–P90 likely range, the risks that could
+push it out, and estimate-vs-actual from your ledger. Chart settings (colour, bar style, markers,
+units) stay with you. Cards that already have an estimate show a `P50 · P90` badge on the board.
+
+![Epoch Desktop pane](docs/desktop-pane.png)
+
+That render uses sample data. Viewing a chart never writes the ledger: each forecast runs in a
+throwaway data dir with a fixed seed, so the same hint always draws the same chart. The full
+spread needs Epoch 0.8 or later; older Epochs show the percentiles only.
+
 ## How it works
 
 - **Shared bindings, comments for display.** The dispatcher (claim) and the assignee's worker
