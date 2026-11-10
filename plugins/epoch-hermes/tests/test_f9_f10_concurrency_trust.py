@@ -253,6 +253,11 @@ def test_f9_lease_claim_is_exclusive_across_processes(tmp_path):
         mod._ctx = Ctx()
         mod._atexit_registered = True
         started = mod.replay_outbox()
+        # Stay alive until the peer has picked too: a claim whose owner process already
+        # exited is correctly taken over, which would read as a double claim here.
+        touch(f"{role}-done")
+        wait("a-done")
+        wait("b-done")
         print(json.dumps({"role": role, "n": len(started),
                           "pids": [c.get("owner_pid") for c in claimed]}), flush=True)
     """)
