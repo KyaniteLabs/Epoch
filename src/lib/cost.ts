@@ -135,8 +135,7 @@ export function compareModels(params: {
     });
 
     const pricing = allPricing[model];
-    const pricingSource = pricing ? "table" : "fallback";
-  const costInput = pricing?.costInput ?? FALLBACK_COST_INPUT;
+    const costInput = pricing?.costInput ?? FALLBACK_COST_INPUT;
     const costOutput = pricing?.costOutput ?? FALLBACK_COST_OUTPUT;
 
     const { promptTokens, completionTokens } = timeMapping.breakdown;
