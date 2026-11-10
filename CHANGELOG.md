@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### fix: explicit estimate lifecycle and run-binding state machines
+
+- Estimate lifecycle (pending → expired / recorded) is now named in one place (`src/lib/estimate-lifecycle.ts`). Every reader uses the same expiry check, and both actual-recording paths use the same duplicate guard.
+- `get_pending_estimates` no longer lists an expired estimate whose id is synthetic (`seed-`, `test-`, ...).
+- The dashboard's "Expired pending" count now includes expired estimates that are also quarantined, orphan-flagged or synthetic.
+- An estimate is expired from the exact instant `expiresAt` passes. Exclusion and dedup reuse used to disagree at that instant.
+- epoch-hermes: run-binding ledger outcome and comment delivery are explicit state machines. Unknown outcomes and overwriting one final outcome with a different one are refused. The on-disk bindings format is unchanged.
+
 ## [0.8.0] - 2026-11-09
 
 The Monte Carlo chart release: see the spread of a schedule in the terminal, or hand the same bins to an agent.
