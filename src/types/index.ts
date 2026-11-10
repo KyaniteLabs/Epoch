@@ -373,6 +373,8 @@ export interface TokenCostEstimate {
   readonly timeBreakdown: TokenTimeBreakdown;
   readonly confidence: ConfidenceLevel;
   readonly urgency: UrgencyCategory;
+  /** "table" = priced from the bundled model table; "fallback" = model unknown, generic $3/$15 per 1M applied. */
+  readonly pricingSource: "table" | "fallback";
   readonly humanReadable: string;
 }
 
