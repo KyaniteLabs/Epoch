@@ -1,0 +1,7 @@
+{
+  "name": "epoch",
+  "label": "Epoch",
+  "description": "How long a Kanban card could take: a Monte Carlo chart from its epoch: o/m/p hint, with risks and estimate-vs-actual.",
+  "icon": "Clock",
+  "api": "plugin_api.py"
+}

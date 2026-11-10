@@ -52,7 +52,8 @@ describe("monteCarloSim: deterministic-seed exact values", () => {
     expect(r.p80).toBe("5");
     expect(r.p95).toBe("5");
     expect(r.estimatedHours).toBe(40); // 5 days * 8h
-    expect(r.estimatedCost).toBe(2000000); // 40h * 50,000 per hour
+    expect(r.estimatedTokens).toBe(2000000); // 40h * 50,000 tokens per hour
+    expect(r.estimatedCost).toBe(r.estimatedTokens); // deprecated alias, same token count
     expect(r.converged).toBe(true); // both checkpoint medians are 5
     expect(r.criticalPathProbability).toBeNull(); // no target
     expect(r.riskEvents).toEqual([]); // sampled == expected*1.5? 5 > 7.5? no
@@ -225,7 +226,7 @@ describe("computePertRiskLevel boundaries (via pertEstimate.riskLevel)", () => {
 describe("monteCarloSim error paths (round 3)", () => {
   const ZERO_SHAPE = {
     p10: "0", p50: "0", p80: "0", p90: "0", p95: "0",
-    estimatedHours: 0, estimatedCost: 0, converged: false,
+    estimatedHours: 0, estimatedTokens: 0, estimatedCost: 0, converged: false,
     criticalPathProbability: null as number | null,
   };
 

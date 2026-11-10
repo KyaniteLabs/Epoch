@@ -218,7 +218,13 @@ export interface MonteCarloResult {
   readonly p95: string;
   /** Median estimate converted to hours (p50 × 8). Enables feedback token. */
   readonly estimatedHours: number;
-  /** Estimated AI token cost at p50 (50k tokens/hour × estimatedHours). */
+  /** Rough AI token budget at p50 (50k tokens/hour × estimatedHours). A token count, not money. */
+  readonly estimatedTokens: number;
+  /**
+   * @deprecated Same value as `estimatedTokens`. Despite the name it is a token
+   * count, not a dollar amount (every other `estimatedCost` in Epoch is USD).
+   * Kept for compatibility; removed in 0.9. Use `estimatedTokens`.
+   */
   readonly estimatedCost: number;
   /**
    * P(total duration ≤ target_hours): the probability the simulated project

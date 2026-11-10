@@ -4,7 +4,7 @@ Calibrated P50/P90 estimates on your Hermes Kanban board.
 
 ![Epoch for Hermes Kanban](docs/banner.png)
 
-> **Disclosure.** This plugin shells out to `npx -y @kyanitelabs/epoch@0.7.0` (downloads Epoch
+> **Disclosure.** This plugin shells out to `npx -y @kyanitelabs/epoch@0.8.0` (downloads Epoch
 > from npm on first run; needs **Node >= 22** and `npx` on `PATH`). The child process gets a
 > **scrubbed environment**: only allow-listed `PATH`/`HOME`/locale/temp, Node/npm (cache,
 > registry, CA certs) and proxy variables. Your parent environment, API keys and Hermes secrets
@@ -37,7 +37,7 @@ Node >= 22 and `npx` on PATH. No API key or secret. The first claim may take a f
 
 | Setting | Default | |
 |---|---|---|
-| `epoch_command` | `npx -y @kyanitelabs/epoch@0.7.0` | Set to `epoch` if installed globally. |
+| `epoch_command` | `npx -y @kyanitelabs/epoch@0.8.0` | Set to `epoch` if installed globally. |
 | `epoch_data_dir` | unset → `<HERMES_HOME>/plugin-data/epoch` | Epoch ledger + run bindings (passed as `EPOCH_DATA_DIR`). The default resolves to the root Hermes home even under `profiles/<name>`, so dispatcher and worker share it. Set `~/.epoch` to reuse a standalone Epoch ledger. An `EPOCH_DATA_DIR` env var is honored when this is unset. |
 | `comment_on_claim` | `true` | Post the estimate comment. |
 | `record_actuals` | `true` | Record wall-clock actuals on completion. |
@@ -58,6 +58,25 @@ On completion, that run's wall-clock actual is recorded back to the ledger:
 
 These are renders of verbatim comment text from a real run (epoch-hermes 0.7.0 plus
 `npx @kyanitelabs/epoch@0.7.0` on a Hermes Kanban board).
+
+### Desktop pane
+
+Hermes Desktop gets an **Epoch** page (sidebar: Epoch). Pick an open Kanban card with an
+`epoch: o/m/p` hint and it draws the Monte Carlo spread: a histogram, a "chance done by" curve or
+50 equally likely outcomes, with P10–P95 markers, the P50–P90 likely range, the risks that could
+push it out, and estimate-vs-actual from your ledger. Chart settings (colour, bar style, markers,
+units) stay with you. Cards that already have an estimate show a `P50 · P90` badge on the board.
+
+![Epoch Desktop pane](docs/desktop-pane.png)
+
+That render uses sample data. Viewing a chart never writes the ledger: each forecast runs in a
+throwaway data dir with a fixed seed, so the same hint always draws the same chart. The full
+spread needs Epoch 0.8 or later; older Epochs show the percentiles only.
+
+The page's backend lives in the plugin on the Hermes host (`/api/plugins/epoch/*`). The page itself
+loads from `~/.hermes/desktop-plugins/epoch/plugin.js` on the machine running Desktop. When Desktop
+connects to a remote Hermes, copy only `desktop/plugin.js` to that path on the Desktop machine; the
+plugin, ledger and Epoch CLI stay on the Hermes host.
 
 ## How it works
 
