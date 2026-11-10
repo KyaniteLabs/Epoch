@@ -73,16 +73,33 @@ function stampLlmsTxt(relativePath) {
   return [`${relativePath}: version header -> v${version}`];
 }
 
+/** The site hero badge: `Apache-2.0 &middot; vX.Y.Z`. */
+function stampSiteBadge() {
+  const relativePath = "site/index.html";
+  const path = join(repoRoot, relativePath);
+  const before = readFileSync(path, "utf8");
+  const pattern = /(Apache-2\.0 &middot; v)\d+\.\d+\.\d+(-[\w.]+)?/;
+  if (!pattern.test(before)) {
+    console.error(`stamp-release-versions: ${relativePath} has no "Apache-2.0 &middot; vX.Y.Z" badge to update — update the script's pattern.`);
+    process.exit(1);
+  }
+  const after = before.replace(pattern, `$1${version}`);
+  if (after === before) return [];
+  if (!CHECK_MODE) writeFileSync(path, after);
+  return [`${relativePath}: hero badge -> v${version}`];
+}
+
 const changes = [
   ...stampServerJson(),
   ...stampLlmsTxt("docs/llms.txt"),
   ...stampLlmsTxt("site/llms-full.txt"),
+  ...stampSiteBadge(),
 ];
 
 // ---- Report ------------------------------------------------------------------
 
 if (changes.length === 0) {
-  console.log(`stamp-release-versions: all surfaces already at v${version} (server.json, docs/llms.txt, site/llms-full.txt)`);
+  console.log(`stamp-release-versions: all surfaces already at v${version} (server.json, docs/llms.txt, site/llms-full.txt, site/index.html)`);
   process.exit(0);
 }
 

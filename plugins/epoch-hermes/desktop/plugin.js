@@ -29,8 +29,9 @@ const CSS = `
 .ep-aside{border-left:1px solid var(--ui-stroke-tertiary);padding:18px 16px 24px;display:flex;flex-direction:column;gap:16px;min-width:0}
 .ep-aside h3,.ep-card h3{margin:0;font-size:13px;font-weight:600}
 .ep-top{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
-.ep-select{font:inherit;font-size:13px;color:var(--ui-text-primary);background:var(--ui-bg-input,var(--ui-bg-elevated));border:1px solid var(--ui-stroke-secondary);
+.ep-select{font:inherit;font-size:13px;color:var(--ui-text-primary);background:transparent;color-scheme:inherit;border:1px solid var(--ui-stroke-secondary);
   border-radius:7px;padding:5px 8px;min-width:0;flex:1 1 260px;max-width:520px}
+.ep-select option{background:var(--ui-bg-elevated,Canvas);color:var(--ui-text-primary,CanvasText)}
 .ep-chip{font:600 11px/1 var(--ep-mono);padding:4px 7px;border-radius:5px;color:var(--ui-text-secondary);border:1px solid var(--ui-stroke-secondary)}
 .ep-btn{font:inherit;font-size:12px;border:1px solid var(--ui-stroke-secondary);background:transparent;color:var(--ui-text-secondary);border-radius:6px;padding:4px 10px;cursor:pointer}
 .ep-btn:hover{background:var(--ui-control-hover-background)}

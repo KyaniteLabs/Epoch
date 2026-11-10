@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "epoch",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk. Covers PERT, COCOMO II, Monte Carlo, sprint forecasting, token-to-time mapping, model-cost comparison, and estimate-vs-actual feedback via MCP or CLI.",
   "author": {
     "name": "Kyanite Labs",

@@ -64,7 +64,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 DEFAULTS: Dict[str, Any] = {
-    "epoch_command": "npx -y @kyanitelabs/epoch@0.7.0",
+    "epoch_command": "npx -y @kyanitelabs/epoch@0.8.0",
     "epoch_data_dir": "",
     "comment_on_claim": True,
     "record_actuals": True,

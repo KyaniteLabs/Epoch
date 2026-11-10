@@ -18,6 +18,18 @@ The Monte Carlo chart release: see the spread of a schedule in the terminal, or 
 - MCP tool results now also carry `structuredContent`, so agents read the parsed object directly. The JSON text block is unchanged.
 - CLI `monte-carlo-schedule` exposes `--seed` and `--target-hours`.
 
+### feat: Hermes Desktop pane (epoch-hermes 0.8.0)
+
+- Hermes Desktop gets an **Epoch** page: pick an open Kanban card with an `epoch: o/m/p` hint and see its Monte Carlo spread as a histogram, a "chance done by" curve or 50 equally likely outcomes, with P10–P95, the P50–P90 likely range, the risks that could push it out and estimate-vs-actual from the ledger. Cards with an estimate show a `P50 · P90` badge on the board.
+- Viewing never writes the ledger: each forecast runs in a throwaway data dir with a fixed seed.
+- The card list includes every open card, not just the first rows of a board crowded with done cards.
+- The card picker is readable in dark themes (Hermes's input colour stays light there).
+- Every plugin bundle and install snippet pins `@kyanitelabs/epoch@0.8.0`.
+
+### deprecated
+
+- `monte_carlo_schedule`'s `estimatedCost` is a token count (50k tokens per hour at P50), not money; every other `estimatedCost` in Epoch is USD. Read the new `estimatedTokens` instead. `estimatedCost` keeps the same value until it is removed in 0.9.
+
 ### fix
 
 - Iteration counts like `12abc`, `0x10` or `1.5` are rejected instead of silently truncated.
@@ -26,6 +38,8 @@ The Monte Carlo chart release: see the spread of a schedule in the terminal, or 
 - `record_actual` flags actuals recorded against an unknown estimate id.
 - A second SIGTERM during shutdown no longer drops the last telemetry record.
 - Site: the Tailwind theme applies, content shows without JavaScript, and the tool table scrolls on phones.
+- Site: the hero badge shows the released version (now stamped from `package.json` with the other release surfaces), the headline uses the Chakra Petch identity face, and link previews get the social card.
+- The hourglass artwork in the social card, README hero and GitHub preview no longer sits on a faint lighter box.
 
 ### perf
 

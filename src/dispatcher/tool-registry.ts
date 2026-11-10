@@ -328,7 +328,8 @@ const monteCarloOutput = {
     },
     humanReadable: { type: "string", description: "Human-readable summary" },
     estimatedHours: { type: "number", description: "Median estimate in hours (p50 × 8)" },
-    estimatedCost: { type: "number", description: "Estimated AI token cost at p50 (50k tokens/hour × estimatedHours)" },
+    estimatedTokens: { type: "number", description: "Rough AI token budget at p50 (50k tokens/hour × estimatedHours). A token count, not money." },
+    estimatedCost: { type: "number", deprecated: true, description: "Deprecated, removed in 0.9: same value as estimatedTokens. A token count despite the name, not USD. Use estimatedTokens." },
     feedbackRef: feedbackRefField,
     distribution: {
       type: "object",
