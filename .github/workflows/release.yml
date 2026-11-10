@@ -60,10 +60,16 @@ jobs:
             if [[ -n "${FORGEJO_RO_TOKEN:-}" ]]; then auth_args=(-H "Authorization: token ${FORGEJO_RO_TOKEN}"); fi
             canonical="$(curl -fsS --max-time 20 "${auth_args[@]}" "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/branches/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"]["id"])')"
             echo "Canonical main:  $canonical (API transport)"
-            if curl -fsS --max-time 20 -o /dev/null "${auth_args[@]}" "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/compare/${canonical}...${tagged}"; then
+            # compare/<canonical>...<tagged> lists commits in the tag that canonical
+            # main lacks. HTTP 200 alone proves nothing (the v0.8.0 run passed with
+            # 4 missing commits); containment means total_commits is exactly 0.
+            # A missing or non-integer count fails closed.
+            ahead="$(curl -fsS --max-time 20 "${auth_args[@]}" "https://git.kyanitelabs.tech/api/v1/repos/KyaniteLabs/Epoch/compare/${canonical}...${tagged}" | python3 -c 'import json,sys; n=json.load(sys.stdin).get("total_commits"); print(n if isinstance(n,int) and not isinstance(n,bool) else "unknown")')" || ahead="unknown"
+            echo "Commits in tag missing from canonical main: $ahead"
+            if [[ "$ahead" == "0" ]]; then
               verdict="ok"
             else
-              echo "::error::API compare says tag ${GITHUB_REF_NAME} ($tagged) is not reachable from canonical main ($canonical). Publish blocked."
+              echo "::error::API compare says tag ${GITHUB_REF_NAME} ($tagged) is not contained in canonical main ($canonical): $ahead commit(s) missing. Publish blocked."
               exit 1
             fi
           fi
