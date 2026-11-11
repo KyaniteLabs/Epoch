@@ -85,13 +85,21 @@ AUTO_WALLCLOCK = "auto_wallclock"
 BINDINGS_FILE = "hermes-run-bindings.json"
 
 _NUM = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
+# Units a hint may carry: hours (default), minutes, workdays, workweeks.
+_UNIT = r"(h|hrs?|hours?|m|mins?|minutes?|d|days?|w|wks?|weeks?)"
+# A time unit Epoch cannot convert ("sprints", "months", "secs", "points"): refuse the hint
+# instead of silently reading the numbers as hours.
+_HINT_BAD_UNIT_RE = re.compile(
+    rf"^[-+.\d][-+.\d\s/,]*?\s*(s|secs?|seconds?|mo|mos|months?|y|yrs?|years?|sprints?|sp|pts?|points?|q|quarters?)\b",
+    re.IGNORECASE,
+)
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
-    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*(h|hrs?|hours?|d|days?)?\s*(?:$|[\s.;)\]])",
+    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.;)\]])",
     re.IGNORECASE,
 )
 _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-10h")
-    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(h|hrs?|hours?|d|days?)?\s*(?:$|[\s.;)\]])",
+    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*" + _UNIT + r"?\s*(?:$|[\s.;)\]])",
     re.IGNORECASE,
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
@@ -217,9 +225,16 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
             parsed = json.loads(out[start:])
         except json.JSONDecodeError:
             parsed = None
-    if isinstance(parsed, dict) and "ok" in parsed:
-        return parsed
     tail = (proc.stderr or "").strip()[-500:] or out[-500:]
+    if isinstance(parsed, dict) and "ok" in parsed:
+        # A non-zero exit is a failure even when stdout carries an ``ok: true`` envelope; keep
+        # the structured payload for diagnosis but never report the call as successful.
+        if proc.returncode != 0 and parsed.get("ok"):
+            failed = dict(parsed)
+            failed["ok"] = False
+            failed["error"] = f"epoch exited {proc.returncode} despite an ok envelope: {tail}"
+            return failed
+        return parsed
     if proc.returncode != 0:
         return {"ok": False, "error": f"epoch exited {proc.returncode}: {tail}"}
     return {"ok": False, "error": f"epoch returned no JSON envelope: {tail}"}
@@ -262,11 +277,16 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
     if not m:
         return None
     raw = m.group(1).strip()
+    bad = _HINT_BAD_UNIT_RE.match(raw)
+    if bad:
+        raise EstimateInputError(
+            f"hint {m.group(0).strip()[:60]!r} uses unit {bad.group(1)!r}; use h, min, d or w "
+            "(e.g. 'epoch: 2/4/10h')")
     sm = _HINT_STRICT_RE.match(raw) or _HINT_DASH_RE.match(raw)
     if not sm:
         raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r} (expected e.g. 'epoch: 2/4/10h')")
     unit = (sm.group(4) or "h").lower()
-    scale = WORKDAY_HOURS if unit.startswith("d") else 1.0
+    scale = {"m": 1 / 60, "d": WORKDAY_HOURS, "w": 5 * WORKDAY_HOURS}.get(unit[0], 1.0)
     try:
         o, ml, p = (float(x) * scale for x in sm.groups()[:3])
     except ValueError:
@@ -1266,7 +1286,9 @@ def _on_completed(task_id: str = "", board: Optional[str] = None, run_id: Any = 
 # mutations (only their read-only ``status`` / ``where`` views). On gateway platforms (Telegram,
 # Discord, …) commands that write the ledger or read the local repo are refused unless
 # ``allow_write_slash_on_gateway: true``.
-_SLASH_BLOCKED = frozenset({"serve", "self-improve"})
+# share-data writes a file at a caller-chosen --output path: terminal only, never via slash.
+_SLASH_BLOCKED = frozenset({"serve", "self-improve", "share-data"})
+_SLASH_PATH_FLAGS = ("--output", "-o")
 _SLASH_READONLY_SUBS = {"telemetry": frozenset({"status"}), "data": frozenset({"where", "status"})}
 _SLASH_WRITE = frozenset({"record-actual", "batch-record-actuals", "auto-actuals", "mine-git",
                           "calibrate-estimates"})
@@ -1310,6 +1332,8 @@ def _slash_refusal(args: List[str]) -> Optional[str]:
         return None
     if cmd in _SLASH_BLOCKED:
         return f"/epoch {cmd} is not available from Hermes; run `epoch {cmd}` in a terminal."
+    if any(a in _SLASH_PATH_FLAGS or a.startswith("--output=") for a in args):
+        return "/epoch cannot write files at a chosen path; run that command in a terminal."
     if cmd in _SLASH_READONLY_SUBS and sub not in _SLASH_READONLY_SUBS[cmd]:
         allowed = ", ".join(sorted(_SLASH_READONLY_SUBS[cmd]))
         return (f"/epoch {cmd} {sub or ''}".rstrip() + f" is not available from Hermes (only {cmd} "

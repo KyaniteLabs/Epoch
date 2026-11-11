@@ -174,6 +174,27 @@ def test_f3_malformed_hint_fails_visibly(plugin, make_ctx, tmp_path, hint):
     assert out["hint_error"]
 
 
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 30/45/90 min", (0.5, 0.75, 1.5)),
+    ("epoch: 30/45/90m", (0.5, 0.75, 1.5)),
+    ("estimate: 1-2-3 weeks", (40.0, 80.0, 120.0)),
+    ("epoch: 1/2/3 days", (8.0, 16.0, 24.0)),
+    ("epoch: 2/4/10h", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 for the API", (2.0, 4.0, 10.0)),
+])
+def test_hint_units_convert_to_hours(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint", ["epoch: 1/2/3 sprints", "epoch: 1/2/3 months", "estimate: 5/8/13 points",
+                                  "epoch: 10/20/30 secs"])
+def test_hint_with_unknown_unit_is_refused_not_read_as_hours(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None and "unit" in problem
+
+
 def test_f3_prose_without_numbers_is_not_a_hint(plugin):
     assert plugin.find_hint("Estimate: TBD", "epoch: later") == (None, None)
 
@@ -412,6 +433,7 @@ def test_default_ledger_is_hermes_plugin_data(plugin, make_ctx, tmp_path, monkey
 @pytest.mark.parametrize("raw,blocked", [
     ("serve", True), ("self-improve --apply", True), ("telemetry enable", True),
     ("telemetry share-data", True), ("--format table telemetry submit", True), ("data delete-data", True),
+    ("share-data --output /tmp/x", True), ("share-data", True), ("telemetry export --output=/tmp/x", True),
     ("telemetry status", False), ("data where", False),
     ("pert-estimate --optimistic 1 --most-likely 2 --pessimistic 4", False),
 ])
@@ -420,6 +442,17 @@ def test_slash_refuses_unsafe_subcommands(plugin, make_ctx, tmp_path, raw, block
                           "epoch_data_dir": str(tmp_path)}})
     plugin._slash(raw)
     assert (calls(tmp_path) == []) is blocked
+
+
+def test_share_data_cannot_overwrite_files_from_gateway(plugin, make_ctx, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_PLATFORM", "telegram")
+    victim = tmp_path / "notes.txt"
+    victim.write_text("keep me")
+    make_ctx({"default": {"epoch_command": f"{sys.executable} {Path(__file__).parent / 'fake_epoch.py'}",
+                          "epoch_data_dir": str(tmp_path)}})
+    out = plugin._slash(f"share-data --output {victim}")
+    assert "not available" in out and calls(tmp_path) == []
+    assert victim.read_text() == "keep me"
 
 
 def test_slash_ledger_writes_refused_on_gateway_unless_opted_in(plugin, make_ctx, tmp_path, monkeypatch):
@@ -444,3 +477,13 @@ def test_manifest_matches_catalog_gates():
     assert re.search(r"^  allow_write_slash_on_gateway:$", text, re.M)
     desc = re.search(r'^description: "(.*)"$', text, re.M).group(1)
     assert "plugin-data/epoch" in desc and "scrubbed" in desc
+
+
+def test_nonzero_exit_with_ok_envelope_is_a_failure(plugin, tmp_path):
+    """A child that prints ``ok: true`` but exits non-zero must not read as success."""
+    script = tmp_path / "liar.py"
+    script.write_text('import json, sys\nprint(json.dumps({"ok": True, "data": {"feedbackRef": "f"}}))\nsys.exit(17)\n')
+    res = plugin.run_epoch(["feedback"], {"epoch_command": f"{sys.executable} {script}",
+                                          "epoch_data_dir": str(tmp_path)})
+    assert res["ok"] is False and "exited 17" in res["error"]
+    assert res["data"] == {"feedbackRef": "f"}  # structured payload kept for diagnosis
