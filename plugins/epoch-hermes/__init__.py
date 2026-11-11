@@ -578,7 +578,34 @@ def _bindings_update(settings: Optional[Dict[str, Any]], fn: Callable[[Dict[str,
     with _file_lock(path):
         data = _read_json_file(path)
         fn(data)
+        _prune_finished_bindings(data)
         _write_json_file(path, data)
+
+
+# Bindings with nothing left to do are dropped this long after they were created, so the file
+# does not grow by one entry per run forever.
+BINDING_RETENTION_SECONDS = 30 * 24 * 3600
+
+
+def _binding_finished(binding: Dict[str, Any]) -> bool:
+    """The ledger side is settled and no audit comment is still waiting to be posted."""
+    settled = ledger_outcome(binding) is not None or bool(binding.get("run_ended"))
+    return settled and all(
+        delivery_state(binding, kind) in (Delivery.NONE, Delivery.DELIVERED) for kind in CommentKind)
+
+
+def _prune_finished_bindings(data: Dict[str, Any], now: Optional[float] = None) -> None:
+    now = time.time() if now is None else now
+    for key, binding in list(data.items()):
+        if not isinstance(binding, dict):
+            continue
+        created = binding.get("created_at")
+        if not isinstance(created, (int, float)):
+            # Written before bindings were timestamped: start its clock now.
+            data[key] = dict(binding, created_at=now)
+            continue
+        if now - created > BINDING_RETENTION_SECONDS and _binding_finished(binding):
+            del data[key]
 
 
 def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
@@ -592,8 +619,9 @@ def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Option
 # --------------------------------------------------------------------------- run-binding state
 #
 # One run binding (``hermes-run-bindings.json`` → ``"<board>:<task>:<run>"``) carries two
-# independent state machines. Persisted keys and values are unchanged; these names are the
-# only place the stages are spelled out, and every write goes through one transition below.
+# independent state machines, plus a ``created_at`` timestamp used only to prune finished
+# bindings. These names are the only place the stages are spelled out, and every write goes
+# through one transition below.
 #
 # 1. Ledger outcome (keys ``recorded`` + ``status``):
 #
@@ -707,6 +735,7 @@ def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Op
             "estimate_commented": False,
             "actual_commented": False,
             "estimate_comment_body": estimate_comment_body,
+            "created_at": time.time(),
         }
 
     _bindings_update(settings, mutate)
