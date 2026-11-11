@@ -51,6 +51,7 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import shlex
 import subprocess
@@ -81,6 +82,10 @@ WORKDAY_HOURS = 8.0
 OUTBOX_KEY = "outbox"
 OUTBOX_MAX_ATTEMPTS = 5
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 3600
+# Missed-completion reconcile: at most this many unrecorded bindings are checked per pass, and a
+# pass runs at most once per interval (at load, then on new claims).
+RECONCILE_PER_PASS = 25
+RECONCILE_INTERVAL_SECONDS = 600
 AUTO_WALLCLOCK = "auto_wallclock"
 BINDINGS_FILE = "hermes-run-bindings.json"
 
@@ -1307,10 +1312,93 @@ def _atexit_wait() -> None:
 # --------------------------------------------------------------------------- hooks / surfaces
 
 
+_reconcile_lock = threading.Lock()
+_reconcile_last = 0.0
+
+
+def _split_binding_key(key: str) -> Optional[Tuple[Optional[str], str, str]]:
+    parts = key.rsplit(":", 2)
+    if len(parts) != 3 or not parts[1] or not parts[2]:
+        return None
+    board, task_id, run_id = parts
+    return (None if board == "-" else board), task_id, run_id
+
+
+def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
+                             limit: int = RECONCILE_PER_PASS) -> int:
+    """Record actuals whose completion hook never fired in this profile.
+
+    ``kanban_task_completed`` fires in the process that finished the run. When that profile does
+    not enable this plugin, the run's binding stays unrecorded forever. This pass checks up to
+    *limit* unrecorded bindings (picked at random) against the board, warns once per run that completed without a
+    recorded actual, and queues the normal completion job for it. Runs that ended any other way
+    are marked so later passes skip them. Returns the number of jobs queued.
+    """
+    if not _cfg("record_actuals", settings):
+        return 0
+    path = _epoch_data_dir(settings) / BINDINGS_FILE
+    with _file_lock(path):
+        data = _read_json_file(path)
+    open_keys = [k for k, v in data.items()
+                 if isinstance(v, dict) and v.get("ref") and ledger_outcome(v) is None
+                 and not v.get("run_ended")]
+    queued = 0
+    # A random sample, so bindings that keep failing (a deleted task, an unreachable board) can't
+    # starve the rest of a large backlog.
+    for key in random.sample(open_keys, min(max(0, limit), len(open_keys))):
+        parsed = _split_binding_key(key)
+        if parsed is None:
+            continue
+        board, task_id, run_id = parsed
+        try:
+            run = _run_for(show_task(task_id, board), run_id)
+        except Exception:
+            continue  # board unreachable or task gone: try again next pass
+        if _run_completed(run):
+            logger.warning(
+                "epoch: run %s of task %s completed but its actual was never recorded; recording it "
+                "now. Enable the epoch plugin in the profile that runs this board's workers so "
+                "completions record directly.", run_id, task_id)
+            if _enqueue("completed", task_id, board, run_id) is not None:
+                queued += 1
+        elif run and run.get("ended_at") is not None:
+            outcome = str(run.get("outcome") or "ended")
+
+            def mark(d: Dict[str, Any], key: str = key, outcome: str = outcome) -> None:
+                cur = d.get(key)
+                if isinstance(cur, dict) and ledger_outcome(cur) is None:
+                    d[key] = dict(cur, run_ended=outcome)
+
+            _bindings_update(settings, mark)
+    return queued
+
+
+def _maybe_reconcile(force: bool = False) -> Optional[threading.Thread]:
+    """Run one reconcile pass in the background, at most once per interval."""
+    global _reconcile_last
+    now = time.time()
+    with _reconcile_lock:
+        if not force and now - _reconcile_last < RECONCILE_INTERVAL_SECONDS:
+            return None
+        _reconcile_last = now
+    settings = snapshot_settings()
+
+    def run() -> None:
+        try:
+            reconcile_missed_actuals(settings)
+        except Exception:
+            logger.debug("epoch: reconcile pass failed", exc_info=True)
+
+    thread = threading.Thread(target=run, name="epoch-reconcile", daemon=True)
+    thread.start()
+    return thread
+
+
 def _on_claimed(task_id: str = "", board: Optional[str] = None, run_id: Any = None, **_: Any) -> None:
     try:
         if task_id:
             _enqueue("claimed", task_id, board, run_id)
+            _maybe_reconcile()
     except Exception:
         logger.debug("epoch: claimed hook failed for %s", task_id, exc_info=True)
 
@@ -1460,3 +1548,7 @@ def register(ctx) -> None:
         replay_outbox()
     except Exception:
         logger.debug("epoch: outbox replay failed", exc_info=True)
+    try:
+        _maybe_reconcile(force=True)
+    except Exception:
+        logger.debug("epoch: reconcile start failed", exc_info=True)
