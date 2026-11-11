@@ -19,7 +19,7 @@ Calibrated P50/P90 estimates on your Hermes Kanban board.
 |---|---|
 | `kanban_task_claimed` hook | Estimates the task and posts a comment. An `epoch: 2/4/10h` line (optimistic/most-likely/pessimistic in hours; `min`, `d` = 8h days and `w` = 5-day weeks also work, any other unit such as sprints is refused) in the title or body gives a Monte Carlo P50/P90 (plus P80/P95); otherwise a reference-class point estimate. A malformed or out-of-order hint is named in the comment and ignored, never silently dropped. Runs in the background, never delays worker spawn. |
 | `kanban_task_completed` hook | Records that run's wall-clock hours (`run.ended_at - run.started_at`) against the run's own Epoch `feedbackRef` with `calibration_provenance: auto_wallclock`, so Epoch's wall-clock sanity gate (0.05–12h, <10× the estimate) applies. Rejected actuals are explained on the card. |
-| `/epoch <subcommand> [flags]` | Epoch CLI subcommands, e.g. `/epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10`. `serve`, `self-improve`, `share-data`, any `--output` path and telemetry/data mutations are refused (only `telemetry status`, `data where` and `data status` run). Ledger writes (`record-actual`, `batch-record-actuals`, `auto-actuals`, `mine-git`, `calibrate-estimates`) are refused on gateway platforms (Telegram, Discord, …) unless `allow_write_slash_on_gateway: true`. |
+| `/epoch <subcommand> [flags]` | Epoch CLI subcommands, e.g. `/epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10`. `serve`, `self-improve`, `share-data`, any `--output` path and telemetry/data mutations are refused (only `telemetry status`, `data where` and `data status` run). Ledger writes (`record-actual`, `batch-record-actuals`, `auto-actuals`, `mine-git`, `calibrate-estimates`) are refused on gateway platforms (Telegram, Discord, …) unless `allow_write_slash_on_gateway: true`. Estimate commands still append their estimate to the local ledger from any platform; that is how a later actual finds it. |
 | `epoch_estimate` tool | Agent-callable estimate. Explicit `optimistic`/`most_likely`/`pessimistic` hours (all three, `0 < o <= m <= p`) override any text hint; invalid values are rejected. |
 
 ## Install
@@ -74,7 +74,7 @@ throwaway data dir with a fixed seed, so the same hint always draws the same cha
 spread needs Epoch 0.8 or later; older Epochs show the percentiles only.
 
 The page's backend lives in the plugin on the Hermes host (`/api/plugins/epoch/*`). The page itself
-loads from `~/.hermes/desktop-plugins/epoch/plugin.js` on the machine running Desktop. When Desktop
+loads from `~/.hermes/desktop-plugins/epoch-hermes/plugin.js` (the folder takes the plugin's install name) on the machine running Desktop. When Desktop
 connects to a remote Hermes, copy only `desktop/plugin.js` to that path on the Desktop machine; the
 plugin, ledger and Epoch CLI stay on the Hermes host.
 
