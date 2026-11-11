@@ -10,6 +10,17 @@ const DAY_HOURS = 8
 const MARKS = ['p10', 'p50', 'p80', 'p90', 'p95']
 const DEFAULTS = { view: 'bars', colour: 'accent', custom: '#e0a030', shape: 'soft', marks: ['p50', 'p90'], band: 'on', unit: 'days' }
 const HEX = /^#[0-9a-f]{6}$/i
+const VIEWS = ['bars', 'cdf', 'dots']
+
+function validPaneEvent(name, p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return false
+  if (name === 'data.updated') return Object.keys(p).length === 0
+  return name === 'view.set' && VIEWS.includes(p.view)
+    && Object.keys(p).every(k => k === 'view' || k === 'item_id')
+    && (!Object.prototype.hasOwnProperty.call(p, 'item_id')
+      || (typeof p.item_id === 'string' && p.item_id.length > 0 && p.item_id.length <= 80
+        && !/[^A-Za-z0-9_.:-]/.test(p.item_id)))
+}
 
 // h(type, props, ...children): JSX without a compiler.
 function h(type, props, ...children) {
@@ -114,6 +125,7 @@ function loadSettings(ctx) {
   const s = { ...DEFAULTS }
   for (const k of Object.keys(DEFAULTS)) if (k in saved && typeof saved[k] === typeof DEFAULTS[k]) s[k] = saved[k]
   if (!Array.isArray(s.marks)) s.marks = DEFAULTS.marks
+  if (!VIEWS.includes(s.view)) s.view = DEFAULTS.view
   s.marks = s.marks.filter(m => MARKS.includes(m))
   if (!HEX.test(s.custom)) s.custom = DEFAULTS.custom
   return s
@@ -359,13 +371,16 @@ function History({ items, s }) {
 
 const keyOf = t => `${t.board}\u0000${t.id}`
 
-function Page({ ctx }) {
+function Page({ ctx, pane }) {
   const [s, setS] = useState(() => loadSettings(ctx))
   const [tasks, setTasks] = useState({ loading: true, tasks: [], errors: [] })
   const [sel, setSel] = useState(() => { try { return ctx.storage.get('selected', '') || '' } catch { return '' } })
   const [f, setF] = useState(null)
   const [hist, setHist] = useState([])
+  const [itemId, setItemId] = useState(null)
+  const [refresh, setRefresh] = useState(0)
   const seq = useRef(0)
+  const requests = useRef(0)
 
   const sx = useMemo(() => ({
     ...s,
@@ -377,25 +392,45 @@ function Page({ ctx }) {
   }), [s, ctx])
 
   const loadTasks = () => {
+    const n = ++requests.current
+    ++seq.current // Invalidate old forecasts immediately, before the next React effect.
+    setRefresh(v => v + 1)
     setTasks(t => ({ ...t, loading: true }))
     ctx.rest('/tasks')
-      .then(r => setTasks({ loading: false, tasks: Array.isArray(r && r.tasks) ? r.tasks : [], errors: (r && r.errors) || [] }))
-      .catch(e => setTasks({ loading: false, tasks: [], errors: [], fault: String((e && e.message) || e) }))
-    ctx.rest('/history').then(r => setHist(Array.isArray(r && r.items) ? r.items : [])).catch(() => setHist([]))
+      .then(r => { if (n === requests.current) setTasks({ loading: false, tasks: Array.isArray(r && r.tasks) ? r.tasks : [], errors: (r && r.errors) || [] }) })
+      .catch(e => { if (n === requests.current) setTasks({ loading: false, tasks: [], errors: [], fault: String((e && e.message) || e) }) })
+    ctx.rest('/history')
+      .then(r => { if (n === requests.current) setHist(Array.isArray(r && r.items) ? r.items : []) })
+      .catch(() => { if (n === requests.current) setHist([]) })
   }
-  useEffect(loadTasks, [])
-
-  const current = tasks.tasks.find(t => keyOf(t) === sel) || tasks.tasks.find(t => t.hint) || null
   useEffect(() => {
-    if (!current) { setF(null); return }
+    const pending = pane.lastView
+    const drop = pane.subscribe((name, p) => {
+      if (name === 'view.set') {
+        sx.set({ view: p.view })
+        if (p.item_id) setItemId(p.item_id)
+      }
+      loadTasks()
+    })
+    if (!pending) loadTasks()
+    return () => { drop(); ++requests.current; ++seq.current }
+  }, [ctx, pane])
+
+  const matches = itemId ? tasks.tasks.filter(t => t.id === itemId) : []
+  const current = itemId ? (matches.length === 1 ? matches[0] : null)
+    : tasks.tasks.find(t => keyOf(t) === sel) || tasks.tasks.find(t => t.hint) || null
+  useEffect(() => {
     const n = ++seq.current
+    if (!current) { setF(null); return }
     setF({ loading: true })
     ctx.rest(`/forecast?board=${encodeURIComponent(current.board)}&task_id=${encodeURIComponent(current.id)}`)
       .then(r => { if (n === seq.current) setF(r) })
       .catch(e => { if (n === seq.current) setF({ ok: false, error: String((e && e.message) || e) }) })
-  }, [current && keyOf(current)])
+    return () => { ++seq.current }
+  }, [current && keyOf(current), current?.hint?.optimistic, current?.hint?.most_likely,
+    current?.hint?.pessimistic, refresh])
 
-  const choose = v => { setSel(v); try { ctx.storage.set('selected', v) } catch { /* ignore */ } }
+  const choose = v => { ++seq.current; setItemId(null); setSel(v); try { ctx.storage.set('selected', v) } catch { /* ignore */ } }
   const style = { '--ep-hue': hueOf(s) }
   const us = unitOf(s)
   const withHint = tasks.tasks.filter(t => t.hint).length
@@ -405,6 +440,10 @@ function Page({ ctx }) {
     main = h('div', { className: 'ep-empty' }, h('b', null, 'Could not reach the Epoch backend.'),
       h('span', { className: 'ep-err' }, tasks.fault),
       h('span', null, 'The plugin must be enabled in Hermes for its backend to load.'))
+  } else if (itemId && !tasks.loading && matches.length !== 1) {
+    main = h('div', { className: 'ep-empty', role: 'status' },
+      h('b', null, matches.length ? 'Card id matches multiple boards; choose a card.' : 'Requested card is not open or was not found.'),
+      h('span', null, itemId))
   } else if (!tasks.loading && !tasks.tasks.length) {
     main = h('div', { className: 'ep-empty' }, h('b', null, 'No open Kanban cards.'),
       h('span', null, 'Epoch charts open cards. Add one with a three-point hint, for example ', h('code', null, 'epoch: 2/4/10h'), '.'))
@@ -462,6 +501,30 @@ export default {
   id: 'epoch',
   name: 'Epoch',
   register(ctx) {
+    const listeners = new Set()
+    const pane = {
+      lastView: null,
+      subscribe(fn) {
+        listeners.add(fn)
+        const pending = pane.lastView
+        pane.lastView = null
+        if (pending) fn('view.set', pending)
+        return () => listeners.delete(fn)
+      }
+    }
+    let refreshBadges = () => {}
+    if (sdk.host && typeof sdk.host.onEvent === 'function') {
+      for (const name of ['data.updated', 'view.set']) {
+        const drop = sdk.host.onEvent(`plugin.epoch.${name}`, ({ payload } = {}) => {
+          if (!validPaneEvent(name, payload)) return
+          if (name === 'view.set') pane.lastView = listeners.size ? null : { ...payload }
+          for (const fn of listeners) fn(name, payload)
+          refreshBadges()
+          if (name === 'view.set' && typeof sdk.host.navigate === 'function') sdk.host.navigate(PATH)
+        })
+        ctx.onDispose(() => { if (typeof drop === 'function') drop() })
+      }
+    }
     const style = document.createElement('style')
     style.dataset.plugin = 'epoch'
     style.textContent = CSS
@@ -469,7 +532,7 @@ export default {
     ctx.onDispose(() => style.remove())
 
     ctx.registerMany([
-      { id: 'page', area: sdk.ROUTES_AREA, data: { path: PATH }, render: () => jsx(Page, { ctx }) },
+      { id: 'page', area: sdk.ROUTES_AREA, data: { path: PATH }, render: () => jsx(Page, { ctx, pane }) },
       { id: 'nav', area: sdk.SIDEBAR_NAV_AREA, data: { path: PATH, label: 'Epoch', codicon: 'watch' } }
     ])
 
@@ -478,6 +541,8 @@ export default {
     if (!area) return
     let byId = {}
     let drop = null
+    let badgeSeq = 0
+    ctx.onDispose(() => { ++badgeSeq; if (drop) drop() })
     const paint = () => {
       if (drop) drop()
       let unit = 'days'
@@ -493,12 +558,17 @@ export default {
         }
       })
     }
-    const pull = () => ctx.rest('/badges')
-      .then(r => {
-        const next = (r && r.tasks) || {}
-        if (JSON.stringify(next) !== JSON.stringify(byId)) { byId = next; paint() }
-      })
-      .catch(() => { /* backend not loaded: no badges, nothing else breaks */ })
+    const pull = () => {
+      const n = ++badgeSeq
+      return ctx.rest('/badges')
+        .then(r => {
+          if (n !== badgeSeq) return
+          const next = (r && r.tasks) || {}
+          if (JSON.stringify(next) !== JSON.stringify(byId)) { byId = next; paint() }
+        })
+        .catch(() => { /* backend not loaded: no badges, nothing else breaks */ })
+    }
+    refreshBadges = pull
     paint()
     pull()
     ctx.setInterval(() => { if (!document.hidden) pull() }, 60000)

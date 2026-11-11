@@ -10,6 +10,7 @@ kanban_task_completed -> find the estimate marker for the *same run* on the boar
                          self-improve and telemetry/data mutations are refused, ledger writes
                          are refused on gateway platforms unless opted in.
 epoch_estimate tool   -> agent-callable Monte Carlo estimate.
+epoch_show tool       -> ask the enabled Desktop page to show a chart and optional card.
 
 Design notes (see README "How it works"):
 
@@ -29,7 +30,7 @@ Design notes (see README "How it works"):
   vars only), ``EPOCH_DATA_DIR`` pinned to the ledger dir and ``EPOCH_TELEMETRY=0``. The ledger
   defaults to ``<HERMES_HOME root>/plugin-data/epoch`` so every profile shares it.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
-  ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
+  ``kanban_comment``); Desktop updates use the optional public plugin event bridge.
 * Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
   profile (HERMES_HOME override, settings, plugin state) follows the job. Settings are also
   snapshotted in the hook's own context.
@@ -65,6 +66,37 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+PANE_VIEWS = ("bars", "cdf", "dots")
+_ITEM_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+PANE_SETUP = ("Check that Epoch is on in Desktop Capabilities -> Plugins; enabling the pane is "
+              "the one step a person does, then the agent can open it with epoch_show.")
+
+
+def _valid_view(payload: Any) -> bool:
+    return (isinstance(payload, dict) and set(payload) <= {"view", "item_id"}
+            and isinstance(payload.get("view"), str) and payload["view"] in PANE_VIEWS
+            and ("item_id" not in payload or (isinstance(payload["item_id"], str)
+                 and _ITEM_ID_RE.fullmatch(payload["item_id"]) is not None)))
+
+
+def _broadcast_pane_event(event: str, payload: Dict[str, Any]) -> bool:
+    """Only invalidation or bounded view state may cross the local Desktop bridge."""
+    if not ((event == "data.updated" and isinstance(payload, dict) and not payload)
+            or (event == "view.set" and _valid_view(payload))):
+        return False
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+    except ImportError:
+        return False
+    try:
+        broadcast_plugin_event("epoch", event, payload)
+        return True  # Sent, not proof of a listening Desktop client.
+    except (Exception, SystemExit):
+        # A bridge importing an unavailable gateway runtime must not end the tool process.
+        logger.debug("epoch: Desktop event was not delivered", exc_info=True)
+        return False
+
+
 DEFAULTS: Dict[str, Any] = {
     "epoch_command": "npx -y @kyanitelabs/epoch@0.8.0",
     "epoch_data_dir": "",
@@ -85,7 +117,7 @@ OUTBOX_MAX_ATTEMPTS = 5
 OUTBOX_REPLAY_INTERVAL_SECONDS = 600
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 3600
 # Missed-completion reconcile: at most this many unrecorded bindings are checked per pass, and a
-# pass runs at most once per interval (at load, then on new claims).
+# pass runs at most once per interval (at load, then on claims and dispatcher ticks).
 RECONCILE_PER_PASS = 25
 RECONCILE_INTERVAL_SECONDS = 600
 AUTO_WALLCLOCK = "auto_wallclock"
@@ -94,24 +126,23 @@ BINDINGS_FILE = "hermes-run-bindings.json"
 _NUM = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
 # Units a hint may carry: hours (default), minutes, workdays, workweeks.
 _UNIT = r"(h|hrs?|hours?|m|mins?|minutes?|d|days?|w|wks?|weeks?)"
-# A time unit Epoch cannot convert ("sprints", "months", "secs", "points"): refuse the hint
-# instead of silently reading the numbers as hours.
-_HINT_BAD_UNIT_RE = re.compile(
-    rf"^[-+.\d][-+.\d\s/,]*?\s*(s|secs?|seconds?|mo|mos|months?|y|yrs?|years?|sprints?|sp|pts?|points?|q|quarters?)\b",
+# Capture the number triple before validating its first following word. Unsupported units must
+# not fall through the optional-unit parser and become hours.
+_HINT_TRIPLE_RE = re.compile(
+    rf"^(?:{_NUM}\s*[/,]\s*{_NUM}\s*[/,]\s*{_NUM}|"
+    r"\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?)",
     re.IGNORECASE,
 )
-# Catch other trailing unit tokens too, including two-word units such as "business days".
-_HINT_TRAILING_UNIT_RE = re.compile(
-    rf"^[-+.\d][-+.\d\s/,]*?\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)\s*(?:$|[.;)\]])",
-    re.IGNORECASE,
-)
+_HINT_QUALIFIERS = frozenset({
+    "roughly", "rough", "approx", "approximately", "maybe", "about", "around", "ish",
+})
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
-    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.;)\]])",
+    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.,;!?)]|\])",
     re.IGNORECASE,
 )
 _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-10h")
-    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*" + _UNIT + r"?\s*(?:$|[\s.;)\]])",
+    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*" + _UNIT + r"?\s*(?:$|[\s.,;!?)]|\])",
     re.IGNORECASE,
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
@@ -291,21 +322,20 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
     if not m:
         return None
     raw = m.group(1).strip()
-    bad = _HINT_BAD_UNIT_RE.match(raw)
-    if bad:
-        raise EstimateInputError(
-            f"hint {m.group(0).strip()[:60]!r} uses unit {bad.group(1)!r}; use h, min, d or w "
-            "(e.g. 'epoch: 2/4/10h')")
-    trailing_unit = _HINT_TRAILING_UNIT_RE.match(raw)
-    if trailing_unit:
-        candidate = trailing_unit.group(1)
-        first = candidate.split()[0]
-        prose = {"for", "to", "of", "about", "on", "with", "from", "in", "by", "as"}
-        allowed = (re.fullmatch(_UNIT, first, re.IGNORECASE) is not None and first != "M")
-        if first.lower() not in prose and not allowed:
-            raise EstimateInputError(
-                f"hint {m.group(0).strip()[:60]!r} uses unit {candidate!r}; use h, min, d or w "
-                "(e.g. 'epoch: 2/4/10h')")
+    numbers = _HINT_TRIPLE_RE.match(raw)
+    if numbers:
+        rest = raw[numbers.end():]
+        unit = re.match(r"\s*([^\W\d_][\w-]*)", rest)
+        explicit = (unit is not None and unit.group(1) != "M"
+                    and re.fullmatch(_UNIT, unit.group(1), re.IGNORECASE) is not None)
+        if not explicit:
+            # Allow-list: a unitless triple may be followed only by qualifiers and punctuation, so
+            # "2/4/10, sprints" or "2/4/10 (months)" can never be read as hours.
+            for word in re.findall(r"[^\W\d_][\w'-]*", rest):
+                if word.lower() not in _HINT_QUALIFIERS:
+                    raise EstimateInputError(
+                        f"hint {m.group(0).strip()[:60]!r} uses unit {word!r}; use h, min, d or w "
+                        "(e.g. 'epoch: 2/4/10h')")
     sm = _HINT_STRICT_RE.match(raw) or _HINT_DASH_RE.match(raw)
     if not sm:
         raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r} (expected e.g. 'epoch: 2/4/10h')")
@@ -757,6 +787,8 @@ def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Op
 
     _bindings_update(settings, mutate)
 
+    _broadcast_pane_event("data.updated", {})
+
 
 def _transition_mark_commented(cur: Dict[str, Any], kind: CommentKind) -> Dict[str, Any]:
     """PENDING | IN_FLIGHT → DELIVERED (DELIVERED → DELIVERED is a no-op). NONE is refused:
@@ -839,6 +871,8 @@ def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, boa
         data[key] = _transition_record(cur, outcome, actual_comment_body, keep_existing)
 
     _bindings_update(settings, mutate)
+
+    _broadcast_pane_event("data.updated", {})
 
 
 def _delivery_claim_expired(claim: Any) -> bool:
@@ -1403,12 +1437,21 @@ def _split_binding_key(key: str) -> Optional[Tuple[Optional[str], str, str]]:
 
 
 def _dead_letter_ids(settings: Optional[Dict[str, Any]]) -> set[str]:
+    ids: set[str] = set()
     try:
         with _dead_letter_path(settings).open(encoding="utf-8") as handle:
-            return {str(row["id"]) for line in handle if line.strip()
-                    for row in [json.loads(line)] if isinstance(row, dict) and row.get("id")}
-    except (OSError, ValueError):
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and row.get("id"):
+                    ids.add(str(row["id"]))
+    except OSError:
         return set()
+    return ids
 
 
 def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
@@ -1426,12 +1469,21 @@ def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
     path = _epoch_data_dir(settings) / BINDINGS_FILE
     with _file_lock(path):
         data = _read_json_file(path)
-    open_keys = [k for k, v in data.items()
-                 if isinstance(v, dict) and v.get("ref") and ledger_outcome(v) is None
-                 and not v.get("run_ended")]
     dead_ids = _dead_letter_ids(settings)
     outbox_ids: set[str] = set()
     _outbox_update(lambda box: outbox_ids.update(box))
+    open_keys = []
+    for key, value in data.items():
+        if not (isinstance(value, dict) and value.get("ref") and ledger_outcome(value) is None
+                and not value.get("run_ended")):
+            continue
+        parsed = _split_binding_key(key)
+        if parsed is None:
+            continue
+        board, task_id, run_id = parsed
+        job_id = _job_id("completed", task_id, board, run_id)
+        if job_id not in dead_ids and job_id not in outbox_ids:
+            open_keys.append(key)
     queued = 0
     # A random sample, so bindings that keep failing (a deleted task, an unreachable board) can't
     # starve the rest of a large backlog.
@@ -1440,9 +1492,6 @@ def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
         if parsed is None:
             continue
         board, task_id, run_id = parsed
-        job_id = _job_id("completed", task_id, board, run_id)
-        if job_id in dead_ids or job_id in outbox_ids:
-            continue
         try:
             run = _run_for(show_task(task_id, board), run_id)
         except Exception:
@@ -1507,6 +1556,14 @@ def _on_completed(task_id: str = "", board: Optional[str] = None, run_id: Any = 
         _maybe_replay()
     except Exception:
         logger.debug("epoch: completed hook failed for %s", task_id, exc_info=True)
+
+
+def _on_dispatch_tick(**_: Any) -> None:
+    """Use Hermes' idle dispatcher ticks to revisit completions missed by another profile."""
+    try:
+        _maybe_reconcile()
+    except Exception:
+        logger.debug("epoch: dispatch-tick reconcile failed", exc_info=True)
 
 
 # /epoch policy. Never via slash: long-running server, self-modification, telemetry/data
@@ -1577,17 +1634,23 @@ def _slash(raw_args: str) -> str:
     except ValueError as exc:
         return f"Could not parse arguments: {exc}"
     if not args:
-        return "Usage: /epoch <epoch-cli-subcommand> [flags]  e.g. /epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10"
+        return ("Usage: /epoch <epoch-cli-subcommand> [flags]  e.g. /epoch pert-estimate "
+                "--optimistic 2 --most-likely 4 --pessimistic 10\n" + PANE_SETUP)
+    if args == ["status"]:
+        return PANE_SETUP
     refusal = _slash_refusal(args)
     if refusal:
         return refusal
     res = run_epoch(args)
+    if res.get("ok") and _subcommand(args)[0] not in _SLASH_READONLY_SUBS:
+        _broadcast_pane_event("data.updated", {})
     data = res.get("data") if isinstance(res.get("data"), dict) else None
     if res.get("ok") and data and data.get("humanReadable"):
         out = data["humanReadable"]
     else:
-        out = json.dumps(res, indent=2)[:3500]
+        out = _redact_home(json.dumps(res, indent=2))[:3500]
     if _subcommand(args) == ("data", "status"):
+        out += "\n" + PANE_SETUP
         lost = dead_letter_count()
         out += (f"\nPlugin jobs abandoned after retries: {lost} (see {DEAD_LETTER_FILE} in the "
                 "Epoch data folder)." if lost else "\nPlugin jobs abandoned after retries: 0.")
@@ -1612,6 +1675,32 @@ ESTIMATE_SCHEMA = {
 
 _TRIPLE = ("optimistic", "most_likely", "pessimistic")
 
+SHOW_SCHEMA = {
+    "name": "epoch_show",
+    "description": "Ask the enabled Epoch Desktop page to open a chart view and optionally focus a Kanban card; the page must be open and enabled.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "view": {"type": "string", "enum": list(PANE_VIEWS),
+                     "description": "bars: Distribution; cdf: Chance done by; dots: 50 dots."},
+            "item_id": {"type": "string", "minLength": 1, "maxLength": 80,
+                        "pattern": "^[A-Za-z0-9_.:-]+$", "description": "Optional Kanban card id."},
+        },
+        "required": ["view"],
+        "additionalProperties": False,
+    },
+}
+
+
+def _show(args: Dict[str, Any], **_: Any) -> str:
+    if not _valid_view(args):
+        return ("Error: view must be bars, cdf or dots; optional item_id must contain 1–80 "
+                "letters, digits, underscores, dots, colons or hyphens; no extra arguments.")
+    sent = _broadcast_pane_event("view.set", dict(args))
+    item = f" for card {args['item_id']}" if "item_id" in args else ""
+    return (f"Asked Desktop to show {args['view']}{item}; the Epoch page must be open and enabled."
+            + ("" if sent else " Desktop event bridge unavailable; request was not delivered."))
+
 
 def _tool(args: Dict[str, Any], **_: Any) -> str:
     args = args or {}
@@ -1627,6 +1716,8 @@ def _tool(args: Dict[str, Any], **_: Any) -> str:
     out = {"summary": r["summary"], "feedbackRef": r.get("feedbackRef"), "method": r.get("method")}
     if r.get("hint_error"):
         out["hint_error"] = r["hint_error"]
+    if r.get("method"):
+        _broadcast_pane_event("data.updated", {})
     return json.dumps(out)
 
 
@@ -1635,10 +1726,13 @@ def register(ctx) -> None:
     _ctx = ctx
     ctx.register_hook("kanban_task_claimed", _on_claimed)
     ctx.register_hook("kanban_task_completed", _on_completed)
+    ctx.register_hook("on_kanban_dispatch_tick", _on_dispatch_tick)
     ctx.register_command("epoch", handler=_slash, description="Run Epoch time-estimation CLI.",
                          args_hint="<subcommand> [flags]")
     ctx.register_tool(name="epoch_estimate", toolset="epoch", schema=ESTIMATE_SCHEMA, handler=_tool,
                       description=ESTIMATE_SCHEMA["description"], emoji="⏱")
+    ctx.register_tool(name="epoch_show", toolset="epoch", schema=SHOW_SCHEMA, handler=_show,
+                      description=SHOW_SCHEMA["description"], emoji="⏱")
     if not _atexit_registered:
         atexit.register(_atexit_wait)
         _atexit_registered = True

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### feat: agent-driven Epoch Desktop page (epoch-hermes 0.9.0)
+
+- Successful tool estimates, slash commands and Kanban estimate/actual writes refresh the page and card badges via local Desktop events with no task text in their payloads.
+- `epoch_show` opens the enabled page, switches between Distribution, Chance done by and 50 dots, and optionally focuses a card; late REST responses cannot override newer events.
+- The plugin skill and `/epoch status` explain the one human setup step in Capabilities -> Plugins; Hermes builds without the event bridge still support estimation.
+
 ### fix: epoch-hermes records actuals a missed completion hook left behind
 
 - When the profile that finished a run does not enable the plugin, its completion hook never fires here, so the actual was never recorded and nothing said so. The plugin now checks up to 25 unrecorded runs at load and on new claims (at most every 10 minutes), logs a WARNING for each completed one and records it. Runs that ended another way are marked and skipped.

@@ -52,6 +52,37 @@ def main():
     if action == "load":  # a later process in this profile: plugin load replays its outbox
         plugins()
         return
+    if action == "complete-no-plugin":
+        with kbc.connect_closing() as conn:
+            ok = kb.complete_task(conn, args[0], summary="done", expected_run_id=int(args[1]))
+        print(json.dumps({"ok": bool(ok)}), flush=True)
+        return
+    if action == "watch-tick":
+        plugins()
+        from hermes_cli import plugins as p
+        from hermes_cli import kanban_db_dispatch as dispatch
+        epoch = p.get_plugin_manager()._plugins["epoch"].module
+        epoch.RECONCILE_INTERVAL_SECONDS = 0
+        for thread in list(__import__("threading").enumerate()):
+            if thread.name == "epoch-reconcile":
+                thread.join(timeout=15)
+        ready = args[0] + ".ready"
+        open(ready, "w").close()
+        deadline = __import__("time").time() + 30
+        while not os.path.exists(args[0]) and __import__("time").time() < deadline:
+            __import__("time").sleep(0.02)
+        if not os.path.exists(args[0]):
+            raise TimeoutError("test tick signal not received")
+        with kbc.connect_closing() as conn:
+            dispatch.dispatch_once(conn, dry_run=True)
+        for thread in list(__import__("threading").enumerate()):
+            if thread.name == "epoch-reconcile":
+                thread.join(timeout=15)
+        epoch.wait_for_inflight(15)
+        # A file, not stdout: Hermes may hold sys.stdout redirected after a dispatch tick.
+        with open(args[0] + ".done", "w") as handle:
+            json.dump({"recorded": True}, handle)
+        return
     if action == "show":
         with kbc.connect_closing() as conn:
             print(json.dumps({
