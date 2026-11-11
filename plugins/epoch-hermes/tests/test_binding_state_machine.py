@@ -100,8 +100,10 @@ def test_record_transition_matrix(prior, outcome):
     cur = {"ref": "r", "recorded": False}
     if prior is not None:
         cur = {"ref": "r", "recorded": True, "status": prior.value, "actual_comment_body": "first"}
-    # Plain mark: UNRECORDED → any; same outcome idempotent; different terminal refused.
-    if prior is None or prior is outcome:
+    # Plain mark: UNRECORDED → any; same outcome idempotent; DUPLICATE → RECORDED is the one
+    # allowed upgrade (racing recorders); any other different terminal is refused.
+    upgrade = prior is P.LedgerOutcome.DUPLICATE and outcome is P.LedgerOutcome.RECORDED
+    if prior is None or prior is outcome or upgrade:
         out = P._transition_record(cur, outcome, "body", keep_existing=False)
         assert P.ledger_outcome(out) is outcome
         assert out["actual_commented"] is False
@@ -114,6 +116,20 @@ def test_record_transition_matrix(prior, outcome):
         assert P.ledger_outcome(out) is outcome and out["actual_comment_body"] == "late"
     else:
         assert P.ledger_outcome(out) is prior and out["actual_comment_body"] == "first"
+
+
+def test_racing_loser_duplicate_then_winner_recorded(tmp_path):
+    """Two recorders race: the loser marks ``duplicate`` first, then the winner marks
+    ``recorded``. The winner's outcome must land, not raise IllegalBindingTransition."""
+    s = {"epoch_data_dir": str(tmp_path)}
+    P._binding_put_ref(s, "t", None, 1, "ref-1")
+    P._binding_mark_recorded(s, "t", None, 1, status="duplicate", keep_existing=True)
+    P._binding_mark_recorded(s, "t", None, 1, status="recorded", actual_comment_body="ok")
+    b = P._binding_get(s, "t", None, 1)
+    assert b["status"] == "recorded" and b["actual_comment_body"] == "ok"
+    # And the upgrade is one-way: recorded never drops back to duplicate.
+    with pytest.raises(P.IllegalBindingTransition):
+        P._binding_mark_recorded(s, "t", None, 1, status="duplicate")
 
 
 def test_record_refuses_unknown_status(tmp_path):
@@ -221,9 +237,13 @@ class BindingMachine(RuleBasedStateMachine):
                                      actual_comment_body="b-" + outcome.value, keep_existing=keep)
         except P.IllegalBindingTransition:
             assert prior is not None and prior is not outcome and not keep
+            assert not (prior is P.LedgerOutcome.DUPLICATE and outcome is P.LedgerOutcome.RECORDED)
             return
         if prior is None:
             self.outcome = outcome
+        elif (not keep and prior is P.LedgerOutcome.DUPLICATE
+              and outcome is P.LedgerOutcome.RECORDED):
+            self.outcome = outcome  # the one allowed upgrade: a racing loser marked first
 
     @precondition(lambda self: self.bound)
     @rule(kind=st.sampled_from(KINDS))
@@ -278,7 +298,7 @@ class BindingMachine(RuleBasedStateMachine):
             return
         assert set(b) <= PERSISTED_KEYS, set(b) - PERSISTED_KEYS
         assert b["ref"] == "ref-1"  # first writer wins, never redirected
-        assert P.ledger_outcome(b) is self.outcome  # terminal outcome is absorbing
+        assert P.ledger_outcome(b) is self.outcome  # terminal outcome is absorbing (bar duplicate→recorded)
         if self.outcome is not None:
             assert b["status"] in {o.value for o in OUTCOMES}
         for kind in KINDS:
