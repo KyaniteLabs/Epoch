@@ -36,6 +36,8 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run build
       - run: pnpm exec vitest run --coverage
+      - name: Epoch Hermes Desktop regression tests (Node 22)
+        run: node --experimental-vm-modules plugins/epoch-hermes/tests/test_pane_events.mjs
       - run: node scripts/validate-community-data.mjs
       - run: node scripts/verify-reference-db.mjs
       - run: pnpm run contract:llms-full
@@ -61,6 +63,14 @@ jobs:
           git -C .hermes-runtime checkout -q FETCH_HEAD
       - name: Install Hermes from its own lockfile
         run: python3 -m pip install --no-cache-dir uv==0.11.22 && uv sync --frozen --python 3.14 --directory .hermes-runtime
+      - name: Validate Epoch manifest with real Hermes
+        shell: bash
+        run: |
+          PY="$PWD/.hermes-runtime/.venv/bin/python"
+          uv pip install --python "$PY" pytest==8.4.2 hypothesis==6.135.0
+          H=$(mktemp -d)
+          HOME="$H" HERMES_AGENT_SRC="$PWD/.hermes-runtime" HERMES_PYTHON="$PY" \
+            "$PY" -m pytest plugins/epoch-hermes/tests/test_real_plugin_validate.py -q
       - name: Plugin tests under Hermes (fails on any unexpected skip)
         shell: bash
         run: |

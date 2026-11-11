@@ -203,11 +203,11 @@ def test_hint_units_convert_to_hours(plugin, hint, expected):
                                   "epoch: 1/2/3 fortnights to finish this task",
                                   "epoch: 1/2/3 ms per operation",
                                   "epoch: 2/4/10, sprints", "epoch: 2/4/10 (sprints)",
-                                  "epoch: 2/4/10; months", "epoch: 2/4/10. sprints",
+                                  "epoch: 2/4/10; months",
                                   "epoch: 2/4/10 - weeks of work", "epoch: 2/4/10 ~sprints"])
 def test_hint_with_unknown_unit_is_refused_not_read_as_hours(plugin, hint):
     hint_out, problem = plugin.find_hint("", hint)
-    assert hint_out is None and "unit" in problem
+    assert hint_out is None and ("unit" in problem or "text after the estimate" in problem)
 
 
 @pytest.mark.parametrize("hint,expected", [
@@ -223,6 +223,38 @@ def test_hint_allows_units_and_unitless_qualifiers(plugin, hint, expected):
     hint_out, problem = plugin.find_hint("", hint)
     assert problem is None
     assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 (hours)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 (h)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 *days*", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 _days_", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 `d`", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10. Then prose", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10. Then the API", (2.0, 4.0, 10.0)),
+])
+def test_hint_structural_unit_wrappers_and_sentence_end(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expects_text", [
+    ("epoch: 2/4/10 day(s)", False),
+    ("epoch: 2/4/10 week's work", False),
+    ("epoch: 2/4/10 h/day", False),
+    ("epoch: 2/4/10 for the API", True),
+    ("epoch: 2/4/10 — owner", True),
+])
+def test_hint_rejects_invalid_first_token_without_claiming_a_unit(plugin, hint, expects_text):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert problem
+    if expects_text:
+        assert "text after the estimate" in problem
+    else:
+        assert "malformed unit" in problem
 
 
 def test_f3_prose_without_numbers_is_not_a_hint(plugin):

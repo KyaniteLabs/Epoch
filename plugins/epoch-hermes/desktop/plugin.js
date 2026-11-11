@@ -404,16 +404,25 @@ function Page({ ctx, pane }) {
       .catch(() => { if (n === requests.current) setHist([]) })
   }
   useEffect(() => {
+    let reloadTimer = null
     const pending = pane.lastView
     const drop = pane.subscribe((name, p) => {
       if (name === 'view.set') {
         sx.set({ view: p.view })
         if (p.item_id) setItemId(p.item_id)
+        loadTasks()
+        return
       }
-      loadTasks()
+      if (reloadTimer !== null) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => { reloadTimer = null; loadTasks() }, 150)
     })
     if (!pending) loadTasks()
-    return () => { drop(); ++requests.current; ++seq.current }
+    return () => {
+      drop()
+      if (reloadTimer !== null) clearTimeout(reloadTimer)
+      ++requests.current
+      ++seq.current
+    }
   }, [ctx, pane])
 
   const matches = itemId ? tasks.tasks.filter(t => t.id === itemId) : []
@@ -478,7 +487,8 @@ function Page({ ctx, pane }) {
     h('div', { className: 'ep-shell' },
       h('main', { className: 'ep-main' },
         h('div', { className: 'ep-top' },
-          h('select', { className: 'ep-select', 'aria-label': 'Kanban card', value: current ? keyOf(current) : '', onChange: e => choose(e.target.value), disabled: !tasks.tasks.length },
+          h('select', { className: 'ep-select', 'aria-label': 'Kanban card', value: current ? keyOf(current) : '', onChange: e => choose(e.target.value), disabled: tasks.loading },
+            h('option', { value: '' }, 'Choose a card…'),
             tasks.tasks.map(t => h('option', { key: keyOf(t), value: keyOf(t) }, `${t.title}${t.hint ? '' : '  (no hint)'}${t.board !== 'default' ? ` · ${t.board}` : ''}`))),
           current ? h('span', { className: 'ep-chip' }, current.board) : null,
           current ? h('span', { className: 'ep-chip' }, current.status) : null,
@@ -513,16 +523,23 @@ export default {
       }
     }
     let refreshBadges = () => {}
+    let badgeReloadTimer = null
     if (sdk.host && typeof sdk.host.onEvent === 'function') {
       for (const name of ['data.updated', 'view.set']) {
         const drop = sdk.host.onEvent(`plugin.epoch.${name}`, ({ payload } = {}) => {
           if (!validPaneEvent(name, payload)) return
           if (name === 'view.set') pane.lastView = listeners.size ? null : { ...payload }
           for (const fn of listeners) fn(name, payload)
-          refreshBadges()
+          if (name === 'data.updated') {
+            if (badgeReloadTimer !== null) clearTimeout(badgeReloadTimer)
+            badgeReloadTimer = setTimeout(() => { badgeReloadTimer = null; refreshBadges() }, 150)
+          } else refreshBadges()
           if (name === 'view.set' && typeof sdk.host.navigate === 'function') sdk.host.navigate(PATH)
         })
-        ctx.onDispose(() => { if (typeof drop === 'function') drop() })
+        ctx.onDispose(() => {
+          if (typeof drop === 'function') drop()
+          if (badgeReloadTimer !== null) clearTimeout(badgeReloadTimer)
+        })
       }
     }
     const style = document.createElement('style')

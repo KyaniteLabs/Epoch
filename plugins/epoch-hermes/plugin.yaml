@@ -14,9 +14,11 @@ provides_tools:
 provides_hooks:
   - kanban_task_claimed
   - kanban_task_completed
+  - on_kanban_dispatch_tick
 hooks:
   - kanban_task_claimed
   - kanban_task_completed
+  - on_kanban_dispatch_tick
 config_schema:
   epoch_command:
     type: str

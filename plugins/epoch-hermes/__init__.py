@@ -56,6 +56,7 @@ import random
 import re
 import shlex
 import subprocess
+import sys
 import threading
 import time
 import tempfile
@@ -83,6 +84,8 @@ def _broadcast_pane_event(event: str, payload: Dict[str, Any]) -> bool:
     """Only invalidation or bounded view state may cross the local Desktop bridge."""
     if not ((event == "data.updated" and isinstance(payload, dict) and not payload)
             or (event == "view.set" and _valid_view(payload))):
+        return False
+    if "tui_gateway.server" not in sys.modules:
         return False
     try:
         from hermes_cli.plugin_events import broadcast_plugin_event
@@ -325,18 +328,34 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
     numbers = _HINT_TRIPLE_RE.match(raw)
     if numbers:
         rest = raw[numbers.end():]
-        unit = re.match(r"\s*([^\W\d_][\w-]*)", rest)
-        explicit = (unit is not None and unit.group(1) != "M"
-                    and re.fullmatch(_UNIT, unit.group(1), re.IGNORECASE) is not None)
-        if not explicit:
-            # Allow-list: a unitless triple may be followed only by qualifiers and punctuation, so
-            # "2/4/10, sprints" or "2/4/10 (months)" can never be read as hours.
-            for word in re.findall(r"[^\W\d_][\w'-]*", rest):
-                if word.lower() not in _HINT_QUALIFIERS:
-                    raise EstimateInputError(
-                        f"hint {m.group(0).strip()[:60]!r} uses unit {word!r}; use h, min, d or w "
-                        "(e.g. 'epoch: 2/4/10h')")
-    sm = _HINT_STRICT_RE.match(raw) or _HINT_DASH_RE.match(raw)
+        before_sentence_end = re.split(r"[.!?]", rest, maxsplit=1)[0]
+        token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", before_sentence_end)
+        token = token_match.group(1) if token_match else ""
+        unit_token = token.strip("(*_`")
+        unit_token = unit_token.rstrip("*_`")
+        unit_token = unit_token.rstrip(",;:)")
+        explicit = (unit_token != "M"
+                    and re.fullmatch(_UNIT, unit_token, re.IGNORECASE) is not None)
+        if token and not explicit and unit_token.lower() not in _HINT_QUALIFIERS:
+            # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
+            # through the optional-unit grammar and become hours.
+            unit_like = re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)",
+                                 unit_token, re.IGNORECASE)
+            if unit_like:
+                raise EstimateInputError(
+                    f"hint {m.group(0).strip()[:60]!r} has malformed unit {token!r}; "
+                    "use h, min, d or w (e.g. 'epoch: 2/4/10h')")
+            raise EstimateInputError(
+                f"hint {m.group(0).strip()[:60]!r} has text after the estimate "
+                f"({token!r}); add a supported unit or punctuation")
+    parse_raw = raw
+    if numbers and explicit:
+        suffix = raw[numbers.end():]
+        token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", re.split(r"[.!?]", suffix, maxsplit=1)[0])
+        token = token_match.group(1) if token_match else ""
+        unit_token = token.strip("(*_`").rstrip("*_`").rstrip(",;:)")
+        parse_raw = raw[:numbers.end()] + unit_token
+    sm = _HINT_STRICT_RE.match(parse_raw) or _HINT_DASH_RE.match(parse_raw)
     if not sm:
         raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r} (expected e.g. 'epoch: 2/4/10h')")
     unit = (sm.group(4) or "h").lower()

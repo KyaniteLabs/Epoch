@@ -7,7 +7,7 @@ import vm from 'node:vm'
 const tick = async () => { await Promise.resolve(); await Promise.resolve() }
 
 async function harness({ badges = true, events = true } = {}) {
-  const handlers = new Map(), disposal = [], requests = [], navigated = [], saved = new Map(), contributions = new Map()
+  const handlers = new Map(), disposal = [], requests = [], navigated = [], saved = new Map(), contributions = new Map(), timers = new Map()
   const states = [], effects = [], pendingEffects = []
   let cursor = 0, tree, page
   const hook = init => {
@@ -41,7 +41,9 @@ async function harness({ badges = true, events = true } = {}) {
     storage: { get: (key, fallback) => saved.get(key) ?? fallback, set: (key, value) => saved.set(key, value) },
     rest: path => new Promise((resolve, reject) => requests.push({ path, resolve, reject })),
   }
-  const context = vm.createContext({ document: { createElement: () => ({ dataset: {}, remove() {} }),
+  let timerId = 0
+  const context = vm.createContext({ setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id },
+    clearTimeout: id => timers.delete(id), document: { createElement: () => ({ dataset: {}, remove() {} }),
     head: { appendChild() {} }, hidden: false } })
   const mod = new vm.SourceTextModule(await readFile(new URL('../desktop/plugin.js', import.meta.url), 'utf8'), { context })
   const modules = { '@hermes/plugin-sdk': sdk, react, 'react/jsx-runtime': { jsx, jsxs: jsx } }
@@ -64,6 +66,7 @@ async function harness({ badges = true, events = true } = {}) {
   const walk = node => !node || typeof node !== 'object' ? []
     : [node, ...[node.props?.children].flat(Infinity).flatMap(child => walk(child))]
   return { ctx, requests, navigated, emit, render, saved, handlers, contributions, nodes: () => walk(tree),
+    flushTimers: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()) },
     unmount: () => { for (const e of effects) e?.drop?.() },
     remount: () => { states.length = 0; effects.length = 0; pendingEffects.length = 0; render() },
     dispose: () => { for (const fn of disposal) fn() } }
@@ -122,14 +125,16 @@ test('live refresh beats old tasks, history, forecast and badge requests', async
 
   h.emit('data.updated', {})
   h.render()
+  h.flushTimers()
   const staleTasks = h.requests.filter(r => r.path === '/tasks').at(-1)
   h.emit('data.updated', {})
   h.render()
+  h.flushTimers()
   const newerTasks = h.requests.filter(r => r.path === '/tasks').at(-1)
   newerTasks.resolve({ tasks: [{ board: 'default', id: 't_b', title: 'new', hint: {} }] })
   staleTasks.resolve({ tasks: [{ board: 'default', id: 't_a', title: 'stale', hint: {} }] })
   await tick(); h.render()
-  assert.equal(h.nodes().find(n => n.type === 'option').props.children, 'new')
+  assert.equal(h.nodes().find(n => n.type === 'option' && n.props.value === 'default\u0000t_b').props.children, 'new')
   h.unmount(); h.dispose()
 })
 
@@ -187,16 +192,51 @@ test('missing and ambiguous card ids do not silently focus another card', async 
   h.requests.find(r => r.path === '/tasks').resolve({ tasks: [{ board: 'default', id: 't_a', title: 'A', hint: {} }] })
   await tick(); h.render()
   assert.ok(h.nodes().some(n => n.props?.children === 'Requested card is not open or was not found.'))
+  const selector = h.nodes().find(n => n.type === 'select')
+  assert.ok(h.nodes().some(n => n.type === 'option' && n.props.value === ''))
+  selector.props.onChange({ target: { value: '' } })
+  h.render()
+  assert.ok(!h.nodes().some(n => n.props?.children === 'Requested card is not open or was not found.'))
+
+  const forecastCount = h.requests.filter(r => r.path.startsWith('/forecast')).length
   h.emit('view.set', { view: 'bars', item_id: 't_a' })
   h.requests.filter(r => r.path === '/tasks').at(-1).resolve({ tasks: [
     { board: 'alpha', id: 't_a', title: 'A', hint: {} }, { board: 'beta', id: 't_a', title: 'B', hint: {} },
   ] })
   await tick(); h.render()
   assert.ok(h.nodes().some(n => n.props?.children === 'Card id matches multiple boards; choose a card.'))
-  assert.ok(!h.requests.some(r => r.path.startsWith('/forecast')))
+  assert.equal(h.requests.filter(r => r.path.startsWith('/forecast')).length, forecastCount)
   h.nodes().find(n => n.type === 'select').props.onChange({ target: { value: 'beta\u0000t_a' } })
   h.render()
   assert.ok(h.requests.some(r => r.path.includes('board=beta&task_id=t_a')))
+  h.unmount(); h.dispose()
+})
+
+test('bursts of data.updated events debounce task and history reloads', async () => {
+  const h = await harness({ badges: false })
+  h.render()
+  const initial = h.requests.length
+  h.emit('data.updated', {})
+  h.emit('data.updated', {})
+  h.emit('data.updated', {})
+  assert.equal(h.requests.length, initial)
+  h.flushTimers()
+  assert.equal(h.requests.length, initial + 2)
+  h.unmount(); h.dispose()
+})
+
+test('an unresolved show request can be cleared when no cards are open', async () => {
+  const h = await harness({ badges: false })
+  h.emit('view.set', { view: 'bars', item_id: 'missing' })
+  h.render()
+  h.requests.find(r => r.path === '/tasks').resolve({ tasks: [] })
+  await tick(); h.render()
+  assert.ok(h.nodes().some(n => n.props?.children === 'Requested card is not open or was not found.'))
+  const selector = h.nodes().find(n => n.type === 'select')
+  assert.equal(selector.props.disabled, false)
+  selector.props.onChange({ target: { value: '' } })
+  h.render()
+  assert.ok(h.nodes().some(n => n.props?.children === 'No open Kanban cards.'))
   h.unmount(); h.dispose()
 })
 

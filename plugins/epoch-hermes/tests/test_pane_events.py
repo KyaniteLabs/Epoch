@@ -1,11 +1,17 @@
 """Agent-to-Desktop events contain only bounded view state, never task text."""
 import json
+import os
+import subprocess
 import sys
+import textwrap
+from pathlib import Path
 from types import ModuleType
 
 import pytest
 
 from conftest import fake_cmd, load_plugin
+
+PLUGIN_DIR = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
@@ -14,6 +20,7 @@ def broadcasts(monkeypatch):
     bridge = ModuleType("hermes_cli.plugin_events")
     bridge.broadcast_plugin_event = lambda *args: calls.append(args)
     monkeypatch.setitem(sys.modules, "hermes_cli.plugin_events", bridge)
+    monkeypatch.setitem(sys.modules, "tui_gateway.server", ModuleType("tui_gateway.server"))
     return calls
 
 
@@ -109,6 +116,31 @@ def test_hermes_absent_is_safe(monkeypatch):
     assert "open and enabled" in mod._show({"view": "bars"})
     assert "Capabilities -> Plugins" in mod._slash("status")
     assert "error" in mod._tool({"optimistic": 1})
+
+
+def test_real_hermes_bridge_does_not_change_stdout_when_tui_is_unloaded():
+    source = os.environ.get("HERMES_AGENT_SRC")
+    if not source or not (Path(source) / "hermes_cli" / "plugin_events.py").is_file():
+        pytest.skip("real Hermes source is not available")
+    if not (Path(source) / "tui_gateway" / "server.py").is_file():
+        pytest.skip("real Hermes TUI source is not available")
+    script = textwrap.dedent(f"""
+        import importlib.util, sys
+        before = sys.stdout
+        assert "tui_gateway.server" not in sys.modules
+        spec = importlib.util.spec_from_file_location(
+            "epoch_hermes_under_test", {str(PLUGIN_DIR)!r} + "/__init__.py",
+            submodule_search_locations=[{str(PLUGIN_DIR)!r}])
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        module._broadcast_pane_event("data.updated", {{}})
+        assert sys.stdout is before
+        assert "tui_gateway.server" not in sys.modules
+    """)
+    pythonpath = os.environ.get("PYTHONPATH", "")
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, (source, pythonpath))))
+    subprocess.run([os.environ.get("HERMES_PYTHON", sys.executable), "-c", script], env=env, check=True)
 
 
 @pytest.mark.parametrize("failure", [RuntimeError, SystemExit])
