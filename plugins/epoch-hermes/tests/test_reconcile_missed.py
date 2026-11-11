@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
-from conftest import calls, fake_cmd
+from conftest import PROFILE, calls, fake_cmd
 
 
 def _records(tmp_path):
@@ -92,3 +93,70 @@ def test_failing_bindings_cannot_starve_the_backlog(plugin, board, make_ctx, tmp
         if _records(tmp_path):
             break
     assert len(_records(tmp_path)) == 1
+
+
+def test_dead_lettered_actual_is_not_enqueued_again(plugin, make_ctx, tmp_path, monkeypatch):
+    make_ctx({"default": {"epoch_data_dir": str(tmp_path)}})
+    settings = plugin.snapshot_settings()
+    key = plugin._binding_key("t_dead", None, 7)
+    plugin._bindings_update(settings, lambda data: data.__setitem__(key, {"ref": "ref-dead"}))
+    monkeypatch.setattr(plugin, "show_task", lambda *_: {"runs": [{
+        "id": 7, "outcome": "completed", "started_at": 1, "ended_at": 2,
+    }]})
+    job = {"id": plugin._job_id("completed", "t_dead", None, 7), "kind": "completed",
+           "task_id": "t_dead", "board": None, "run_id": 7, "settings": settings,
+           "created_at": time.time(), "attempts": plugin.OUTBOX_MAX_ATTEMPTS,
+           "last_error": "permanent failure"}
+    plugin._dead_letter(job, "attempts_exhausted")
+
+    assert plugin.reconcile_missed_actuals(settings) == 0
+    assert plugin._job_id("completed", "t_dead", None, 7) not in make_ctx_state(plugin)
+
+
+def make_ctx_state(plugin):
+    return plugin._ctx.state.get(plugin.OUTBOX_KEY, {})
+
+
+def test_reconcile_runs_epoch_jobs_sequentially(plugin, make_ctx, tmp_path, monkeypatch):
+    make_ctx({"default": {"epoch_data_dir": str(tmp_path), "record_actuals": False}})
+    settings = {"epoch_data_dir": str(tmp_path), "record_actuals": True}
+    bindings = {plugin._binding_key(f"t_{i}", None, i): {"ref": f"ref-{i}"}
+                for i in range(4)}
+    plugin._bindings_update(settings, lambda data: data.update(bindings))
+    monkeypatch.setattr(plugin, "show_task", lambda task_id, _board: {"runs": [{
+        "id": int(task_id[2:]), "outcome": "completed", "started_at": 1, "ended_at": 2,
+    }]})
+    active = peak = 0
+
+    def slow_completed(*_args, **_kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        time.sleep(0.03)
+        active -= 1
+        return "done"
+
+    monkeypatch.setitem(plugin._JOBS, "completed", slow_completed)
+    assert plugin.reconcile_missed_actuals(settings, limit=4) == 4
+    assert plugin.wait_for_inflight(5)
+    assert peak == 1
+
+
+def test_maybe_reconcile_keeps_dispatcher_context(plugin, board, make_ctx, tmp_path, monkeypatch):
+    ctx = make_ctx({"default": {}, "dispatcher": {"epoch_data_dir": str(tmp_path)}})
+    task_id = board.create("completed task")
+    run_id = board.claim(task_id)
+    board.complete(task_id, run_id)
+    settings = {"epoch_data_dir": str(tmp_path), "record_actuals": True}
+    key = plugin._binding_key(task_id, None, run_id)
+    plugin._bindings_update(settings, lambda data: data.__setitem__(key, {"ref": "ref-1"}))
+    monkeypatch.setattr(plugin, "_reconcile_last", 0.0)
+
+    token = PROFILE.set("dispatcher")
+    try:
+        thread = plugin._maybe_reconcile()
+    finally:
+        PROFILE.reset(token)
+    assert thread is not None
+    thread.join(5)
+    assert ("dispatcher", "kanban_show") in [call[:2] for call in ctx.dispatch_calls]

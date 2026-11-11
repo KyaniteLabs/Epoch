@@ -100,6 +100,11 @@ _HINT_BAD_UNIT_RE = re.compile(
     rf"^[-+.\d][-+.\d\s/,]*?\s*(s|secs?|seconds?|mo|mos|months?|y|yrs?|years?|sprints?|sp|pts?|points?|q|quarters?)\b",
     re.IGNORECASE,
 )
+# Catch other trailing unit tokens too, including two-word units such as "business days".
+_HINT_TRAILING_UNIT_RE = re.compile(
+    rf"^[-+.\d][-+.\d\s/,]*?\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)\s*(?:$|[.;)\]])",
+    re.IGNORECASE,
+)
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
     rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.;)\]])",
@@ -194,8 +199,10 @@ def _scrubbed_env(settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
 def _error_text(res: Dict[str, Any]) -> str:
     err = res.get("error")
     if isinstance(err, dict):
-        return str(err.get("message") or err)
-    return str(err) if err is not None else "unknown error"
+        text = str(err.get("message") or err)
+    else:
+        text = str(err) if err is not None else "unknown error"
+    return _redact_home(text)
 
 
 def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -289,6 +296,16 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
         raise EstimateInputError(
             f"hint {m.group(0).strip()[:60]!r} uses unit {bad.group(1)!r}; use h, min, d or w "
             "(e.g. 'epoch: 2/4/10h')")
+    trailing_unit = _HINT_TRAILING_UNIT_RE.match(raw)
+    if trailing_unit:
+        candidate = trailing_unit.group(1)
+        first = candidate.split()[0]
+        prose = {"for", "to", "of", "about", "on", "with", "from", "in", "by", "as"}
+        allowed = (re.fullmatch(_UNIT, first, re.IGNORECASE) is not None and first != "M")
+        if first.lower() not in prose and not allowed:
+            raise EstimateInputError(
+                f"hint {m.group(0).strip()[:60]!r} uses unit {candidate!r}; use h, min, d or w "
+                "(e.g. 'epoch: 2/4/10h')")
     sm = _HINT_STRICT_RE.match(raw) or _HINT_DASH_RE.match(raw)
     if not sm:
         raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r} (expected e.g. 'epoch: 2/4/10h')")
@@ -1385,6 +1402,15 @@ def _split_binding_key(key: str) -> Optional[Tuple[Optional[str], str, str]]:
     return (None if board == "-" else board), task_id, run_id
 
 
+def _dead_letter_ids(settings: Optional[Dict[str, Any]]) -> set[str]:
+    try:
+        with _dead_letter_path(settings).open(encoding="utf-8") as handle:
+            return {str(row["id"]) for line in handle if line.strip()
+                    for row in [json.loads(line)] if isinstance(row, dict) and row.get("id")}
+    except (OSError, ValueError):
+        return set()
+
+
 def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
                              limit: int = RECONCILE_PER_PASS) -> int:
     """Record actuals whose completion hook never fired in this profile.
@@ -1403,6 +1429,9 @@ def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
     open_keys = [k for k, v in data.items()
                  if isinstance(v, dict) and v.get("ref") and ledger_outcome(v) is None
                  and not v.get("run_ended")]
+    dead_ids = _dead_letter_ids(settings)
+    outbox_ids: set[str] = set()
+    _outbox_update(lambda box: outbox_ids.update(box))
     queued = 0
     # A random sample, so bindings that keep failing (a deleted task, an unreachable board) can't
     # starve the rest of a large backlog.
@@ -1411,6 +1440,9 @@ def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
         if parsed is None:
             continue
         board, task_id, run_id = parsed
+        job_id = _job_id("completed", task_id, board, run_id)
+        if job_id in dead_ids or job_id in outbox_ids:
+            continue
         try:
             run = _run_for(show_task(task_id, board), run_id)
         except Exception:
@@ -1420,8 +1452,10 @@ def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
                 "epoch: run %s of task %s completed but its actual was never recorded; recording it "
                 "now. Enable the epoch plugin in the profile that runs this board's workers so "
                 "completions record directly.", run_id, task_id)
-            if _enqueue("completed", task_id, board, run_id) is not None:
+            thread = _enqueue("completed", task_id, board, run_id)
+            if thread is not None:
                 queued += 1
+                thread.join()
         elif run and run.get("ended_at") is not None:
             outcome = str(run.get("outcome") or "ended")
 
@@ -1443,6 +1477,7 @@ def _maybe_reconcile(force: bool = False) -> Optional[threading.Thread]:
             return None
         _reconcile_last = now
     settings = snapshot_settings()
+    run_context = contextvars.copy_context()
 
     def run() -> None:
         try:
@@ -1450,7 +1485,8 @@ def _maybe_reconcile(force: bool = False) -> Optional[threading.Thread]:
         except Exception:
             logger.debug("epoch: reconcile pass failed", exc_info=True)
 
-    thread = threading.Thread(target=run, name="epoch-reconcile", daemon=True)
+    thread = threading.Thread(target=run_context.run, args=(run,),
+                              name="epoch-reconcile", daemon=True)
     thread.start()
     return thread
 
