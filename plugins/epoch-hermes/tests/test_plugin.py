@@ -180,7 +180,6 @@ def test_f3_malformed_hint_fails_visibly(plugin, make_ctx, tmp_path, hint):
     ("estimate: 1-2-3 weeks", (40.0, 80.0, 120.0)),
     ("epoch: 1/2/3 days", (8.0, 16.0, 24.0)),
     ("epoch: 2/4/10h", (2.0, 4.0, 10.0)),
-    ("epoch: 2/4/10 for the API", (2.0, 4.0, 10.0)),
 ])
 def test_hint_units_convert_to_hours(plugin, hint, expected):
     hint_out, problem = plugin.find_hint("", hint)
@@ -192,14 +191,83 @@ def test_hint_units_convert_to_hours(plugin, hint, expected):
                                   "epoch: 10/20/30 secs", "epoch: 1/2/3 fortnights",
                                   "epoch: 1/2/3 business days", "epoch: 1/2/3 person-days",
                                   "epoch: 1/2/3 ms", "epoch: 1/2/3 M",
-                                  "epoch: 1/2/3 story-points"])
+                                  "epoch: 1/2/3 story-points",
+                                  "epoch: 2/4/10 business days, roughly",
+                                  "epoch: 2/4/10 business days for the migration",
+                                  "epoch: 3/5/8 story points (rough)",
+                                  "epoch: 1/2/4 fortnights, maybe more",
+                                  "epoch: 2/4/10 dev days - owner",
+                                  "epoch: 2/4/10 for the API",
+                                  "epoch: 2/4/10 días",
+                                  "estimate: 1/2/26 ship date, tbc",
+                                  "epoch: 1/2/3 fortnights to finish this task",
+                                  "epoch: 1/2/3 ms per operation",
+                                  "epoch: 2/4/10, sprints", "epoch: 2/4/10 (sprints)",
+                                  "epoch: 2/4/10; months",
+                                  "epoch: 2/4/10 - weeks of work", "epoch: 2/4/10 ~sprints"])
 def test_hint_with_unknown_unit_is_refused_not_read_as_hours(plugin, hint):
     hint_out, problem = plugin.find_hint("", hint)
-    assert hint_out is None and "unit" in problem
+    assert hint_out is None and ("unit" in problem or "text after the estimate" in problem)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 roughly", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 approx", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 maybe", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 days, roughly", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 (rough)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10!", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10h for the API", (2.0, 4.0, 10.0)),
+])
+def test_hint_allows_units_and_unitless_qualifiers(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 (hours)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 (h)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 *days*", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 _days_", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 `d`", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10. Then prose", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10. Then the API", (2.0, 4.0, 10.0)),
+])
+def test_hint_structural_unit_wrappers_and_sentence_end(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expects_text", [
+    ("epoch: 2/4/10 day(s)", False),
+    ("epoch: 2/4/10 week's work", False),
+    ("epoch: 2/4/10 h/day", False),
+    ("epoch: 2/4/10 for the API", True),
+    ("epoch: 2/4/10 — owner", True),
+])
+def test_hint_rejects_invalid_first_token_without_claiming_a_unit(plugin, hint, expects_text):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert problem
+    if expects_text:
+        assert "text after the estimate" in problem
+    else:
+        assert "malformed unit" in problem
 
 
 def test_f3_prose_without_numbers_is_not_a_hint(plugin):
     assert plugin.find_hint("Estimate: TBD", "epoch: later") == (None, None)
+
+
+def test_slash_error_redacts_home_path(plugin, make_ctx, monkeypatch):
+    make_ctx({"default": {}})
+    monkeypatch.setattr(plugin, "run_epoch", lambda *_args, **_kwargs: {
+        "ok": False, "error": f"cannot read {Path.home()}/private/data"})
+    result = plugin._slash("pert-estimate --optimistic 1 --most-likely 2 --pessimistic 3")
+    assert str(Path.home()) not in result
+    assert "~/private/data" in result
 
 
 # ---------------------------------------------------------------- finding 4: cross-profile
@@ -386,7 +454,9 @@ def test_epoch_data_dir_setting_pins_the_ledger(plugin, make_ctx, tmp_path):
 
 def test_plugin_imports_no_private_hermes_modules():
     src = (PLUGIN_DIR / "__init__.py").read_text()
-    assert not re.search(r"^\s*(from|import)\s+hermes_cli", src, re.M)
+    # The optional, public Desktop bridge is the sole Hermes import.
+    imports = re.findall(r"^\s*(?:from|import)\s+(hermes_cli[\w.]*)", src, re.M)
+    assert imports == ["hermes_cli.plugin_events"]
     assert "kanban_db" not in src
 
 

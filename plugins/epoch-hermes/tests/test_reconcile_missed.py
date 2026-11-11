@@ -95,6 +95,37 @@ def test_failing_bindings_cannot_starve_the_backlog(plugin, board, make_ctx, tmp
     assert len(_records(tmp_path)) == 1
 
 
+def test_dead_bindings_are_filtered_before_reconcile_sample(plugin, make_ctx, tmp_path, monkeypatch):
+    make_ctx({"default": {"epoch_data_dir": str(tmp_path)}})
+    settings = {"epoch_data_dir": str(tmp_path), "record_actuals": True}
+    live_key = plugin._binding_key("t_live", None, 99)
+    plugin._bindings_update(settings, lambda data: data.update({
+        **{f"-:gone{i}:{i}": {"ref": f"dead-{i}"} for i in range(30)},
+        live_key: {"ref": "live-ref"},
+    }))
+    dead_path = plugin._dead_letter_path(settings)
+    dead_path.write_text("".join(json.dumps({"id": plugin._job_id("completed", f"gone{i}", None, i)}) + "\n"
+                            for i in range(30)))
+    plugin._outbox_update(lambda box: box.update({
+        plugin._job_id("completed", "t_live", None, 99): {"id": plugin._job_id("completed", "t_live", None, 99)}
+    }))
+    sampled = []
+    monkeypatch.setattr(plugin.random, "sample", lambda population, count: sampled.extend(population) or population[:count])
+    monkeypatch.setattr(plugin, "show_task", lambda *_: {"runs": []})
+
+    plugin.reconcile_missed_actuals(settings, limit=1)
+
+    assert sampled == []  # dead and outbox IDs are removed before the bounded sample
+
+
+def test_corrupt_dead_letter_line_does_not_hide_valid_ids(plugin, make_ctx, tmp_path):
+    make_ctx({"default": {"epoch_data_dir": str(tmp_path)}})
+    path = plugin._dead_letter_path({"epoch_data_dir": str(tmp_path)})
+    path.write_text('{"id":"valid-before"}\nnot-json\n{"id":"valid-after"}\n')
+
+    assert plugin._dead_letter_ids({"epoch_data_dir": str(tmp_path)}) == {"valid-before", "valid-after"}
+
+
 def test_dead_lettered_actual_is_not_enqueued_again(plugin, make_ctx, tmp_path, monkeypatch):
     make_ctx({"default": {"epoch_data_dir": str(tmp_path)}})
     settings = plugin.snapshot_settings()
