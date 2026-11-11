@@ -26,6 +26,18 @@ def test_failure_text_never_carries_the_home_path(tmp_path, monkeypatch):
     assert str(home) not in res["error"] and "~/.epoch/ledger is locked" in res["error"]
 
 
+def test_error_text_redacts_home_from_cli_and_exception_messages(tmp_path, monkeypatch):
+    p = load_plugin()
+    home = tmp_path / "private-home"
+    monkeypatch.setenv("HOME", str(home))
+    for error in (f"permission denied: {home}/plugin-data/epoch", {
+            "message": f"permission denied: {home}/plugin-data/epoch",
+    }):
+        text = p._error_text({"error": error})
+        assert str(home) not in text
+        assert "~/plugin-data/epoch" in text
+
+
 def test_completion_retries_the_outbox_at_most_every_interval(monkeypatch):
     p = load_plugin()
     replays = []

@@ -189,7 +189,10 @@ def test_hint_units_convert_to_hours(plugin, hint, expected):
 
 
 @pytest.mark.parametrize("hint", ["epoch: 1/2/3 sprints", "epoch: 1/2/3 months", "estimate: 5/8/13 points",
-                                  "epoch: 10/20/30 secs"])
+                                  "epoch: 10/20/30 secs", "epoch: 1/2/3 fortnights",
+                                  "epoch: 1/2/3 business days", "epoch: 1/2/3 person-days",
+                                  "epoch: 1/2/3 ms", "epoch: 1/2/3 M",
+                                  "epoch: 1/2/3 story-points"])
 def test_hint_with_unknown_unit_is_refused_not_read_as_hours(plugin, hint):
     hint_out, problem = plugin.find_hint("", hint)
     assert hint_out is None and "unit" in problem
