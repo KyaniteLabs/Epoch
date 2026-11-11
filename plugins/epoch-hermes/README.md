@@ -106,6 +106,8 @@ plugin, ledger and Epoch CLI stay on the Hermes host.
 
 ## Tests
 
+Needs `pytest` and `hypothesis` (the binding state-machine property test).
+
 ```bash
 python -m pytest plugins/epoch-hermes/tests               # unit + fake-Epoch regression tests
 HERMES_AGENT_SRC=/path/to/hermes-agent python -m pytest plugins/epoch-hermes/tests   # + real Hermes, separate processes

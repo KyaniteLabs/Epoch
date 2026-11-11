@@ -58,6 +58,7 @@ import threading
 import time
 import tempfile
 from contextlib import contextmanager, suppress
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -554,6 +555,100 @@ def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Option
     return dict(raw) if isinstance(raw, dict) else None
 
 
+# --------------------------------------------------------------------------- run-binding state
+#
+# One run binding (``hermes-run-bindings.json`` → ``"<board>:<task>:<run>"``) carries two
+# independent state machines. Persisted keys and values are unchanged; these names are the
+# only place the stages are spelled out, and every write goes through one transition below.
+#
+# 1. Ledger outcome (keys ``recorded`` + ``status``):
+#
+#        UNRECORDED ──record(recorded)──▶ RECORDED
+#            │ ├──────record(duplicate)─▶ DUPLICATE      (terminal; a *different* terminal
+#            │ └──────record(rejected)──▶ REJECTED        outcome is refused, the same one is
+#                                                         idempotent; keep_existing defers to
+#                                                         whatever the first recorder stored)
+#
+# 2. Comment delivery, once per kind ∈ {estimate, actual}
+#    (keys ``<kind>_comment_body`` / ``<kind>_delivery_in_flight`` / ``<kind>_commented``):
+#
+#        NONE ──set body──▶ PENDING ──claim──▶ IN_FLIGHT ──complete──▶ DELIVERED (terminal)
+#                             ▲                   │
+#                             └──release/expiry───┘
+#
+#    NONE (no body yet) and DELIVERED both read as "terminal" to a deliverer: nothing to post.
+
+
+class LedgerOutcome(str, Enum):
+    """Terminal Epoch-ledger outcome of a run's wall-clock actual (persisted as ``status``)."""
+
+    RECORDED = "recorded"
+    DUPLICATE = "duplicate"
+    REJECTED = "rejected"
+
+
+class CommentKind(str, Enum):
+    ESTIMATE = "estimate"
+    ACTUAL = "actual"
+
+
+class Delivery(str, Enum):
+    """Derived audit-comment delivery stage for one :class:`CommentKind` (never persisted)."""
+
+    NONE = "none"
+    PENDING = "pending"
+    IN_FLIGHT = "in_flight"
+    DELIVERED = "delivered"
+
+
+class IllegalBindingTransition(RuntimeError):
+    """A write that would move a run binding along an edge the diagram above does not have."""
+
+
+def _kind(kind: Any) -> CommentKind:
+    try:
+        return CommentKind(kind)
+    except ValueError:
+        raise IllegalBindingTransition(f"unknown comment kind {kind!r}") from None
+
+
+def _body_key(kind: CommentKind) -> str:
+    return f"{kind.value}_comment_body"
+
+
+def _claim_key(kind: CommentKind) -> str:
+    return f"{kind.value}_delivery_in_flight"
+
+
+def _commented_key(kind: CommentKind) -> str:
+    return f"{kind.value}_commented"
+
+
+def ledger_outcome(binding: Optional[Dict[str, Any]]) -> Optional[LedgerOutcome]:
+    """``None`` while UNRECORDED. Tolerant of legacy rows: ``recorded`` without a (known)
+    ``status`` reads as RECORDED, since ``recorded`` has always been the authority."""
+    if not binding or not binding.get("recorded"):
+        return None
+    try:
+        return LedgerOutcome(binding.get("status"))
+    except ValueError:
+        return LedgerOutcome.RECORDED
+
+
+def delivery_state(binding: Optional[Dict[str, Any]], kind: Any) -> Delivery:
+    k = _kind(kind)
+    if not binding:
+        return Delivery.NONE
+    if binding.get(_commented_key(k)):
+        return Delivery.DELIVERED
+    if not binding.get(_body_key(k)):
+        return Delivery.NONE
+    claim = binding.get(_claim_key(k))
+    if claim and not _delivery_claim_expired(claim):
+        return Delivery.IN_FLIGHT
+    return Delivery.PENDING
+
+
 def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
                      run_id: Any, ref: str, *,
                      estimate_comment_body: Optional[str] = None) -> None:
@@ -563,7 +658,8 @@ def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Op
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else {}
         if cur.get("ref"):
-            # First writer wins on ref; still attach a pending comment body if a crash left none.
+            # First writer wins on ref; still attach a pending comment body if a crash left none
+            # (estimate delivery NONE → PENDING).
             if estimate_comment_body and not cur.get("estimate_comment_body"):
                 cur = dict(cur)
                 cur["estimate_comment_body"] = estimate_comment_body
@@ -582,24 +678,62 @@ def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Op
     _bindings_update(settings, mutate)
 
 
-def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id: str,
-                                     board: Optional[str], run_id: Any) -> None:
+def _transition_mark_commented(cur: Dict[str, Any], kind: CommentKind) -> Dict[str, Any]:
+    """PENDING | IN_FLIGHT → DELIVERED (DELIVERED → DELIVERED is a no-op). NONE is refused:
+    there is no body, so nothing can have been posted."""
+    if delivery_state(cur, kind) is Delivery.NONE:
+        raise IllegalBindingTransition(f"{kind.value} comment marked delivered with no body")
+    cur = dict(cur)
+    cur[_commented_key(kind)] = True
+    cur.pop(_claim_key(kind), None)
+    return cur
+
+
+def _binding_mark_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                            board: Optional[str], run_id: Any, kind: Any) -> None:
+    k = _kind(kind)
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur:
             return
-        cur = dict(cur)
-        cur["estimate_commented"] = True
-        cur.pop("estimate_delivery_in_flight", None)
-        data[key] = cur
+        data[key] = _transition_mark_commented(cur, k)
 
     _bindings_update(settings, mutate)
 
 
+def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                                     board: Optional[str], run_id: Any) -> None:
+    _binding_mark_commented(settings, task_id, board, run_id, CommentKind.ESTIMATE)
+
+
+def _binding_mark_actual_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                                   board: Optional[str], run_id: Any) -> None:
+    _binding_mark_commented(settings, task_id, board, run_id, CommentKind.ACTUAL)
+
+
+def _transition_record(cur: Dict[str, Any], outcome: LedgerOutcome,
+                       actual_comment_body: Optional[str], keep_existing: bool) -> Dict[str, Any]:
+    """UNRECORDED → outcome. Already terminal: ``keep_existing`` keeps the stored outcome/body
+    (the duplicate path defers to whoever appended); otherwise only the same outcome is
+    accepted (idempotent re-mark) and a different one is refused."""
+    prior = ledger_outcome(cur)
+    if prior is not None and not keep_existing and prior is not outcome:
+        raise IllegalBindingTransition(
+            f"ledger outcome already {prior.value}; refusing to overwrite with {outcome.value}")
+    cur = dict(cur)
+    cur["recorded"] = True
+    if not (keep_existing and prior is not None and cur.get("status")):
+        cur["status"] = outcome.value
+    if actual_comment_body is not None and not (keep_existing and cur.get("actual_comment_body")):
+        cur["actual_comment_body"] = actual_comment_body
+    cur.setdefault("actual_commented", False)
+    return cur
+
+
 def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
-                           run_id: Any, *, status: str,
+                           run_id: Any, *, status: Any,
                            actual_comment_body: Optional[str] = None,
                            keep_existing: bool = False) -> None:
     """Mark the Epoch ledger outcome. Does not imply the audit comment was delivered.
@@ -607,37 +741,17 @@ def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, boa
     With ``keep_existing`` (duplicate path) a status/body already stored by the recorder that
     actually appended to the ledger wins; only a missing body is filled in.
     """
+    try:
+        outcome = LedgerOutcome(status)
+    except ValueError:
+        raise IllegalBindingTransition(f"unknown ledger outcome {status!r}") from None
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur:
             return
-        cur = dict(cur)
-        had = bool(cur.get("recorded"))
-        cur["recorded"] = True
-        if not (keep_existing and had and cur.get("status")):
-            cur["status"] = status
-        if actual_comment_body is not None and not (keep_existing and cur.get("actual_comment_body")):
-            cur["actual_comment_body"] = actual_comment_body
-        cur.setdefault("actual_commented", False)
-        data[key] = cur
-
-    _bindings_update(settings, mutate)
-
-
-def _binding_mark_actual_commented(settings: Optional[Dict[str, Any]], task_id: str,
-                                   board: Optional[str], run_id: Any) -> None:
-    key = _binding_key(task_id, board, run_id)
-
-    def mutate(data: Dict[str, Any]) -> None:
-        cur = data.get(key) if isinstance(data.get(key), dict) else None
-        if not cur:
-            return
-        cur = dict(cur)
-        cur["actual_commented"] = True
-        cur.pop("actual_delivery_in_flight", None)
-        data[key] = cur
+        data[key] = _transition_record(cur, outcome, actual_comment_body, keep_existing)
 
     _bindings_update(settings, mutate)
 
@@ -662,20 +776,18 @@ _DELIVERY_CONTESTED = "contested"
 
 
 def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                            board: Optional[str], run_id: Any, *, kind: str
+                            board: Optional[str], run_id: Any, *, kind: Any
                             ) -> Tuple[Optional[str], str]:
     """Atomically claim the right to post the pending *kind* comment under the bindings flock.
 
-    Returns ``(body, "claimed")`` on success, ``(None, "terminal")`` when already delivered or
-    nothing to post, or ``(None, "contested")`` when another live claim still holds the slot.
-    Callers must not treat contested as success — raise (or otherwise leave the outbox job
-    pending) so a peer can retry after the lease expires or is released. A BoardError after
-    claiming must call :func:`_release_comment_delivery` so a peer (or retry) can reclaim.
+    PENDING → IN_FLIGHT (or a re-claim of our own IN_FLIGHT). Returns ``(body, "claimed")`` on
+    success, ``(None, "terminal")`` when NONE/DELIVERED, or ``(None, "contested")`` when another
+    live claim still holds the slot. Callers must not treat contested as success — raise (or
+    otherwise leave the outbox job pending) so a peer can retry after the lease expires or is
+    released. A BoardError after claiming must call :func:`_release_comment_delivery`.
     """
+    k = _kind(kind)
     key = _binding_key(task_id, board, run_id)
-    flag = f"{kind}_commented"
-    body_key = f"{kind}_comment_body"
-    claim_key = f"{kind}_delivery_in_flight"
     result: Dict[str, Any] = {"body": None, "status": _DELIVERY_TERMINAL}
     now = time.time()
     claim = {
@@ -686,15 +798,12 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
-        if not cur or cur.get(flag):
+        state = delivery_state(cur, k)
+        if state in (Delivery.NONE, Delivery.DELIVERED):
             result["status"] = _DELIVERY_TERMINAL
             return
-        body = cur.get(body_key)
-        if not body:
-            result["status"] = _DELIVERY_TERMINAL
-            return
-        existing = cur.get(claim_key)
-        if existing and not _delivery_claim_expired(existing):
+        if state is Delivery.IN_FLIGHT:
+            existing = cur.get(_claim_key(k))
             same = (isinstance(existing, dict)
                     and existing.get("pid") == claim["pid"]
                     and existing.get("tid") == claim["tid"])
@@ -702,9 +811,9 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
                 result["status"] = _DELIVERY_CONTESTED
                 return
         cur = dict(cur)
-        cur[claim_key] = claim
+        cur[_claim_key(k)] = claim
         data[key] = cur
-        result["body"] = str(body)
+        result["body"] = str(cur.get(_body_key(k)))
         result["status"] = _DELIVERY_CLAIMED
 
     _bindings_update(settings, mutate)
@@ -712,72 +821,78 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
 
 
 def _release_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                              board: Optional[str], run_id: Any, *, kind: str) -> None:
-    """Drop an in-flight delivery claim (BoardError / crash-recovery path)."""
+                              board: Optional[str], run_id: Any, *, kind: Any) -> None:
+    """IN_FLIGHT → PENDING: drop our (or an expired) claim (BoardError / crash-recovery path)."""
+    k = _kind(kind)
     key = _binding_key(task_id, board, run_id)
-    claim_key = f"{kind}_delivery_in_flight"
     me = (os.getpid(), threading.get_ident())
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur:
             return
-        existing = cur.get(claim_key)
+        existing = cur.get(_claim_key(k))
         if not isinstance(existing, dict):
             return
         if (existing.get("pid"), existing.get("tid")) != me and not _delivery_claim_expired(existing):
             return
         cur = dict(cur)
-        cur.pop(claim_key, None)
+        cur.pop(_claim_key(k), None)
         data[key] = cur
 
     _bindings_update(settings, mutate)
 
 
 def _complete_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                               board: Optional[str], run_id: Any, *, kind: str) -> None:
-    """Mark *kind* comment delivered and clear any in-flight claim."""
-    if kind == "estimate":
+                               board: Optional[str], run_id: Any, *, kind: Any) -> None:
+    """Mark *kind* comment delivered and clear any in-flight claim.
+
+    Dispatches through the per-kind module names so tests (and crash simulations) can patch them.
+    """
+    if _kind(kind) is CommentKind.ESTIMATE:
         _binding_mark_estimate_commented(settings, task_id, board, run_id)
     else:
         _binding_mark_actual_commented(settings, task_id, board, run_id)
 
 
-def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
-                              binding: Dict[str, Any],
-                              settings: Optional[Dict[str, Any]]) -> None:
-    """Post a pending estimate/audit comment without re-running Epoch.
+def _deliver_comment(task_id: str, board: Optional[str], run_id: Any,
+                     binding: Dict[str, Any], settings: Optional[Dict[str, Any]],
+                     kind: CommentKind) -> Tuple[bool, Dict[str, Any]]:
+    """Drive *kind* delivery to a terminal stage. Returns ``(posted_now, last_seen_binding)``.
 
-    Delivery is claimed under the bindings flock so concurrent claimed_job racers cannot
-    double-post. A BoardError releases the claim for retry. Contested (another live claim)
-    raises after a brief spin so ``claimed_job`` / ``_run_job`` leave the outbox entry pending
-    — never treat a held lease as terminal success.
+    Delivery is claimed under the bindings flock so concurrent racers cannot double-post. A
+    BoardError releases the claim for retry. Contested (another live claim) raises after a brief
+    spin so the outbox leaves the job pending — never treat a held lease as terminal success.
     """
-    if binding.get("estimate_commented"):
-        return
-    # Brief spin: another live claim may finish (or release) momentarily.
+    if binding.get(_commented_key(kind)):
+        return False, binding
     deadline = time.time() + 2.0
     while True:
         fresh = _binding_get(settings, task_id, board, run_id) or binding
-        if fresh.get("estimate_commented"):
-            return
-        if not fresh.get("estimate_comment_body"):
-            return
-        body, status = _claim_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+        if delivery_state(fresh, kind) in (Delivery.NONE, Delivery.DELIVERED):
+            return False, fresh
+        body, status = _claim_comment_delivery(settings, task_id, board, run_id, kind=kind)
         if status == _DELIVERY_CLAIMED and body is not None:
             try:
                 add_comment(task_id, board, body)
             except Exception:
-                _release_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+                _release_comment_delivery(settings, task_id, board, run_id, kind=kind)
                 raise
-            _complete_comment_delivery(settings, task_id, board, run_id, kind="estimate")
-            return
+            _complete_comment_delivery(settings, task_id, board, run_id, kind=kind)
+            return True, fresh
         if status == _DELIVERY_TERMINAL:
-            return
+            return False, fresh
         if time.time() >= deadline:
             # Still contested after wait — leave non-terminal so the outbox retries.
-            raise RuntimeError("estimate comment delivery contested")
+            raise RuntimeError(f"{kind.value} comment delivery contested")
         time.sleep(0.02)
+
+
+def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
+                              binding: Dict[str, Any],
+                              settings: Optional[Dict[str, Any]]) -> None:
+    """Post a pending estimate/audit comment without re-running Epoch."""
+    _deliver_comment(task_id, board, run_id, binding, settings, CommentKind.ESTIMATE)
 
 
 def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
@@ -786,37 +901,13 @@ def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
     """Post a pending actual/rejection comment without re-recording. Returns status string.
 
     Once delivery has finished (or there is nothing to post), further calls return
-    ``already_recorded`` so the outbox treats the job as terminal. Concurrent success and
-    duplicate recorders serialize on the claim so the audit comment is posted at most once
-    per successful claim cycle.
+    ``already_recorded`` so the outbox treats the job as terminal; a post made by this call
+    returns the binding's ledger outcome.
     """
-    if binding.get("actual_commented"):
+    posted, fresh = _deliver_comment(task_id, board, run_id, binding, settings, CommentKind.ACTUAL)
+    if not posted:
         return "already_recorded"
-    # Brief spin: another live claim may finish momentarily.
-    deadline = time.time() + 2.0
-    while True:
-        fresh = _binding_get(settings, task_id, board, run_id) or binding
-        if fresh.get("actual_commented"):
-            return "already_recorded"
-        if not fresh.get("actual_comment_body"):
-            return "already_recorded"
-        body, claim_status = _claim_comment_delivery(
-            settings, task_id, board, run_id, kind="actual")
-        if claim_status == _DELIVERY_CLAIMED and body is not None:
-            try:
-                add_comment(task_id, board, body)
-            except Exception:
-                _release_comment_delivery(settings, task_id, board, run_id, kind="actual")
-                raise
-            _complete_comment_delivery(settings, task_id, board, run_id, kind="actual")
-            status = str(fresh.get("status") or "recorded")
-            return status if status != "recorded" else "recorded"
-        if claim_status == _DELIVERY_TERMINAL:
-            return "already_recorded"
-        if time.time() >= deadline:
-            # Still contested after wait — leave non-terminal so the outbox retries.
-            raise RuntimeError("actual comment delivery contested")
-        time.sleep(0.02)
+    return (ledger_outcome(fresh) or LedgerOutcome.RECORDED).value
 
 
 # --------------------------------------------------------------------------- jobs

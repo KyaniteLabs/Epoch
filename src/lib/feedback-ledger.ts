@@ -9,6 +9,7 @@ import { readLines, dataDir, withLedgerWriteLock, ESTIMATES_FILE, ACTUALS_FILE, 
 import type { EstimateRecord, ActualRecord } from "./ledger.js";
 import { canonicalizeToolName } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
+import { estimateStage } from "./estimate-lifecycle.js";
 
 export type { EstimateRecord, ActualRecord };
 
@@ -84,22 +85,18 @@ function findDedupMatch(
   actualsFile: string,
 ): string | null {
   const signature = inputsSignature(inputs);
-  const cutoffMs = Date.now() - windowMinutes * 60_000;
   const nowMs = Date.now();
+  const cutoffMs = nowMs - windowMinutes * 60_000;
   const estimates = readLines<EstimateRecord>(estimatesFile);
   const actualIds = new Set(readLines<ActualRecord>(actualsFile).map((a) => a.estimateId));
 
   const candidates = estimates.filter((e) => {
-    if (actualIds.has(e.id)) return false; // must still be pending
+    if (estimateStage(e, actualIds.has(e.id), nowMs) !== "pending") return false; // must still be pending
     if ((canonicalizeToolName(e.tool) ?? e.tool) !== canonicalTool) return false;
     if (stringField(e.inputs["session_id"]) !== sessionId) return false;
     if (inputsSignature(e.inputs) !== signature) return false;
     const estimatedAtMs = Date.parse(e.estimatedAt);
     if (!Number.isFinite(estimatedAtMs) || estimatedAtMs < cutoffMs) return false;
-    if (e.expiresAt) {
-      const expiresMs = Date.parse(e.expiresAt);
-      if (Number.isFinite(expiresMs) && expiresMs <= nowMs) return false;
-    }
     return true;
   });
 

@@ -67,7 +67,7 @@ jobs:
         # e2e tests skip here (they need HERMES_AGENT_SRC); see plugins/epoch-hermes/README.md.
         run: |
           python3 -m venv /tmp/epoch-hermes-venv
-          /tmp/epoch-hermes-venv/bin/pip install --quiet "pytest==8.4.2"
+          /tmp/epoch-hermes-venv/bin/pip install --quiet "pytest==8.4.2" "hypothesis==6.135.0"
           /tmp/epoch-hermes-venv/bin/python -m pytest plugins/epoch-hermes/tests -q
 
       - name: Validate community data
