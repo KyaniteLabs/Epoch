@@ -77,7 +77,7 @@
         "-euo",
         "pipefail",
         "-c",
-        "curl -sSfL -o /tmp/gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz && echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz' | sha256sum -c - && tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks && src=$(mktemp -d) && git archive HEAD | tar -x -C \"$src\" && /tmp/gitleaks dir \"$src\" --no-banner --redact --verbose --exit-code 1"
+        "case \"$(uname -m)\" in x86_64) arch=x64; sum=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb;; aarch64|arm64) arch=arm64; sum=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080;; *) echo \"no pinned gitleaks build for $(uname -m)\" >&2; exit 1;; esac && curl -sSfL -o /tmp/gitleaks.tgz \"https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_${arch}.tar.gz\" && echo \"$sum  /tmp/gitleaks.tgz\" | sha256sum -c - && tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks && src=$(mktemp -d) && git archive HEAD | tar -x -C \"$src\" && /tmp/gitleaks dir \"$src\" --no-banner --redact --verbose --exit-code 1"
       ]
     },
     {
