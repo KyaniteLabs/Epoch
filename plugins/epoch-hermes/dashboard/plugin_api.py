@@ -256,12 +256,17 @@ def read_history(data_dir: Path, keep: int = HISTORY_KEEP) -> List[Dict[str, Any
 
 
 def read_badges(bindings_path: Path) -> Dict[str, Dict[str, Any]]:
-    """task id -> P50/P90 hours from the newest run's posted estimate."""
+    """task id -> P50/P90 hours from the newest run's posted estimate.
+
+    Desktop's card decorator only sees the card id, never its board. A task id bound on two
+    boards is therefore ambiguous and gets no badge, rather than showing another board's
+    estimate on the wrong card."""
     try:
         data = json.loads(bindings_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     best: Dict[str, tuple] = {}
+    boards: Dict[str, set] = {}
     if not isinstance(data, dict):
         return {}
     for key, val in data.items():
@@ -272,6 +277,7 @@ def read_badges(bindings_path: Path) -> Dict[str, Dict[str, Any]]:
         m = _BODY_PCT_RE.search(str(val.get("estimate_comment_body") or ""))
         if not m:
             continue
+        boards.setdefault(task_id, set()).add(board)
         try:
             run_n = int(run)
         except ValueError:
@@ -279,7 +285,7 @@ def read_badges(bindings_path: Path) -> Dict[str, Dict[str, Any]]:
         if task_id not in best or run_n > best[task_id][0]:
             best[task_id] = (run_n, {"board": board, "p50_hours": float(m.group(1)),
                                      "p90_hours": float(m.group(2))})
-    return {k: v[1] for k, v in best.items()}
+    return {k: v[1] for k, v in best.items() if len(boards.get(k, ())) == 1}
 
 
 def _check_ref(board: str, task_id: str) -> None:

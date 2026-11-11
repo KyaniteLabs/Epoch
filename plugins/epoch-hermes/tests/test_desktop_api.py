@@ -237,3 +237,16 @@ def test_badge_regex_matches_what_the_plugin_posts(env):
     out = env.plugin._monte_carlo("Ship", {"optimistic": 8.0, "most_likely": 16.0, "pessimistic": 40.0}, "hint", settings)
     m = env.api._BODY_PCT_RE.search(out["summary"])
     assert m and float(m.group(1)) == 16.0 and float(m.group(2)) == 20.8
+
+
+def test_same_task_id_on_two_boards_gets_no_badge(env):
+    """Desktop decorates by card id only, so a task id bound on two boards is ambiguous:
+    no badge beats the other board's estimate on the wrong card."""
+    bindings = {
+        "alpha:same-task:1": {"estimate_comment_body": "P50 1.0h · P90 2.0h"},
+        "beta:same-task:2": {"estimate_comment_body": "P50 99.0h · P90 120.0h"},
+        "alpha:solo:1": {"estimate_comment_body": "P50 3.0h · P90 4.0h"},
+    }
+    (env.ledger / env.plugin.BINDINGS_FILE).write_text(json.dumps(bindings))
+    got = env.client.get("/api/plugins/epoch/badges").json()["tasks"]
+    assert got == {"solo": {"board": "alpha", "p50_hours": 3.0, "p90_hours": 4.0}}
