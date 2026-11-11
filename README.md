@@ -756,7 +756,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 - **CLI**: Commander.js
 - **Date Handling**: `date-fns` 4.x + `date-fns-tz` 3.x
 - **Build**: `tsup` (ESM output)
-- **Testing**: `vitest` 4.x with v8 coverage (97% statements, 88% branches)
+- **Testing**: `vitest` 4.x with v8 coverage (91% statements, 83% branches)
 
 ## Configuration
 

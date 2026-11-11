@@ -719,7 +719,12 @@ def _transition_record(cur: Dict[str, Any], outcome: LedgerOutcome,
     (the duplicate path defers to whoever appended); otherwise only the same outcome is
     accepted (idempotent re-mark) and a different one is refused."""
     prior = ledger_outcome(cur)
-    if prior is not None and not keep_existing and prior is not outcome:
+    # DUPLICATE → RECORDED is the one upgrade allowed. Two recorders race: the loser can see
+    # Epoch's ``duplicate`` rejection and mark the binding before the winner, whose append is
+    # what actually landed, gets to mark it. The winner's outcome is the truth, so it replaces
+    # the loser's status and pending notice.
+    upgrade = prior is LedgerOutcome.DUPLICATE and outcome is LedgerOutcome.RECORDED
+    if prior is not None and not keep_existing and prior is not outcome and not upgrade:
         raise IllegalBindingTransition(
             f"ledger outcome already {prior.value}; refusing to overwrite with {outcome.value}")
     cur = dict(cur)
