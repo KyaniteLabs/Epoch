@@ -31,7 +31,8 @@ MAX_TASKS = 300
 HISTORY_KEEP = 12
 _TASK_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 _BOARD_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
-_BODY_PCT_RE = re.compile(r"P50 ([\d.]+)h\s*·\s*P90 ([\d.]+)h")
+# Hours ("4.0h"), or whole minutes below an hour ("25m").
+_BODY_PCT_RE = re.compile(r"P50 ([\d.]+)([hm])\s*·\s*P90 ([\d.]+)([hm])")
 _PRIVATE = "_epoch_hermes_desktop_backend"
 _cache: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
 _cache_lock = threading.Lock()
@@ -193,7 +194,7 @@ def run_forecast(mod, settings: Dict[str, Any], title: str, triple: Dict[str, fl
     for r in d.get("riskEvents") or []:
         if isinstance(r, dict) and isinstance(r.get("description"), str):
             risks.append({"description": r["description"][:200], "probability": _num(r.get("probability")),
-                          "impact_days": _num(r.get("impact"))})
+                          "impact_days": _num(r.get("impactDays", r.get("impact")))})
     out = {"ok": True, "iterations": iterations, "seed": SEED if not old_cli else None,
            "percentiles_days": pct, "distribution": dist, "risks": risks[:6],
            "needs_epoch_0_8": dist is None}
@@ -283,9 +284,13 @@ def read_badges(bindings_path: Path) -> Dict[str, Dict[str, Any]]:
         except ValueError:
             run_n = -1
         if task_id not in best or run_n > best[task_id][0]:
-            best[task_id] = (run_n, {"board": board, "p50_hours": float(m.group(1)),
-                                     "p90_hours": float(m.group(2))})
+            best[task_id] = (run_n, {"board": board, "p50_hours": _to_hours(m.group(1), m.group(2)),
+                                     "p90_hours": _to_hours(m.group(3), m.group(4))})
     return {k: v[1] for k, v in best.items() if len(boards.get(k, ())) == 1}
+
+
+def _to_hours(value: str, unit: str) -> float:
+    return float(value) / 60 if unit == "m" else float(value)
 
 
 def _check_ref(board: str, task_id: str) -> None:

@@ -25,7 +25,7 @@ PERSISTED_KEYS = {
     "ref", "recorded", "status",
     "estimate_commented", "actual_commented",
     "estimate_comment_body", "actual_comment_body",
-    "estimate_delivery_in_flight", "actual_delivery_in_flight",
+    "estimate_delivery_in_flight", "actual_delivery_in_flight", "run_ended",
 }
 
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### fix: epoch-hermes records actuals a missed completion hook left behind
+
+- When the profile that finished a run does not enable the plugin, its completion hook never fires here, so the actual was never recorded and nothing said so. The plugin now checks up to 25 unrecorded runs at load and on new claims (at most every 10 minutes), logs a WARNING for each completed one and records it. Runs that ended another way are marked and skipped.
+- The docs now say the wall-clock gate is two-sided: a run more than 10× faster than its estimate is rejected as well as one more than 10× slower.
+### fix: epoch-hermes small fixes (roast E3, E5, E7, E9)
+
+- Sub-hour estimates read in minutes ("P50 15m") instead of "P50 0.0h". Desktop badges read both forms.
+- The Desktop forecast shows risk impact again. The CLI names the field `impactDays`; the page read `impact`.
+- Error text posted to Kanban cards replaces the home directory with `~`.
+- Unfinished outbox jobs are retried when a run completes (at most every 10 minutes), not only when the plugin loads.
+
 ### fix: explicit estimate lifecycle and run-binding state machines
 
 - Estimate lifecycle (pending → expired / recorded) is now named in one place (`src/lib/estimate-lifecycle.ts`). Every reader uses the same expiry check, and both actual-recording paths use the same duplicate guard.
