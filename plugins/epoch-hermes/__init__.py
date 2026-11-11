@@ -1127,6 +1127,40 @@ def _outbox_done(job_id: str) -> None:
     _outbox_update(lambda box: box.pop(job_id, None))
 
 
+DEAD_LETTER_FILE = "dead-letter.jsonl"
+
+
+def _dead_letter_path(settings: Optional[Dict[str, Any]] = None) -> Path:
+    return _epoch_data_dir(settings) / DEAD_LETTER_FILE
+
+
+def _dead_letter(job: Dict[str, Any], reason: str) -> None:
+    """Record a job the outbox will never retry, so abandoning it is never silent."""
+    record = {
+        "id": job.get("id"), "task_id": job.get("task_id"), "board": job.get("board"),
+        "kind": job.get("kind"), "run_id": job.get("run_id"),
+        "attempts": int(job.get("attempts") or 0), "created_at": job.get("created_at"),
+        "last_error": job.get("last_error"), "reason": reason, "abandoned_at": time.time(),
+    }
+    try:
+        path = _dead_letter_path(job.get("settings"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True, default=str) + "\n")
+    except OSError as exc:
+        logger.warning("epoch: could not write dead-letter for job %s: %s", job.get("id"), exc)
+    logger.warning("epoch: abandoned %s job %s for task %s (%s, attempts=%s)",
+                   job.get("kind"), job.get("id"), job.get("task_id"), reason, record["attempts"])
+
+
+def dead_letter_count(settings: Optional[Dict[str, Any]] = None) -> int:
+    try:
+        with _dead_letter_path(settings).open(encoding="utf-8") as handle:
+            return sum(1 for line in handle if line.strip())
+    except OSError:
+        return 0
+
+
 def _run_job(job: Dict[str, Any]) -> None:
     fn = _JOBS.get(job.get("kind"))
     try:
@@ -1137,12 +1171,13 @@ def _run_job(job: Dict[str, Any]) -> None:
                     attempt=int(job.get("attempts") or 0))
         logger.debug("epoch: %s -> %s", job["id"], status)
         _outbox_done(job["id"])
-    except Exception:
+    except Exception as exc:
         logger.debug("epoch: job %s failed; left in outbox for retry", job.get("id"), exc_info=True)
         def bump(box):
             if job["id"] in box:
                 box[job["id"]]["attempts"] = int(box[job["id"]].get("attempts", 0)) + 1
                 box[job["id"]]["lease_until"] = 0
+                box[job["id"]]["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
         _outbox_update(bump)
     finally:
         with _inflight_lock:
@@ -1211,6 +1246,7 @@ def replay_outbox() -> List[threading.Thread]:
         return started
     now = time.time()
     picked: List[Dict[str, Any]] = []
+    abandoned: List[Tuple[Dict[str, Any], str]] = []
 
     def pick(box):
         for jid, job in list(box.items()):
@@ -1219,6 +1255,9 @@ def replay_outbox() -> List[threading.Thread]:
                 continue
             too_old = now - float(job.get("created_at") or 0) > OUTBOX_MAX_AGE_SECONDS
             if too_old or int(job.get("attempts") or 0) >= OUTBOX_MAX_ATTEMPTS:
+                # Terminal by policy: record the loss before dropping the job.
+                abandoned.append((dict(job, id=job.get("id") or jid),
+                                  "too_old" if too_old else "attempts_exhausted"))
                 box.pop(jid, None)
                 continue
             with _inflight_lock:
@@ -1231,6 +1270,8 @@ def replay_outbox() -> List[threading.Thread]:
             picked.append(dict(job))
 
     _outbox_update(pick)
+    for job, reason in abandoned:
+        _dead_letter(job, reason)
     for job in picked:
         started.append(_start(job))
     return started
@@ -1357,8 +1398,14 @@ def _slash(raw_args: str) -> str:
     res = run_epoch(args)
     data = res.get("data") if isinstance(res.get("data"), dict) else None
     if res.get("ok") and data and data.get("humanReadable"):
-        return data["humanReadable"]
-    return json.dumps(res, indent=2)[:3500]
+        out = data["humanReadable"]
+    else:
+        out = json.dumps(res, indent=2)[:3500]
+    if _subcommand(args) == ("data", "status"):
+        lost = dead_letter_count()
+        out += (f"\nPlugin jobs abandoned after retries: {lost} (see {DEAD_LETTER_FILE} in the "
+                "Epoch data folder)." if lost else "\nPlugin jobs abandoned after retries: 0.")
+    return out
 
 
 ESTIMATE_SCHEMA = {
