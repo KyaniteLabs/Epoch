@@ -26,6 +26,7 @@ PERSISTED_KEYS = {
     "estimate_commented", "actual_commented",
     "estimate_comment_body", "actual_comment_body",
     "estimate_delivery_in_flight", "actual_delivery_in_flight", "run_ended",
+    "created_at",
 }
 
 

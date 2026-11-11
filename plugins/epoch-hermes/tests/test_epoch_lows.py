@@ -39,3 +39,30 @@ def test_completion_retries_the_outbox_at_most_every_interval(monkeypatch):
     clock[0] += p.OUTBOX_REPLAY_INTERVAL_SECONDS + 1
     p._on_completed(task_id="t3")
     assert replays == [1, 1]
+
+
+def test_finished_bindings_are_pruned_after_retention():
+    p = load_plugin()
+    now = 10_000_000.0
+    old = now - p.BINDING_RETENTION_SECONDS - 1
+    data = {
+        "b:done:1": {"ref": "r", "recorded": True, "status": "recorded", "created_at": old,
+                     "estimate_comment_body": "e", "estimate_commented": True,
+                     "actual_comment_body": "a", "actual_commented": True},
+        "b:ended:2": {"ref": "r", "recorded": False, "run_ended": "blocked", "created_at": old},
+        "b:pending:3": {"ref": "r", "recorded": True, "status": "recorded", "created_at": old,
+                        "actual_comment_body": "a", "actual_commented": False},
+        "b:open:4": {"ref": "r", "recorded": False, "created_at": old},
+        "b:fresh:5": {"ref": "r", "recorded": True, "status": "recorded", "created_at": now - 60},
+        "b:legacy:6": {"ref": "r", "recorded": True, "status": "recorded"},
+    }
+    p._prune_finished_bindings(data, now=now)
+    assert sorted(data) == ["b:fresh:5", "b:legacy:6", "b:open:4", "b:pending:3"]
+    assert data["b:legacy:6"]["created_at"] == now, "untimestamped bindings start their clock"
+
+
+def test_new_bindings_carry_a_timestamp(tmp_path):
+    p = load_plugin()
+    settings = {"epoch_data_dir": str(tmp_path)}
+    p._binding_put_ref(settings, "t", "b", 1, "ref-1")
+    assert isinstance(p._binding_get(settings, "t", "b", 1)["created_at"], float)
