@@ -122,6 +122,10 @@ only to the local Epoch CLI, which runs with a scrubbed environment.
 
 The MCP server and skills for Claude/Cursor are in [`../epoch`](../epoch).
 
+## Known issues
+
+- Epoch 0.7.0 did not screen path flags in `/epoch` pass-through. `/epoch share-data --output <path>` or `/epoch community-export --output <path>` could write a local JSON export (anonymized estimate records) to that path, including from gateway platforms. No data left the machine. 0.8.0 refuses `share-data` and any `--output` or `-o` path from `/epoch`.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE). Epoch is an independent project by KyaniteLabs and is not endorsed by Nous Research.
