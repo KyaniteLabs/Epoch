@@ -81,6 +81,8 @@ MAX_ESTIMATE_HOURS = 2000.0
 WORKDAY_HOURS = 8.0
 OUTBOX_KEY = "outbox"
 OUTBOX_MAX_ATTEMPTS = 5
+# Unfinished jobs are retried at load and, at most this often, when a run completes.
+OUTBOX_REPLAY_INTERVAL_SECONDS = 600
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 3600
 # Missed-completion reconcile: at most this many unrecorded bindings are checked per pass, and a
 # pass runs at most once per interval (at load, then on new claims).
@@ -230,7 +232,7 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
             parsed = json.loads(out[start:])
         except json.JSONDecodeError:
             parsed = None
-    tail = (proc.stderr or "").strip()[-500:] or out[-500:]
+    tail = _redact_home((proc.stderr or "").strip()[-500:] or out[-500:])
     if isinstance(parsed, dict) and "ok" in parsed:
         # A non-zero exit is a failure even when stdout carries an ``ok: true`` envelope; keep
         # the structured payload for diagnosis but never report the call as successful.
@@ -320,6 +322,13 @@ def guess_type(text: str) -> str:
     return "feature"
 
 
+def _fmt_estimate_hours(hours: float) -> str:
+    """``1.5h`` from one hour up; whole minutes below it, so a 10-minute task never reads 0.0h."""
+    if hours < 1:
+        return f"{max(1, round(hours * 60))}m"
+    return f"{hours:.1f}h"
+
+
 def _monte_carlo(title: str, triple: Dict[str, float], source: str,
                  settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     # Epoch monte_carlo_schedule works in days (8h workday); the triple is in hours.
@@ -333,7 +342,7 @@ def _monte_carlo(title: str, triple: Dict[str, float], source: str,
 
     def h(k: str) -> str:
         try:
-            return f"{float(d[k]) * WORKDAY_HOURS:.1f}h"
+            return _fmt_estimate_hours(float(d[k]) * WORKDAY_HOURS)
         except (KeyError, TypeError, ValueError):
             return "n/a"
 
@@ -1200,6 +1209,14 @@ def _start(job: Dict[str, Any]) -> threading.Thread:
     return t
 
 
+def _redact_home(text: str) -> str:
+    """Errors are posted as Kanban comments; never leak the home directory path into them."""
+    home = os.path.expanduser("~")
+    if home and home not in ("/", "~"):
+        text = text.replace(home.rstrip("/"), "~")
+    return text
+
+
 def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Optional[threading.Thread]:
     settings = snapshot_settings()  # resolved in the hook's own profile context
     job = {"id": _job_id(kind, task_id, board, run_id), "kind": kind, "task_id": task_id,
@@ -1280,6 +1297,21 @@ def replay_outbox() -> List[threading.Thread]:
     for job in picked:
         started.append(_start(job))
     return started
+
+
+_replay_lock = threading.Lock()
+_replay_last = 0.0
+
+
+def _maybe_replay() -> None:
+    """Retry stuck outbox jobs from a long-lived process, not only at the next plugin load."""
+    global _replay_last
+    with _replay_lock:
+        now = time.time()
+        if now - _replay_last < OUTBOX_REPLAY_INTERVAL_SECONDS:
+            return
+        _replay_last = now
+    replay_outbox()
 
 
 def wait_for_inflight(timeout: Optional[float] = None) -> bool:
@@ -1407,6 +1439,7 @@ def _on_completed(task_id: str = "", board: Optional[str] = None, run_id: Any = 
     try:
         if task_id and _cfg("record_actuals"):
             _enqueue("completed", task_id, board, run_id)
+        _maybe_replay()
     except Exception:
         logger.debug("epoch: completed hook failed for %s", task_id, exc_info=True)
 

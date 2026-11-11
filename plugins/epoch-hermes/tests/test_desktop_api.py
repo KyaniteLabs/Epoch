@@ -35,7 +35,7 @@ FAKE = textwrap.dedent('''
     ml = float(task["most_likely"])
     data = {"p10": ml * .8, "p50": str(ml), "p80": ml * 1.2, "p90": ml * 1.3, "p95": ml * 1.4,
             "estimatedCost": 4036142.14,
-            "riskEvents": [{"description": "Task ran over 1.5x its PERT expected time", "probability": 0.27, "impact": 0.31},
+            "riskEvents": [{"description": "Task ran over 1.5x its PERT expected time", "probability": 0.27, "impactDays": 0.31},
                            "junk", {"description": 5}]}
     if "--distribution" in argv:
         data["distribution"] = {"edges": [ml * .5, ml, ml * 1.5, ml * 2], "counts": [10, 70, 20], "p50Bin": 1, "p90Bin": 2}
@@ -133,7 +133,8 @@ def test_forecast_runs_in_a_throwaway_data_dir(env):
     assert r["percentiles_days"]["p50"] == 2.0  # 16h / 8, string coerced
     assert r["distribution"]["counts"] == [10, 70, 20]
     assert "estimatedCost" not in json.dumps(r)
-    assert [x["description"] for x in r["risks"]] == ["Task ran over 1.5x its PERT expected time"]
+    assert r["risks"] == [{"description": "Task ran over 1.5x its PERT expected time",
+                           "probability": 0.27, "impact_days": 0.31}]  # the CLI says impactDays
     call, = env.calls()
     assert "--distribution" in call["argv"] and call["argv"][call["argv"].index("--seed") + 1] == "42"
     assert call["data_dir"] != str(env.ledger) and not Path(call["data_dir"]).exists()  # gone after the run
@@ -236,7 +237,19 @@ def test_badge_regex_matches_what_the_plugin_posts(env):
     settings = env.api._settings(env.plugin)
     out = env.plugin._monte_carlo("Ship", {"optimistic": 8.0, "most_likely": 16.0, "pessimistic": 40.0}, "hint", settings)
     m = env.api._BODY_PCT_RE.search(out["summary"])
-    assert m and float(m.group(1)) == 16.0 and float(m.group(2)) == 20.8
+    assert m and env.api._to_hours(*m.group(1, 2)) == 16.0 and env.api._to_hours(*m.group(3, 4)) == 20.8
+
+
+def test_sub_hour_estimates_badge_in_minutes(env):
+    settings = env.api._settings(env.plugin)
+    out = env.plugin._monte_carlo("Typo", {"optimistic": 0.1, "most_likely": 0.25, "pessimistic": 0.5}, "hint", settings)
+    assert "P50 15m" in out["summary"] and "0.0h" not in out["summary"]
+    bindings = {"default:t_m:1": {"estimate_comment_body": out["summary"]},
+                "default:t_n:1": {"estimate_comment_body": "P50 45m · P90 1.5h"}}
+    (env.ledger / env.plugin.BINDINGS_FILE).write_text(json.dumps(bindings))
+    got = env.client.get("/api/plugins/epoch/badges").json()["tasks"]
+    assert got["t_m"]["p50_hours"] == 0.25
+    assert got["t_n"] == {"board": "default", "p50_hours": 0.75, "p90_hours": 1.5}
 
 
 def test_same_task_id_on_two_boards_gets_no_badge(env):
