@@ -1,6 +1,6 @@
 # Epoch for Hermes (native plugin)
 
-Calibrated P50/P90 estimates on your Hermes Kanban board.
+P50/P90 estimates on your Hermes Kanban board, calibrated against the actuals you record. They are forecasts, not commitments.
 
 ![Epoch for Hermes Kanban](docs/banner.png)
 
@@ -48,7 +48,7 @@ Node >= 22 and `npx` on PATH. No API key or secret. The first claim may take a f
 
 ## What it looks like
 
-On claim, a calibrated estimate lands on the card:
+On claim, an estimate lands on the card:
 
 ![Estimate comment on claim](docs/kanban-claim-comment.png)
 
@@ -121,3 +121,11 @@ telemetry is opt-in (`epoch telemetry enable`) and the plugin never turns it on.
 only to the local Epoch CLI, which runs with a scrubbed environment.
 
 The MCP server and skills for Claude/Cursor are in [`../epoch`](../epoch).
+
+## Known issues
+
+- Epoch 0.7.0 did not screen path flags in `/epoch` pass-through. `/epoch share-data --output <path>` or `/epoch community-export --output <path>` could write a local JSON export (anonymized estimate records) to that path, including from gateway platforms. No data left the machine. 0.8.0 refuses `share-data` and any `--output` or `-o` path from `/epoch`.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE). Epoch is an independent project by KyaniteLabs and is not endorsed by Nous Research.
