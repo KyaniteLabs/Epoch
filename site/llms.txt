@@ -24,9 +24,9 @@ Epoch is a free, open-source Model Context Protocol (MCP) server that gives AI a
 
 ## Install
 
-    claude mcp add epoch -- npx @kyanitelabs/epoch
+    claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0
 
-Other MCP clients: run `npx @kyanitelabs/epoch` as a stdio MCP server.
+Other MCP clients: run `npx -y @kyanitelabs/epoch@0.8.0` as a stdio MCP server.
 
 ## Key URLs
 
