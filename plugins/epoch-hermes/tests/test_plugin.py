@@ -259,9 +259,27 @@ def test_hint_finds_unit_after_qualifier_or_punctuation(plugin, hint, expected):
     assert tuple(hint_out.values()) == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 roughly working days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 ish business days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 approx. working days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 roughly in days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 roughly calendar weeks", (80.0, 160.0, 400.0)),
+])
+def test_hint_finds_unit_after_qualifier_and_one_modifier(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
 @pytest.mark.parametrize("hint", [
     "epoch: 2/4/10 roughly months", "epoch: 2/4/10 roughly fortnights",
     "epoch: 2/4/10 roughly sprints", "epoch: 2/4/10 roughly M",
+    "epoch: 2/4/10 roughly months for the work",
+    "epoch: 2/4/10 roughly fortnights to finish",
+    "epoch: 2/4/10 roughly day(s) to finish",
+    "epoch: 2/4/10 roughly years of work",
+    "epoch: 2/4/10 roughly person-days total",
 ])
 def test_hint_rejects_unknown_unit_after_qualifier(plugin, hint):
     hint_out, problem = plugin.find_hint("", hint)
@@ -271,6 +289,28 @@ def test_hint_rejects_unknown_unit_after_qualifier(plugin, hint):
 
 def test_hint_does_not_scan_an_unrelated_sentence_for_a_unit(plugin):
     hint_out, problem = plugin.find_hint("", "epoch: 2/4/10. There are days when APIs fail")
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10. Minutes from the sync are attached.",
+    "epoch: 2/4/10. Weeks of prep are already done.",
+    "epoch: 2/4/10. Days matter here, ship Friday.",
+    "epoch: 2/4/10! Min viable version only.",
+])
+def test_hint_does_not_use_a_unit_followed_by_next_sentence_prose(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 roughly blocked",
+    "epoch: 2/4/10 ish, tentative",
+])
+def test_hint_allows_one_word_of_commentary_after_qualifier(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
     assert problem is None
     assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
 
@@ -306,6 +346,34 @@ def test_hint_does_not_mine_prose_for_a_unit(plugin, hint):
     "`epoch: 2/4/10`",
 ])
 def test_hint_allows_wrapped_trailing_punctuation(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("**epoch: 2/4/10** days", (16.0, 32.0, 80.0)),
+    ("**epoch: 2/4/10** (days)", (16.0, 32.0, 80.0)),
+    ("`epoch: 2/4/10` days", (16.0, 32.0, 80.0)),
+])
+def test_hint_finds_unit_after_closing_markdown(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint", [
+    "| est | epoch: 2/4/10 |",
+    '"epoch: 2/4/10"',
+    "'epoch: 2/4/10'",
+    "~~epoch: 2/4/10~~",
+    "<epoch: 2/4/10>",
+    "{epoch: 2/4/10}",
+    "epoch: 2/4/10</p>",
+    "epoch: 2/4/10”",
+    "_epoch: 2/4/10_",
+])
+def test_hint_accepts_common_wrappers(plugin, hint):
     hint_out, problem = plugin.find_hint("", hint)
     assert problem is None
     assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
