@@ -38,9 +38,6 @@ def test_r9_decimal_quantity_after_qualifier_is_not_silently_hours(plugin, hint)
         ("maybe, a reviewer is out", (2.0, 4.0, 10.0)),
         ("ish, one caveat below", (2.0, 4.0, 10.0)),
         ("roughly days, pending review", (16.0, 32.0, 80.0)),
-        ("roughly full-time days", (2.0, 4.0, 10.0)),
-        ("roughly ideal days", (2.0, 4.0, 10.0)),
-        ("roughly few days", (2.0, 4.0, 10.0)),
         ("maybe 2 reviewers needed", (2.0, 4.0, 10.0)),
     ],
 )
@@ -129,6 +126,19 @@ def test_r9_unknown_unit_after_qualifier_is_refused(plugin, unit):
 
     assert estimate is None
     assert problem and "unit" in problem
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["roughly full-time days", "roughly ideal days", "roughly few days"],
+)
+def test_r9_qualifier_followed_by_unapproved_modifier_and_unit_is_refused(
+    plugin, phrase
+):
+    estimate, problem = plugin.find_hint("", f"epoch: 2/4/10 {phrase}")
+
+    assert estimate is None
+    assert problem
 
 
 def test_r9_corrupt_state_notifies_claim_without_claiming_retry(

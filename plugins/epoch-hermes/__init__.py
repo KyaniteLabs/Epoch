@@ -141,23 +141,16 @@ _HINT_TRIPLE_RE = re.compile(
 _HINT_QUALIFIERS = frozenset({
     "roughly", "rough", "approx", "approximately", "maybe", "about", "around", "ish",
 })
-_HINT_UNSUPPORTED_UNITS = frozenset({
-    "fortnight", "fortnights", "month", "months", "sprint", "sprints", "year", "years",
-    "person-day", "person-days", "point", "points", "story-point", "story-points",
-    "sec", "secs", "second", "seconds", "ms", "s", "yr", "yrs", "mo", "pt", "pts",
-    "millisecond", "milliseconds", "iteration", "iterations", "quarter", "quarters",
-    "días", "tage", "jours", "mths", "sprnts", "millis",
-})
 _HINT_UNIT_LIKE_RE = re.compile(
     r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])", re.IGNORECASE)
 _HINT_UNIT_STEM_RE = re.compile(
-    r"^(?:(?:[a-z]+[-_])|(?:work))?(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|"
-    r"weeks?|wks?|months?|years?|fortnights?|quarters?|sprints?|iterations?|points?)"
-    r"(?:s{1,3}|z+|['’]s)?$", re.IGNORECASE)
+    r"(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|wks?|months?|years?|"
+    r"fortnights?|quarters?|sprints?|iterations?|points?)(?:s{1,3}|z+|['’]s)?$",
+    re.IGNORECASE,
+)
 _HINT_ALLOWED_MODIFIERS = frozenset({"working", "business", "calendar", "work", "full", "in"})
-_HINT_COMMENTARY_COUNTS = frozenset({
-    "pr", "prs", "endpoint", "endpoints", "reviewer", "reviewers", "caveat", "caveats",
-})
+_HINT_BARE_COUNT_NOUN_RE = re.compile(r"(?:[A-Z]{2,}s?|endpoints?)")
+_HINT_COMMENTARY_WORD_RE = re.compile(r"(?:ed|ing|ive|al|ous|able|ible|ful|less|ly)$", re.IGNORECASE)
 _HINT_NUMBER_WORDS = frozenset({
     "a", "an", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
     "ten", "eleven", "twelve",
@@ -180,7 +173,7 @@ _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-1
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
 _HINT_ATTEMPT_RE = re.compile(
-    r"(?<![A-Za-z0-9_.$-])(?:_{1,2})?(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)",
+    r"(?:_{1,2})?(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)",
     re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[epoch:(estimate|actual)((?:\s+[a-z_]+=[^\s\]]+)*)\s*\]")
 
@@ -392,9 +385,72 @@ def _clean_hint_unit(token: str) -> str:
 
 def _looks_like_hint_unit(token: str) -> bool:
     normalized = token.lower().strip(".,;:!?()[]{}\"'`~«»「」『』")
-    return (normalized in _HINT_UNSUPPORTED_UNITS or bool(_HINT_UNIT_LIKE_RE.match(normalized))
-            or bool(_HINT_UNIT_STEM_RE.fullmatch(normalized))
-            or bool(re.fullmatch(r"\d+dys", normalized)))
+    stem = _HINT_UNIT_STEM_RE.search(normalized)
+    if _has_lexical_day_stem_collision(normalized):
+        return False
+    return (bool(_HINT_UNIT_LIKE_RE.match(normalized)) or bool(stem)
+            or bool(re.fullmatch(r"\d+[a-z]+", normalized)))
+
+
+def _has_lexical_day_stem_collision(token: str) -> bool:
+    """Avoid reading words like ``Friday`` and ``holidays`` as a unit compound."""
+    stem = _HINT_UNIT_STEM_RE.search(token)
+    return bool(stem and stem.group().startswith("day")
+                and token[:stem.start()].endswith(tuple("aeiou")))
+
+
+def _is_alpha_hint_word(token: str) -> bool:
+    return bool(re.fullmatch(r"[^\W\d_]+(?:[-_][^\W\d_]+)*", token, re.UNICODE))
+
+
+def _is_hint_commentary_word(token: str) -> bool:
+    return bool(_HINT_COMMENTARY_WORD_RE.search(token))
+
+
+def _hint_label_boundary(text: str, start: int) -> bool:
+    """Accept labels at prose boundaries and deliberate ``re-``/sentence suffixes."""
+    prefix = text[:start]
+    if not prefix:
+        return True
+    previous = prefix[-1]
+    if previous.isalnum() or previous in "_$":
+        return False
+    if previous not in ".-/:\\":
+        return True
+
+    before_separator = prefix[:-1]
+    previous_word = re.search(r"([A-Za-z0-9_]+)$", before_separator)
+    if previous == "-" and previous_word and previous_word.group(1).lower() == "re":
+        before_word = before_separator[:previous_word.start()]
+        return (not before_word or before_word[-1].isspace()
+                or before_word[-1] in "([{<\"'`>)]*,;!?|")
+    if previous == "." and previous_word:
+        word = previous_word.group(1)
+        before_word = before_separator[:previous_word.start()]
+        return (bool(re.fullmatch(r"[A-Z][a-z]+", word))
+                and (not before_word or before_word[-1].isspace()
+                     or before_word[-1] in "([{<\"'`>)]*,;!?|"))
+    if previous_word:
+        return False
+    return True
+
+
+def _is_count_commentary(noun: str, continuation: List[str]) -> bool:
+    """Separate a count in prose from an ambiguous quantity-plus-unit phrase."""
+    if continuation:
+        first = _clean_hint_unit(continuation[0])
+        if first.lower() == "in":
+            if len(continuation) > 1:
+                next_word = _clean_hint_unit(continuation[1])
+                if (next_word and (re.fullmatch(_UNIT, next_word, re.IGNORECASE)
+                                   or _looks_like_hint_unit(next_word))):
+                    return False
+            return True
+        if (first and (re.fullmatch(_UNIT, first, re.IGNORECASE)
+                       or _looks_like_hint_unit(first))):
+            return False
+        return True
+    return bool(_HINT_BARE_COUNT_NOUN_RE.fullmatch(noun))
 
 
 def _is_hint_quantity(token: str) -> bool:
@@ -409,13 +465,20 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
     Returns ``None`` when there is no hint attempt; raises :class:`EstimateInputError` when there is
     one but it is malformed or out of bounds (callers surface that visibly).
     """
-    m = _HINT_ATTEMPT_RE.search(text or "")
+    text = text or ""
+    m = next((candidate for candidate in _HINT_ATTEMPT_RE.finditer(text)
+              if _hint_label_boundary(text, candidate.start())), None)
     if not m:
         return None
     raw = m.group(1).strip()
     numbers = _HINT_TRIPLE_RE.match(raw)
     if numbers:
         rest = raw[numbers.end():]
+        if (re.match(r"\|[A-Za-z][A-Za-z0-9_-]*\|", rest) is None
+                and re.match(r"\|[A-Za-z]", rest)):
+            raise EstimateInputError(
+                f"hint {m.group(0).strip()[:60]!r} has a unit glued after a table boundary; "
+                "separate table cells from the estimate")
         rest = rest.split("|", 1)[0]
         boundary = _HINT_HTML_BOUNDARY_RE.search(rest)
         if boundary:
@@ -457,15 +520,39 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                     in_unit_phrase = True
                     continue
                 if qualifier_seen and _is_hint_quantity(later_unit):
+                    following_tokens = re.findall(r"\S+", scan_rest[later_match.end():])
+                    following_token = following_tokens[0] if following_tokens else ""
+                    following_unit = _clean_hint_unit(following_token)
+                    continuation = following_tokens[1:]
+                    following_supported = (following_unit and following_unit != "M"
+                                           and re.fullmatch(_UNIT, following_unit, re.IGNORECASE))
+                    following_unknown = (following_unit and _looks_like_hint_unit(following_unit)
+                                         and not following_supported)
                     if qualifier_comma:
+                        if following_supported or following_unknown:
+                            if not continuation:
+                                raise EstimateInputError(
+                                    f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity "
+                                    f"and unit ({later_token!r} {following_token!r}); "
+                                    "state the estimate directly")
+                        elif (following_token and not _is_count_commentary(
+                                following_unit, continuation)):
+                            raise EstimateInputError(
+                                f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity "
+                                f"and unit ({later_token!r} {following_token!r}); "
+                                "state the estimate directly")
                         token = unit_token = ""
                         break
-                    following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
-                    following_token = following_match.group(1) if following_match else ""
-                    following_unit = _clean_hint_unit(following_token)
-                    if (following_unit and following_unit != "M"
-                            and (_looks_like_hint_unit(following_unit)
-                                 or following_unit.lower() not in _HINT_COMMENTARY_COUNTS)):
+                    if following_supported or following_unknown:
+                        if (following_unknown
+                                and _is_count_commentary(following_unit, continuation)):
+                            token = unit_token = ""
+                            break
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and "
+                            f"unit ({later_token!r} {following_token!r}); "
+                            "state the estimate directly")
+                    if following_token and not _is_count_commentary(following_unit, continuation):
                         raise EstimateInputError(
                             f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and "
                             f"unit ({later_token!r} {following_token!r}); "
@@ -488,26 +575,25 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                     break
                 if qualifier_seen:
                     following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
-                    following_token = following_match.group(1) if following_match else ""
+                    following_tokens = re.findall(r"\S+", scan_rest[later_match.end():])
+                    following_token = following_tokens[0] if following_tokens else ""
                     following_unit = _clean_hint_unit(following_token)
                     following_supported = (following_unit and following_unit != "M"
                                            and re.fullmatch(_UNIT, following_unit, re.IGNORECASE))
                     following_unknown = (following_unit and _looks_like_hint_unit(following_unit)
                                          and not following_supported)
                     if following_supported or following_unknown:
-                        if after_sentence_end and later_unit.lower() not in _HINT_ALLOWED_MODIFIERS:
+                        if (following_supported and after_sentence_end
+                                and later_unit.lower() not in _HINT_ALLOWED_MODIFIERS):
                             token = unit_token = ""
                             break
                         if following_unknown:
                             token, unit_token = following_token, following_unit
                             break
                         if later_unit.lower() not in _HINT_ALLOWED_MODIFIERS:
-                            if in_unit_phrase or later_unit.lower() in {"per", "next", "another"}:
-                                raise EstimateInputError(
-                                    f"hint {m.group(0).strip()[:60]!r} has text before the unit "
-                                    f"({later_token!r}); use a supported unit directly after the qualifier")
-                            token = unit_token = ""
-                            break
+                            raise EstimateInputError(
+                                f"hint {m.group(0).strip()[:60]!r} has text before the unit "
+                                f"({later_token!r}); use a supported unit directly after the qualifier")
                         unit_end = later_match.end() + following_match.end()
                         trailing_text = scan_rest[unit_end:].strip(
                             " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
@@ -516,8 +602,22 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                             break
                         token, unit_token, explicit = following_token, following_unit, True
                         break
+                    if (following_token and _looks_like_hint_unit(later_unit)
+                            and following_unit.lower().endswith(("ing", "ed"))):
+                        # A stem match inside ordinary phrases such as "holidays permitting"
+                        # or "checkpoints included" is not a unit token.
+                        token = unit_token = ""
+                        break
                     if _looks_like_hint_unit(later_unit):
                         token, unit_token = later_token, later_unit
+                    elif (not following_token and _is_alpha_hint_word(later_unit)
+                          and later_unit.lower() != "m"
+                          and not _is_hint_commentary_word(later_unit)
+                          and not in_unit_phrase
+                          and not _has_lexical_day_stem_collision(later_unit)):
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has an unsupported unit "
+                            f"({later_token!r}); use h, min, d or w")
                     else:
                         # Non-unit words after a qualifier are commentary, even if later prose
                         # contains a number or a unit word.
@@ -1604,11 +1704,12 @@ def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Opti
         if job["id"] in _inflight:
             return None
     if not _outbox_put(job):
-        if kind == "claimed" and bool(_cfg("comment_on_claim", settings)):
+        if kind in {"claimed", "completed"} and bool(_cfg("comment_on_claim", settings)):
             try:
                 add_comment(task_id, board,
                             "⏱ Epoch couldn't save this estimate job, so it wasn't queued and "
-                            "will not retry automatically. Please retry this claim later.")
+                            "will not retry automatically. Repair the Epoch state file, then "
+                            "retry this action.")
             except Exception as exc:
                 logger.warning("epoch: could not notify task %s that its estimate was not queued (%s)",
                                task_id, type(exc).__name__)
