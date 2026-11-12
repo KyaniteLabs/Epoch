@@ -377,21 +377,29 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
         explicit = (unit_token != "M"
                     and re.fullmatch(_UNIT, unit_token, re.IGNORECASE) is not None)
         if not explicit and (not token or unit_token.lower() in _HINT_QUALIFIERS):
-            # A qualifier or sentence punctuation may precede the unit. Keep looking for a
-            # later unit token so punctuation cannot silently turn days/weeks into hours.
+            # A qualifier or sentence punctuation may precede the unit. Look only through
+            # qualifiers/counts and the first unit candidate; never mine later prose for one.
+            qualifier_seen = unit_token.lower() in _HINT_QUALIFIERS
             for later_match in re.finditer(r"\S+", rest):
                 later_token = later_match.group(0)
                 later_unit = later_token.strip("(*_`").rstrip("*_`").rstrip(".,;:!?)]")
-                if not later_unit or later_unit.lower() in _HINT_QUALIFIERS or later_unit.isdigit():
+                if not later_unit:
                     continue
-                if re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
+                if later_unit.lower() in _HINT_QUALIFIERS:
+                    qualifier_seen = True
+                    continue
+                if later_unit.isdigit():
+                    continue
+                if later_unit != "M" and re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
                     token, unit_token, explicit = later_token, later_unit, True
                     break
                 # A non-unit word can contain a malformed unit extension (for example day(s)).
                 if re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",
                             later_unit, re.IGNORECASE):
                     token, unit_token = later_token, later_unit
-                    break
+                elif qualifier_seen:
+                    token, unit_token = later_token, later_unit
+                break
         if token and not explicit and unit_token.lower() not in _HINT_QUALIFIERS:
             # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
             # through the optional-unit grammar and become hours.

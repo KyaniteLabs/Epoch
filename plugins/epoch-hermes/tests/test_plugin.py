@@ -261,6 +261,22 @@ def test_hint_finds_unit_after_qualifier_or_punctuation(plugin, hint, expected):
 
 
 @pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 roughly months", "epoch: 2/4/10 roughly fortnights",
+    "epoch: 2/4/10 roughly sprints", "epoch: 2/4/10 roughly M",
+])
+def test_hint_rejects_unknown_unit_after_qualifier(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert problem and ("unit" in problem or "text after the estimate" in problem)
+
+
+def test_hint_does_not_scan_an_unrelated_sentence_for_a_unit(plugin):
+    hint_out, problem = plugin.find_hint("", "epoch: 2/4/10. There are days when APIs fail")
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
     "epoch: 2/4/10 hopefully", "epoch: 2/4/10 worst", "epoch: 2/4/10 with",
     "epoch: 2/4/10 more", "epoch: 2/4/10 max", "epoch: 2/4/10 working",
 ])

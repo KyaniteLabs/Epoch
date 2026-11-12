@@ -138,6 +138,28 @@ test('live refresh beats old tasks, history, forecast and badge requests', async
   h.unmount(); h.dispose()
 })
 
+test('Kanban badges use the current chart unit after settings change', async () => {
+  const h = await harness()
+  h.render()
+  const initial = h.requests.find(r => r.path === '/badges')
+  initial.resolve({ tasks: { t_b: { p50_hours: 8, p90_hours: 16 } } })
+  await tick()
+  const decorate = () => h.contributions.get('estimate').data.decorate({ id: 't_b' })
+  assert.equal(decorate().label, 'P50 1.0d · P90 2.0d')
+
+  h.saved.set('chart', { unit: 'hours' })
+  assert.equal(decorate().label, 'P50 8.0h · P90 16.0h')
+
+  h.emit('data.updated', {})
+  h.flushTimers()
+  h.requests.filter(r => r.path === '/badges').at(-1).resolve({
+    tasks: { t_b: { p50_hours: 8, p90_hours: 16 } },
+  })
+  await tick()
+  assert.equal(decorate().label, 'P50 8.0h · P90 16.0h')
+  h.unmount(); h.dispose()
+})
+
 test('Refresh refetches the selected card forecast after its hint changes', async () => {
   const h = await harness({ badges: false })
   h.render()

@@ -560,17 +560,18 @@ export default {
     let drop = null
     let badgeSeq = 0
     ctx.onDispose(() => { ++badgeSeq; if (drop) drop() })
+    const currentUnit = () => {
+      try { return (ctx.storage.get('chart', {}) || {}).unit === 'hours' ? 'hours' : 'days' } catch { return 'days' }
+    }
     const paint = () => {
       if (drop) drop()
-      let unit = 'days'
-      try { unit = (ctx.storage.get('chart', {}) || {}).unit === 'hours' ? 'hours' : 'days' } catch { /* default */ }
       drop = ctx.register({
         id: 'estimate', area,
         data: {
           decorate: card => {
             const t = card && byId[card.id]
             if (!t || card.status === 'done' || card.status === 'archived') return null
-            return { label: badgeLabel(t, unit), tone: 'neutral', tooltip: `Epoch estimate posted when this card was claimed (${DAY_HOURS}-hour days).` }
+            return { label: badgeLabel(t, currentUnit()), tone: 'neutral', tooltip: `Epoch estimate posted when this card was claimed (${DAY_HOURS}-hour days).` }
           }
         }
       })
