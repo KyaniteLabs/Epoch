@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### fix: the agent-lifecycle hook survives a moved checkout and fails loudly
+
+- `scripts/epoch-lifecycle-hook.mjs` is the supported estimate→actual hook: on `UserPromptSubmit` it records a PERT estimate, on `Stop` it records the elapsed wall-clock actual. It resolves the CLI from `EPOCH_BIN`, then the checkout that ships the hook, then the same checkout candidates `scripts/configure-mac-mini-telemetry.sh` probes (`~/workspaces/kyanite-labs/Epoch`, `~/workspaces/Epoch`, `~/Epoch`), then npm-global installs. When nothing resolves it prints one loud stderr line and appends a `hook_failed` line naming every path tried — the 2026-05 stall (a moved checkout made every call fail `Cannot find module`, logged only as `estimate_failed`, while the submitter and receiver looked healthy) now surfaces immediately. `--check` proves the resolved CLI answers `--version`.
+- `scripts/configure-mac-mini-telemetry.sh` verifies both failure modes at configure time: it runs the CLI through a bin-style symlink and fails if `epoch --version` prints nothing (the entry-check regression that made npm-installed `epoch` a silent no-op), and it fails if the hook cannot resolve a working CLI.
+- The realpath-tolerant entry check is unit-tested (`src/lib/entrypoint.ts`, symlink and literal-fallback cases) alongside the existing dist-safe `epoch_version` wire test, so neither regression can come back without a red test.
+
 ### feat: agent-driven Epoch Desktop page (epoch-hermes 0.9.0)
 
 - Successful tool estimates, slash commands and Kanban estimate/actual writes refresh the page and card badges via local Desktop events with no task text in their payloads.
