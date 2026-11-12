@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "epoch": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
