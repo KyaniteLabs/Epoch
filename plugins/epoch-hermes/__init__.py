@@ -141,6 +141,15 @@ _HINT_TRIPLE_RE = re.compile(
 _HINT_QUALIFIERS = frozenset({
     "roughly", "rough", "approx", "approximately", "maybe", "about", "around", "ish",
 })
+_HINT_UNSUPPORTED_UNITS = frozenset({
+    "fortnight", "fortnights", "month", "months", "sprint", "sprints", "year", "years",
+    "person-day", "person-days", "point", "points", "story-point", "story-points",
+    "sec", "secs", "second", "seconds", "ms",
+})
+_HINT_UNIT_LIKE_RE = re.compile(
+    r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])", re.IGNORECASE)
+_HINT_WRAP_OPEN = "(*_`\"'~|<{["
+_HINT_WRAP_CLOSE = ")*_`\"'~|>}]”’“‘"
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
     rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.,;!?)*_`]|\])",
@@ -151,7 +160,7 @@ _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-1
     re.IGNORECASE,
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
-_HINT_ATTEMPT_RE = re.compile(r"\b(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)", re.IGNORECASE)
+_HINT_ATTEMPT_RE = re.compile(r"(?<![A-Za-z0-9])(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)", re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[epoch:(estimate|actual)((?:\s+[a-z_]+=[^\s\]]+)*)\s*\]")
 
 _TYPE_WORDS = {
@@ -355,6 +364,11 @@ def validate_triple(o: Any, m: Any, p: Any, *, source: str = "estimate") -> Tupl
     return vals[0], vals[1], vals[2]
 
 
+def _clean_hint_unit(token: str) -> str:
+    token = re.sub(r"</[A-Za-z][A-Za-z0-9:-]*>[.,;:!?]*$", "", token)
+    return token.strip(_HINT_WRAP_OPEN).rstrip(_HINT_WRAP_CLOSE).rstrip(".,;:!?")
+
+
 def parse_hint(text: str) -> Optional[Dict[str, float]]:
     """Parse the first ``epoch:``/``estimate:`` hint in *text* (hours).
 
@@ -371,12 +385,10 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
         before_sentence_end = re.split(r"[.!?]", rest, maxsplit=1)[0]
         token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", before_sentence_end)
         token = token_match.group(1) if token_match else ""
-        unit_token = token.strip("(*_`")
-        unit_token = unit_token.rstrip("*_`")
-        unit_token = unit_token.rstrip(",;:)]")
+        unit_token = _clean_hint_unit(token)
         explicit = (unit_token != "M"
                     and re.fullmatch(_UNIT, unit_token, re.IGNORECASE) is not None)
-        if not explicit and (not token or unit_token.lower() in _HINT_QUALIFIERS):
+        if not explicit and (not unit_token or unit_token.lower() in _HINT_QUALIFIERS):
             # Look at at most the first non-qualifier token in this sentence. A bare
             # count or a word in commentary ends the search; never mine later prose for a unit.
             qualifier_seen = unit_token.lower() in _HINT_QUALIFIERS
@@ -385,47 +397,66 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
             after_sentence_end = False
             if sentence_end:
                 prefix = rest[:sentence_end.start()]
-                if not prefix.strip() or (
-                    sentence_end.group() == "."
-                    and re.search(r"\bapprox$", prefix.rstrip(), re.IGNORECASE)
-                ):
+                if not prefix.strip():
                     scan_rest = re.sub(r"^[\s.!?]+", "", rest[sentence_end.end():])
                     after_sentence_end = True
+                elif (sentence_end.group() == "."
+                      and re.search(r"\bapprox$", prefix.rstrip(), re.IGNORECASE)):
+                    scan_rest = re.sub(r"^[\s.!?]+", "", rest[sentence_end.end():])
                 else:
                     scan_rest = prefix
             for later_match in re.finditer(r"\S+", scan_rest):
                 later_token = later_match.group(0)
-                later_unit = later_token.strip("(*_`").rstrip("*_`").rstrip(".,;:!?)]")
+                later_unit = _clean_hint_unit(later_token)
                 if not later_unit:
                     continue
                 if later_unit.lower() in _HINT_QUALIFIERS:
                     qualifier_seen = True
                     continue
+                if qualifier_seen and later_unit.isdigit():
+                    token = unit_token = ""
+                    break
                 if later_unit != "M" and re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
+                    trailing_text = scan_rest[later_match.end():].strip(
+                        " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
+                    if after_sentence_end and trailing_text:
+                        token = unit_token = ""
+                        break
                     token, unit_token, explicit = later_token, later_unit, True
                     break
-                # A non-unit word after sentence punctuation belongs to the following prose.
                 if after_sentence_end:
                     token = unit_token = ""
                     break
-                trailing_text = scan_rest[later_match.end():].strip(" \t.,;:!?*_`)]")
-                if qualifier_seen and trailing_text:
-                    # Qualifier plus a number or commentary is not a delayed unit.
-                    token = unit_token = ""
-                    break
-                # A non-unit word can contain a malformed unit extension (for example day(s)).
-                if re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",
-                            later_unit, re.IGNORECASE):
-                    token, unit_token = later_token, later_unit
-                elif qualifier_seen:
+                if qualifier_seen:
+                    following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
+                    following_token = following_match.group(1) if following_match else ""
+                    following_unit = _clean_hint_unit(following_token)
+                    if (following_unit and following_unit != "M"
+                            and re.fullmatch(_UNIT, following_unit, re.IGNORECASE)):
+                        unit_end = later_match.end() + following_match.end()
+                        trailing_text = scan_rest[unit_end:].strip(
+                            " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
+                        if after_sentence_end and trailing_text:
+                            token = unit_token = ""
+                            break
+                        token, unit_token, explicit = following_token, following_unit, True
+                        break
+                    if (_HINT_UNIT_LIKE_RE.match(later_unit)
+                            or later_unit == "M"
+                            or later_unit.lower() in _HINT_UNSUPPORTED_UNITS):
+                        token, unit_token = later_token, later_unit
+                    else:
+                        # Non-unit words after a qualifier are commentary, even if later prose
+                        # contains a number or a unit word.
+                        token = unit_token = ""
+                else:
                     token, unit_token = later_token, later_unit
                 break
         if (token and unit_token and unit_token.lower() not in _HINT_QUALIFIERS
                 and unit_token.lower() != "h/t" and not explicit):
             # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
             # through the optional-unit grammar and become hours.
-            unit_like = re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",
-                                 unit_token, re.IGNORECASE)
+            unit_like = _HINT_UNIT_LIKE_RE.match(unit_token)
             if unit_like:
                 raise EstimateInputError(
                     f"hint {m.group(0).strip()[:60]!r} has malformed unit {token!r}; "
@@ -433,7 +464,8 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
             raise EstimateInputError(
                 f"hint {m.group(0).strip()[:60]!r} has text after the estimate "
                 f"({token!r}); add a supported unit or punctuation")
-    parse_raw = raw
+    parse_raw = re.sub(r"</[A-Za-z][A-Za-z0-9:-]*>\s*$", "", raw).rstrip()
+    parse_raw = parse_raw.rstrip(_HINT_WRAP_CLOSE)
     if numbers and explicit:
         parse_raw = raw[:numbers.end()] + unit_token
     sm = _HINT_STRICT_RE.match(parse_raw) or _HINT_DASH_RE.match(parse_raw)
