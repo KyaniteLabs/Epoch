@@ -1,4 +1,13 @@
 allowBuilds:
   esbuild: true
 overrides:
+  'body-parser@>=2.0.0 <2.4.0': '2.4.0'
+  'brace-expansion@5.0.6': '5.0.12'
+  'esbuild@<0.28.1': '0.28.1'
+  'fast-uri@3.1.2': '3.1.9'
+  'ip-address@10.2.0': '10.7.4'
+  'minimatch@10.2.5': '11.0.1'
   'proxy-addr@>=1.1.0 <2.0.8': '2.0.8'
+  'qs@>=6.15.0 <6.16.1': '6.16.1'
+  'source-map-js@1.2.1': '1.2.2'
+  'vite@7.3.2': '7.3.7'
