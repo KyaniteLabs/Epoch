@@ -144,10 +144,19 @@ _HINT_QUALIFIERS = frozenset({
 _HINT_UNSUPPORTED_UNITS = frozenset({
     "fortnight", "fortnights", "month", "months", "sprint", "sprints", "year", "years",
     "person-day", "person-days", "point", "points", "story-point", "story-points",
-    "sec", "secs", "second", "seconds", "ms",
+    "sec", "secs", "second", "seconds", "ms", "s", "yr", "yrs", "mo", "pt", "pts",
+    "iteration", "iterations", "quarter", "quarters",
 })
 _HINT_UNIT_LIKE_RE = re.compile(
     r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])", re.IGNORECASE)
+_HINT_UNIT_STEM_RE = re.compile(
+    r"(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|wks?|months?|years?|"
+    r"fortnights?|quarters?|sprints?|iterations?|points?)(?:s{1,3}|z+)?$", re.IGNORECASE)
+_HINT_ALLOWED_MODIFIERS = frozenset({"working", "business", "calendar", "work", "full", "in"})
+_HINT_NUMBER_WORDS = frozenset({
+    "a", "an", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve",
+})
 _HINT_WRAP_OPEN = "(*_`\"'~|<{["
 _HINT_WRAP_CLOSE = ")*_`\"'~|>}]”’“‘"
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
@@ -160,7 +169,9 @@ _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-1
     re.IGNORECASE,
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
-_HINT_ATTEMPT_RE = re.compile(r"(?<![A-Za-z0-9])(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)", re.IGNORECASE)
+_HINT_ATTEMPT_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:_{1,2})?(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)",
+    re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[epoch:(estimate|actual)((?:\s+[a-z_]+=[^\s\]]+)*)\s*\]")
 
 _TYPE_WORDS = {
@@ -365,8 +376,20 @@ def validate_triple(o: Any, m: Any, p: Any, *, source: str = "estimate") -> Tupl
 
 
 def _clean_hint_unit(token: str) -> str:
-    token = re.sub(r"</[A-Za-z][A-Za-z0-9:-]*>[.,;:!?]*$", "", token)
-    return token.strip(_HINT_WRAP_OPEN).rstrip(_HINT_WRAP_CLOSE).rstrip(".,;:!?")
+    token = re.sub(r"<[^>]*>", "", token)
+    return token.strip(_HINT_WRAP_OPEN + _HINT_WRAP_CLOSE + ".,;:!?")
+
+
+def _looks_like_hint_unit(token: str) -> bool:
+    normalized = token.lower().strip(".,;:!?()[]{}\"'`~")
+    return (normalized in _HINT_UNSUPPORTED_UNITS or bool(_HINT_UNIT_LIKE_RE.match(normalized))
+            or bool(_HINT_UNIT_STEM_RE.search(normalized)))
+
+
+def _is_hint_quantity(token: str) -> bool:
+    parts = re.split(r"[-–]", token.lower().strip(".,;:!?"))
+    return (1 <= len(parts) <= 2
+            and all(part in _HINT_NUMBER_WORDS or re.fullmatch(_NUM, part) for part in parts))
 
 
 def parse_hint(text: str) -> Optional[Dict[str, float]]:
@@ -382,6 +405,8 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
     numbers = _HINT_TRIPLE_RE.match(raw)
     if numbers:
         rest = raw[numbers.end():]
+        rest = re.split(r"</(?:p|div|li|td|th|tr|section|article)\b", rest,
+                        maxsplit=1, flags=re.IGNORECASE)[0]
         before_sentence_end = re.split(r"[.!?]", rest, maxsplit=1)[0]
         token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", before_sentence_end)
         token = token_match.group(1) if token_match else ""
@@ -397,14 +422,19 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
             after_sentence_end = False
             if sentence_end:
                 prefix = rest[:sentence_end.start()]
-                if not prefix.strip():
+                if (not prefix.strip()
+                        or (sentence_end.group() == "."
+                            and re.search(r"\bapprox$", prefix.rstrip(), re.IGNORECASE))):
                     scan_rest = re.sub(r"^[\s.!?]+", "", rest[sentence_end.end():])
                     after_sentence_end = True
-                elif (sentence_end.group() == "."
-                      and re.search(r"\bapprox$", prefix.rstrip(), re.IGNORECASE)):
-                    scan_rest = re.sub(r"^[\s.!?]+", "", rest[sentence_end.end():])
                 else:
                     scan_rest = prefix
+            if re.match(r"\s*</(?:p|div|li|td|th|tr|section|article)\b", scan_rest,
+                        re.IGNORECASE):
+                scan_rest = ""
+            table_cell = scan_rest.find("|")
+            if table_cell >= 0:
+                scan_rest = scan_rest[:table_cell]
             for later_match in re.finditer(r"\S+", scan_rest):
                 later_token = later_match.group(0)
                 later_unit = _clean_hint_unit(later_token)
@@ -413,42 +443,83 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                 if later_unit.lower() in _HINT_QUALIFIERS:
                     qualifier_seen = True
                     continue
-                if qualifier_seen and later_unit.isdigit():
+                if qualifier_seen and _is_hint_quantity(later_unit):
+                    following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
+                    following_token = following_match.group(1) if following_match else ""
+                    following_unit = _clean_hint_unit(following_token)
+                    if following_unit and following_unit != "M":
+                        following_supported = re.fullmatch(_UNIT, following_unit, re.IGNORECASE)
+                        if following_supported:
+                            unit_end = later_match.end() + following_match.end()
+                            trailing_text = scan_rest[unit_end:].strip(
+                                " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
+                            if trailing_text:
+                                token = unit_token = ""
+                                break
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and "
+                            f"unit ({later_token!r} {following_token!r}); "
+                            "state the estimate directly")
                     token = unit_token = ""
                     break
+                if qualifier_seen and re.fullmatch(
+                        rf"{_NUM}(?:h|hrs?|hours?|m|mins?|minutes?|d|days?|w|wks?|weeks?)",
+                        later_unit, re.IGNORECASE):
+                    raise EstimateInputError(
+                        f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and unit "
+                        f"({later_token!r}); state the estimate directly")
                 if later_unit != "M" and re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
                     trailing_text = scan_rest[later_match.end():].strip(
                         " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
                     if after_sentence_end and trailing_text:
                         token = unit_token = ""
                         break
+                    if qualifier_seen and trailing_text:
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has text after the unit "
+                            f"({trailing_text!r}); end the hint after its unit")
                     token, unit_token, explicit = later_token, later_unit, True
-                    break
-                if after_sentence_end:
-                    token = unit_token = ""
                     break
                 if qualifier_seen:
                     following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
                     following_token = following_match.group(1) if following_match else ""
                     following_unit = _clean_hint_unit(following_token)
-                    if (following_unit and following_unit != "M"
-                            and re.fullmatch(_UNIT, following_unit, re.IGNORECASE)):
+                    following_supported = (following_unit and following_unit != "M"
+                                           and re.fullmatch(_UNIT, following_unit, re.IGNORECASE))
+                    following_unknown = (following_unit and _looks_like_hint_unit(following_unit)
+                                         and not following_supported)
+                    if following_supported or following_unknown:
+                        if after_sentence_end and later_unit.lower() not in _HINT_ALLOWED_MODIFIERS:
+                            token = unit_token = ""
+                            break
+                        if following_unknown:
+                            token, unit_token = following_token, following_unit
+                            break
+                        if later_unit.lower() not in _HINT_ALLOWED_MODIFIERS:
+                            raise EstimateInputError(
+                                f"hint {m.group(0).strip()[:60]!r} has text before the unit "
+                                f"({later_token!r}); use a supported unit directly after the qualifier")
                         unit_end = later_match.end() + following_match.end()
                         trailing_text = scan_rest[unit_end:].strip(
                             " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
                         if after_sentence_end and trailing_text:
                             token = unit_token = ""
                             break
+                        if trailing_text:
+                            raise EstimateInputError(
+                                f"hint {m.group(0).strip()[:60]!r} has text after the unit "
+                                f"({trailing_text!r}); end the hint after its unit")
                         token, unit_token, explicit = following_token, following_unit, True
                         break
-                    if (_HINT_UNIT_LIKE_RE.match(later_unit)
-                            or later_unit == "M"
-                            or later_unit.lower() in _HINT_UNSUPPORTED_UNITS):
+                    if _looks_like_hint_unit(later_unit):
                         token, unit_token = later_token, later_unit
                     else:
                         # Non-unit words after a qualifier are commentary, even if later prose
                         # contains a number or a unit word.
                         token = unit_token = ""
+                elif after_sentence_end:
+                    token = unit_token = ""
+                    break
                 else:
                     token, unit_token = later_token, later_unit
                 break
@@ -456,7 +527,7 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                 and unit_token.lower() != "h/t" and not explicit):
             # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
             # through the optional-unit grammar and become hours.
-            unit_like = _HINT_UNIT_LIKE_RE.match(unit_token)
+            unit_like = _looks_like_hint_unit(unit_token)
             if unit_like:
                 raise EstimateInputError(
                     f"hint {m.group(0).strip()[:60]!r} has malformed unit {token!r}; "
@@ -464,8 +535,7 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
             raise EstimateInputError(
                 f"hint {m.group(0).strip()[:60]!r} has text after the estimate "
                 f"({token!r}); add a supported unit or punctuation")
-    parse_raw = re.sub(r"</[A-Za-z][A-Za-z0-9:-]*>\s*$", "", raw).rstrip()
-    parse_raw = parse_raw.rstrip(_HINT_WRAP_CLOSE)
+    parse_raw = raw[:numbers.end()] if numbers else raw
     if numbers and explicit:
         parse_raw = raw[:numbers.end()] + unit_token
     sm = _HINT_STRICT_RE.match(parse_raw) or _HINT_DASH_RE.match(parse_raw)
@@ -1369,8 +1439,8 @@ def _outbox_update(fn) -> bool:
         return False
 
 
-def _outbox_put(job: Dict[str, Any]) -> None:
-    _outbox_update(lambda box: box.__setitem__(job["id"], job))
+def _outbox_put(job: Dict[str, Any]) -> bool:
+    return _outbox_update(lambda box: box.__setitem__(job["id"], job))
 
 
 def _outbox_done(job_id: str) -> None:
@@ -1528,7 +1598,8 @@ def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Opti
     with _inflight_lock:
         if job["id"] in _inflight:
             return None
-    _outbox_put(job)
+    if not _outbox_put(job):
+        return None
     return _start(job)
 
 
