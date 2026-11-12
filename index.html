@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Epoch — Time Estimation for AI Agents | 26 MCP Tools</title>
-  <meta name="description" content="Stop guessing timelines. Get data-driven estimates your AI can actually use. 26 MCP tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, and cost estimation. 30-second install.">
+  <link rel="icon" type="image/png" href="favicon-64.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="description" content="Stop guessing timelines. Get data-driven estimates your AI can actually use. 26 MCP tools for PERT, COCOMO II, Monte Carlo, sprint forecasting, and cost estimation. One-line install.">
 
   <!-- Open Graph -->
   <meta property="og:title" content="Epoch — Stop Guessing Timelines">
@@ -13,10 +15,15 @@
   <meta property="og:url" content="https://kyanitelabs.github.io/Epoch/">
   <meta property="og:site_name" content="Epoch">
   <meta property="og:locale" content="en_US">
+  <meta property="og:image" content="https://kyanitelabs.github.io/Epoch/og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Epoch hourglass and wordmark, by KyaniteLabs">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Epoch — Stop Guessing Timelines">
-  <meta name="twitter:description" content="26 MCP tools that give AI agents data-driven time estimates. 30-second install.">
+  <meta name="twitter:description" content="26 MCP tools that give AI agents data-driven time estimates. One-line install.">
   <meta name="twitter:site" content="@KyaniteLabs">
+  <meta name="twitter:image" content="https://kyanitelabs.github.io/Epoch/og.jpg">
 
   <!-- SEO Meta Tags -->
   <meta name="keywords" content="MCP server, time estimation, AI agent, PERT, COCOMO II, Monte Carlo, Claude Code, Codex CLI, Cline, cost estimation, sprint forecasting, project planning, LLM tools, token cost, schedule risk, Cursor, Windsurf, VS Code, Zed, software estimation">
@@ -61,7 +68,7 @@
         "name": "How do I install Epoch?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Run `claude mcp add epoch -- npx @kyanitelabs/epoch` in Claude Code, or add it to your .mcp.json file. Epoch is also listed on the MCP Registry at https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest."
+          "text": "Run `claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0` in Claude Code, or add it to your .mcp.json file. Epoch is also listed on the MCP Registry at https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest."
         }
       },
       {
@@ -122,13 +129,13 @@
     "@context": "https://schema.org",
     "@type": "HowTo",
     "name": "Install and Use Epoch for AI Time Estimation",
-    "description": "Get data-driven time estimates from your AI agent in 30 seconds.",
+    "description": "Get data-driven time estimates from your AI agent.",
     "totalTime": "PT30S",
     "step": [
       {
         "@type": "HowToStep",
         "name": "Install Epoch",
-        "text": "Run: claude mcp add epoch -- npx @kyanitelabs/epoch",
+        "text": "Run: claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0",
         "position": 1
       },
       {
@@ -154,7 +161,7 @@
     "@type": "Organization",
     "name": "Kyanite Labs",
     "url": "https://github.com/KyaniteLabs",
-    "logo": "https://kyanitelabs.github.io/Epoch/",
+    "logo": "https://kyanitelabs.github.io/Epoch/apple-touch-icon.png",
     "sameAs": ["https://github.com/KyaniteLabs"]
   }
   </script>
@@ -171,10 +178,11 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>document.documentElement.classList.add("js")</script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwindcss.config = {
+    tailwind.config = {
       theme: {
         extend: {
           fontFamily: {
@@ -187,7 +195,7 @@
             surface2: '#10102A',
             surface3: '#16163A',
             fg: '#E8E8F0',
-            muted: '#6B6B8D',
+            muted: '#8A8AAA',
             accent: '#00E5A0',
             accent2: '#00B8D4',
             warn: '#FFB800',
@@ -205,13 +213,14 @@
       --surface: #0A0A1A;
       --surface2: #10102A;
       --fg: #E8E8F0;
-      --muted: #6B6B8D;
+      --muted: #8A8AAA;
       --accent: #00E5A0;
       --accent2: #00B8D4;
       --border: #1E1E3A;
     }
 
     * { box-sizing: border-box; }
+
 
     body {
       background: var(--bg);
@@ -221,6 +230,7 @@
     }
 
     .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .font-display { font-family: 'Chakra Petch', 'Inter', system-ui, sans-serif; font-weight: 700; }
 
     .hero-mesh {
       position: relative;
@@ -422,7 +432,11 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
+      max-width: 100%;
+      overflow-x: auto;
     }
+    /* Flex children default to min-width:auto, which lets long code push the page wider than a phone. */
+    .flex > .flex-1 { min-width: 0; }
 
     .nav-link {
       transition: color 150ms ease-out;
@@ -476,26 +490,39 @@
       font-weight: 500;
     }
 
-    .reveal {
-      opacity: 0;
-      transform: translateY(30px);
-      transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    /* Sections only drift up into place; they are never invisible, so cold loads, crawlers and screenshots see every word. */
+    .js .reveal {
+      transform: translateY(16px);
+      transition: transform 0.6s ease-out;
     }
-    .reveal.visible {
-      opacity: 1;
+    .js .reveal.visible {
       transform: translateY(0);
     }
 
+    .pain-list { border-top: 1px solid var(--border); }
     .pain-item {
-      padding: 20px 24px;
-      border-radius: 12px;
-      background: rgba(255,77,106,0.03);
-      border: 1px solid rgba(255,77,106,0.08);
-      transition: border-color 200ms ease-out;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
     }
-    .pain-item:hover {
-      border-color: rgba(255,77,106,0.15);
+    @media (min-width: 768px) {
+      .pain-item { grid-template-columns: 12rem minmax(0, 1fr); gap: 32px; }
     }
+    .pain-item > p { margin-bottom: 0; }
+    .ledger { border-top: 1px solid var(--border); }
+    .ledger-row {
+      display: grid;
+      grid-template-columns: 7rem minmax(0, 1fr);
+      gap: 24px;
+      align-items: baseline;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    @media (min-width: 768px) { .ledger-row { grid-template-columns: 9rem minmax(0, 1fr); } }
+    .ledger-row dt { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700; color: var(--accent, #00E5A0); }
+    .ledger-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--muted, #8B8B95); }
 
     .value-card {
       background: var(--surface);
@@ -545,7 +572,7 @@
     @media (prefers-reduced-motion: reduce) {
       .card-hover:hover { transform: none; }
       .cta-primary:hover { transform: none; }
-      .reveal { opacity: 1; transform: none; transition: none; }
+      .js .reveal { opacity: 1; transform: none; transition: none; }
       * { animation-duration: 0ms !important; transition-duration: 0ms !important; }
     }
 
@@ -568,6 +595,17 @@
       top: 0;
     }
 
+    /* The rings sit partly off-canvas; clip them here so the page never scrolls sideways (body overflow-x alone does not stop iOS panning). */
+    body { position: relative; }
+    .deco-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    /* Phones: stack each tool's description under its name instead of scrolling the table sideways. */
+    @media (max-width: 640px) {
+      .tool-table thead { display: none; }
+      .tool-table .tool-table-row td { display: block; }
+      .tool-table .tool-table-row td:first-child { padding-bottom: 0.15rem; }
+      .tool-table .tool-table-row td:nth-child(2) { padding-top: 0; }
+      .tool-table .tool-table-row td:nth-child(3) { display: none; }
+    }
     .deco-ring {
       position: absolute;
       border-radius: 50%;
@@ -579,20 +617,17 @@
 <body class="antialiased">
   <a href="#main" class="skip-link">Skip to content</a>
 
-  <div class="deco-ring" style="width:600px;height:600px;top:-200px;right:-200px;"></div>
-  <div class="deco-ring" style="width:400px;height:400px;top:1200px;left:-150px;"></div>
-  <div class="deco-ring" style="width:500px;height:500px;top:3000px;right:-180px;"></div>
+  <div class="deco-wrap" aria-hidden="true">
+    <div class="deco-ring" style="width:600px;height:600px;top:-200px;right:-200px;"></div>
+    <div class="deco-ring" style="width:400px;height:400px;top:1200px;left:-150px;"></div>
+    <div class="deco-ring" style="width:500px;height:500px;top:3000px;right:-180px;"></div>
+  </div>
 
   <!-- Navigation -->
   <nav class="fixed top-0 w-full z-50" style="background: rgba(5,5,16,0.85); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid var(--border);">
     <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, rgba(0,229,160,0.15), rgba(0,184,212,0.1)); border: 1px solid rgba(0,229,160,0.2);">
-          <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" role="img" aria-label="Epoch clock icon">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-        </div>
+        <img src="epoch-mark.png" width="18" height="28" alt="" class="block">
         <span class="font-mono font-bold text-lg tracking-tight">epoch</span>
       </div>
       <div class="hidden md:flex items-center gap-8 text-sm">
@@ -616,9 +651,9 @@
       <div class="max-w-5xl mx-auto text-center relative z-10">
         <div class="inline-flex items-center gap-2 mb-8 badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
           <span class="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
-          Open Source &middot; Apache-2.0 &middot; v0.6.0
+          Open Source &middot; Apache-2.0 &middot; v0.8.0
         </div>
-        <h1 class="text-5xl md:text-7xl lg:text-8xl font-black tracking-tight leading-[1.05] mb-4">
+        <h1 class="font-display text-5xl md:text-7xl lg:text-8xl tracking-tight leading-[1.05] mb-4">
           Stop guessing<br>
           <span class="glow-text">timelines.</span>
         </h1>
@@ -626,7 +661,7 @@
           Get data-driven estimates your AI can actually use.
         </p>
         <p class="text-base md:text-lg text-muted max-w-2xl mx-auto mb-12 leading-relaxed">
-          26 MCP tools. 30-second install. Works with Claude Code, Cursor, Codex CLI, Cline, Zed, and any MCP client.
+          26 MCP tools. One-line install. Works with Claude Code, Cursor, Codex CLI, Cline, Zed, and any MCP client.
         </p>
         <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <a href="#quickstart" class="cta-primary">
@@ -635,7 +670,6 @@
           </a>
           <a href="#demo" class="cta-secondary">See the demo</a>
         </div>
-        <p class="text-base text-muted">Free to install. If the estimates saved you a bad plan, <a href="https://github.com/sponsors/KyaniteLabs">sponsor the work</a> or <a href="https://ko-fi.com/kyanitelabs">tip on Ko-fi</a>.</p>
 
         <div class="max-w-lg mx-auto terminal" style="box-shadow: 0 0 60px rgba(0,229,160,0.06);">
           <div class="terminal-header">
@@ -645,7 +679,7 @@
             <span class="text-xs text-muted ml-2 font-mono">Terminal</span>
           </div>
           <div class="p-5 font-mono text-sm text-left">
-            <span class="text-muted">$</span> <span class="text-accent">claude mcp add epoch</span> <span class="text-muted">-- npx @kyanitelabs/epoch</span>
+            <span class="text-muted">$</span> <span class="text-accent">claude mcp add epoch</span> <span class="text-muted">-- npx -y @kyanitelabs/epoch@0.8.0</span>
           </div>
         </div>
       </div>
@@ -663,7 +697,7 @@
             Your AI is powerful. But when it comes to "how long will this take?" &mdash; it guesses. Badly.
           </p>
         </div>
-        <div class="grid md:grid-cols-3 gap-6 mb-12 reveal">
+        <div class="pain-list max-w-3xl mx-auto mb-12 reveal">
           <div class="pain-item">
             <p class="text-danger font-semibold mb-2">Asking AI directly</p>
             <p class="text-muted text-sm leading-relaxed">"This will take 2 hours." Two days later, you're still waiting. LLMs hallucinate timelines because they can't perceive time.</p>
@@ -735,35 +769,13 @@
               </li>
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-                <span><strong class="text-fg">30-second install</strong>, zero config, no API keys</span>
+                <span><strong class="text-fg">One-line install</strong>, zero config, no API keys</span>
               </li>
               <li class="flex items-start gap-3 text-muted">
                 <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
                 <span><strong class="text-fg">Self-improving</strong> &mdash; gets more accurate with every estimate</span>
               </li>
             </ul>
-          </div>
-        </div>
-        <!-- Value Equation -->
-        <div class="mt-12 p-8 rounded-2xl text-center reveal" style="background: var(--surface); border: 1px solid var(--border);">
-          <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">The Value Equation</p>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <div>
-              <p class="text-fg font-bold mb-1">Dream Outcome</p>
-              <p class="text-muted text-sm">Estimates your team trusts</p>
-            </div>
-            <div>
-              <p class="text-fg font-bold mb-1">Perceived Likelihood</p>
-              <p class="text-muted text-sm">COCOMO II, PERT, Monte Carlo &mdash; proven methods</p>
-            </div>
-            <div>
-              <p class="text-fg font-bold mb-1">Time Delay</p>
-              <p class="text-muted text-sm">30-second install, instant results</p>
-            </div>
-            <div>
-              <p class="text-fg font-bold mb-1">Effort</p>
-              <p class="text-muted text-sm">AI calls the tools automatically, zero config</p>
-            </div>
           </div>
         </div>
       </div>
@@ -778,7 +790,7 @@
           <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Live Demo</p>
           <h2 class="text-4xl md:text-5xl font-bold mb-6">See it in action</h2>
           <p class="text-muted max-w-xl mx-auto leading-relaxed">
-            A real interaction. No cherry-picking, no edits.
+            An illustrative exchange. Run the same tools yourself for real numbers.
           </p>
         </div>
 
@@ -789,7 +801,7 @@
             <div class="terminal-dot" style="background:#28C840;"></div>
             <span class="text-xs text-muted ml-2 font-mono">Claude + Epoch</span>
           </div>
-          <div class="p-6 space-y-5">
+          <div class="p-4 sm:p-6 space-y-5">
             <div class="flex justify-end">
               <div class="chat-user max-w-[80%]">
                 <p class="text-fg/90 text-sm">How long will a 15K LOC project take with a team of 5?</p>
@@ -802,10 +814,10 @@
               </div>
             </div>
             <div class="flex justify-start">
-              <div class="chat-agent max-w-[85%]">
+              <div class="chat-agent max-w-full sm:max-w-[85%] min-w-0">
                 <div class="font-mono text-sm space-y-3">
                   <p class="text-fg/90 font-semibold">Based on COCOMO II estimation:</p>
-                  <div class="grid grid-cols-2 gap-x-6 gap-y-2">
+                  <div class="grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2">
                     <span class="text-muted">Effort:</span>
                     <span class="text-accent font-semibold">45 person-months</span>
                     <span class="text-muted">Duration:</span>
@@ -879,7 +891,7 @@
             <div class="layer-badge">L4</div>
             <div class="flex-1">
               <h3 class="font-semibold text-lg mb-1">Self-Improving</h3>
-              <p class="text-muted text-sm">Reference class forecasting, calibration from historical data. Gets more accurate with every estimate.</p>
+              <p class="text-muted text-sm">Reference class forecasting, calibration from historical data. Gets more accurate as you record actuals.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
               <span class="tool-tag">reference_class_estimate</span>
@@ -920,41 +932,17 @@
     <!-- 6. SOCIAL PROOF (Real Signals) -->
     <section class="py-28 px-6">
       <div class="max-w-7xl mx-auto">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 reveal">
-          <div class="text-center p-8 rounded-2xl card-hover">
-            <div class="metric-value mb-3">CI</div>
-            <div class="text-sm text-muted font-medium">Tests, Lint, Build</div>
-          </div>
-          <div class="text-center p-8 rounded-2xl card-hover">
-            <div class="metric-value mb-3">97%</div>
-            <div class="text-sm text-muted font-medium">Statement Coverage</div>
-          </div>
-          <div class="text-center p-8 rounded-2xl card-hover">
-            <div class="metric-value mb-3">24</div>
-            <div class="text-sm text-muted font-medium">MCP Tools</div>
-          </div>
-          <div class="text-center p-8 rounded-2xl card-hover">
-            <div class="metric-value mb-3">12</div>
-            <div class="text-sm text-muted font-medium">Model Calibrations</div>
-          </div>
-        </div>
-        <div class="flex flex-wrap items-center justify-center gap-4 mt-10 reveal">
-          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-            Apache-2.0 License
-          </div>
-          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-            Open Source
-          </div>
-          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-            5,800+ Calibration Samples
-          </div>
-          <div class="badge" style="background: rgba(0,229,160,0.06); border: 1px solid rgba(0,229,160,0.12); color: #00E5A0;">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-            30 Test Files
-          </div>
+        <div class="max-w-3xl mx-auto reveal">
+          <h2 class="text-3xl md:text-4xl font-bold mb-8">The receipts</h2>
+          <dl class="ledger">
+            <div class="ledger-row"><dt>CI</dt><dd>Tests, lint and build run on every pull request</dd></div>
+            <div class="ledger-row"><dt>91%</dt><dd>Statement coverage; CI enforces an 80% floor on lib and tools</dd></div>
+            <div class="ledger-row"><dt>26</dt><dd>MCP tools, the same set over CLI and REST</dd></div>
+            <div class="ledger-row"><dt>16</dt><dd>Models covered, 12 with measured throughput calibrations and a generic default for the rest</dd></div>
+            <div class="ledger-row"><dt>117,791</dt><dd>Tool-usage and latency samples in the bundled reference database</dd></div>
+            <div class="ledger-row"><dt>2,000+</dt><dd>Passing tests in the main Vitest suite</dd></div>
+            <div class="ledger-row"><dt>Apache-2.0</dt><dd>Open-source licence</dd></div>
+          </dl>
         </div>
       </div>
     </section>
@@ -971,29 +959,11 @@
             The code is public. Audit it yourself. Telemetry is off by default. Every data point is documented.
           </p>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 reveal">
-          <div class="p-8 rounded-2xl card-hover text-center">
-            <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-            </div>
-            <h3 class="font-semibold text-lg mb-3 text-fg">Off by Default</h3>
-            <p class="text-muted text-sm leading-relaxed">Telemetry requires explicit opt-in. Preview exactly what will be shared before enabling.</p>
-          </div>
-          <div class="p-8 rounded-2xl card-hover text-center">
-            <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-            </div>
-            <h3 class="font-semibold text-lg mb-3 text-fg">Zero PII</h3>
-            <p class="text-muted text-sm leading-relaxed">No names, emails, project names, or company data. Dates truncated to day-only.</p>
-          </div>
-          <div class="p-8 rounded-2xl card-hover text-center">
-            <div class="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-7 h-7 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
-            </div>
-            <h3 class="font-semibold text-lg mb-3 text-fg">Self-Hostable</h3>
-            <p class="text-muted text-sm leading-relaxed">Configurable endpoint. Run your own telemetry server. Full API contract documented.</p>
-          </div>
-        </div>
+        <dl class="ledger max-w-3xl mx-auto mb-10 reveal">
+          <div class="ledger-row"><dt>Off</dt><dd><strong class="text-fg">Telemetry is off by default.</strong> Turning it on is an explicit opt-in, and you can preview exactly what will be shared first.</dd></div>
+          <div class="ledger-row"><dt>No PII</dt><dd><strong class="text-fg">No names, emails, project names or company data.</strong> Dates are truncated to the day.</dd></div>
+          <div class="ledger-row"><dt>Yours</dt><dd><strong class="text-fg">Self-hostable.</strong> Point the endpoint at your own telemetry server; the API contract is documented.</dd></div>
+        </dl>
         <div class="flex flex-wrap items-center justify-center gap-8 text-sm reveal">
           <a href="https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md" class="nav-link text-muted font-medium">Privacy Policy</a>
           <a href="https://github.com/KyaniteLabs/Epoch/blob/main/docs/TELEMETRY.md" class="nav-link text-muted font-medium">Telemetry Docs</a>
@@ -1014,50 +984,16 @@
             All 26 tools are accessible through MCP, CLI, and REST API. Use whichever fits your workflow.
           </p>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 reveal">
-          <div class="p-8 rounded-2xl card-hover">
-            <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-5" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            </div>
-            <h3 class="font-semibold text-lg mb-2 text-fg">MCP Server</h3>
-            <p class="text-muted text-sm mb-5">Stdio transport for Claude Code, Cursor, Codex CLI, Cline, Zed</p>
-            <div class="code-block p-3 font-mono text-xs text-accent">claude mcp add epoch -- npx @kyanitelabs/epoch</div>
-          </div>
-          <div class="p-8 rounded-2xl card-hover">
-            <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-5" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-            </div>
-            <h3 class="font-semibold text-lg mb-2 text-fg">CLI</h3>
-            <p class="text-muted text-sm mb-5">Scriptable subcommands with JSON or table output</p>
-            <div class="code-block p-3 font-mono text-xs text-accent">epoch pert-estimate -o 2 -m 4 -p 12</div>
-          </div>
-          <div class="p-8 rounded-2xl card-hover">
-            <div class="w-12 h-12 rounded-xl flex items-center justify-center mb-5" style="background: rgba(0,229,160,0.08); border: 1px solid rgba(0,229,160,0.15);">
-              <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
-            </div>
-            <h3 class="font-semibold text-lg mb-2 text-fg">REST API</h3>
-            <p class="text-muted text-sm mb-5">HTTP server with OpenAPI spec and AI discoverability</p>
-            <div class="code-block p-3 font-mono text-xs text-accent">epoch serve --port 3000</div>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-center text-sm reveal">
-          <div class="p-4 rounded-xl" style="background: var(--surface); border: 1px solid var(--border);">
-            <div class="font-mono text-accent text-xs mb-1">/.well-known/ai-plugin.json</div>
-            <div class="text-muted text-xs">AI manifest</div>
-          </div>
-          <div class="p-4 rounded-xl" style="background: var(--surface); border: 1px solid var(--border);">
-            <div class="font-mono text-accent text-xs mb-1">/llms.txt</div>
-            <div class="text-muted text-xs">LLM docs</div>
-          </div>
-          <div class="p-4 rounded-xl" style="background: var(--surface); border: 1px solid var(--border);">
-            <div class="font-mono text-accent text-xs mb-1">/openapi.json</div>
-            <div class="text-muted text-xs">OpenAPI 3.1</div>
-          </div>
-          <div class="p-4 rounded-xl" style="background: var(--surface); border: 1px solid var(--border);">
-            <div class="font-mono text-accent text-xs mb-1">/health</div>
-            <div class="text-muted text-xs">Status</div>
-          </div>
-        </div>
+        <dl class="ledger max-w-3xl mx-auto mb-8 reveal">
+          <div class="ledger-row"><dt>MCP</dt><dd><span class="block mb-3">Stdio server for Claude Code, Cursor, Codex CLI, Cline and Zed.</span><code class="code-block block p-3 font-mono text-xs text-accent">claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0</code></dd></div>
+          <div class="ledger-row"><dt>CLI</dt><dd><span class="block mb-3">Scriptable subcommands with JSON or table output.</span><code class="code-block block p-3 font-mono text-xs text-accent">epoch pert-estimate -o 2 -m 4 -p 12</code></dd></div>
+          <div class="ledger-row"><dt>REST</dt><dd><span class="block mb-3">HTTP server with an OpenAPI spec and AI discovery files.</span><code class="code-block block p-3 font-mono text-xs text-accent">epoch serve --port 3000</code></dd></div>
+        </dl>
+        <p class="text-sm text-muted text-center leading-relaxed reveal">REST also serves
+          <code class="font-mono text-accent">/.well-known/ai-plugin.json</code> (AI manifest),
+          <code class="font-mono text-accent">/llms.txt</code> (LLM docs),
+          <code class="font-mono text-accent">/openapi.json</code> (OpenAPI 3.1) and
+          <code class="font-mono text-accent">/health</code>.</p>
       </div>
     </section>
 
@@ -1073,8 +1009,8 @@
             Zod-validated schemas, <code class="font-mono text-accent text-sm">.describe()</code> on every field, <code class="font-mono text-accent text-sm">readOnlyHint</code> annotations.
           </p>
         </div>
-        <div class="rounded-2xl overflow-hidden reveal" style="background: var(--surface); border: 1px solid var(--border);">
-          <table class="w-full text-sm">
+        <div class="rounded-2xl overflow-hidden overflow-x-auto reveal" style="background: var(--surface); border: 1px solid var(--border);">
+          <table class="tool-table w-full text-sm">
             <thead>
               <tr style="background: var(--surface2);">
                 <th class="px-5 py-4 font-mono font-semibold text-accent text-left">Tool</th>
@@ -1093,15 +1029,21 @@
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_estimate</td><td class="px-5 py-3 text-muted">COCOMO II with 5 LLM-adapted cost drivers</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">sprint_forecast</td><td class="px-5 py-3 text-muted">Sprint velocity forecasting with variance-based pessimistic estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">critical_path</td><td class="px-5 py-3 text-muted">CPM with forward/backward pass and merge bias</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-5 py-3 text-muted">Monte Carlo simulation with seeded PRNG, P10-P95 percentiles</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">monte_carlo_schedule</td><td class="px-5 py-3 text-muted">Monte Carlo simulation with seeded PRNG: P10–P95 percentiles and an optional histogram</td><td class="px-5 py-3 text-muted hidden md:table-cell">L3</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">reference_class_estimate</td><td class="px-5 py-3 text-muted">Reference class forecasting with industry correction factors</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">estimate_from_context</td><td class="px-5 py-3 text-muted">Classify a free-text task and route it to reference class estimation</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">calibrate_estimates</td><td class="px-5 py-3 text-muted">Team-specific correction factor calibration from historical data</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
-              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-5 py-3 text-muted">Map token budgets to wall-clock time for 16 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_time_bridge</td><td class="px-5 py-3 text-muted">Map token budgets to wall-clock time for 16 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">wait_bound</td><td class="px-5 py-3 text-muted">Derive a wait deadline from the mechanism the wait rides</td><td class="px-5 py-3 text-muted hidden md:table-cell">L4</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">token_cost_estimate</td><td class="px-5 py-3 text-muted">Token cost estimation with input/output breakdown</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">compare_models</td><td class="px-5 py-3 text-muted">Side-by-side comparison across 16 LLM models</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">accuracy_trend</td><td class="px-5 py-3 text-muted">Sliding-window MAPE tracking over time</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">schedule_risk</td><td class="px-5 py-3 text-muted">Confidence intervals using team MdAPE</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_validate</td><td class="px-5 py-3 text-muted">Validate COCOMO II estimates against reference data</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">cocomo_ground_truth</td><td class="px-5 py-3 text-muted">Benchmark COCOMO variants against real historical projects</td><td class="px-5 py-3 text-muted hidden md:table-cell">L5</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">record_actual</td><td class="px-5 py-3 text-muted">Submit actual hours for a previous estimate</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">get_pending_estimates</td><td class="px-5 py-3 text-muted">List estimates still waiting for actual hours</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
+              <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">batch_record_actuals</td><td class="px-5 py-3 text-muted">Record actual hours for many estimates at once</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
               <tr class="tool-table-row"><td class="px-5 py-3 font-mono text-accent whitespace-nowrap">feedback_health</td><td class="px-5 py-3 text-muted">Comprehensive feedback data quality report</td><td class="px-5 py-3 text-muted hidden md:table-cell">Feedback</td></tr>
             </tbody>
           </table>
@@ -1116,7 +1058,7 @@
       <div class="max-w-3xl mx-auto relative z-10">
         <div class="text-center mb-16 reveal">
           <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Get Started</p>
-          <h2 class="text-4xl md:text-5xl font-bold mb-6">Up and running in 30 seconds</h2>
+          <h2 class="text-4xl md:text-5xl font-bold mb-6">Up and running</h2>
           <p class="text-muted max-w-xl mx-auto leading-relaxed text-lg">
             No config files. No API keys. One command.
           </p>
@@ -1134,7 +1076,7 @@
                   <div class="terminal-dot" style="background:#28C840;"></div>
                 </div>
                 <div class="p-4 font-mono text-sm overflow-x-auto">
-                  <span class="text-muted">$</span> <span class="text-accent">claude mcp add epoch</span> <span class="text-muted">-- npx @kyanitelabs/epoch</span>
+                  <span class="text-muted">$</span> <span class="text-accent">claude mcp add epoch</span> <span class="text-muted">-- npx -y @kyanitelabs/epoch@0.8.0</span>
                 </div>
               </div>
             </div>
@@ -1169,7 +1111,7 @@
         </div>
 
         <div class="mt-16 text-center reveal">
-          <p class="text-muted text-sm mb-5">30 seconds. No API keys. No config.</p>
+          <p class="text-muted text-sm mb-5">One command. No API keys. No config.</p>
           <a href="https://github.com/KyaniteLabs/Epoch" class="cta-primary">
             Install Epoch &mdash; It's Free
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M7 17L17 7M7 7h10v10"/></svg>
@@ -1221,14 +1163,14 @@
               <span>What estimation methods does Epoch use?</span>
               <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </div>
-            <div class="faq-answer">PERT three-point estimation, COCOMO II (with LLM-adapted cost drivers), Monte Carlo simulation, reference class forecasting, critical path method, and sprint velocity forecasting. Each method has been calibrated against historical project data.</div>
+            <div class="faq-answer">PERT three-point estimation, COCOMO II (with LLM-adapted cost drivers), Monte Carlo simulation, reference class forecasting, critical path method, and sprint velocity forecasting. PERT and reference class correction factors are backtested against recorded actuals; the other methods use their published parameters.</div>
           </div>
           <div class="faq-item">
             <div class="faq-question">
               <span>How does self-improvement work?</span>
               <svg class="w-5 h-5 text-muted flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </div>
-            <div class="faq-answer">Every estimate generates a feedback token. Record the actual hours when the work is done, and Epoch auto-calibrates correction factors for that task type and complexity. After 5+ matched pairs per task type, self-improvement kicks in automatically. More data = better estimates.</div>
+            <div class="faq-answer">Every estimate generates a feedback token. Record the actual hours when the work is done, and Epoch auto-calibrates correction factors for that task type and complexity. After 5+ matched pairs per task type, self-improvement kicks in automatically. Each recorded actual feeds the next correction.</div>
           </div>
         </div>
       </div>
@@ -1243,24 +1185,12 @@
           <p class="text-accent font-mono text-sm font-semibold tracking-widest uppercase mb-4">Built With</p>
           <h2 class="text-4xl md:text-5xl font-bold mb-6">Solid foundations</h2>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 reveal">
-          <div class="p-6 rounded-2xl card-hover text-center">
-            <div class="font-mono font-bold text-fg text-lg">TypeScript 6.0</div>
-            <div class="text-xs text-muted mt-2">Strict + noUncheckedIndexedAccess</div>
-          </div>
-          <div class="p-6 rounded-2xl card-hover text-center">
-            <div class="font-mono font-bold text-fg text-lg">Zod 4.0</div>
-            <div class="text-xs text-muted mt-2">Schema validation with .describe()</div>
-          </div>
-          <div class="p-6 rounded-2xl card-hover text-center">
-            <div class="font-mono font-bold text-fg text-lg">MCP SDK 1.12</div>
-            <div class="text-xs text-muted mt-2">Model Context Protocol</div>
-          </div>
-          <div class="p-6 rounded-2xl card-hover text-center">
-            <div class="font-mono font-bold text-fg text-lg">Vitest 4.x</div>
-            <div class="text-xs text-muted mt-2">Current suite via pnpm test</div>
-          </div>
-        </div>
+        <dl class="ledger max-w-3xl mx-auto reveal">
+          <div class="ledger-row"><dt>TypeScript 6</dt><dd>Strict mode with noUncheckedIndexedAccess</dd></div>
+          <div class="ledger-row"><dt>Zod 4</dt><dd>Every tool input validated by a schema with .describe() text</dd></div>
+          <div class="ledger-row"><dt>MCP SDK 1.31</dt><dd>Model Context Protocol server over stdio</dd></div>
+          <div class="ledger-row"><dt>Vitest 4</dt><dd>The full suite runs with pnpm test</dd></div>
+        </dl>
       </div>
     </section>
   </main>
@@ -1269,22 +1199,17 @@
   <footer class="py-12 px-6" style="border-top: 1px solid var(--border);">
     <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted">
       <div class="flex items-center gap-3">
-        <div class="w-6 h-6 rounded flex items-center justify-center" style="background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.15);">
-          <svg class="w-3 h-3 text-accent" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" role="img" aria-label="Epoch clock icon">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-        </div>
+        <img src="epoch-mark.png" width="18" height="28" alt="" class="block">
         <span class="font-mono font-medium text-fg/70">Epoch</span>
         <span class="text-fg/20">&mdash;</span>
         <span>Built by <a href="https://github.com/KyaniteLabs" class="text-accent/70 hover:text-accent transition-colors">Kyanite Labs</a></span>
       </div>
-      <div class="flex items-center gap-6">
+      <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
         <a href="https://github.com/KyaniteLabs/Epoch" class="nav-link text-muted">GitHub</a>
         <a href="https://www.npmjs.com/package/@kyanitelabs/epoch" class="nav-link text-muted">npm</a>
         <a href="https://github.com/KyaniteLabs/Epoch/blob/main/docs/PRIVACY.md" class="nav-link text-muted">Privacy</a>
         <a href="https://github.com/KyaniteLabs/Epoch/blob/main/docs/TELEMETRY.md" class="nav-link text-muted">Telemetry</a>
-        <span class="text-fg/20">Apache-2.0</span>
+        <span class="text-muted">Apache-2.0</span>
       </div>
     </div>
   </footer>
@@ -1304,7 +1229,7 @@
             entry.target.classList.add('visible');
           }
         });
-      }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+      }, { threshold: 0, rootMargin: '0px 0px -40px 0px' });
       document.querySelectorAll('.reveal').forEach(function(el) {
         observer.observe(el);
       });

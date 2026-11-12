@@ -8,7 +8,7 @@ Keywords: mcp-server, time-estimation, pert, cocomo-ii, monte-carlo, cost-estima
 sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, codex-cli,
 cline, zed, windsurf, llm
 
-Install: claude mcp add epoch -- npx @kyanitelabs/epoch
+Install: claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0
 npm: https://www.npmjs.com/package/@kyanitelabs/epoch
 MCP Registry: https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest
 GitHub: https://github.com/KyaniteLabs/Epoch
@@ -18,7 +18,7 @@ Agent skill: skills/epoch/SKILL.md, invoked as $epoch in compatible agent hosts
 
 # Epoch — Time Estimation MCP Server
 
-> @kyanitelabs/epoch v0.6.0 — 26 structured tools for grounded time estimation
+> @kyanitelabs/epoch v0.8.0 — 26 structured tools for grounded time estimation
 
 ## What
 
@@ -227,15 +227,15 @@ Health report on the feedback loop.
 
 ## Interfaces
 
-- **MCP**: `npx @kyanitelabs/epoch` (stdio transport) — Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code
-- **CLI**: `npx @kyanitelabs/epoch <command> [options]`
+- **MCP**: `npx -y @kyanitelabs/epoch@0.8.0` (stdio transport) — Claude Code, Cursor, Codex CLI, Cline, Zed, Windsurf, VS Code
+- **CLI**: `npx -y @kyanitelabs/epoch@0.8.0 <command> [options]`
 - **HTTP**: `http://localhost:3000/v1/tools/<tool-name>` (POST with JSON body)
 - **AI Manifest**: `/.well-known/ai-plugin.json`
 - **OpenAPI**: `/openapi.json` (OpenAPI 3.1 spec)
 
 ## Quick Start
 
-1. Install: `claude mcp add epoch -- npx @kyanitelabs/epoch`
+1. Install: `claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0`
 2. Ask any time question: "How long will a 15K LOC project take?"
 3. Get grounded estimates with PERT, COCOMO II, Monte Carlo, and more
 
