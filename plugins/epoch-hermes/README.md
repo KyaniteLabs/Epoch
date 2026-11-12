@@ -1,19 +1,26 @@
 # Epoch for Hermes (native plugin)
 
+Epoch tells you how long a task will probably take, and how long it could take in the worst case, based on your own past tasks.
+
 P50/P90 estimates on your Hermes Kanban board, calibrated against the actuals you record. They are forecasts, not commitments.
 
 ![Epoch for Hermes Kanban](docs/banner.png)
 
 > **Disclosure.** This plugin shells out to `npx -y @kyanitelabs/epoch@0.8.0` (downloads Epoch
 > from npm on first run; needs **Node >= 22** and `npx` on `PATH`). The child process gets a
-> **scrubbed environment**: only allow-listed `PATH`/`HOME`/locale/temp, Node/npm (cache,
-> registry, CA certs) and proxy variables. Your parent environment, API keys and Hermes secrets
-> are never passed through. The ledger and run bindings live under
+> **scrubbed environment**: only the variables listed under "Environment passed to Epoch" below.
+> Your parent environment, API keys and Hermes secrets are never passed through. The ledger and run bindings live under
 > `<HERMES_HOME>/plugin-data/epoch/` (the root Hermes home, shared by every profile) unless you set
 > `epoch_data_dir`. Epoch telemetry is **forced off** for every plugin run (`EPOCH_TELEMETRY=0`,
 > which overrides `epoch telemetry enable`). Apart from the npm download there is no network
 > access, and no API key. The task title (first 80 chars) and its `epoch:` hint go only to the
 > local CLI. Hook work runs on a short-lived background thread.
+
+> **Host dependency.** The Desktop dashboard backend (`dashboard/plugin_api.py`) reads Kanban through
+> Hermes internals (`hermes_cli.kanban_db`, `kanban_db_connect`, `kanban_db_boards`) and your plugin
+> settings through `hermes_cli.config`. These are not a public Hermes API. If they are missing or
+> renamed, `/tasks` answers with an empty list and a "Kanban is not available" note, `/forecast`
+> answers 503, and the hooks, the `/epoch` command and the tool keep working.
 
 | Surface | What it does |
 |---|---|
@@ -46,6 +53,16 @@ Node >= 22 and `npx` on PATH. No API key or secret. The first claim may take a f
 | `timeout_seconds` | `60` | Per Epoch CLI call. |
 | `shutdown_wait_seconds` | `20` | How long an exiting process waits for in-flight Epoch work. |
 | `allow_write_slash_on_gateway` | `false` | Allow `/epoch` ledger-writing commands from gateway platforms. |
+| `allow_ledger_read_on_gateway` | `false` | Allow `/epoch` commands that read the ledger (`get-pending-estimates`, `accuracy-trend`, `feedback-health`, `data status`, `reference-class-estimate`, ...) from gateway platforms. Off by default because the ledger holds task text from every profile. Gateways always allow the pure calculators (`pert-estimate`, `parse-duration`, ...). Local use (CLI, TUI, Desktop) is unaffected. |
+
+### Environment passed to Epoch
+
+Only these variables reach the `npx` child, and only when set in the parent: `PATH`, `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TZ`, `TMPDIR`, `TMP`, `TEMP`, `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, `NODE_EXTRA_CA_CERTS`, `NVM_DIR`, `NVM_BIN`, `VOLTA_HOME`, `FNM_DIR`, `npm_config_cache`, `npm_config_registry`, `npm_config_prefix`, `npm_config_userconfig` (and their upper-case forms), `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (and lower-case), `SSL_CERT_FILE`, `SSL_CERT_DIR`.
+Epoch itself adds `EPOCH_DATA_DIR`, `EPOCH_TELEMETRY=0`, `NO_COLOR`, `NO_UPDATE_NOTIFIER`,
+`npm_config_update_notifier=false` and `npm_config_fund=false`. `NODE_OPTIONS` is always dropped,
+because it can preload code into Node. The registry, cache, CA and proxy variables stay because
+`npx` needs them to download Epoch; proxy URLs may carry credentials, and `HOME` lets npm read
+your `~/.npmrc`, so keep secrets out of those if you do not want npm to see them.
 
 ## What it looks like
 
@@ -135,7 +152,7 @@ The MCP server and skills for Claude/Cursor are in [`../epoch`](../epoch).
 
 ## Known issues
 
-- Epoch 0.7.0 did not screen path flags in `/epoch` pass-through. `/epoch share-data --output <path>` or `/epoch community-export --output <path>` could write a local JSON export (anonymized estimate records) to that path, including from gateway platforms. No data left the machine. 0.8.0 refuses `share-data` and any `--output` or `-o` path from `/epoch`.
+- Epoch 0.7.0 did not screen path flags in `/epoch` pass-through. `/epoch share-data --output <path>` or `/epoch community-export --output <path>` could write a local JSON export (anonymized estimate records) to that path, including from gateway platforms. No data left the machine. 0.9.0 refuses `share-data` and any `--output` or `-o` path from `/epoch`. 0.7.0 and 0.8.0 do not.
 
 ## License
 

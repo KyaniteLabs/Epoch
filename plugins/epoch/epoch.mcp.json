@@ -5,7 +5,10 @@
       "args": [
         "-y",
         "@kyanitelabs/epoch@0.8.0"
-      ]
+      ],
+      "env": {
+        "EPOCH_TOOLS": "core"
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "epoch",
+  "name": "epoch-agent",
   "version": "0.8.0",
   "description": "Use Epoch for calibrated time estimates, business-day math, and schedule risk.",
   "author": {

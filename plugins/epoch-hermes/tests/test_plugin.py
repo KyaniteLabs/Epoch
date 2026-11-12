@@ -118,7 +118,9 @@ def test_f2_concurrent_recorders_record_once(plugin, board, make_ctx, tmp_path):
           for _ in range(2)]
     [t.start() for t in ts]
     [t.join() for t in ts]
-    assert sorted(out) == ["duplicate", "recorded"]
+    # The lock is now polled (E3), so the loser may arrive after the winner finished and see
+    # "already_recorded" instead of Epoch's "duplicate". Either way exactly one actual lands.
+    assert sorted(out)[1] == "recorded" and sorted(out)[0] in ("duplicate", "already_recorded")
     assert sum("[epoch:actual" in b for b in board.bodies(tid)) == 1
 
 
@@ -478,7 +480,9 @@ def test_child_env_is_scrubbed_and_telemetry_forced_off(plugin, make_ctx, tmp_pa
     assert call["telemetry"] == "0"
     assert set(call["env_keys"]) <= set(plugin._ENV_ALLOW) | {
         "EPOCH_DATA_DIR", "EPOCH_TELEMETRY", "NO_COLOR", "NO_UPDATE_NOTIFIER",
-        "npm_config_update_notifier", "npm_config_fund", "LC_CTYPE"}
+        "npm_config_update_notifier", "npm_config_fund", "LC_CTYPE",
+        # macOS adds this to every process at exec, even under `env -i`; the plugin never passes it.
+        "__CF_USER_TEXT_ENCODING"}
 
 
 def test_scrubbed_env_keeps_path_and_pins_data_dir(plugin, make_ctx, tmp_path, monkeypatch):

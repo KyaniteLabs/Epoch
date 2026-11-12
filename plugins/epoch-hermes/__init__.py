@@ -55,6 +55,7 @@ import os
 import random
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -109,6 +110,7 @@ DEFAULTS: Dict[str, Any] = {
     "timeout_seconds": 60,
     "shutdown_wait_seconds": 20,
     "allow_write_slash_on_gateway": False,
+    "allow_ledger_read_on_gateway": False,
 }
 
 # Hours bounds for a three-point estimate (explicit or hint). 2000h ≈ one person-year.
@@ -180,12 +182,19 @@ class BoardError(RuntimeError):
 # --------------------------------------------------------------------------- settings
 
 
+_config_warned = False
+
+
 def _cfg(key: str, settings: Optional[Dict[str, Any]] = None) -> Any:
+    global _config_warned
     if settings is not None and key in settings:
         return settings[key]
     try:
         val = _ctx.get_config(key, None) if _ctx is not None else None
-    except Exception:
+    except Exception as exc:
+        if not _config_warned:  # once: a broken config store would otherwise repeat on every read
+            _config_warned = True
+            logger.warning("epoch: reading the plugin config failed (%s); using the defaults", type(exc).__name__)
         val = None
     return DEFAULTS[key] if val is None else val
 
@@ -198,12 +207,13 @@ def snapshot_settings() -> Dict[str, Any]:
 # --------------------------------------------------------------------------- Epoch CLI
 
 # Only what ``npx``/Node need to resolve, download (proxy/cache) and run Epoch. The parent
-# environment (API keys, tokens, Hermes secrets) is never handed to the child.
+# environment (API keys, tokens, Hermes secrets) is never handed to the child. NODE_OPTIONS is
+# deliberately absent: it can preload arbitrary code (``--require``) into Node.
 _ENV_ALLOW = (
     "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
     "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA",
     "USERPROFILE", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
-    "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS", "NVM_DIR", "NVM_BIN", "VOLTA_HOME", "FNM_DIR",
+    "NODE_EXTRA_CA_CERTS", "NVM_DIR", "NVM_BIN", "VOLTA_HOME", "FNM_DIR",
     "npm_config_cache", "NPM_CONFIG_CACHE", "npm_config_registry", "NPM_CONFIG_REGISTRY",
     "npm_config_prefix", "NPM_CONFIG_PREFIX", "npm_config_userconfig", "NPM_CONFIG_USERCONFIG",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
@@ -230,6 +240,15 @@ def _scrubbed_env(settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
 
 
 
+def _split_command(raw: str, windows: Optional[bool] = None) -> List[str]:
+    """``shlex.split`` that keeps Windows backslash paths: POSIX rules there eat every ``\\``."""
+    windows = os.name == "nt" if windows is None else windows
+    parts = shlex.split(raw, posix=not windows)
+    if windows:  # non-POSIX mode leaves the quotes on; drop one matching pair
+        parts = [p[1:-1] if len(p) >= 2 and p[0] == p[-1] and p[0] in "\"'" else p for p in parts]
+    return parts
+
+
 def _error_text(res: Dict[str, Any]) -> str:
     err = res.get("error")
     if isinstance(err, dict):
@@ -239,6 +258,27 @@ def _error_text(res: Dict[str, Any]) -> str:
     return _redact_home(text)
 
 
+def _run_group(cmd: List[str], timeout: float, env: Dict[str, str]) -> "subprocess.CompletedProcess[str]":
+    """``subprocess.run`` that, on timeout, kills the whole process group, not only ``npx``.
+
+    ``npx`` spawns node as a child; killing just ``npx`` would leave node running.
+    """
+    posix = os.name == "posix"
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                          start_new_session=posix) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if posix:
+                with suppress(ProcessLookupError, PermissionError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.communicate()
+            raise
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Run the Epoch CLI and return its parsed ``{ok, data|error}`` envelope.
 
@@ -246,7 +286,7 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
     as ``{"ok": False, "error": "..."}``.
     """
     try:
-        cmd = shlex.split(str(_cfg("epoch_command", settings))) + [str(a) for a in args]
+        cmd = _split_command(str(_cfg("epoch_command", settings))) + [str(a) for a in args]
     except ValueError as exc:
         return {"ok": False, "error": f"invalid epoch_command: {exc}"}
     try:
@@ -258,7 +298,7 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
     except (TypeError, ValueError):
         timeout = float(DEFAULTS["timeout_seconds"])
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+        proc = _run_group(cmd, timeout, env)
     except (FileNotFoundError, PermissionError) as exc:
         return {"ok": False, "error": f"epoch not runnable: {exc}"}
     except subprocess.TimeoutExpired:
@@ -574,6 +614,13 @@ def _binding_key(task_id: str, board: Optional[str], run_id: Any) -> str:
     return f"{board or '-'}:{task_id}:{run_id}"
 
 
+LOCK_TIMEOUT_SECONDS = 5.0
+
+
+class LockTimeout(TimeoutError):
+    """Another process held a state-file lock past the deadline."""
+
+
 @contextmanager
 def _file_lock(path: Path):
     """Exclusive cross-process lock via a sibling ``.<name>.lock`` (Hermes PluginState convention)."""
@@ -594,7 +641,18 @@ def _file_lock(path: Path):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(
+                            f"could not lock {path.name} within {LOCK_TIMEOUT_SECONDS:g}s; "
+                            "another Epoch process is holding it"
+                        ) from None
+                    time.sleep(0.05)
             try:
                 yield
             finally:
@@ -1191,7 +1249,7 @@ def _job_id(kind: str, task_id: str, board: Optional[str], run_id: Any) -> str:
     return f"{kind}:{board or '-'}:{task_id}:{run_id}"
 
 
-def _outbox_update(fn) -> None:
+def _outbox_update(fn) -> bool:
     """Apply *fn* to the outbox dict under a cross-process transaction when possible.
 
     Hermes ``PluginState.get``/``set`` each lock individually; a get→mutate→set RMW across
@@ -1200,7 +1258,7 @@ def _outbox_update(fn) -> None:
     calling get/set (which would drop the lock between ops).
     """
     if _ctx is None:
-        return
+        return False
     try:
         state = _ctx.state
         update = getattr(state, "update", None)
@@ -1210,7 +1268,7 @@ def _outbox_update(fn) -> None:
                 fn(box)
                 return box
             update(OUTBOX_KEY, mutator, default={})
-            return
+            return True
         path = getattr(state, "path", None)
         if path is not None:
             path = Path(path)
@@ -1221,15 +1279,21 @@ def _outbox_update(fn) -> None:
                     fn(box)
                     data[OUTBOX_KEY] = box
                     _write_json_file(path, data)
-            return
+            return True
         with _outbox_lock:
             box = state.get(OUTBOX_KEY, None) or {}
             if not isinstance(box, dict):
                 box = {}
             fn(box)
             state.set(OUTBOX_KEY, box)
-    except Exception:
+        return True
+    except Exception as exc:
+        # The change did not reach disk. Callers that need it durable (the start claim) must not
+        # proceed; a restart will not replay (or will replay a finished) job.
+        logger.warning("epoch: outbox update failed (%s: %s); the outbox was not changed",
+                       type(exc).__name__, exc)
         logger.debug("epoch: outbox update failed", exc_info=True)
+        return False
 
 
 def _outbox_put(job: Dict[str, Any]) -> None:
@@ -1286,11 +1350,13 @@ def _run_job(job: Dict[str, Any]) -> None:
         _outbox_done(job["id"])
     except Exception as exc:
         logger.debug("epoch: job %s failed; left in outbox for retry", job.get("id"), exc_info=True)
+        last_error = f"{type(exc).__name__}: {exc}"[:300]  # captured here: bump runs after this block
+
         def bump(box):
             if job["id"] in box:
                 box[job["id"]]["attempts"] = int(box[job["id"]].get("attempts", 0)) + 1
                 box[job["id"]]["lease_until"] = 0
-                box[job["id"]]["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
+                box[job["id"]]["last_error"] = last_error
         _outbox_update(bump)
     finally:
         with _inflight_lock:
@@ -1306,6 +1372,70 @@ def _start(job: Dict[str, Any]) -> threading.Thread:
         _inflight[job["id"]] = t
     t.start()
     return t
+
+
+REPLAY_WORKERS = 2
+
+
+def _claim_for_start(job: Dict[str, Any]) -> bool:
+    """Renew the lease when a worker actually starts *job*, and say whether it should run.
+
+    The lease taken at pick time ticks while the job waits behind the other workers, so with
+    enough queued jobs it lapses before the job starts and another replay takes the job over (or
+    finishes it). Renewing here gives the job its full lease from the moment it starts. If the
+    job is gone from the outbox (finished elsewhere) or is now owned by another live process, this
+    worker leaves it alone instead of running it a second time. If the outbox update itself fails
+    (a lock timeout, say) the check never ran, so the job is not run either; it stays queued for
+    a later replay.
+    """
+    verdict = {"run": False}  # stays False unless the check below actually ran
+
+    def claim(box):
+        current = box.get(job["id"])
+        if not isinstance(current, dict):
+            verdict["run"] = False
+            return
+        owner = current.get("owner_pid")
+        if owner not in (None, 0, os.getpid()) and _pid_alive(owner):
+            verdict["run"] = False
+            return
+        current["lease_until"] = time.time() + _lease_seconds(current.get("settings"))
+        current["owner_pid"] = os.getpid()
+        verdict["run"] = True
+
+    ok = _outbox_update(claim)
+    return bool(verdict["run"] and ok)
+
+
+def _start_pool(jobs: List[Dict[str, Any]]) -> List[threading.Thread]:
+    """Run *jobs* on at most ``REPLAY_WORKERS`` threads, so a replay after an offline spell
+    starts two npx processes at a time, not one per queued job."""
+    pending = list(reversed(jobs))
+    pending_lock = threading.Lock()
+
+    def worker() -> None:
+        while True:
+            with pending_lock:
+                if not pending:
+                    return
+                job = pending.pop()
+            with _inflight_lock:
+                if job["id"] in _inflight:  # a later replay re-picked a job that is still queued
+                    continue
+                _inflight[job["id"]] = threading.current_thread()
+            if not _claim_for_start(job):
+                with _inflight_lock:
+                    _inflight.pop(job["id"], None)
+                continue
+            _run_job(job)
+
+    threads = []
+    for n in range(min(REPLAY_WORKERS, len(jobs))):
+        run_ctx = contextvars.copy_context()  # one copy per thread: a Context is single-entry
+        t = threading.Thread(target=run_ctx.run, args=(worker,), daemon=True, name=f"epoch-replay-{n}")
+        threads.append(t)
+        t.start()
+    return threads
 
 
 def _redact_home(text: str) -> str:
@@ -1393,8 +1523,7 @@ def replay_outbox() -> List[threading.Thread]:
     _outbox_update(pick)
     for job, reason in abandoned:
         _dead_letter(job, reason)
-    for job in picked:
-        started.append(_start(job))
+    started.extend(_start_pool(picked))
     return started
 
 
@@ -1588,13 +1717,21 @@ def _on_dispatch_tick(**_: Any) -> None:
 # /epoch policy. Never via slash: long-running server, self-modification, telemetry/data
 # mutations (only their read-only ``status`` / ``where`` views). On gateway platforms (Telegram,
 # Discord, …) commands that write the ledger or read the local repo are refused unless
-# ``allow_write_slash_on_gateway: true``.
+# ``allow_write_slash_on_gateway: true``; ledger reads unless ``allow_ledger_read_on_gateway: true``.
 # share-data writes a file at a caller-chosen --output path: terminal only, never via slash.
 _SLASH_BLOCKED = frozenset({"serve", "self-improve", "share-data"})
 _SLASH_PATH_FLAGS = ("--output", "-o")
 _SLASH_READONLY_SUBS = {"telemetry": frozenset({"status"}), "data": frozenset({"where", "status"})}
 _SLASH_WRITE = frozenset({"record-actual", "batch-record-actuals", "auto-actuals", "mine-git",
                           "calibrate-estimates"})
+# Pure calculators: no ledger read. Everything else that is not a ledger write reads the ledger
+# (task text of every profile) and needs ``allow_ledger_read_on_gateway`` on gateway platforms.
+_SLASH_PURE = frozenset({
+    "get-current-time", "convert-timezone", "parse-duration", "time-math", "add-business-days",
+    "count-business-days", "pert-estimate", "cocomo-estimate", "sprint-forecast", "critical-path",
+    "monte-carlo-schedule", "wait-bound", "token-time-bridge", "token-cost-estimate",
+    "compare-models", "schedule-risk", "list-tools",
+})
 _LOCAL_PLATFORMS = frozenset({"", "cli", "local", "tui", "desktop", "acp"})
 _GLOBAL_VALUE_FLAGS = frozenset({"--format"})
 
@@ -1644,12 +1781,17 @@ def _slash_refusal(args: List[str]) -> Optional[str]:
     if cmd in _SLASH_WRITE and _on_gateway() and not _cfg("allow_write_slash_on_gateway"):
         return (f"/epoch {cmd} writes the local Epoch ledger and is disabled on gateway platforms. "
                 "Run it from the Hermes CLI, or set allow_write_slash_on_gateway: true.")
+    if (cmd not in _SLASH_WRITE and cmd not in _SLASH_PURE and _on_gateway()
+            and not _cfg("allow_ledger_read_on_gateway")):
+        return (f"/epoch {cmd} reads the local Epoch ledger (task text from every profile) and is "
+                "disabled on gateway platforms. Run it from the Hermes CLI, or set "
+                "allow_ledger_read_on_gateway: true.")
     return None
 
 
 def _slash(raw_args: str) -> str:
     try:
-        args = shlex.split(raw_args or "")
+        args = _split_command(raw_args or "")
     except ValueError as exc:
         return f"Could not parse arguments: {exc}"
     if not args:
@@ -1682,8 +1824,8 @@ ESTIMATE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "title": {"type": "string"},
-            "body": {"type": "string"},
+            "title": {"type": "string", "description": "Short task title. An 'epoch: 2/4/10h' hint here is used when no hours are given."},
+            "body": {"type": "string", "description": "Optional task description. An 'epoch: 2/4/10h' hint here is used when the title has none."},
             "optimistic": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
             "most_likely": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
             "pessimistic": {"type": "number", "description": "hours", "exclusiveMinimum": 0},

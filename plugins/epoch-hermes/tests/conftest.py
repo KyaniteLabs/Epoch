@@ -184,6 +184,12 @@ def make_ctx(plugin, board, tmp_path):
             settings.setdefault("epoch_data_dir", shared)
         ctx = FakeCtx(board, settings_by_profile)
         plugin.register(ctx)
+        # register() starts a background reconcile pass. If it is still running when the test
+        # creates its bindings it records the actual itself and steals the test's board and ledger
+        # calls. Let it finish against the still-empty store so the test owns every call.
+        for thread in threading.enumerate():
+            if thread.name == "epoch-reconcile":
+                thread.join(timeout=10)
         return ctx
     yield _make
     plugin.wait_for_inflight(10)

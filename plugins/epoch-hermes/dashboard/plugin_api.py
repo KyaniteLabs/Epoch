@@ -29,6 +29,7 @@ SEED = 42
 OPEN_STATUSES_LAST = ("done", "archived", "cancelled", "canceled")
 MAX_TASKS = 300
 HISTORY_KEEP = 12
+HISTORY_TAIL_BYTES = 4 * 1024 * 1024  # read_history looks only at the newest few MB of each ledger file
 _TASK_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 _BOARD_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 # Hours ("4.0h"), or whole minutes below an hour ("25m").
@@ -67,6 +68,14 @@ def _plugin():
         sys.modules.pop(_PRIVATE, None)
         raise
     return mod
+
+
+def _iterations(mod, settings: Dict[str, Any]) -> int:
+    """The configured simulation count, or the default when the setting is not a number."""
+    try:
+        return int(settings.get("iterations") or mod.DEFAULTS["iterations"])
+    except (TypeError, ValueError):
+        return int(mod.DEFAULTS["iterations"])
 
 
 def _settings(mod) -> Dict[str, Any]:
@@ -168,7 +177,7 @@ def _valid_distribution(d: Any) -> Optional[Dict[str, Any]]:
 
 def run_forecast(mod, settings: Dict[str, Any], title: str, triple: Dict[str, float]) -> Dict[str, Any]:
     """One Monte Carlo run for a triple (hours), in a throwaway data dir. Cached per triple."""
-    iterations = int(settings.get("iterations") or mod.DEFAULTS["iterations"])
+    iterations = _iterations(mod, settings)
     key = (triple["optimistic"], triple["most_likely"], triple["pessimistic"], iterations,
            str(settings.get("epoch_command")))
     with _cache_lock:
@@ -206,12 +215,18 @@ def run_forecast(mod, settings: Dict[str, Any], title: str, triple: Dict[str, fl
 
 
 def _jsonl(path: Path) -> List[Dict[str, Any]]:
+    """Rows from the last ``HISTORY_TAIL_BYTES`` of a JSONL file (a partial first line is dropped)."""
     rows: List[Dict[str, Any]] = []
     try:
-        with path.open(encoding="utf-8") as fh:
-            for line in fh:
+        with path.open("rb") as fh:
+            size = fh.seek(0, 2)
+            start = max(0, size - HISTORY_TAIL_BYTES)
+            fh.seek(start)
+            if start:
+                fh.readline()  # lands mid-line: skip to the next whole line
+            for raw in fh:
                 try:
-                    row = json.loads(line)
+                    row = json.loads(raw.decode("utf-8", "replace"))
                 except ValueError:
                     continue
                 if isinstance(row, dict):
@@ -301,10 +316,12 @@ def _check_ref(board: str, task_id: str) -> None:
 @router.get("/tasks")
 def tasks():
     mod = _plugin()
+    iterations = _iterations(mod, _settings(mod))
     try:
-        return list_open_tasks(mod)
-    except ImportError:
-        raise HTTPException(status_code=503, detail="Kanban is not available in this Hermes")
+        return {**list_open_tasks(mod), "iterations": iterations}
+    except (ImportError, AttributeError):  # host internals missing or renamed: show an empty list
+        return {"tasks": [], "errors": ["Kanban is not available in this Hermes"], "degraded": True,
+                "iterations": iterations}
 
 
 @router.get("/forecast")
@@ -313,7 +330,7 @@ def forecast(board: str = "default", task_id: str = ""):
     mod = _plugin()
     try:
         task = _get_task(board, task_id)
-    except ImportError:
+    except (ImportError, AttributeError):
         raise HTTPException(status_code=503, detail="Kanban is not available in this Hermes")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"board {board}: {type(exc).__name__}")

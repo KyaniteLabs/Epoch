@@ -13,6 +13,7 @@ import threading
 import time
 
 import pytest
+pytest.importorskip("hypothesis")
 from hypothesis import HealthCheck, settings as hsettings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
