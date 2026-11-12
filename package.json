@@ -36,7 +36,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "ops:check": "bash -n scripts/epoch-fleet-bootstrap.sh scripts/epoch-receiver-watchdog.sh scripts/install-epoch-receiver-watchdog.sh",
+    "ops:check": "bash -n scripts/epoch-fleet-bootstrap.sh scripts/epoch-receiver-watchdog.sh scripts/install-epoch-receiver-watchdog.sh scripts/configure-mac-mini-telemetry.sh && node --check scripts/epoch-lifecycle-hook.mjs",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
     "canary": "node canary-runner.mjs",
     "stamp:versions": "node scripts/stamp-release-versions.mjs",

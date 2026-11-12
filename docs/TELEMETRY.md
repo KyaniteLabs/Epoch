@@ -332,12 +332,49 @@ epoch telemetry set-endpoint --endpoint https://your-server.example.com/v1/telem
 # { "telemetry": { "enabled": true, "endpoint": "https://your-server.example.com/v1/telemetry" } }
 ```
 
+## Agent lifecycle hook (estimate → actual)
+
+`scripts/epoch-lifecycle-hook.mjs` turns an agent's prompt/stop lifecycle into
+calibration data: `UserPromptSubmit` records a PERT estimate through the CLI
+and `Stop` records the elapsed wall-clock hours against it. Wire it into
+Claude Code's settings:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command",
+      "command": "node /path/to/Epoch/scripts/epoch-lifecycle-hook.mjs" }] }],
+    "Stop": [{ "hooks": [{ "type": "command",
+      "command": "node /path/to/Epoch/scripts/epoch-lifecycle-hook.mjs" }] }]
+  }
+}
+```
+
+The hook finds the CLI in this order: `EPOCH_BIN`, the checkout that ships
+the hook, the checkout candidates that
+`scripts/configure-mac-mini-telemetry.sh` probes
+(`~/workspaces/kyanite-labs/Epoch`, `~/workspaces/Epoch`, `~/Epoch`), and
+finally npm-global installs. A path that does not resolve
+prints one `epoch-lifecycle-hook: ERROR: …` line and appends a `hook_failed`
+entry to `~/.epoch/agent-lifecycle.log`; it never fails silently and never
+breaks the agent session. `node scripts/epoch-lifecycle-hook.mjs --check`
+prints `<resolved path> <version>` or exits non-zero.
+
+`scripts/configure-mac-mini-telemetry.sh` runs both checks at setup time and
+the hook appends `session_started` / `session_recorded` events to
+`~/.epoch/agent-lifecycle.log`.
+
 ## Environment Variables
 
 | Variable | Values | Description |
 |----------|--------|-------------|
 | `EPOCH_TELEMETRY` | `0` or `1` | Overrides config file. `0` disables telemetry, `1` enables it (requires prior consent). |
 | `EPOCH_TELEMETRY_ENDPOINT` | URL | Overrides the configured telemetry receiver endpoint for status/submission. |
+| `EPOCH_BIN` | path | Agent-lifecycle hook only: explicit CLI entry (`dist/index.js`). A value that is not a readable file fails loudly instead of falling back. |
+| `EPOCH_LIFECYCLE_OPTIMISTIC_HOURS` | number | Hook PERT optimistic hours (default `0.25`). |
+| `EPOCH_LIFECYCLE_MOST_LIKELY_HOURS` | number | Hook PERT most-likely hours (default `1`). |
+| `EPOCH_LIFECYCLE_PESSIMISTIC_HOURS` | number | Hook PERT pessimistic hours (default `3`). |
+| `EPOCH_LIFECYCLE_SESSION_TTL_HOURS` | number | Hook: a session older than this is replaced, not reused (default `12`). |
 
 The environment variable takes precedence over the config file setting.
 
