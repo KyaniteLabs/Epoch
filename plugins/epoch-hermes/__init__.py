@@ -143,11 +143,11 @@ _HINT_QUALIFIERS = frozenset({
 })
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
-    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.,;!?)]|\])",
+    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.,;!?)*_`]|\])",
     re.IGNORECASE,
 )
 _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-10h")
-    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*" + _UNIT + r"?\s*(?:$|[\s.,;!?)]|\])",
+    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*" + _UNIT + r"?\s*(?:$|[\s.,;!?)*_`]|\])",
     re.IGNORECASE,
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
@@ -373,14 +373,27 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
         token = token_match.group(1) if token_match else ""
         unit_token = token.strip("(*_`")
         unit_token = unit_token.rstrip("*_`")
-        unit_token = unit_token.rstrip(",;:)")
+        unit_token = unit_token.rstrip(",;:)]")
         explicit = (unit_token != "M"
                     and re.fullmatch(_UNIT, unit_token, re.IGNORECASE) is not None)
         if not explicit and (not token or unit_token.lower() in _HINT_QUALIFIERS):
-            # A qualifier or sentence punctuation may precede the unit. Look only through
-            # qualifiers/counts and the first unit candidate; never mine later prose for one.
+            # Look at at most the first non-qualifier token in this sentence. A bare
+            # count or a word in commentary ends the search; never mine later prose for a unit.
             qualifier_seen = unit_token.lower() in _HINT_QUALIFIERS
-            for later_match in re.finditer(r"\S+", rest):
+            sentence_end = re.search(r"[.!?]", rest)
+            scan_rest = rest
+            after_sentence_end = False
+            if sentence_end:
+                prefix = rest[:sentence_end.start()]
+                if not prefix.strip() or (
+                    sentence_end.group() == "."
+                    and re.search(r"\bapprox$", prefix.rstrip(), re.IGNORECASE)
+                ):
+                    scan_rest = re.sub(r"^[\s.!?]+", "", rest[sentence_end.end():])
+                    after_sentence_end = True
+                else:
+                    scan_rest = prefix
+            for later_match in re.finditer(r"\S+", scan_rest):
                 later_token = later_match.group(0)
                 later_unit = later_token.strip("(*_`").rstrip("*_`").rstrip(".,;:!?)]")
                 if not later_unit:
@@ -388,10 +401,17 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                 if later_unit.lower() in _HINT_QUALIFIERS:
                     qualifier_seen = True
                     continue
-                if later_unit.isdigit():
-                    continue
                 if later_unit != "M" and re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
                     token, unit_token, explicit = later_token, later_unit, True
+                    break
+                # A non-unit word after sentence punctuation belongs to the following prose.
+                if after_sentence_end:
+                    token = unit_token = ""
+                    break
+                trailing_text = scan_rest[later_match.end():].strip(" \t.,;:!?*_`)]")
+                if qualifier_seen and trailing_text:
+                    # Qualifier plus a number or commentary is not a delayed unit.
+                    token = unit_token = ""
                     break
                 # A non-unit word can contain a malformed unit extension (for example day(s)).
                 if re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",
@@ -400,7 +420,8 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                 elif qualifier_seen:
                     token, unit_token = later_token, later_unit
                 break
-        if token and not explicit and unit_token.lower() not in _HINT_QUALIFIERS:
+        if (token and unit_token and unit_token.lower() not in _HINT_QUALIFIERS
+                and unit_token.lower() != "h/t" and not explicit):
             # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
             # through the optional-unit grammar and become hours.
             unit_like = re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",

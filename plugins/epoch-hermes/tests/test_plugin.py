@@ -244,7 +244,6 @@ def test_hint_structural_unit_wrappers_and_sentence_end(plugin, hint, expected):
 
 @pytest.mark.parametrize("hint,expected", [
     ("epoch: 2/4/10 roughly days", (16.0, 32.0, 80.0)),
-    ("epoch: 2/4/10 about 3 days", (16.0, 32.0, 80.0)),
     ("epoch: 2/4/10 maybe weeks", (80.0, 160.0, 400.0)),
     ("epoch: 2/4/10 (approx) weeks", (80.0, 160.0, 400.0)),
     ("epoch: 2/4/10 approx. weeks", (80.0, 160.0, 400.0)),
@@ -272,6 +271,42 @@ def test_hint_rejects_unknown_unit_after_qualifier(plugin, hint):
 
 def test_hint_does_not_scan_an_unrelated_sentence_for_a_unit(plugin):
     hint_out, problem = plugin.find_hint("", "epoch: 2/4/10. There are days when APIs fail")
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 ish, 20 min standup after",
+    "epoch: 2/4/10 about 3 days",
+    "epoch: 2/4/10, h/t Ada",
+    "epoch: 2/4/10. Plan B w/ Ada",
+    "epoch: 2/4/10 roughly, blocked 2 days on review",
+    "epoch: 2/4/10. Deploy soaks for 2 days after merge",
+    "epoch: 2/4/10. Then wait 3 weeks for the vendor",
+    "epoch: 2/4/10. Retest in 30 m",
+    "epoch: 2/4/10. Ping Ted M. if it slips",
+    "epoch: 2/4/10. Due in 2 weeks",
+    "epoch: 2/4/10. Deploy takes 3 days of soak.",
+    "epoch: 2/4/10 roughly the same as last week",
+    "epoch: 2/4/10. Needs 5 min review from Ada.",
+    "epoch: 2/4/10 maybe 12 M tokens",
+    "epoch: 2/4/10. M",
+    "epoch: 2/4/10. Plan B needs w approval",
+])
+def test_hint_does_not_mine_prose_for_a_unit(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "Fix login (epoch: 2/4/10)",
+    "[epoch: 2/4/10]",
+    "**epoch: 2/4/10**",
+    "`epoch: 2/4/10`",
+])
+def test_hint_allows_wrapped_trailing_punctuation(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
     assert problem is None
     assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
 
