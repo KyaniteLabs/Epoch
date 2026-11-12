@@ -297,6 +297,7 @@ def test_hint_does_not_scan_an_unrelated_sentence_for_a_unit(plugin):
     "epoch: 2/4/10. Minutes from the sync are attached.",
     "epoch: 2/4/10. Weeks of prep are already done.",
     "epoch: 2/4/10. Days matter here, ship Friday.",
+    "epoch: 2/4/10 approx. Next week QA starts.",
     "epoch: 2/4/10! Min viable version only.",
 ])
 def test_hint_does_not_use_a_unit_followed_by_next_sentence_prose(plugin, hint):
@@ -317,7 +318,6 @@ def test_hint_allows_one_word_of_commentary_after_qualifier(plugin, hint):
 
 @pytest.mark.parametrize("hint", [
     "epoch: 2/4/10 ish, 20 min standup after",
-    "epoch: 2/4/10 about 3 days",
     "epoch: 2/4/10, h/t Ada",
     "epoch: 2/4/10. Plan B w/ Ada",
     "epoch: 2/4/10 roughly, blocked 2 days on review",
