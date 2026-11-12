@@ -242,6 +242,34 @@ def test_hint_structural_unit_wrappers_and_sentence_end(plugin, hint, expected):
     assert tuple(hint_out.values()) == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 roughly days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 about 3 days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 maybe weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10 (approx) weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10 approx. weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10 roughly, days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10?? days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 ... days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10! weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10. days", (16.0, 32.0, 80.0)),
+])
+def test_hint_finds_unit_after_qualifier_or_punctuation(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 hopefully", "epoch: 2/4/10 worst", "epoch: 2/4/10 with",
+    "epoch: 2/4/10 more", "epoch: 2/4/10 max", "epoch: 2/4/10 working",
+])
+def test_hint_does_not_treat_words_starting_with_unit_letters_as_units(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert "malformed unit" not in problem
+
+
 @pytest.mark.parametrize("hint,expects_text", [
     ("epoch: 2/4/10 day(s)", False),
     ("epoch: 2/4/10 week's work", False),
