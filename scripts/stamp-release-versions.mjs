@@ -89,8 +89,28 @@ function stampSiteBadge() {
   return [`${relativePath}: hero badge -> v${version}`];
 }
 
+/** The portable agent bundle's manifests (the plugin.json files under plugins/epoch) carry the same version. */
+function stampBundleManifests() {
+  const touched = [];
+  for (const rel of [
+    "plugins/epoch/plugin.json",
+    "plugins/epoch/.claude-plugin/plugin.json",
+    "plugins/epoch/.cursor-plugin/plugin.json",
+    "plugins/epoch/.minimax-plugin/plugin.json",
+  ]) {
+    const path = join(repoRoot, rel);
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    if (doc.version === version) continue;
+    touched.push(`${rel}: version ${doc.version} -> ${version}`);
+    doc.version = version;
+    if (!CHECK_MODE) writeFileSync(path, `${JSON.stringify(doc, null, 2)}\n`);
+  }
+  return touched;
+}
+
 const changes = [
   ...stampServerJson(),
+  ...stampBundleManifests(),
   ...stampLlmsTxt("docs/llms.txt"),
   ...stampLlmsTxt("site/llms-full.txt"),
   ...stampSiteBadge(),

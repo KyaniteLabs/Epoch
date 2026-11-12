@@ -765,6 +765,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `EPOCH_PORT` | `3000` | HTTP server port |
 | `EPOCH_HOST` | `127.0.0.1` | HTTP server bind address |
+| `EPOCH_TOOLS` | `core` | MCP tools to expose: `core` (pert_estimate, monte_carlo_schedule, parse_duration, time_math, get_current_time, record_actual) or `all` (all 26). The CLI and HTTP server always expose everything. Not in the published 0.8.0 runtime: it ignores this variable and serves all 26. |
 | `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |
 | `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
 | `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per client (HTTP only). `0` disables limiting; invalid or negative values fall back to `100` with a warning. 429 responses carry a `Retry-After` header. |

@@ -211,7 +211,7 @@ suite("stdio JSON-RPC guard (integration, real server)", () => {
 				tools.result as { tools?: Array<{ name: string }> }
 			)?.tools?.map((t) => t.name);
 			expect(toolNames).toContain("pert_estimate");
-			expect(toolNames?.length).toBeGreaterThanOrEqual(26);
+			expect(toolNames?.length).toBe(6); // EPOCH_TOOLS=core is the default
 
 			// exactly one response per hostile probe id — nothing doubled, nothing orphaned
 			const all = await session.allLines();

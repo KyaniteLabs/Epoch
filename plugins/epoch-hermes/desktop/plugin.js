@@ -397,7 +397,7 @@ function Page({ ctx, pane }) {
     setRefresh(v => v + 1)
     setTasks(t => ({ ...t, loading: true }))
     ctx.rest('/tasks')
-      .then(r => { if (n === requests.current) setTasks({ loading: false, tasks: Array.isArray(r && r.tasks) ? r.tasks : [], errors: (r && r.errors) || [] }) })
+      .then(r => { if (n === requests.current) setTasks({ loading: false, tasks: Array.isArray(r && r.tasks) ? r.tasks : [], errors: (r && r.errors) || [], iterations: (r && r.iterations) || 0 }) })
       .catch(e => { if (n === requests.current) setTasks({ loading: false, tasks: [], errors: [], fault: String((e && e.message) || e) }) })
     ctx.rest('/history')
       .then(r => { if (n === requests.current) setHist(Array.isArray(r && r.items) ? r.items : []) })
@@ -461,7 +461,7 @@ function Page({ ctx, pane }) {
       : h('div', { className: 'ep-empty' }, h('b', null, 'No card has an estimate hint yet.'),
         h('span', null, 'Add ', h('code', null, 'epoch: optimistic/likely/pessimistic'), ' to a card title or body, like ', h('code', null, 'epoch: 2/4/10h'), '.'))
   } else if (!f || f.loading) {
-    main = h('p', { className: 'ep-muted' }, 'Running 5,000 simulations…')
+    main = h('p', { className: 'ep-muted' }, 'Running ' + (tasks.iterations ? tasks.iterations.toLocaleString('en-US') : 'the') + ' simulations…')
   } else if (!f.ok) {
     const hinted = f.hint || current.hint
     main = h('div', { className: 'ep-empty' }, h('b', null, hinted ? 'Epoch could not run.' : 'This card has no estimate hint.'),

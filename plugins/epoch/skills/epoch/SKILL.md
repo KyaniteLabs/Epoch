@@ -46,7 +46,8 @@ epoch record-actual --estimate-id <feedback-token> --actual-hours 3.25 --notes "
   "mcpServers": {
     "epoch": {
       "command": "npx",
-      "args": ["@kyanitelabs/epoch"]
+      "args": ["-y", "@kyanitelabs/epoch@0.8.0"],
+      "env": { "EPOCH_TOOLS": "all" }
     }
   }
 }

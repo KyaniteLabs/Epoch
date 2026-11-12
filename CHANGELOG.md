@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Successful tool estimates, slash commands and Kanban estimate/actual writes refresh the page and card badges via local Desktop events with no task text in their payloads.
 - `epoch_show` opens the enabled page, switches between Distribution, Chance done by and 50 dots, and optionally focuses a card; late REST responses cannot override newer events.
 - The plugin skill and `/epoch status` explain the one human setup step in Capabilities -> Plugins; Hermes builds without the event bridge still support estimation.
+### feat: MCP exposes six core tools by default
+
+- The stdio MCP server now registers only `pert_estimate`, `monte_carlo_schedule`, `parse_duration`, `time_math`, `get_current_time` and `record_actual` unless `EPOCH_TOOLS=all` is set, which restores all 26. The CLI and HTTP surfaces are unchanged. Hosts that relied on the other tools over MCP must set `EPOCH_TOOLS=all` in the server's `env`.
+
+### fix: epoch-hermes 0.9.0 carries the `share-data` refusal it was documented to have
+
+- The 0.8.0 tag does not refuse `/epoch share-data` or `--output` / `-o`; the code that does landed after it. Plugin version is 0.9.0 (there is no 0.8.1 release), and the README says 0.7.0 and 0.8.0 lack the refusal. The `@kyanitelabs/epoch` npm runtime pin stays 0.8.0 (no CLI change).
+- `/epoch` on gateway platforms now allows only pure calculators. Commands that read the ledger (task text from every profile) need the new `allow_ledger_read_on_gateway` setting (default false). Local use is unchanged.
+- A timed-out Epoch call kills the whole process group, not only `npx`, so no node child is left running.
+- `NODE_OPTIONS` is no longer passed to the Epoch child. The manifest and README list exactly which variables reach it.
 
 ### fix: epoch-hermes records actuals a missed completion hook left behind
 

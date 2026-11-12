@@ -70,7 +70,8 @@ jobs:
         # e2e and desktop tests run in the epoch-hermes-plugin job below, under real Hermes.
         run: |
           python3 -m venv /tmp/epoch-hermes-venv
-          /tmp/epoch-hermes-venv/bin/pip install --quiet "pytest==8.4.2" "hypothesis==6.135.0"
+          /tmp/epoch-hermes-venv/bin/pip install --quiet "pytest==8.4.2" "hypothesis==6.135.0" "ruff==0.15.12"
+          /tmp/epoch-hermes-venv/bin/ruff check --select F --exclude plugins/epoch-hermes/tests plugins/epoch-hermes
           /tmp/epoch-hermes-venv/bin/python -m pytest plugins/epoch-hermes/tests -q
 
       - name: Validate community data
@@ -100,7 +101,16 @@ jobs:
   epoch-hermes-plugin:
     # The Hermes plugin under the Hermes release it is tested against: desktop API and
     # real-Hermes multi-process e2e tests, which the Node job above skips.
-    name: Hermes plugin under Hermes v0.23.0
+    name: Hermes plugin under Hermes ${{ matrix.hermes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # requires_hermes is ">=0.21.6": test the floor as well as the newest release.
+        include:
+          - hermes: v0.21.6
+            ref: 818c13be1dc4fd28987e1e881a9408224afd4535
+          - hermes: v0.23.0
+            ref: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
@@ -115,7 +125,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           repository: NousResearch/hermes-agent
-          ref: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19  # v0.23.0
+          ref: ${{ matrix.ref }}  # ${{ matrix.hermes }}
           path: .hermes-runtime
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0

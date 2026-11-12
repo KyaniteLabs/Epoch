@@ -76,7 +76,47 @@ jobs:
         run: |
           set -o pipefail
           PY="$PWD/.hermes-runtime/.venv/bin/python"
+          uv pip install --python "$PY" pytest==8.4.2 hypothesis==6.135.0 ruff==0.15.12
+          "$PY" -m ruff check --select F --exclude plugins/epoch-hermes/tests plugins/epoch-hermes
+          H=$(mktemp -d)
+          HOME="$H" HERMES_HOME="$H/hermes" HERMES_AGENT_SRC="$PWD/.hermes-runtime" HERMES_PYTHON="$PY" \
+            "$PY" -m pytest plugins/epoch-hermes/tests -q -rs | tee pytest.out
+          if grep '^SKIPPED' pytest.out | grep -v 'test_real_epoch.py'; then echo "unexpected skip"; exit 1; fi
+  # requires_hermes is ">=0.21.6": the same tests under the oldest supported release.
+  epoch-hermes-plugin-floor:
+    name: epoch-hermes-plugin-floor
+    runs-on: docker
+    timeout-minutes: 20
+    container:
+      image: python:3.14-bookworm@sha256:3fe825da0a80fa8e2cd79baadeb76b03c0ddf3d6cdbc8346778a0208b9d6038c
+    steps:
+      - name: Install checkout runtime (actions/checkout needs node + git)
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git nodejs
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Fetch the tested Hermes runtime (v0.21.6, pinned by commit)
+        run: |
+          git init -q .hermes-runtime
+          git -C .hermes-runtime fetch -q --depth 1 https://github.com/NousResearch/hermes-agent 818c13be1dc4fd28987e1e881a9408224afd4535
+          git -C .hermes-runtime checkout -q FETCH_HEAD
+      - name: Install Hermes from its own lockfile
+        run: python3 -m pip install --no-cache-dir uv==0.11.22 && uv sync --frozen --python 3.14 --directory .hermes-runtime
+      - name: Validate Epoch manifest with real Hermes
+        shell: bash
+        run: |
+          PY="$PWD/.hermes-runtime/.venv/bin/python"
           uv pip install --python "$PY" pytest==8.4.2 hypothesis==6.135.0
+          H=$(mktemp -d)
+          HOME="$H" HERMES_AGENT_SRC="$PWD/.hermes-runtime" HERMES_PYTHON="$PY" \
+            "$PY" -m pytest plugins/epoch-hermes/tests/test_real_plugin_validate.py -q
+      - name: Plugin tests under Hermes (fails on any unexpected skip)
+        shell: bash
+        run: |
+          set -o pipefail
+          PY="$PWD/.hermes-runtime/.venv/bin/python"
+          uv pip install --python "$PY" pytest==8.4.2 hypothesis==6.135.0 ruff==0.15.12
+          "$PY" -m ruff check --select F --exclude plugins/epoch-hermes/tests plugins/epoch-hermes
           H=$(mktemp -d)
           HOME="$H" HERMES_HOME="$H/hermes" HERMES_AGENT_SRC="$PWD/.hermes-runtime" HERMES_PYTHON="$PY" \
             "$PY" -m pytest plugins/epoch-hermes/tests -q -rs | tee pytest.out
