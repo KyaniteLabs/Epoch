@@ -145,20 +145,30 @@ _HINT_UNSUPPORTED_UNITS = frozenset({
     "fortnight", "fortnights", "month", "months", "sprint", "sprints", "year", "years",
     "person-day", "person-days", "point", "points", "story-point", "story-points",
     "sec", "secs", "second", "seconds", "ms", "s", "yr", "yrs", "mo", "pt", "pts",
-    "iteration", "iterations", "quarter", "quarters",
+    "millisecond", "milliseconds", "iteration", "iterations", "quarter", "quarters",
+    "días", "tage", "jours", "mths", "sprnts", "millis",
 })
 _HINT_UNIT_LIKE_RE = re.compile(
     r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])", re.IGNORECASE)
 _HINT_UNIT_STEM_RE = re.compile(
-    r"(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|wks?|months?|years?|"
-    r"fortnights?|quarters?|sprints?|iterations?|points?)(?:s{1,3}|z+)?$", re.IGNORECASE)
+    r"^(?:(?:[a-z]+[-_])|(?:work))?(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|"
+    r"weeks?|wks?|months?|years?|fortnights?|quarters?|sprints?|iterations?|points?)"
+    r"(?:s{1,3}|z+|['’]s)?$", re.IGNORECASE)
 _HINT_ALLOWED_MODIFIERS = frozenset({"working", "business", "calendar", "work", "full", "in"})
+_HINT_COMMENTARY_COUNTS = frozenset({
+    "pr", "prs", "endpoint", "endpoints", "reviewer", "reviewers", "caveat", "caveats",
+})
 _HINT_NUMBER_WORDS = frozenset({
     "a", "an", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
     "ten", "eleven", "twelve",
 })
 _HINT_WRAP_OPEN = "(*_`\"'~|<{["
 _HINT_WRAP_CLOSE = ")*_`\"'~|>}]”’“‘"
+_HINT_SENTENCE_END_RE = re.compile(r"[!?]|\.(?!\d)")
+_HINT_HTML_BOUNDARY_RE = re.compile(
+    r"</?(?:address|article|aside|blockquote|br|dd|div|dl|dt|fieldset|figcaption|figure|"
+    r"footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|"
+    r"th|thead|tr|ul)\b[^>]*>", re.IGNORECASE)
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
     rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.,;!?)*_`]|\])",
@@ -170,7 +180,7 @@ _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-1
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
 _HINT_ATTEMPT_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:_{1,2})?(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)",
+    r"(?<![A-Za-z0-9_.$-])(?:_{1,2})?(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)",
     re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[epoch:(estimate|actual)((?:\s+[a-z_]+=[^\s\]]+)*)\s*\]")
 
@@ -381,9 +391,10 @@ def _clean_hint_unit(token: str) -> str:
 
 
 def _looks_like_hint_unit(token: str) -> bool:
-    normalized = token.lower().strip(".,;:!?()[]{}\"'`~")
+    normalized = token.lower().strip(".,;:!?()[]{}\"'`~«»「」『』")
     return (normalized in _HINT_UNSUPPORTED_UNITS or bool(_HINT_UNIT_LIKE_RE.match(normalized))
-            or bool(_HINT_UNIT_STEM_RE.search(normalized)))
+            or bool(_HINT_UNIT_STEM_RE.fullmatch(normalized))
+            or bool(re.fullmatch(r"\d+dys", normalized)))
 
 
 def _is_hint_quantity(token: str) -> bool:
@@ -405,9 +416,11 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
     numbers = _HINT_TRIPLE_RE.match(raw)
     if numbers:
         rest = raw[numbers.end():]
-        rest = re.split(r"</(?:p|div|li|td|th|tr|section|article)\b", rest,
-                        maxsplit=1, flags=re.IGNORECASE)[0]
-        before_sentence_end = re.split(r"[.!?]", rest, maxsplit=1)[0]
+        rest = rest.split("|", 1)[0]
+        boundary = _HINT_HTML_BOUNDARY_RE.search(rest)
+        if boundary:
+            rest = rest[:boundary.start()]
+        before_sentence_end = _HINT_SENTENCE_END_RE.split(rest, maxsplit=1)[0]
         token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", before_sentence_end)
         token = token_match.group(1) if token_match else ""
         unit_token = _clean_hint_unit(token)
@@ -417,7 +430,9 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
             # Look at at most the first non-qualifier token in this sentence. A bare
             # count or a word in commentary ends the search; never mine later prose for a unit.
             qualifier_seen = unit_token.lower() in _HINT_QUALIFIERS
-            sentence_end = re.search(r"[.!?]", rest)
+            qualifier_comma = bool(qualifier_seen and token.endswith(","))
+            in_unit_phrase = False
+            sentence_end = _HINT_SENTENCE_END_RE.search(rest)
             scan_rest = rest
             after_sentence_end = False
             if sentence_end:
@@ -429,12 +444,6 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                     after_sentence_end = True
                 else:
                     scan_rest = prefix
-            if re.match(r"\s*</(?:p|div|li|td|th|tr|section|article)\b", scan_rest,
-                        re.IGNORECASE):
-                scan_rest = ""
-            table_cell = scan_rest.find("|")
-            if table_cell >= 0:
-                scan_rest = scan_rest[:table_cell]
             for later_match in re.finditer(r"\S+", scan_rest):
                 later_token = later_match.group(0)
                 later_unit = _clean_hint_unit(later_token)
@@ -442,20 +451,21 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                     continue
                 if later_unit.lower() in _HINT_QUALIFIERS:
                     qualifier_seen = True
+                    qualifier_comma = later_token.endswith(",")
+                    continue
+                if qualifier_seen and later_unit.lower() == "in":
+                    in_unit_phrase = True
                     continue
                 if qualifier_seen and _is_hint_quantity(later_unit):
+                    if qualifier_comma:
+                        token = unit_token = ""
+                        break
                     following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
                     following_token = following_match.group(1) if following_match else ""
                     following_unit = _clean_hint_unit(following_token)
-                    if following_unit and following_unit != "M":
-                        following_supported = re.fullmatch(_UNIT, following_unit, re.IGNORECASE)
-                        if following_supported:
-                            unit_end = later_match.end() + following_match.end()
-                            trailing_text = scan_rest[unit_end:].strip(
-                                " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
-                            if trailing_text:
-                                token = unit_token = ""
-                                break
+                    if (following_unit and following_unit != "M"
+                            and (_looks_like_hint_unit(following_unit)
+                                 or following_unit.lower() not in _HINT_COMMENTARY_COUNTS)):
                         raise EstimateInputError(
                             f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and "
                             f"unit ({later_token!r} {following_token!r}); "
@@ -474,10 +484,6 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                     if after_sentence_end and trailing_text:
                         token = unit_token = ""
                         break
-                    if qualifier_seen and trailing_text:
-                        raise EstimateInputError(
-                            f"hint {m.group(0).strip()[:60]!r} has text after the unit "
-                            f"({trailing_text!r}); end the hint after its unit")
                     token, unit_token, explicit = later_token, later_unit, True
                     break
                 if qualifier_seen:
@@ -496,19 +502,18 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                             token, unit_token = following_token, following_unit
                             break
                         if later_unit.lower() not in _HINT_ALLOWED_MODIFIERS:
-                            raise EstimateInputError(
-                                f"hint {m.group(0).strip()[:60]!r} has text before the unit "
-                                f"({later_token!r}); use a supported unit directly after the qualifier")
+                            if in_unit_phrase or later_unit.lower() in {"per", "next", "another"}:
+                                raise EstimateInputError(
+                                    f"hint {m.group(0).strip()[:60]!r} has text before the unit "
+                                    f"({later_token!r}); use a supported unit directly after the qualifier")
+                            token = unit_token = ""
+                            break
                         unit_end = later_match.end() + following_match.end()
                         trailing_text = scan_rest[unit_end:].strip(
                             " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
                         if after_sentence_end and trailing_text:
                             token = unit_token = ""
                             break
-                        if trailing_text:
-                            raise EstimateInputError(
-                                f"hint {m.group(0).strip()[:60]!r} has text after the unit "
-                                f"({trailing_text!r}); end the hint after its unit")
                         token, unit_token, explicit = following_token, following_unit, True
                         break
                     if _looks_like_hint_unit(later_unit):
@@ -1599,6 +1604,14 @@ def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Opti
         if job["id"] in _inflight:
             return None
     if not _outbox_put(job):
+        if kind == "claimed" and bool(_cfg("comment_on_claim", settings)):
+            try:
+                add_comment(task_id, board,
+                            "⏱ Epoch couldn't save this estimate job, so it wasn't queued and "
+                            "will not retry automatically. Please retry this claim later.")
+            except Exception as exc:
+                logger.warning("epoch: could not notify task %s that its estimate was not queued (%s)",
+                               task_id, type(exc).__name__)
         return None
     return _start(job)
 
