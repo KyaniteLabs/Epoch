@@ -376,10 +376,26 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
         unit_token = unit_token.rstrip(",;:)")
         explicit = (unit_token != "M"
                     and re.fullmatch(_UNIT, unit_token, re.IGNORECASE) is not None)
+        if not explicit and (not token or unit_token.lower() in _HINT_QUALIFIERS):
+            # A qualifier or sentence punctuation may precede the unit. Keep looking for a
+            # later unit token so punctuation cannot silently turn days/weeks into hours.
+            for later_match in re.finditer(r"\S+", rest):
+                later_token = later_match.group(0)
+                later_unit = later_token.strip("(*_`").rstrip("*_`").rstrip(".,;:!?)]")
+                if not later_unit or later_unit.lower() in _HINT_QUALIFIERS or later_unit.isdigit():
+                    continue
+                if re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
+                    token, unit_token, explicit = later_token, later_unit, True
+                    break
+                # A non-unit word can contain a malformed unit extension (for example day(s)).
+                if re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",
+                            later_unit, re.IGNORECASE):
+                    token, unit_token = later_token, later_unit
+                    break
         if token and not explicit and unit_token.lower() not in _HINT_QUALIFIERS:
             # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
             # through the optional-unit grammar and become hours.
-            unit_like = re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)",
+            unit_like = re.match(r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])",
                                  unit_token, re.IGNORECASE)
             if unit_like:
                 raise EstimateInputError(
@@ -390,10 +406,6 @@ def parse_hint(text: str) -> Optional[Dict[str, float]]:
                 f"({token!r}); add a supported unit or punctuation")
     parse_raw = raw
     if numbers and explicit:
-        suffix = raw[numbers.end():]
-        token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", re.split(r"[.!?]", suffix, maxsplit=1)[0])
-        token = token_match.group(1) if token_match else ""
-        unit_token = token.strip("(*_`").rstrip("*_`").rstrip(",;:)")
         parse_raw = raw[:numbers.end()] + unit_token
     sm = _HINT_STRICT_RE.match(parse_raw) or _HINT_DASH_RE.match(parse_raw)
     if not sm:
