@@ -90,7 +90,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.7",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "hono": "^4.13.18",
