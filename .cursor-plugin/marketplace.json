@@ -6,7 +6,7 @@
   },
   "plugins": [
     {
-      "name": "epoch",
+      "name": "epoch-agent",
       "source": "plugins/epoch"
     }
   ]

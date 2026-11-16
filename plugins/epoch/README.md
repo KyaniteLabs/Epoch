@@ -5,13 +5,18 @@
 Calibrated time estimation for AI agents. The plugin adds the Epoch MCP
 server (26 tools) and the `epoch` skill to your agent.
 
-Plugin bundle **0.7.0** pins the runtime **@kyanitelabs/epoch 0.7.0**
-(`npx -y @kyanitelabs/epoch@0.7.0`, stdio).
+Plugin bundle **0.8.0** pins the runtime **@kyanitelabs/epoch 0.8.0**
+(`npx -y @kyanitelabs/epoch@0.8.0`, stdio).
+
+The shipped configs set `EPOCH_TOOLS=core`, which limits the server to six
+everyday tools. The published 0.8.0 runtime ignores `EPOCH_TOOLS` and serves all
+26 tools. The setting takes effect from the first release after 0.8.0; the pin
+is not changed here because that release is not on npm yet.
 
 ## Install
 
 ```
-/plugin install epoch --marketplace KyaniteLabs/Epoch
+/plugin install epoch-agent --marketplace KyaniteLabs/Epoch
 ```
 
 ## What it adds
@@ -37,7 +42,7 @@ human-only decision, never the agent's. Details:
 ## Health check
 
 ```bash
-npx -y @kyanitelabs/epoch@0.7.0 --version   # -> 0.7.0
+npx -y @kyanitelabs/epoch@0.8.0 --version   # -> 0.8.0
 ```
 
 ## Limit Epoch tools in Hermes

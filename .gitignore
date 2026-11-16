@@ -27,3 +27,4 @@ docs/ops/audits/*
 # Mutation testing (stryker)
 .stryker-tmp/
 reports/mutation/
+.hypothesis/

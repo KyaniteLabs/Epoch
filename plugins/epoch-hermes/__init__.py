@@ -10,6 +10,7 @@ kanban_task_completed -> find the estimate marker for the *same run* on the boar
                          self-improve and telemetry/data mutations are refused, ledger writes
                          are refused on gateway platforms unless opted in.
 epoch_estimate tool   -> agent-callable Monte Carlo estimate.
+epoch_show tool       -> ask the enabled Desktop page to show a chart and optional card.
 
 Design notes (see README "How it works"):
 
@@ -29,7 +30,7 @@ Design notes (see README "How it works"):
   vars only), ``EPOCH_DATA_DIR`` pinned to the ledger dir and ``EPOCH_TELEMETRY=0``. The ledger
   defaults to ``<HERMES_HOME root>/plugin-data/epoch`` so every profile shares it.
 * Board access goes through the public ``ctx.dispatch_tool`` surface (``kanban_show`` /
-  ``kanban_comment``); the plugin imports nothing from ``hermes_cli``.
+  ``kanban_comment``); Desktop updates use the optional public plugin event bridge.
 * Background work runs on a thread started under ``contextvars.copy_context()`` so the event's
   profile (HERMES_HOME override, settings, plugin state) follows the job. Settings are also
   snapshotted in the hook's own context.
@@ -51,20 +52,57 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import shlex
+import signal
 import subprocess
+import sys
 import threading
 import time
 import tempfile
 from contextlib import contextmanager, suppress
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+PANE_VIEWS = ("bars", "cdf", "dots")
+_ITEM_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,80}")
+PANE_SETUP = ("Check that Epoch is on in Desktop Capabilities -> Plugins; enabling the pane is "
+              "the one step a person does, then the agent can open it with epoch_show.")
+
+
+def _valid_view(payload: Any) -> bool:
+    return (isinstance(payload, dict) and set(payload) <= {"view", "item_id"}
+            and isinstance(payload.get("view"), str) and payload["view"] in PANE_VIEWS
+            and ("item_id" not in payload or (isinstance(payload["item_id"], str)
+                 and _ITEM_ID_RE.fullmatch(payload["item_id"]) is not None)))
+
+
+def _broadcast_pane_event(event: str, payload: Dict[str, Any]) -> bool:
+    """Only invalidation or bounded view state may cross the local Desktop bridge."""
+    if not ((event == "data.updated" and isinstance(payload, dict) and not payload)
+            or (event == "view.set" and _valid_view(payload))):
+        return False
+    if "tui_gateway.server" not in sys.modules:
+        return False
+    try:
+        from hermes_cli.plugin_events import broadcast_plugin_event
+    except ImportError:
+        return False
+    try:
+        broadcast_plugin_event("epoch", event, payload)
+        return True  # Sent, not proof of a listening Desktop client.
+    except (Exception, SystemExit):
+        # A bridge importing an unavailable gateway runtime must not end the tool process.
+        logger.debug("epoch: Desktop event was not delivered", exc_info=True)
+        return False
+
+
 DEFAULTS: Dict[str, Any] = {
-    "epoch_command": "npx -y @kyanitelabs/epoch@0.7.0",
+    "epoch_command": "npx -y @kyanitelabs/epoch@0.8.0",
     "epoch_data_dir": "",
     "comment_on_claim": True,
     "record_actuals": True,
@@ -72,6 +110,7 @@ DEFAULTS: Dict[str, Any] = {
     "timeout_seconds": 60,
     "shutdown_wait_seconds": 20,
     "allow_write_slash_on_gateway": False,
+    "allow_ledger_read_on_gateway": False,
 }
 
 # Hours bounds for a three-point estimate (explicit or hint). 2000h ≈ one person-year.
@@ -79,22 +118,63 @@ MAX_ESTIMATE_HOURS = 2000.0
 WORKDAY_HOURS = 8.0
 OUTBOX_KEY = "outbox"
 OUTBOX_MAX_ATTEMPTS = 5
+# Unfinished jobs are retried at load and, at most this often, when a run completes.
+OUTBOX_REPLAY_INTERVAL_SECONDS = 600
 OUTBOX_MAX_AGE_SECONDS = 7 * 24 * 3600
+# Missed-completion reconcile: at most this many unrecorded bindings are checked per pass, and a
+# pass runs at most once per interval (at load, then on claims and dispatcher ticks).
+RECONCILE_PER_PASS = 25
+RECONCILE_INTERVAL_SECONDS = 600
 AUTO_WALLCLOCK = "auto_wallclock"
 BINDINGS_FILE = "hermes-run-bindings.json"
 
 _NUM = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
+# Units a hint may carry: hours (default), minutes, workdays, workweeks.
+_UNIT = r"(h|hrs?|hours?|m|mins?|minutes?|d|days?|w|wks?|weeks?)"
+# Capture the number triple before validating its first following word. Unsupported units must
+# not fall through the optional-unit parser and become hours.
+_HINT_TRIPLE_RE = re.compile(
+    rf"^(?:{_NUM}\s*[/,]\s*{_NUM}\s*[/,]\s*{_NUM}|"
+    r"\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_HINT_QUALIFIERS = frozenset({
+    "roughly", "rough", "approx", "approximately", "maybe", "about", "around", "ish",
+})
+_HINT_UNIT_LIKE_RE = re.compile(
+    r"(?:hours?|hrs?|h|minutes?|mins?|m|days?|weeks?|wks?|w)(?![A-Za-z])", re.IGNORECASE)
+_HINT_UNIT_STEM_RE = re.compile(
+    r"(?:hours?|hrs?|minutes?|mins?|seconds?|secs?|days?|weeks?|wks?|months?|years?|"
+    r"fortnights?|quarters?|sprints?|iterations?|points?)(?:s{1,3}|z+|['’]s)?$",
+    re.IGNORECASE,
+)
+_HINT_ALLOWED_MODIFIERS = frozenset({"working", "business", "calendar", "work", "full", "in"})
+_HINT_BARE_COUNT_NOUN_RE = re.compile(r"(?:[A-Z]{2,}s?|endpoints?)")
+_HINT_COMMENTARY_WORD_RE = re.compile(r"(?:ed|ing|ive|al|ous|able|ible|ful|less|ly)$", re.IGNORECASE)
+_HINT_NUMBER_WORDS = frozenset({
+    "a", "an", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve",
+})
+_HINT_WRAP_OPEN = "(*_`\"'~|<{["
+_HINT_WRAP_CLOSE = ")*_`\"'~|>}]”’“‘"
+_HINT_SENTENCE_END_RE = re.compile(r"[!?]|\.(?!\d)")
+_HINT_HTML_BOUNDARY_RE = re.compile(
+    r"</?(?:address|article|aside|blockquote|br|dd|div|dl|dt|fieldset|figcaption|figure|"
+    r"footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|"
+    r"th|thead|tr|ul)\b[^>]*>", re.IGNORECASE)
 # Strict form: "epoch: 2/4/10", "estimate: 2-4-10 h", "epoch: 1,2,3 days".
 _HINT_STRICT_RE = re.compile(
-    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*(h|hrs?|hours?|d|days?)?\s*(?:$|[\s.;)\]])",
+    rf"^({_NUM})\s*[/,]\s*({_NUM})\s*[/,]\s*({_NUM})\s*{_UNIT}?\s*(?:$|[\s.,;!?)*_`]|\])",
     re.IGNORECASE,
 )
 _HINT_DASH_RE = re.compile(  # dash separators only for unsigned numbers ("2-4-10h")
-    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(h|hrs?|hours?|d|days?)?\s*(?:$|[\s.;)\]])",
+    r"^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*" + _UNIT + r"?\s*(?:$|[\s.,;!?)*_`]|\])",
     re.IGNORECASE,
 )
 # Anything that *looks* like a hint attempt: "epoch:" / "estimate:" followed by a number-ish token.
-_HINT_ATTEMPT_RE = re.compile(r"\b(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)", re.IGNORECASE)
+_HINT_ATTEMPT_RE = re.compile(
+    r"(?:_{1,2})?(?:epoch|estimate)\s*:\s*([-+.]?\d[^\n]*)",
+    re.IGNORECASE)
 _MARKER_RE = re.compile(r"\[epoch:(estimate|actual)((?:\s+[a-z_]+=[^\s\]]+)*)\s*\]")
 
 _TYPE_WORDS = {
@@ -125,12 +205,19 @@ class BoardError(RuntimeError):
 # --------------------------------------------------------------------------- settings
 
 
+_config_warned = False
+
+
 def _cfg(key: str, settings: Optional[Dict[str, Any]] = None) -> Any:
+    global _config_warned
     if settings is not None and key in settings:
         return settings[key]
     try:
         val = _ctx.get_config(key, None) if _ctx is not None else None
-    except Exception:
+    except Exception as exc:
+        if not _config_warned:  # once: a broken config store would otherwise repeat on every read
+            _config_warned = True
+            logger.warning("epoch: reading the plugin config failed (%s); using the defaults", type(exc).__name__)
         val = None
     return DEFAULTS[key] if val is None else val
 
@@ -143,12 +230,13 @@ def snapshot_settings() -> Dict[str, Any]:
 # --------------------------------------------------------------------------- Epoch CLI
 
 # Only what ``npx``/Node need to resolve, download (proxy/cache) and run Epoch. The parent
-# environment (API keys, tokens, Hermes secrets) is never handed to the child.
+# environment (API keys, tokens, Hermes secrets) is never handed to the child. NODE_OPTIONS is
+# deliberately absent: it can preload arbitrary code (``--require``) into Node.
 _ENV_ALLOW = (
     "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
     "TMPDIR", "TMP", "TEMP", "SYSTEMROOT", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA",
     "USERPROFILE", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
-    "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS", "NVM_DIR", "NVM_BIN", "VOLTA_HOME", "FNM_DIR",
+    "NODE_EXTRA_CA_CERTS", "NVM_DIR", "NVM_BIN", "VOLTA_HOME", "FNM_DIR",
     "npm_config_cache", "NPM_CONFIG_CACHE", "npm_config_registry", "NPM_CONFIG_REGISTRY",
     "npm_config_prefix", "NPM_CONFIG_PREFIX", "npm_config_userconfig", "NPM_CONFIG_USERCONFIG",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
@@ -175,11 +263,43 @@ def _scrubbed_env(settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
 
 
 
+def _split_command(raw: str, windows: Optional[bool] = None) -> List[str]:
+    """``shlex.split`` that keeps Windows backslash paths: POSIX rules there eat every ``\\``."""
+    windows = os.name == "nt" if windows is None else windows
+    parts = shlex.split(raw, posix=not windows)
+    if windows:  # non-POSIX mode leaves the quotes on; drop one matching pair
+        parts = [p[1:-1] if len(p) >= 2 and p[0] == p[-1] and p[0] in "\"'" else p for p in parts]
+    return parts
+
+
 def _error_text(res: Dict[str, Any]) -> str:
     err = res.get("error")
     if isinstance(err, dict):
-        return str(err.get("message") or err)
-    return str(err) if err is not None else "unknown error"
+        text = str(err.get("message") or err)
+    else:
+        text = str(err) if err is not None else "unknown error"
+    return _redact_home(text)
+
+
+def _run_group(cmd: List[str], timeout: float, env: Dict[str, str]) -> "subprocess.CompletedProcess[str]":
+    """``subprocess.run`` that, on timeout, kills the whole process group, not only ``npx``.
+
+    ``npx`` spawns node as a child; killing just ``npx`` would leave node running.
+    """
+    posix = os.name == "posix"
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                          start_new_session=posix) as proc:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if posix:
+                with suppress(ProcessLookupError, PermissionError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+            proc.communicate()
+            raise
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
 def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -189,7 +309,7 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
     as ``{"ok": False, "error": "..."}``.
     """
     try:
-        cmd = shlex.split(str(_cfg("epoch_command", settings))) + [str(a) for a in args]
+        cmd = _split_command(str(_cfg("epoch_command", settings))) + [str(a) for a in args]
     except ValueError as exc:
         return {"ok": False, "error": f"invalid epoch_command: {exc}"}
     try:
@@ -201,7 +321,7 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
     except (TypeError, ValueError):
         timeout = float(DEFAULTS["timeout_seconds"])
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+        proc = _run_group(cmd, timeout, env)
     except (FileNotFoundError, PermissionError) as exc:
         return {"ok": False, "error": f"epoch not runnable: {exc}"}
     except subprocess.TimeoutExpired:
@@ -216,9 +336,16 @@ def run_epoch(args: List[str], settings: Optional[Dict[str, Any]] = None) -> Dic
             parsed = json.loads(out[start:])
         except json.JSONDecodeError:
             parsed = None
+    tail = _redact_home((proc.stderr or "").strip()[-500:] or out[-500:])
     if isinstance(parsed, dict) and "ok" in parsed:
+        # A non-zero exit is a failure even when stdout carries an ``ok: true`` envelope; keep
+        # the structured payload for diagnosis but never report the call as successful.
+        if proc.returncode != 0 and parsed.get("ok"):
+            failed = dict(parsed)
+            failed["ok"] = False
+            failed["error"] = f"epoch exited {proc.returncode} despite an ok envelope: {tail}"
+            return failed
         return parsed
-    tail = (proc.stderr or "").strip()[-500:] or out[-500:]
     if proc.returncode != 0:
         return {"ok": False, "error": f"epoch exited {proc.returncode}: {tail}"}
     return {"ok": False, "error": f"epoch returned no JSON envelope: {tail}"}
@@ -251,21 +378,276 @@ def validate_triple(o: Any, m: Any, p: Any, *, source: str = "estimate") -> Tupl
     return vals[0], vals[1], vals[2]
 
 
+def _clean_hint_unit(token: str) -> str:
+    token = re.sub(r"<[^>]*>", "", token)
+    return token.strip(_HINT_WRAP_OPEN + _HINT_WRAP_CLOSE + ".,;:!?")
+
+
+def _looks_like_hint_unit(token: str) -> bool:
+    normalized = token.lower().strip(".,;:!?()[]{}\"'`~«»「」『』")
+    stem = _HINT_UNIT_STEM_RE.search(normalized)
+    if _has_lexical_day_stem_collision(normalized):
+        return False
+    return (bool(_HINT_UNIT_LIKE_RE.match(normalized)) or bool(stem)
+            or bool(re.fullmatch(r"\d+[a-z]+", normalized)))
+
+
+def _has_lexical_day_stem_collision(token: str) -> bool:
+    """Avoid reading words like ``Friday`` and ``holidays`` as a unit compound."""
+    stem = _HINT_UNIT_STEM_RE.search(token)
+    return bool(stem and stem.group().startswith("day")
+                and token[:stem.start()].endswith(tuple("aeiou")))
+
+
+def _is_alpha_hint_word(token: str) -> bool:
+    return bool(re.fullmatch(r"[^\W\d_]+(?:[-_][^\W\d_]+)*", token, re.UNICODE))
+
+
+def _is_hint_commentary_word(token: str) -> bool:
+    return bool(_HINT_COMMENTARY_WORD_RE.search(token))
+
+
+def _hint_label_boundary(text: str, start: int) -> bool:
+    """Accept labels at prose boundaries and deliberate ``re-``/sentence suffixes."""
+    prefix = text[:start]
+    if not prefix:
+        return True
+    previous = prefix[-1]
+    if previous.isalnum() or previous in "_$":
+        return False
+    if previous not in ".-/:\\":
+        return True
+
+    before_separator = prefix[:-1]
+    previous_word = re.search(r"([A-Za-z0-9_]+)$", before_separator)
+    if previous == "-" and previous_word and previous_word.group(1).lower() == "re":
+        before_word = before_separator[:previous_word.start()]
+        return (not before_word or before_word[-1].isspace()
+                or before_word[-1] in "([{<\"'`>)]*,;!?|")
+    if previous == "." and previous_word:
+        word = previous_word.group(1)
+        before_word = before_separator[:previous_word.start()]
+        return (bool(re.fullmatch(r"[A-Z][a-z]+", word))
+                and (not before_word or before_word[-1].isspace()
+                     or before_word[-1] in "([{<\"'`>)]*,;!?|"))
+    if previous_word:
+        return False
+    return True
+
+
+def _is_count_commentary(noun: str, continuation: List[str]) -> bool:
+    """Separate a count in prose from an ambiguous quantity-plus-unit phrase."""
+    if continuation:
+        first = _clean_hint_unit(continuation[0])
+        if first.lower() == "in":
+            if len(continuation) > 1:
+                next_word = _clean_hint_unit(continuation[1])
+                if (next_word and (re.fullmatch(_UNIT, next_word, re.IGNORECASE)
+                                   or _looks_like_hint_unit(next_word))):
+                    return False
+            return True
+        if (first and (re.fullmatch(_UNIT, first, re.IGNORECASE)
+                       or _looks_like_hint_unit(first))):
+            return False
+        return True
+    return bool(_HINT_BARE_COUNT_NOUN_RE.fullmatch(noun))
+
+
+def _is_hint_quantity(token: str) -> bool:
+    parts = re.split(r"[-–]", token.lower().strip(".,;:!?"))
+    return (1 <= len(parts) <= 2
+            and all(part in _HINT_NUMBER_WORDS or re.fullmatch(_NUM, part) for part in parts))
+
+
 def parse_hint(text: str) -> Optional[Dict[str, float]]:
     """Parse the first ``epoch:``/``estimate:`` hint in *text* (hours).
 
     Returns ``None`` when there is no hint attempt; raises :class:`EstimateInputError` when there is
     one but it is malformed or out of bounds (callers surface that visibly).
     """
-    m = _HINT_ATTEMPT_RE.search(text or "")
+    text = text or ""
+    m = next((candidate for candidate in _HINT_ATTEMPT_RE.finditer(text)
+              if _hint_label_boundary(text, candidate.start())), None)
     if not m:
         return None
     raw = m.group(1).strip()
-    sm = _HINT_STRICT_RE.match(raw) or _HINT_DASH_RE.match(raw)
+    numbers = _HINT_TRIPLE_RE.match(raw)
+    if numbers:
+        rest = raw[numbers.end():]
+        if (re.match(r"\|[A-Za-z][A-Za-z0-9_-]*\|", rest) is None
+                and re.match(r"\|[A-Za-z]", rest)):
+            raise EstimateInputError(
+                f"hint {m.group(0).strip()[:60]!r} has a unit glued after a table boundary; "
+                "separate table cells from the estimate")
+        rest = rest.split("|", 1)[0]
+        boundary = _HINT_HTML_BOUNDARY_RE.search(rest)
+        if boundary:
+            rest = rest[:boundary.start()]
+        before_sentence_end = _HINT_SENTENCE_END_RE.split(rest, maxsplit=1)[0]
+        token_match = re.match(r"\s*[,;]*\s*([^\s,;]+)", before_sentence_end)
+        token = token_match.group(1) if token_match else ""
+        unit_token = _clean_hint_unit(token)
+        explicit = (unit_token != "M"
+                    and re.fullmatch(_UNIT, unit_token, re.IGNORECASE) is not None)
+        if not explicit and (not unit_token or unit_token.lower() in _HINT_QUALIFIERS):
+            # Look at at most the first non-qualifier token in this sentence. A bare
+            # count or a word in commentary ends the search; never mine later prose for a unit.
+            qualifier_seen = unit_token.lower() in _HINT_QUALIFIERS
+            qualifier_comma = bool(qualifier_seen and token.endswith(","))
+            in_unit_phrase = False
+            sentence_end = _HINT_SENTENCE_END_RE.search(rest)
+            scan_rest = rest
+            after_sentence_end = False
+            if sentence_end:
+                prefix = rest[:sentence_end.start()]
+                if (not prefix.strip()
+                        or (sentence_end.group() == "."
+                            and re.search(r"\bapprox$", prefix.rstrip(), re.IGNORECASE))):
+                    scan_rest = re.sub(r"^[\s.!?]+", "", rest[sentence_end.end():])
+                    after_sentence_end = True
+                else:
+                    scan_rest = prefix
+            for later_match in re.finditer(r"\S+", scan_rest):
+                later_token = later_match.group(0)
+                later_unit = _clean_hint_unit(later_token)
+                if not later_unit:
+                    continue
+                if later_unit.lower() in _HINT_QUALIFIERS:
+                    qualifier_seen = True
+                    qualifier_comma = later_token.endswith(",")
+                    continue
+                if qualifier_seen and later_unit.lower() == "in":
+                    in_unit_phrase = True
+                    continue
+                if qualifier_seen and _is_hint_quantity(later_unit):
+                    following_tokens = re.findall(r"\S+", scan_rest[later_match.end():])
+                    following_token = following_tokens[0] if following_tokens else ""
+                    following_unit = _clean_hint_unit(following_token)
+                    continuation = following_tokens[1:]
+                    following_supported = (following_unit and following_unit != "M"
+                                           and re.fullmatch(_UNIT, following_unit, re.IGNORECASE))
+                    following_unknown = (following_unit and _looks_like_hint_unit(following_unit)
+                                         and not following_supported)
+                    if qualifier_comma:
+                        if following_supported or following_unknown:
+                            if not continuation:
+                                raise EstimateInputError(
+                                    f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity "
+                                    f"and unit ({later_token!r} {following_token!r}); "
+                                    "state the estimate directly")
+                        elif (following_token and not _is_count_commentary(
+                                following_unit, continuation)):
+                            raise EstimateInputError(
+                                f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity "
+                                f"and unit ({later_token!r} {following_token!r}); "
+                                "state the estimate directly")
+                        token = unit_token = ""
+                        break
+                    if following_supported or following_unknown:
+                        if (following_unknown
+                                and _is_count_commentary(following_unit, continuation)):
+                            token = unit_token = ""
+                            break
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and "
+                            f"unit ({later_token!r} {following_token!r}); "
+                            "state the estimate directly")
+                    if following_token and not _is_count_commentary(following_unit, continuation):
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and "
+                            f"unit ({later_token!r} {following_token!r}); "
+                            "state the estimate directly")
+                    token = unit_token = ""
+                    break
+                if qualifier_seen and re.fullmatch(
+                        rf"{_NUM}(?:h|hrs?|hours?|m|mins?|minutes?|d|days?|w|wks?|weeks?)",
+                        later_unit, re.IGNORECASE):
+                    raise EstimateInputError(
+                        f"hint {m.group(0).strip()[:60]!r} has an ambiguous quantity and unit "
+                        f"({later_token!r}); state the estimate directly")
+                if later_unit != "M" and re.fullmatch(_UNIT, later_unit, re.IGNORECASE):
+                    trailing_text = scan_rest[later_match.end():].strip(
+                        " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
+                    if after_sentence_end and trailing_text:
+                        token = unit_token = ""
+                        break
+                    token, unit_token, explicit = later_token, later_unit, True
+                    break
+                if qualifier_seen:
+                    following_match = re.match(r"\s*(\S+)", scan_rest[later_match.end():])
+                    following_tokens = re.findall(r"\S+", scan_rest[later_match.end():])
+                    following_token = following_tokens[0] if following_tokens else ""
+                    following_unit = _clean_hint_unit(following_token)
+                    following_supported = (following_unit and following_unit != "M"
+                                           and re.fullmatch(_UNIT, following_unit, re.IGNORECASE))
+                    following_unknown = (following_unit and _looks_like_hint_unit(following_unit)
+                                         and not following_supported)
+                    if following_supported or following_unknown:
+                        if (following_supported and after_sentence_end
+                                and later_unit.lower() not in _HINT_ALLOWED_MODIFIERS):
+                            token = unit_token = ""
+                            break
+                        if following_unknown:
+                            token, unit_token = following_token, following_unit
+                            break
+                        if later_unit.lower() not in _HINT_ALLOWED_MODIFIERS:
+                            raise EstimateInputError(
+                                f"hint {m.group(0).strip()[:60]!r} has text before the unit "
+                                f"({later_token!r}); use a supported unit directly after the qualifier")
+                        unit_end = later_match.end() + following_match.end()
+                        trailing_text = scan_rest[unit_end:].strip(
+                            " \t.,;:!?" + _HINT_WRAP_OPEN + _HINT_WRAP_CLOSE)
+                        if after_sentence_end and trailing_text:
+                            token = unit_token = ""
+                            break
+                        token, unit_token, explicit = following_token, following_unit, True
+                        break
+                    if (following_token and _looks_like_hint_unit(later_unit)
+                            and following_unit.lower().endswith(("ing", "ed"))):
+                        # A stem match inside ordinary phrases such as "holidays permitting"
+                        # or "checkpoints included" is not a unit token.
+                        token = unit_token = ""
+                        break
+                    if _looks_like_hint_unit(later_unit):
+                        token, unit_token = later_token, later_unit
+                    elif (not following_token and _is_alpha_hint_word(later_unit)
+                          and later_unit.lower() != "m"
+                          and not _is_hint_commentary_word(later_unit)
+                          and not in_unit_phrase
+                          and not _has_lexical_day_stem_collision(later_unit)):
+                        raise EstimateInputError(
+                            f"hint {m.group(0).strip()[:60]!r} has an unsupported unit "
+                            f"({later_token!r}); use h, min, d or w")
+                    else:
+                        # Non-unit words after a qualifier are commentary, even if later prose
+                        # contains a number or a unit word.
+                        token = unit_token = ""
+                elif after_sentence_end:
+                    token = unit_token = ""
+                    break
+                else:
+                    token, unit_token = later_token, later_unit
+                break
+        if (token and unit_token and unit_token.lower() not in _HINT_QUALIFIERS
+                and unit_token.lower() != "h/t" and not explicit):
+            # Do not let malformed extensions of a known unit (day(s), week's, h/day) fall
+            # through the optional-unit grammar and become hours.
+            unit_like = _looks_like_hint_unit(unit_token)
+            if unit_like:
+                raise EstimateInputError(
+                    f"hint {m.group(0).strip()[:60]!r} has malformed unit {token!r}; "
+                    "use h, min, d or w (e.g. 'epoch: 2/4/10h')")
+            raise EstimateInputError(
+                f"hint {m.group(0).strip()[:60]!r} has text after the estimate "
+                f"({token!r}); add a supported unit or punctuation")
+    parse_raw = raw[:numbers.end()] if numbers else raw
+    if numbers and explicit:
+        parse_raw = raw[:numbers.end()] + unit_token
+    sm = _HINT_STRICT_RE.match(parse_raw) or _HINT_DASH_RE.match(parse_raw)
     if not sm:
         raise EstimateInputError(f"malformed hint {m.group(0).strip()[:60]!r} (expected e.g. 'epoch: 2/4/10h')")
     unit = (sm.group(4) or "h").lower()
-    scale = WORKDAY_HOURS if unit.startswith("d") else 1.0
+    scale = {"m": 1 / 60, "d": WORKDAY_HOURS, "w": 5 * WORKDAY_HOURS}.get(unit[0], 1.0)
     try:
         o, ml, p = (float(x) * scale for x in sm.groups()[:3])
     except ValueError:
@@ -294,6 +676,13 @@ def guess_type(text: str) -> str:
     return "feature"
 
 
+def _fmt_estimate_hours(hours: float) -> str:
+    """``1.5h`` from one hour up; whole minutes below it, so a 10-minute task never reads 0.0h."""
+    if hours < 1:
+        return f"{max(1, round(hours * 60))}m"
+    return f"{hours:.1f}h"
+
+
 def _monte_carlo(title: str, triple: Dict[str, float], source: str,
                  settings: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     # Epoch monte_carlo_schedule works in days (8h workday); the triple is in hours.
@@ -307,7 +696,7 @@ def _monte_carlo(title: str, triple: Dict[str, float], source: str,
 
     def h(k: str) -> str:
         try:
-            return f"{float(d[k]) * WORKDAY_HOURS:.1f}h"
+            return _fmt_estimate_hours(float(d[k]) * WORKDAY_HOURS)
         except (KeyError, TypeError, ValueError):
             return "n/a"
 
@@ -473,6 +862,13 @@ def _binding_key(task_id: str, board: Optional[str], run_id: Any) -> str:
     return f"{board or '-'}:{task_id}:{run_id}"
 
 
+LOCK_TIMEOUT_SECONDS = 5.0
+
+
+class LockTimeout(TimeoutError):
+    """Another process held a state-file lock past the deadline."""
+
+
 @contextmanager
 def _file_lock(path: Path):
     """Exclusive cross-process lock via a sibling ``.<name>.lock`` (Hermes PluginState convention)."""
@@ -493,7 +889,18 @@ def _file_lock(path: Path):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(
+                            f"could not lock {path.name} within {LOCK_TIMEOUT_SECONDS:g}s; "
+                            "another Epoch process is holding it"
+                        ) from None
+                    time.sleep(0.05)
             try:
                 yield
             finally:
@@ -543,7 +950,34 @@ def _bindings_update(settings: Optional[Dict[str, Any]], fn: Callable[[Dict[str,
     with _file_lock(path):
         data = _read_json_file(path)
         fn(data)
+        _prune_finished_bindings(data)
         _write_json_file(path, data)
+
+
+# Bindings with nothing left to do are dropped this long after they were created, so the file
+# does not grow by one entry per run forever.
+BINDING_RETENTION_SECONDS = 30 * 24 * 3600
+
+
+def _binding_finished(binding: Dict[str, Any]) -> bool:
+    """The ledger side is settled and no audit comment is still waiting to be posted."""
+    settled = ledger_outcome(binding) is not None or bool(binding.get("run_ended"))
+    return settled and all(
+        delivery_state(binding, kind) in (Delivery.NONE, Delivery.DELIVERED) for kind in CommentKind)
+
+
+def _prune_finished_bindings(data: Dict[str, Any], now: Optional[float] = None) -> None:
+    now = time.time() if now is None else now
+    for key, binding in list(data.items()):
+        if not isinstance(binding, dict):
+            continue
+        created = binding.get("created_at")
+        if not isinstance(created, (int, float)):
+            # Written before bindings were timestamped: start its clock now.
+            data[key] = dict(binding, created_at=now)
+            continue
+        if now - created > BINDING_RETENTION_SECONDS and _binding_finished(binding):
+            del data[key]
 
 
 def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
@@ -552,6 +986,101 @@ def _binding_get(settings: Optional[Dict[str, Any]], task_id: str, board: Option
     with _file_lock(path):
         raw = _read_json_file(path).get(_binding_key(task_id, board, run_id))
     return dict(raw) if isinstance(raw, dict) else None
+
+
+# --------------------------------------------------------------------------- run-binding state
+#
+# One run binding (``hermes-run-bindings.json`` → ``"<board>:<task>:<run>"``) carries two
+# independent state machines, plus a ``created_at`` timestamp used only to prune finished
+# bindings. These names are the only place the stages are spelled out, and every write goes
+# through one transition below.
+#
+# 1. Ledger outcome (keys ``recorded`` + ``status``):
+#
+#        UNRECORDED ──record(recorded)──▶ RECORDED
+#            │ ├──────record(duplicate)─▶ DUPLICATE      (terminal; a *different* terminal
+#            │ └──────record(rejected)──▶ REJECTED        outcome is refused, the same one is
+#                                                         idempotent; keep_existing defers to
+#                                                         whatever the first recorder stored)
+#
+# 2. Comment delivery, once per kind ∈ {estimate, actual}
+#    (keys ``<kind>_comment_body`` / ``<kind>_delivery_in_flight`` / ``<kind>_commented``):
+#
+#        NONE ──set body──▶ PENDING ──claim──▶ IN_FLIGHT ──complete──▶ DELIVERED (terminal)
+#                             ▲                   │
+#                             └──release/expiry───┘
+#
+#    NONE (no body yet) and DELIVERED both read as "terminal" to a deliverer: nothing to post.
+
+
+class LedgerOutcome(str, Enum):
+    """Terminal Epoch-ledger outcome of a run's wall-clock actual (persisted as ``status``)."""
+
+    RECORDED = "recorded"
+    DUPLICATE = "duplicate"
+    REJECTED = "rejected"
+
+
+class CommentKind(str, Enum):
+    ESTIMATE = "estimate"
+    ACTUAL = "actual"
+
+
+class Delivery(str, Enum):
+    """Derived audit-comment delivery stage for one :class:`CommentKind` (never persisted)."""
+
+    NONE = "none"
+    PENDING = "pending"
+    IN_FLIGHT = "in_flight"
+    DELIVERED = "delivered"
+
+
+class IllegalBindingTransition(RuntimeError):
+    """A write that would move a run binding along an edge the diagram above does not have."""
+
+
+def _kind(kind: Any) -> CommentKind:
+    try:
+        return CommentKind(kind)
+    except ValueError:
+        raise IllegalBindingTransition(f"unknown comment kind {kind!r}") from None
+
+
+def _body_key(kind: CommentKind) -> str:
+    return f"{kind.value}_comment_body"
+
+
+def _claim_key(kind: CommentKind) -> str:
+    return f"{kind.value}_delivery_in_flight"
+
+
+def _commented_key(kind: CommentKind) -> str:
+    return f"{kind.value}_commented"
+
+
+def ledger_outcome(binding: Optional[Dict[str, Any]]) -> Optional[LedgerOutcome]:
+    """``None`` while UNRECORDED. Tolerant of legacy rows: ``recorded`` without a (known)
+    ``status`` reads as RECORDED, since ``recorded`` has always been the authority."""
+    if not binding or not binding.get("recorded"):
+        return None
+    try:
+        return LedgerOutcome(binding.get("status"))
+    except ValueError:
+        return LedgerOutcome.RECORDED
+
+
+def delivery_state(binding: Optional[Dict[str, Any]], kind: Any) -> Delivery:
+    k = _kind(kind)
+    if not binding:
+        return Delivery.NONE
+    if binding.get(_commented_key(k)):
+        return Delivery.DELIVERED
+    if not binding.get(_body_key(k)):
+        return Delivery.NONE
+    claim = binding.get(_claim_key(k))
+    if claim and not _delivery_claim_expired(claim):
+        return Delivery.IN_FLIGHT
+    return Delivery.PENDING
 
 
 def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
@@ -563,7 +1092,8 @@ def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Op
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else {}
         if cur.get("ref"):
-            # First writer wins on ref; still attach a pending comment body if a crash left none.
+            # First writer wins on ref; still attach a pending comment body if a crash left none
+            # (estimate delivery NONE → PENDING).
             if estimate_comment_body and not cur.get("estimate_comment_body"):
                 cur = dict(cur)
                 cur["estimate_comment_body"] = estimate_comment_body
@@ -577,29 +1107,75 @@ def _binding_put_ref(settings: Optional[Dict[str, Any]], task_id: str, board: Op
             "estimate_commented": False,
             "actual_commented": False,
             "estimate_comment_body": estimate_comment_body,
+            "created_at": time.time(),
         }
 
     _bindings_update(settings, mutate)
 
+    _broadcast_pane_event("data.updated", {})
 
-def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id: str,
-                                     board: Optional[str], run_id: Any) -> None:
+
+def _transition_mark_commented(cur: Dict[str, Any], kind: CommentKind) -> Dict[str, Any]:
+    """PENDING | IN_FLIGHT → DELIVERED (DELIVERED → DELIVERED is a no-op). NONE is refused:
+    there is no body, so nothing can have been posted."""
+    if delivery_state(cur, kind) is Delivery.NONE:
+        raise IllegalBindingTransition(f"{kind.value} comment marked delivered with no body")
+    cur = dict(cur)
+    cur[_commented_key(kind)] = True
+    cur.pop(_claim_key(kind), None)
+    return cur
+
+
+def _binding_mark_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                            board: Optional[str], run_id: Any, kind: Any) -> None:
+    k = _kind(kind)
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur:
             return
-        cur = dict(cur)
-        cur["estimate_commented"] = True
-        cur.pop("estimate_delivery_in_flight", None)
-        data[key] = cur
+        data[key] = _transition_mark_commented(cur, k)
 
     _bindings_update(settings, mutate)
 
 
+def _binding_mark_estimate_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                                     board: Optional[str], run_id: Any) -> None:
+    _binding_mark_commented(settings, task_id, board, run_id, CommentKind.ESTIMATE)
+
+
+def _binding_mark_actual_commented(settings: Optional[Dict[str, Any]], task_id: str,
+                                   board: Optional[str], run_id: Any) -> None:
+    _binding_mark_commented(settings, task_id, board, run_id, CommentKind.ACTUAL)
+
+
+def _transition_record(cur: Dict[str, Any], outcome: LedgerOutcome,
+                       actual_comment_body: Optional[str], keep_existing: bool) -> Dict[str, Any]:
+    """UNRECORDED → outcome. Already terminal: ``keep_existing`` keeps the stored outcome/body
+    (the duplicate path defers to whoever appended); otherwise only the same outcome is
+    accepted (idempotent re-mark) and a different one is refused."""
+    prior = ledger_outcome(cur)
+    # DUPLICATE → RECORDED is the one upgrade allowed. Two recorders race: the loser can see
+    # Epoch's ``duplicate`` rejection and mark the binding before the winner, whose append is
+    # what actually landed, gets to mark it. The winner's outcome is the truth, so it replaces
+    # the loser's status and pending notice.
+    upgrade = prior is LedgerOutcome.DUPLICATE and outcome is LedgerOutcome.RECORDED
+    if prior is not None and not keep_existing and prior is not outcome and not upgrade:
+        raise IllegalBindingTransition(
+            f"ledger outcome already {prior.value}; refusing to overwrite with {outcome.value}")
+    cur = dict(cur)
+    cur["recorded"] = True
+    if not (keep_existing and prior is not None and cur.get("status")):
+        cur["status"] = outcome.value
+    if actual_comment_body is not None and not (keep_existing and cur.get("actual_comment_body")):
+        cur["actual_comment_body"] = actual_comment_body
+    cur.setdefault("actual_commented", False)
+    return cur
+
+
 def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, board: Optional[str],
-                           run_id: Any, *, status: str,
+                           run_id: Any, *, status: Any,
                            actual_comment_body: Optional[str] = None,
                            keep_existing: bool = False) -> None:
     """Mark the Epoch ledger outcome. Does not imply the audit comment was delivered.
@@ -607,39 +1183,21 @@ def _binding_mark_recorded(settings: Optional[Dict[str, Any]], task_id: str, boa
     With ``keep_existing`` (duplicate path) a status/body already stored by the recorder that
     actually appended to the ledger wins; only a missing body is filled in.
     """
+    try:
+        outcome = LedgerOutcome(status)
+    except ValueError:
+        raise IllegalBindingTransition(f"unknown ledger outcome {status!r}") from None
     key = _binding_key(task_id, board, run_id)
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur:
             return
-        cur = dict(cur)
-        had = bool(cur.get("recorded"))
-        cur["recorded"] = True
-        if not (keep_existing and had and cur.get("status")):
-            cur["status"] = status
-        if actual_comment_body is not None and not (keep_existing and cur.get("actual_comment_body")):
-            cur["actual_comment_body"] = actual_comment_body
-        cur.setdefault("actual_commented", False)
-        data[key] = cur
+        data[key] = _transition_record(cur, outcome, actual_comment_body, keep_existing)
 
     _bindings_update(settings, mutate)
 
-
-def _binding_mark_actual_commented(settings: Optional[Dict[str, Any]], task_id: str,
-                                   board: Optional[str], run_id: Any) -> None:
-    key = _binding_key(task_id, board, run_id)
-
-    def mutate(data: Dict[str, Any]) -> None:
-        cur = data.get(key) if isinstance(data.get(key), dict) else None
-        if not cur:
-            return
-        cur = dict(cur)
-        cur["actual_commented"] = True
-        cur.pop("actual_delivery_in_flight", None)
-        data[key] = cur
-
-    _bindings_update(settings, mutate)
+    _broadcast_pane_event("data.updated", {})
 
 
 def _delivery_claim_expired(claim: Any) -> bool:
@@ -662,20 +1220,18 @@ _DELIVERY_CONTESTED = "contested"
 
 
 def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                            board: Optional[str], run_id: Any, *, kind: str
+                            board: Optional[str], run_id: Any, *, kind: Any
                             ) -> Tuple[Optional[str], str]:
     """Atomically claim the right to post the pending *kind* comment under the bindings flock.
 
-    Returns ``(body, "claimed")`` on success, ``(None, "terminal")`` when already delivered or
-    nothing to post, or ``(None, "contested")`` when another live claim still holds the slot.
-    Callers must not treat contested as success — raise (or otherwise leave the outbox job
-    pending) so a peer can retry after the lease expires or is released. A BoardError after
-    claiming must call :func:`_release_comment_delivery` so a peer (or retry) can reclaim.
+    PENDING → IN_FLIGHT (or a re-claim of our own IN_FLIGHT). Returns ``(body, "claimed")`` on
+    success, ``(None, "terminal")`` when NONE/DELIVERED, or ``(None, "contested")`` when another
+    live claim still holds the slot. Callers must not treat contested as success — raise (or
+    otherwise leave the outbox job pending) so a peer can retry after the lease expires or is
+    released. A BoardError after claiming must call :func:`_release_comment_delivery`.
     """
+    k = _kind(kind)
     key = _binding_key(task_id, board, run_id)
-    flag = f"{kind}_commented"
-    body_key = f"{kind}_comment_body"
-    claim_key = f"{kind}_delivery_in_flight"
     result: Dict[str, Any] = {"body": None, "status": _DELIVERY_TERMINAL}
     now = time.time()
     claim = {
@@ -686,15 +1242,12 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
-        if not cur or cur.get(flag):
+        state = delivery_state(cur, k)
+        if state in (Delivery.NONE, Delivery.DELIVERED):
             result["status"] = _DELIVERY_TERMINAL
             return
-        body = cur.get(body_key)
-        if not body:
-            result["status"] = _DELIVERY_TERMINAL
-            return
-        existing = cur.get(claim_key)
-        if existing and not _delivery_claim_expired(existing):
+        if state is Delivery.IN_FLIGHT:
+            existing = cur.get(_claim_key(k))
             same = (isinstance(existing, dict)
                     and existing.get("pid") == claim["pid"]
                     and existing.get("tid") == claim["tid"])
@@ -702,9 +1255,9 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
                 result["status"] = _DELIVERY_CONTESTED
                 return
         cur = dict(cur)
-        cur[claim_key] = claim
+        cur[_claim_key(k)] = claim
         data[key] = cur
-        result["body"] = str(body)
+        result["body"] = str(cur.get(_body_key(k)))
         result["status"] = _DELIVERY_CLAIMED
 
     _bindings_update(settings, mutate)
@@ -712,72 +1265,78 @@ def _claim_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
 
 
 def _release_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                              board: Optional[str], run_id: Any, *, kind: str) -> None:
-    """Drop an in-flight delivery claim (BoardError / crash-recovery path)."""
+                              board: Optional[str], run_id: Any, *, kind: Any) -> None:
+    """IN_FLIGHT → PENDING: drop our (or an expired) claim (BoardError / crash-recovery path)."""
+    k = _kind(kind)
     key = _binding_key(task_id, board, run_id)
-    claim_key = f"{kind}_delivery_in_flight"
     me = (os.getpid(), threading.get_ident())
 
     def mutate(data: Dict[str, Any]) -> None:
         cur = data.get(key) if isinstance(data.get(key), dict) else None
         if not cur:
             return
-        existing = cur.get(claim_key)
+        existing = cur.get(_claim_key(k))
         if not isinstance(existing, dict):
             return
         if (existing.get("pid"), existing.get("tid")) != me and not _delivery_claim_expired(existing):
             return
         cur = dict(cur)
-        cur.pop(claim_key, None)
+        cur.pop(_claim_key(k), None)
         data[key] = cur
 
     _bindings_update(settings, mutate)
 
 
 def _complete_comment_delivery(settings: Optional[Dict[str, Any]], task_id: str,
-                               board: Optional[str], run_id: Any, *, kind: str) -> None:
-    """Mark *kind* comment delivered and clear any in-flight claim."""
-    if kind == "estimate":
+                               board: Optional[str], run_id: Any, *, kind: Any) -> None:
+    """Mark *kind* comment delivered and clear any in-flight claim.
+
+    Dispatches through the per-kind module names so tests (and crash simulations) can patch them.
+    """
+    if _kind(kind) is CommentKind.ESTIMATE:
         _binding_mark_estimate_commented(settings, task_id, board, run_id)
     else:
         _binding_mark_actual_commented(settings, task_id, board, run_id)
 
 
-def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
-                              binding: Dict[str, Any],
-                              settings: Optional[Dict[str, Any]]) -> None:
-    """Post a pending estimate/audit comment without re-running Epoch.
+def _deliver_comment(task_id: str, board: Optional[str], run_id: Any,
+                     binding: Dict[str, Any], settings: Optional[Dict[str, Any]],
+                     kind: CommentKind) -> Tuple[bool, Dict[str, Any]]:
+    """Drive *kind* delivery to a terminal stage. Returns ``(posted_now, last_seen_binding)``.
 
-    Delivery is claimed under the bindings flock so concurrent claimed_job racers cannot
-    double-post. A BoardError releases the claim for retry. Contested (another live claim)
-    raises after a brief spin so ``claimed_job`` / ``_run_job`` leave the outbox entry pending
-    — never treat a held lease as terminal success.
+    Delivery is claimed under the bindings flock so concurrent racers cannot double-post. A
+    BoardError releases the claim for retry. Contested (another live claim) raises after a brief
+    spin so the outbox leaves the job pending — never treat a held lease as terminal success.
     """
-    if binding.get("estimate_commented"):
-        return
-    # Brief spin: another live claim may finish (or release) momentarily.
+    if binding.get(_commented_key(kind)):
+        return False, binding
     deadline = time.time() + 2.0
     while True:
         fresh = _binding_get(settings, task_id, board, run_id) or binding
-        if fresh.get("estimate_commented"):
-            return
-        if not fresh.get("estimate_comment_body"):
-            return
-        body, status = _claim_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+        if delivery_state(fresh, kind) in (Delivery.NONE, Delivery.DELIVERED):
+            return False, fresh
+        body, status = _claim_comment_delivery(settings, task_id, board, run_id, kind=kind)
         if status == _DELIVERY_CLAIMED and body is not None:
             try:
                 add_comment(task_id, board, body)
             except Exception:
-                _release_comment_delivery(settings, task_id, board, run_id, kind="estimate")
+                _release_comment_delivery(settings, task_id, board, run_id, kind=kind)
                 raise
-            _complete_comment_delivery(settings, task_id, board, run_id, kind="estimate")
-            return
+            _complete_comment_delivery(settings, task_id, board, run_id, kind=kind)
+            return True, fresh
         if status == _DELIVERY_TERMINAL:
-            return
+            return False, fresh
         if time.time() >= deadline:
             # Still contested after wait — leave non-terminal so the outbox retries.
-            raise RuntimeError("estimate comment delivery contested")
+            raise RuntimeError(f"{kind.value} comment delivery contested")
         time.sleep(0.02)
+
+
+def _deliver_estimate_comment(task_id: str, board: Optional[str], run_id: Any,
+                              binding: Dict[str, Any],
+                              settings: Optional[Dict[str, Any]]) -> None:
+    """Post a pending estimate/audit comment without re-running Epoch."""
+    _deliver_comment(task_id, board, run_id, binding, settings, CommentKind.ESTIMATE)
 
 
 def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
@@ -786,37 +1345,13 @@ def _deliver_actual_comment(task_id: str, board: Optional[str], run_id: Any,
     """Post a pending actual/rejection comment without re-recording. Returns status string.
 
     Once delivery has finished (or there is nothing to post), further calls return
-    ``already_recorded`` so the outbox treats the job as terminal. Concurrent success and
-    duplicate recorders serialize on the claim so the audit comment is posted at most once
-    per successful claim cycle.
+    ``already_recorded`` so the outbox treats the job as terminal; a post made by this call
+    returns the binding's ledger outcome.
     """
-    if binding.get("actual_commented"):
+    posted, fresh = _deliver_comment(task_id, board, run_id, binding, settings, CommentKind.ACTUAL)
+    if not posted:
         return "already_recorded"
-    # Brief spin: another live claim may finish momentarily.
-    deadline = time.time() + 2.0
-    while True:
-        fresh = _binding_get(settings, task_id, board, run_id) or binding
-        if fresh.get("actual_commented"):
-            return "already_recorded"
-        if not fresh.get("actual_comment_body"):
-            return "already_recorded"
-        body, claim_status = _claim_comment_delivery(
-            settings, task_id, board, run_id, kind="actual")
-        if claim_status == _DELIVERY_CLAIMED and body is not None:
-            try:
-                add_comment(task_id, board, body)
-            except Exception:
-                _release_comment_delivery(settings, task_id, board, run_id, kind="actual")
-                raise
-            _complete_comment_delivery(settings, task_id, board, run_id, kind="actual")
-            status = str(fresh.get("status") or "recorded")
-            return status if status != "recorded" else "recorded"
-        if claim_status == _DELIVERY_TERMINAL:
-            return "already_recorded"
-        if time.time() >= deadline:
-            # Still contested after wait — leave non-terminal so the outbox retries.
-            raise RuntimeError("actual comment delivery contested")
-        time.sleep(0.02)
+    return (ledger_outcome(fresh) or LedgerOutcome.RECORDED).value
 
 
 # --------------------------------------------------------------------------- jobs
@@ -962,7 +1497,7 @@ def _job_id(kind: str, task_id: str, board: Optional[str], run_id: Any) -> str:
     return f"{kind}:{board or '-'}:{task_id}:{run_id}"
 
 
-def _outbox_update(fn) -> None:
+def _outbox_update(fn) -> bool:
     """Apply *fn* to the outbox dict under a cross-process transaction when possible.
 
     Hermes ``PluginState.get``/``set`` each lock individually; a get→mutate→set RMW across
@@ -971,7 +1506,7 @@ def _outbox_update(fn) -> None:
     calling get/set (which would drop the lock between ops).
     """
     if _ctx is None:
-        return
+        return False
     try:
         state = _ctx.state
         update = getattr(state, "update", None)
@@ -981,7 +1516,7 @@ def _outbox_update(fn) -> None:
                 fn(box)
                 return box
             update(OUTBOX_KEY, mutator, default={})
-            return
+            return True
         path = getattr(state, "path", None)
         if path is not None:
             path = Path(path)
@@ -992,23 +1527,63 @@ def _outbox_update(fn) -> None:
                     fn(box)
                     data[OUTBOX_KEY] = box
                     _write_json_file(path, data)
-            return
+            return True
         with _outbox_lock:
             box = state.get(OUTBOX_KEY, None) or {}
             if not isinstance(box, dict):
                 box = {}
             fn(box)
             state.set(OUTBOX_KEY, box)
-    except Exception:
+        return True
+    except Exception as exc:
+        # The change did not reach disk. Callers that need it durable (the start claim) must not
+        # proceed; a restart will not replay (or will replay a finished) job.
+        logger.warning("epoch: outbox update failed (%s: %s); the outbox was not changed",
+                       type(exc).__name__, exc)
         logger.debug("epoch: outbox update failed", exc_info=True)
+        return False
 
 
-def _outbox_put(job: Dict[str, Any]) -> None:
-    _outbox_update(lambda box: box.__setitem__(job["id"], job))
+def _outbox_put(job: Dict[str, Any]) -> bool:
+    return _outbox_update(lambda box: box.__setitem__(job["id"], job))
 
 
 def _outbox_done(job_id: str) -> None:
     _outbox_update(lambda box: box.pop(job_id, None))
+
+
+DEAD_LETTER_FILE = "dead-letter.jsonl"
+
+
+def _dead_letter_path(settings: Optional[Dict[str, Any]] = None) -> Path:
+    return _epoch_data_dir(settings) / DEAD_LETTER_FILE
+
+
+def _dead_letter(job: Dict[str, Any], reason: str) -> None:
+    """Record a job the outbox will never retry, so abandoning it is never silent."""
+    record = {
+        "id": job.get("id"), "task_id": job.get("task_id"), "board": job.get("board"),
+        "kind": job.get("kind"), "run_id": job.get("run_id"),
+        "attempts": int(job.get("attempts") or 0), "created_at": job.get("created_at"),
+        "last_error": job.get("last_error"), "reason": reason, "abandoned_at": time.time(),
+    }
+    try:
+        path = _dead_letter_path(job.get("settings"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True, default=str) + "\n")
+    except OSError as exc:
+        logger.warning("epoch: could not write dead-letter for job %s: %s", job.get("id"), exc)
+    logger.warning("epoch: abandoned %s job %s for task %s (%s, attempts=%s)",
+                   job.get("kind"), job.get("id"), job.get("task_id"), reason, record["attempts"])
+
+
+def dead_letter_count(settings: Optional[Dict[str, Any]] = None) -> int:
+    try:
+        with _dead_letter_path(settings).open(encoding="utf-8") as handle:
+            return sum(1 for line in handle if line.strip())
+    except OSError:
+        return 0
 
 
 def _run_job(job: Dict[str, Any]) -> None:
@@ -1021,12 +1596,15 @@ def _run_job(job: Dict[str, Any]) -> None:
                     attempt=int(job.get("attempts") or 0))
         logger.debug("epoch: %s -> %s", job["id"], status)
         _outbox_done(job["id"])
-    except Exception:
+    except Exception as exc:
         logger.debug("epoch: job %s failed; left in outbox for retry", job.get("id"), exc_info=True)
+        last_error = f"{type(exc).__name__}: {exc}"[:300]  # captured here: bump runs after this block
+
         def bump(box):
             if job["id"] in box:
                 box[job["id"]]["attempts"] = int(box[job["id"]].get("attempts", 0)) + 1
                 box[job["id"]]["lease_until"] = 0
+                box[job["id"]]["last_error"] = last_error
         _outbox_update(bump)
     finally:
         with _inflight_lock:
@@ -1044,6 +1622,78 @@ def _start(job: Dict[str, Any]) -> threading.Thread:
     return t
 
 
+REPLAY_WORKERS = 2
+
+
+def _claim_for_start(job: Dict[str, Any]) -> bool:
+    """Renew the lease when a worker actually starts *job*, and say whether it should run.
+
+    The lease taken at pick time ticks while the job waits behind the other workers, so with
+    enough queued jobs it lapses before the job starts and another replay takes the job over (or
+    finishes it). Renewing here gives the job its full lease from the moment it starts. If the
+    job is gone from the outbox (finished elsewhere) or is now owned by another live process, this
+    worker leaves it alone instead of running it a second time. If the outbox update itself fails
+    (a lock timeout, say) the check never ran, so the job is not run either; it stays queued for
+    a later replay.
+    """
+    verdict = {"run": False}  # stays False unless the check below actually ran
+
+    def claim(box):
+        current = box.get(job["id"])
+        if not isinstance(current, dict):
+            verdict["run"] = False
+            return
+        owner = current.get("owner_pid")
+        if owner not in (None, 0, os.getpid()) and _pid_alive(owner):
+            verdict["run"] = False
+            return
+        current["lease_until"] = time.time() + _lease_seconds(current.get("settings"))
+        current["owner_pid"] = os.getpid()
+        verdict["run"] = True
+
+    ok = _outbox_update(claim)
+    return bool(verdict["run"] and ok)
+
+
+def _start_pool(jobs: List[Dict[str, Any]]) -> List[threading.Thread]:
+    """Run *jobs* on at most ``REPLAY_WORKERS`` threads, so a replay after an offline spell
+    starts two npx processes at a time, not one per queued job."""
+    pending = list(reversed(jobs))
+    pending_lock = threading.Lock()
+
+    def worker() -> None:
+        while True:
+            with pending_lock:
+                if not pending:
+                    return
+                job = pending.pop()
+            with _inflight_lock:
+                if job["id"] in _inflight:  # a later replay re-picked a job that is still queued
+                    continue
+                _inflight[job["id"]] = threading.current_thread()
+            if not _claim_for_start(job):
+                with _inflight_lock:
+                    _inflight.pop(job["id"], None)
+                continue
+            _run_job(job)
+
+    threads = []
+    for n in range(min(REPLAY_WORKERS, len(jobs))):
+        run_ctx = contextvars.copy_context()  # one copy per thread: a Context is single-entry
+        t = threading.Thread(target=run_ctx.run, args=(worker,), daemon=True, name=f"epoch-replay-{n}")
+        threads.append(t)
+        t.start()
+    return threads
+
+
+def _redact_home(text: str) -> str:
+    """Errors are posted as Kanban comments; never leak the home directory path into them."""
+    home = os.path.expanduser("~")
+    if home and home not in ("/", "~"):
+        text = text.replace(home.rstrip("/"), "~")
+    return text
+
+
 def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Optional[threading.Thread]:
     settings = snapshot_settings()  # resolved in the hook's own profile context
     job = {"id": _job_id(kind, task_id, board, run_id), "kind": kind, "task_id": task_id,
@@ -1053,7 +1703,17 @@ def _enqueue(kind: str, task_id: str, board: Optional[str], run_id: Any) -> Opti
     with _inflight_lock:
         if job["id"] in _inflight:
             return None
-    _outbox_put(job)
+    if not _outbox_put(job):
+        if kind in {"claimed", "completed"} and bool(_cfg("comment_on_claim", settings)):
+            try:
+                add_comment(task_id, board,
+                            "⏱ Epoch couldn't save this estimate job, so it wasn't queued and "
+                            "will not retry automatically. Repair the Epoch state file, then "
+                            "retry this action.")
+            except Exception as exc:
+                logger.warning("epoch: could not notify task %s that its estimate was not queued (%s)",
+                               task_id, type(exc).__name__)
+        return None
     return _start(job)
 
 
@@ -1095,6 +1755,7 @@ def replay_outbox() -> List[threading.Thread]:
         return started
     now = time.time()
     picked: List[Dict[str, Any]] = []
+    abandoned: List[Tuple[Dict[str, Any], str]] = []
 
     def pick(box):
         for jid, job in list(box.items()):
@@ -1103,6 +1764,9 @@ def replay_outbox() -> List[threading.Thread]:
                 continue
             too_old = now - float(job.get("created_at") or 0) > OUTBOX_MAX_AGE_SECONDS
             if too_old or int(job.get("attempts") or 0) >= OUTBOX_MAX_ATTEMPTS:
+                # Terminal by policy: record the loss before dropping the job.
+                abandoned.append((dict(job, id=job.get("id") or jid),
+                                  "too_old" if too_old else "attempts_exhausted"))
                 box.pop(jid, None)
                 continue
             with _inflight_lock:
@@ -1115,9 +1779,25 @@ def replay_outbox() -> List[threading.Thread]:
             picked.append(dict(job))
 
     _outbox_update(pick)
-    for job in picked:
-        started.append(_start(job))
+    for job, reason in abandoned:
+        _dead_letter(job, reason)
+    started.extend(_start_pool(picked))
     return started
+
+
+_replay_lock = threading.Lock()
+_replay_last = 0.0
+
+
+def _maybe_replay() -> None:
+    """Retry stuck outbox jobs from a long-lived process, not only at the next plugin load."""
+    global _replay_last
+    with _replay_lock:
+        now = time.time()
+        if now - _replay_last < OUTBOX_REPLAY_INTERVAL_SECONDS:
+            return
+        _replay_last = now
+    replay_outbox()
 
 
 def wait_for_inflight(timeout: Optional[float] = None) -> bool:
@@ -1150,10 +1830,127 @@ def _atexit_wait() -> None:
 # --------------------------------------------------------------------------- hooks / surfaces
 
 
+_reconcile_lock = threading.Lock()
+_reconcile_last = 0.0
+
+
+def _split_binding_key(key: str) -> Optional[Tuple[Optional[str], str, str]]:
+    parts = key.rsplit(":", 2)
+    if len(parts) != 3 or not parts[1] or not parts[2]:
+        return None
+    board, task_id, run_id = parts
+    return (None if board == "-" else board), task_id, run_id
+
+
+def _dead_letter_ids(settings: Optional[Dict[str, Any]]) -> set[str]:
+    ids: set[str] = set()
+    try:
+        with _dead_letter_path(settings).open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and row.get("id"):
+                    ids.add(str(row["id"]))
+    except OSError:
+        return set()
+    return ids
+
+
+def reconcile_missed_actuals(settings: Optional[Dict[str, Any]] = None,
+                             limit: int = RECONCILE_PER_PASS) -> int:
+    """Record actuals whose completion hook never fired in this profile.
+
+    ``kanban_task_completed`` fires in the process that finished the run. When that profile does
+    not enable this plugin, the run's binding stays unrecorded forever. This pass checks up to
+    *limit* unrecorded bindings (picked at random) against the board, warns once per run that completed without a
+    recorded actual, and queues the normal completion job for it. Runs that ended any other way
+    are marked so later passes skip them. Returns the number of jobs queued.
+    """
+    if not _cfg("record_actuals", settings):
+        return 0
+    path = _epoch_data_dir(settings) / BINDINGS_FILE
+    with _file_lock(path):
+        data = _read_json_file(path)
+    dead_ids = _dead_letter_ids(settings)
+    outbox_ids: set[str] = set()
+    _outbox_update(lambda box: outbox_ids.update(box))
+    open_keys = []
+    for key, value in data.items():
+        if not (isinstance(value, dict) and value.get("ref") and ledger_outcome(value) is None
+                and not value.get("run_ended")):
+            continue
+        parsed = _split_binding_key(key)
+        if parsed is None:
+            continue
+        board, task_id, run_id = parsed
+        job_id = _job_id("completed", task_id, board, run_id)
+        if job_id not in dead_ids and job_id not in outbox_ids:
+            open_keys.append(key)
+    queued = 0
+    # A random sample, so bindings that keep failing (a deleted task, an unreachable board) can't
+    # starve the rest of a large backlog.
+    for key in random.sample(open_keys, min(max(0, limit), len(open_keys))):
+        parsed = _split_binding_key(key)
+        if parsed is None:
+            continue
+        board, task_id, run_id = parsed
+        try:
+            run = _run_for(show_task(task_id, board), run_id)
+        except Exception:
+            continue  # board unreachable or task gone: try again next pass
+        if _run_completed(run):
+            logger.warning(
+                "epoch: run %s of task %s completed but its actual was never recorded; recording it "
+                "now. Enable the epoch plugin in the profile that runs this board's workers so "
+                "completions record directly.", run_id, task_id)
+            thread = _enqueue("completed", task_id, board, run_id)
+            if thread is not None:
+                queued += 1
+                thread.join()
+        elif run and run.get("ended_at") is not None:
+            outcome = str(run.get("outcome") or "ended")
+
+            def mark(d: Dict[str, Any], key: str = key, outcome: str = outcome) -> None:
+                cur = d.get(key)
+                if isinstance(cur, dict) and ledger_outcome(cur) is None:
+                    d[key] = dict(cur, run_ended=outcome)
+
+            _bindings_update(settings, mark)
+    return queued
+
+
+def _maybe_reconcile(force: bool = False) -> Optional[threading.Thread]:
+    """Run one reconcile pass in the background, at most once per interval."""
+    global _reconcile_last
+    now = time.time()
+    with _reconcile_lock:
+        if not force and now - _reconcile_last < RECONCILE_INTERVAL_SECONDS:
+            return None
+        _reconcile_last = now
+    settings = snapshot_settings()
+    run_context = contextvars.copy_context()
+
+    def run() -> None:
+        try:
+            reconcile_missed_actuals(settings)
+        except Exception:
+            logger.debug("epoch: reconcile pass failed", exc_info=True)
+
+    thread = threading.Thread(target=run_context.run, args=(run,),
+                              name="epoch-reconcile", daemon=True)
+    thread.start()
+    return thread
+
+
 def _on_claimed(task_id: str = "", board: Optional[str] = None, run_id: Any = None, **_: Any) -> None:
     try:
         if task_id:
             _enqueue("claimed", task_id, board, run_id)
+            _maybe_reconcile()
     except Exception:
         logger.debug("epoch: claimed hook failed for %s", task_id, exc_info=True)
 
@@ -1162,18 +1959,37 @@ def _on_completed(task_id: str = "", board: Optional[str] = None, run_id: Any = 
     try:
         if task_id and _cfg("record_actuals"):
             _enqueue("completed", task_id, board, run_id)
+        _maybe_replay()
     except Exception:
         logger.debug("epoch: completed hook failed for %s", task_id, exc_info=True)
+
+
+def _on_dispatch_tick(**_: Any) -> None:
+    """Use Hermes' idle dispatcher ticks to revisit completions missed by another profile."""
+    try:
+        _maybe_reconcile()
+    except Exception:
+        logger.debug("epoch: dispatch-tick reconcile failed", exc_info=True)
 
 
 # /epoch policy. Never via slash: long-running server, self-modification, telemetry/data
 # mutations (only their read-only ``status`` / ``where`` views). On gateway platforms (Telegram,
 # Discord, …) commands that write the ledger or read the local repo are refused unless
-# ``allow_write_slash_on_gateway: true``.
-_SLASH_BLOCKED = frozenset({"serve", "self-improve"})
+# ``allow_write_slash_on_gateway: true``; ledger reads unless ``allow_ledger_read_on_gateway: true``.
+# share-data writes a file at a caller-chosen --output path: terminal only, never via slash.
+_SLASH_BLOCKED = frozenset({"serve", "self-improve", "share-data"})
+_SLASH_PATH_FLAGS = ("--output", "-o")
 _SLASH_READONLY_SUBS = {"telemetry": frozenset({"status"}), "data": frozenset({"where", "status"})}
 _SLASH_WRITE = frozenset({"record-actual", "batch-record-actuals", "auto-actuals", "mine-git",
                           "calibrate-estimates"})
+# Pure calculators: no ledger read. Everything else that is not a ledger write reads the ledger
+# (task text of every profile) and needs ``allow_ledger_read_on_gateway`` on gateway platforms.
+_SLASH_PURE = frozenset({
+    "get-current-time", "convert-timezone", "parse-duration", "time-math", "add-business-days",
+    "count-business-days", "pert-estimate", "cocomo-estimate", "sprint-forecast", "critical-path",
+    "monte-carlo-schedule", "wait-bound", "token-time-bridge", "token-cost-estimate",
+    "compare-models", "schedule-risk", "list-tools",
+})
 _LOCAL_PLATFORMS = frozenset({"", "cli", "local", "tui", "desktop", "acp"})
 _GLOBAL_VALUE_FLAGS = frozenset({"--format"})
 
@@ -1214,6 +2030,8 @@ def _slash_refusal(args: List[str]) -> Optional[str]:
         return None
     if cmd in _SLASH_BLOCKED:
         return f"/epoch {cmd} is not available from Hermes; run `epoch {cmd}` in a terminal."
+    if any(a in _SLASH_PATH_FLAGS or a.startswith("--output=") for a in args):
+        return "/epoch cannot write files at a chosen path; run that command in a terminal."
     if cmd in _SLASH_READONLY_SUBS and sub not in _SLASH_READONLY_SUBS[cmd]:
         allowed = ", ".join(sorted(_SLASH_READONLY_SUBS[cmd]))
         return (f"/epoch {cmd} {sub or ''}".rstrip() + f" is not available from Hermes (only {cmd} "
@@ -1221,24 +2039,41 @@ def _slash_refusal(args: List[str]) -> Optional[str]:
     if cmd in _SLASH_WRITE and _on_gateway() and not _cfg("allow_write_slash_on_gateway"):
         return (f"/epoch {cmd} writes the local Epoch ledger and is disabled on gateway platforms. "
                 "Run it from the Hermes CLI, or set allow_write_slash_on_gateway: true.")
+    if (cmd not in _SLASH_WRITE and cmd not in _SLASH_PURE and _on_gateway()
+            and not _cfg("allow_ledger_read_on_gateway")):
+        return (f"/epoch {cmd} reads the local Epoch ledger (task text from every profile) and is "
+                "disabled on gateway platforms. Run it from the Hermes CLI, or set "
+                "allow_ledger_read_on_gateway: true.")
     return None
 
 
 def _slash(raw_args: str) -> str:
     try:
-        args = shlex.split(raw_args or "")
+        args = _split_command(raw_args or "")
     except ValueError as exc:
         return f"Could not parse arguments: {exc}"
     if not args:
-        return "Usage: /epoch <epoch-cli-subcommand> [flags]  e.g. /epoch pert-estimate --optimistic 2 --most-likely 4 --pessimistic 10"
+        return ("Usage: /epoch <epoch-cli-subcommand> [flags]  e.g. /epoch pert-estimate "
+                "--optimistic 2 --most-likely 4 --pessimistic 10\n" + PANE_SETUP)
+    if args == ["status"]:
+        return PANE_SETUP
     refusal = _slash_refusal(args)
     if refusal:
         return refusal
     res = run_epoch(args)
+    if res.get("ok") and _subcommand(args)[0] not in _SLASH_READONLY_SUBS:
+        _broadcast_pane_event("data.updated", {})
     data = res.get("data") if isinstance(res.get("data"), dict) else None
     if res.get("ok") and data and data.get("humanReadable"):
-        return data["humanReadable"]
-    return json.dumps(res, indent=2)[:3500]
+        out = data["humanReadable"]
+    else:
+        out = _redact_home(json.dumps(res, indent=2))[:3500]
+    if _subcommand(args) == ("data", "status"):
+        out += "\n" + PANE_SETUP
+        lost = dead_letter_count()
+        out += (f"\nPlugin jobs abandoned after retries: {lost} (see {DEAD_LETTER_FILE} in the "
+                "Epoch data folder)." if lost else "\nPlugin jobs abandoned after retries: 0.")
+    return out
 
 
 ESTIMATE_SCHEMA = {
@@ -1247,8 +2082,8 @@ ESTIMATE_SCHEMA = {
     "parameters": {
         "type": "object",
         "properties": {
-            "title": {"type": "string"},
-            "body": {"type": "string"},
+            "title": {"type": "string", "description": "Short task title. An 'epoch: 2/4/10h' hint here is used when no hours are given."},
+            "body": {"type": "string", "description": "Optional task description. An 'epoch: 2/4/10h' hint here is used when the title has none."},
             "optimistic": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
             "most_likely": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
             "pessimistic": {"type": "number", "description": "hours", "exclusiveMinimum": 0},
@@ -1258,6 +2093,32 @@ ESTIMATE_SCHEMA = {
 }
 
 _TRIPLE = ("optimistic", "most_likely", "pessimistic")
+
+SHOW_SCHEMA = {
+    "name": "epoch_show",
+    "description": "Ask the enabled Epoch Desktop page to open a chart view and optionally focus a Kanban card; the page must be open and enabled.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "view": {"type": "string", "enum": list(PANE_VIEWS),
+                     "description": "bars: Distribution; cdf: Chance done by; dots: 50 dots."},
+            "item_id": {"type": "string", "minLength": 1, "maxLength": 80,
+                        "pattern": "^[A-Za-z0-9_.:-]+$", "description": "Optional Kanban card id."},
+        },
+        "required": ["view"],
+        "additionalProperties": False,
+    },
+}
+
+
+def _show(args: Dict[str, Any], **_: Any) -> str:
+    if not _valid_view(args):
+        return ("Error: view must be bars, cdf or dots; optional item_id must contain 1–80 "
+                "letters, digits, underscores, dots, colons or hyphens; no extra arguments.")
+    sent = _broadcast_pane_event("view.set", dict(args))
+    item = f" for card {args['item_id']}" if "item_id" in args else ""
+    return (f"Asked Desktop to show {args['view']}{item}; the Epoch page must be open and enabled."
+            + ("" if sent else " Desktop event bridge unavailable; request was not delivered."))
 
 
 def _tool(args: Dict[str, Any], **_: Any) -> str:
@@ -1274,6 +2135,8 @@ def _tool(args: Dict[str, Any], **_: Any) -> str:
     out = {"summary": r["summary"], "feedbackRef": r.get("feedbackRef"), "method": r.get("method")}
     if r.get("hint_error"):
         out["hint_error"] = r["hint_error"]
+    if r.get("method"):
+        _broadcast_pane_event("data.updated", {})
     return json.dumps(out)
 
 
@@ -1282,10 +2145,13 @@ def register(ctx) -> None:
     _ctx = ctx
     ctx.register_hook("kanban_task_claimed", _on_claimed)
     ctx.register_hook("kanban_task_completed", _on_completed)
+    ctx.register_hook("on_kanban_dispatch_tick", _on_dispatch_tick)
     ctx.register_command("epoch", handler=_slash, description="Run Epoch time-estimation CLI.",
                          args_hint="<subcommand> [flags]")
     ctx.register_tool(name="epoch_estimate", toolset="epoch", schema=ESTIMATE_SCHEMA, handler=_tool,
                       description=ESTIMATE_SCHEMA["description"], emoji="⏱")
+    ctx.register_tool(name="epoch_show", toolset="epoch", schema=SHOW_SCHEMA, handler=_show,
+                      description=SHOW_SCHEMA["description"], emoji="⏱")
     if not _atexit_registered:
         atexit.register(_atexit_wait)
         _atexit_registered = True
@@ -1293,3 +2159,7 @@ def register(ctx) -> None:
         replay_outbox()
     except Exception:
         logger.debug("epoch: outbox replay failed", exc_info=True)
+    try:
+        _maybe_reconcile(force=True)
+    except Exception:
+        logger.debug("epoch: reconcile start failed", exc_info=True)

@@ -7,6 +7,7 @@ import type { HistoricalRecord, TaskType } from "../types/index.js";
 import { readLines, joinActualsEarliestReported, withLedgerWriteLock, LedgerLockTimeoutError, LedgerLockUnavailableError, ESTIMATES_FILE, ACTUALS_FILE, loadLedgerWithOverlays } from "./ledger.js";
 import type { EstimateRecord, ActualRecord, MergedOverlayFlags } from "./ledger.js";
 import { isExcluded, isSyntheticId, isAutoWallclockSane, isGitDerivedSane, isGitDerivedProvenance, type ExclusionReason } from "./exclusion.js";
+import { checkRecordActual, estimateStage } from "./estimate-lifecycle.js";
 import { canonicalizeToolName, ESTIMATION_TOOL_NAMES } from "./tool-aliases.js";
 import { debugLog } from "./internal/logging.js";
 import { appendLine, appendLines, isDryRun, DRY_RUN_FILE, DRY_RUN_ESTIMATES_FILE } from "./feedback-ledger.js";
@@ -262,11 +263,12 @@ export function recordActualDetailed(
       (): RecordActualResult => {
         // Reject duplicates — last-write-wins silently corrupts calibration
         const existing = readLines<ActualRecord>(actualsSource);
-        if (existing.some((a) => a.estimateId === estimateId)) {
-          return { ok: false, reason: "duplicate" };
-        }
-
         const matchedEstimate = readLines<EstimateRecord>(estimatesSource).find((e) => e.id === estimateId);
+        const transition = checkRecordActual(
+          estimateStage(matchedEstimate ?? {}, existing.some((a) => a.estimateId === estimateId)),
+        );
+        if (!transition.ok) return transition;
+
         const { result, record } = evaluateActualForWrite(estimateId, normalizedHours, notes, calibrationProvenance, matchedEstimate);
         if (!result.ok) return result;
 
@@ -295,16 +297,14 @@ export function getPendingEstimates(limit = 50): Array<EstimateRecord & { hasAct
   const actuals = readLines<ActualRecord>(ACTUALS_FILE);
   const actualIds = new Set(actuals.map((a) => a.estimateId));
 
+  // Lifecycle stage comes from estimate-lifecycle.ts — the same expiry
+  // predicate isExcluded()'s ttl_expired uses. (Previously this keyed off
+  // isExcluded()'s FIRST reason, so an expired estimate with a higher-
+  // precedence reason — e.g. a synthetic id — leaked back in as pending.)
+  const now = Date.now();
   return estimates
     .map((e) => ({ ...e, hasActual: actualIds.has(e.id) }))
-    .filter((e) => !e.hasActual)
-    .filter((e) => {
-      // Pending-TTL expiry (Phase 1 Task 7): route through the shared
-      // isExcluded() predicate so this stays coordinated with exclusion.ts's
-      // ttl_expired semantics — only exclude on that specific reason.
-      const verdict = isExcluded({ id: e.id, tool: e.tool, estimatedAt: e.estimatedAt, expiresAt: e.expiresAt });
-      return !(verdict.excluded && verdict.reason === "ttl_expired");
-    })
+    .filter((e) => estimateStage(e, e.hasActual, now) === "pending")
     .slice(-limit);
 }
 
@@ -745,8 +745,14 @@ export function batchRecordActuals(entries: BatchActualEntry[]): BatchResult {
             // Duplicate precedence is unchanged: an on-disk actual or an
             // intra-batch claim beats every later check (unknown_tool, the
             // wallclock gate, ...) — the same order the sequential loop hit.
-            if (existingIds.has(candidate.entry.estimateId) || claimed.has(candidate.entry.estimateId)) {
-              perEntry[candidate.index] = { ok: false, reason: "duplicate" };
+            const transition = checkRecordActual(
+              estimateStage(
+                estimatesById.get(candidate.entry.estimateId) ?? {},
+                existingIds.has(candidate.entry.estimateId) || claimed.has(candidate.entry.estimateId),
+              ),
+            );
+            if (!transition.ok) {
+              perEntry[candidate.index] = transition;
               continue;
             }
             const evaluation = evaluateActualForWrite(

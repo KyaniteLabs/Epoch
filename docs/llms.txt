@@ -7,7 +7,7 @@
 Keywords: mcp-server, time-estimation, pert, cocomo-ii, monte-carlo, cost-estimation,
 sprint-forecast, token-cost, schedule-risk, ai-tools, claude-code, cursor, llm
 
-Install: claude mcp add epoch -- npx @kyanitelabs/epoch
+Install: claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0
 npm: https://www.npmjs.com/package/@kyanitelabs/epoch
 MCP Registry: https://registry.modelcontextprotocol.io/v0/servers/tech.kyanitelabs%2Fepoch/versions/latest
 Legacy MCP Registry id: io.github.KyaniteLabs/Epoch — version-locked-deprecated at 0.5.2
@@ -223,8 +223,8 @@ Health report on the feedback loop.
 
 ## Interfaces
 
-- **MCP**: `npx @kyanitelabs/epoch` (stdio transport)
-- **CLI**: `npx @kyanitelabs/epoch <command> [options]`
+- **MCP**: `npx -y @kyanitelabs/epoch@0.8.0` (stdio transport)
+- **CLI**: `npx -y @kyanitelabs/epoch@0.8.0 <command> [options]`
 - **HTTP**: `http://localhost:3000/v1/tools/<tool-name>` (POST with JSON body)
 
 ## Telemetry

@@ -1,0 +1,1720 @@
+schema_version: 1
+status: draft_incomplete
+run_status: NOT_EXECUTED
+policy:
+  pass: Every required action executes and meets its observable assertion on the Security-merged default-branch
+    SHA.
+  blocked: Missing fixture, dependency, consent or path assertions prevent a full pass; discovery/help never count
+    as end-to-end execution.
+  evidence: For every path retain exact command/request, SHA, exit/HTTP code, stdout/stderr, asserted observations
+    and hashes; screenshots for rendered UI. Sanitize before delivery.
+  isolation: New clone/install; empty HOME and XDG dirs for product subprocesses only; isolated state per transport;
+    no real user data or credentials; retain evidence outside scratch cleanup.
+  resources: One bounded product test at a time; tiny fixtures, one FFmpeg thread, no bulk benchmark/model download.
+  change_control: Catalog and qa/run.sh changes require a repository PR and Security merge. No runner exists in
+    this draft; execute listed actions by hand.
+product: Epoch
+repository: KyaniteLabs/Epoch
+source_revision: 68404e56750b22638d7ae0a7cd77f0dbd9d9a0f3
+revision_policy: Local-source provenance only; fetch/verify the actual Security merge SHA during QA and install
+  that checkout.
+setup:
+- id: configure
+  surface: configure
+  command: 'mkdir -p "$QA_WORK/home" "$QA_WORK/config" "$QA_WORK/cache" "$QA_WORK/data-cli" "$QA_WORK/data-mcp"
+    "$QA_WORK/data-http"
+
+    export HOME="$QA_WORK/home" XDG_CONFIG_HOME="$QA_WORK/config" XDG_CACHE_HOME="$QA_WORK/cache" EPOCH_DATA_DIR="$QA_WORK/data-cli"
+    EPOCH_TELEMETRY=0 EPOCH_SOURCE=qa-fixture'
+  expected: All writes remain in disposable test state; telemetry remains disabled and no user ledger is loaded.
+    Use a distinct data directory for each surface to avoid duplicate-feedback contamination.
+  sources:
+  - file: README.md
+    line: 752
+    quote: '| `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |'
+- id: install
+  surface: install
+  command: 'pnpm install --frozen-lockfile
+
+    pnpm run build'
+  expected: Exit 0; dist/index.js built from the merge SHA; Node >=22 and pnpm version match package metadata.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+- id: http-launch
+  surface: http
+  command: EPOCH_DATA_DIR="$QA_WORK/data-http" EPOCH_TELEMETRY=0 EPOCH_HOST=127.0.0.1 node dist/index.js serve --port
+    3099
+  expected: A new test process listens only on a free loopback port; /health returns status=ok. Never stop or replace
+    an existing listener. Capture/terminate only this test PID after QA.
+  sources:
+  - file: README.md
+    line: 669
+    quote: epoch serve --port 3099
+feedback_fixture_protocol:
+  cli_prepare: 'node dist/index.js pert-estimate --optimistic 2 --most-likely 4 --pessimistic 12 --unit hours >
+    "$QA_WORK/estimate.json"
+
+    ESTIMATE_ID=$(python3 -c ''import json,sys; print(json.load(open(sys.argv[1]))["data"]["feedbackRef"])'' "$QA_WORK/estimate.json")
+
+    node dist/index.js pert-estimate --optimistic 2 --most-likely 4 --pessimistic 12 --unit hours > "$QA_WORK/batch-estimate.json"
+
+    BATCH_ESTIMATE_ID=$(python3 -c ''import json,sys; print(json.load(open(sys.argv[1]))["data"]["feedbackRef"])''
+    "$QA_WORK/batch-estimate.json")
+
+    export ESTIMATE_ID BATCH_ESTIMATE_ID'
+  other_surfaces: For MCP/HTTP generate two fresh PERT estimates through that same transport; capture each returned
+    data.feedbackRef into ESTIMATE_ID and BATCH_ESTIMATE_ID for that surface. Substitute exact values in JSON, never
+    literal placeholders or synthetic ids.
+  source:
+    file: src/dispatcher/tool-registry.ts
+    line: 1211
+    quote: 'synthetic_id: `Estimate ID "${p.estimate_id}" looks like test/synthetic data (reserved prefix), so it
+      cannot receive actuals. Use the feedbackRef returned by a fresh estimation-tool call.`,'
+paths:
+- id: get_current_time
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js get-current-time --timezone America/Los_Angeles
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/get_current_time -H ''Content-Type:
+      application/json'' --data ''{"timezone":"America/Los_Angeles"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: get_current_time
+      arguments:
+        timezone: America/Los_Angeles
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.timezone is America/Los_Angeles
+    and iso is a parseable current instant.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 125
+    quote: '**`get_current_time`** -- Current wall-clock time in any IANA timezone'
+  - file: src/entries/cli-tool-commands.ts
+    line: 41
+    quote: 'name: "get-current-time",'
+- id: convert_timezone
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js convert-timezone --timestamp 2026-05-01T12:00:00Z --target-tz Asia/Tokyo
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/convert_timezone -H ''Content-Type:
+      application/json'' --data ''{"timestamp":"2026-05-01T12:00:00Z","target_tz":"Asia/Tokyo"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: convert_timezone
+      arguments:
+        timestamp: '2026-05-01T12:00:00Z'
+        target_tz: Asia/Tokyo
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.iso is 2026-05-01T21:00:00.000+09:00.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 137
+    quote: '**`convert_timezone`** -- Convert a timestamp between IANA timezones'
+  - file: src/entries/cli-tool-commands.ts
+    line: 49
+    quote: 'name: "convert-timezone",'
+- id: parse_duration
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js parse-duration --duration 2h30m
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/parse_duration -H ''Content-Type: application/json''
+      --data ''{"duration_string":"2h30m"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: parse_duration
+      arguments:
+        duration_string: 2h30m
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.totalSeconds equals
+    9000.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 149
+    quote: '**`parse_duration`** -- Parse human-readable duration strings'
+  - file: src/entries/cli-tool-commands.ts
+    line: 58
+    quote: 'name: "parse-duration",'
+- id: time_math
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js time-math --operation add_days --date 2026-05-01 --days 7
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/time_math -H ''Content-Type: application/json''
+      --data ''{"operation":"add_days","operands":{"start_date":"2026-05-01","days":7}}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: time_math
+      arguments:
+        operation: add_days
+        operands:
+          start_date: '2026-05-01'
+          days: 7
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data equals 2026-05-08.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 160
+    quote: '**`time_math`** -- Date arithmetic operations'
+  - file: src/entries/cli-tool-commands.ts
+    line: 66
+    quote: 'name: "time-math",'
+- id: add_business_days
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js add-business-days --start-date 2026-05-01 --days 5 --country US
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/add_business_days -H ''Content-Type:
+      application/json'' --data ''{"start_date":"2026-05-01","days":5,"country":"US"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: add_business_days
+      arguments:
+        start_date: '2026-05-01'
+        days: 5
+        country: US
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.endDate equals 2026-05-08
+    and holidaySupport is holiday_calendar.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 171
+    quote: '**`add_business_days`** -- Add N business days with holiday awareness (US, UK, FR, DE, JP)'
+  - file: src/entries/cli-tool-commands.ts
+    line: 83
+    quote: 'name: "add-business-days",'
+- id: count_business_days
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js count-business-days --start-date 2026-05-01 --end-date 2026-05-15 --country US
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/count_business_days -H ''Content-Type:
+      application/json'' --data ''{"start_date":"2026-05-01","end_date":"2026-05-15","country":"US"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: count_business_days
+      arguments:
+        start_date: '2026-05-01'
+        end_date: '2026-05-15'
+        country: US
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.businessDays equals
+    10.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 185
+    quote: '**`count_business_days`** -- Count business days between two dates'
+  - file: src/entries/cli-tool-commands.ts
+    line: 93
+    quote: 'name: "count-business-days",'
+- id: pert_estimate
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js pert-estimate --optimistic 2 --most-likely 4 --pessimistic 12 --unit hours
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/pert_estimate -H ''Content-Type: application/json''
+      --data ''{"optimistic":2,"most_likely":4,"pessimistic":12,"unit":"hours"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: pert_estimate
+      arguments:
+        optimistic: 2
+        most_likely: 4
+        pessimistic: 12
+        unit: hours
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.expected equals 5;
+    feedbackRef is nonempty and a fresh estimate is persisted; confidence intervals are ordered.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 203
+    quote: '**`pert_estimate`** -- PERT three-point estimation with confidence intervals and urgency scoring'
+  - file: src/entries/cli-tool-commands.ts
+    line: 103
+    quote: 'name: "pert-estimate",'
+- id: cocomo_estimate
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js cocomo-estimate --kloc 15
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/cocomo_estimate -H ''Content-Type: application/json''
+      --data ''{"kloc":15}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: cocomo_estimate
+      arguments:
+        kloc: 15
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.kloc equals 15; nominal
+    and adjusted person-month estimates are finite and positive.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 235
+    quote: '**`cocomo_estimate`** -- COCOMO II software sizing with LLM-adapted cost drivers'
+  - file: src/entries/cli-tool-commands.ts
+    line: 114
+    quote: 'name: "cocomo-estimate",'
+- id: sprint_forecast
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js sprint-forecast --backlog-points 100 --velocity-history 20,25,22,23 --sprint-length-days
+      14 --hours-per-sprint 80
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/sprint_forecast -H ''Content-Type: application/json''
+      --data ''{"backlog_points":100,"velocity_history":[20,25,22,23],"sprint_length_days":14,"hours_per_sprint":80}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: sprint_forecast
+      arguments:
+        backlog_points: 100
+        velocity_history:
+        - 20
+        - 25
+        - 22
+        - 23
+        sprint_length_days: 14
+        hours_per_sprint: 80
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.averageVelocity equals
+    22.5; requiredSprints is positive.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 264
+    quote: '**`sprint_forecast`** -- Sprint velocity forecasting from historical data'
+  - file: src/entries/cli-tool-commands.ts
+    line: 127
+    quote: 'name: "sprint-forecast",'
+- id: critical_path
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js critical-path --tasks '[{"name":"A","duration":5,"predecessors":[]},{"name":"B","duration":3,"predecessors":["A"]},{"name":"C","duration":4,"predecessors":["A"]}]'
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/critical_path -H ''Content-Type: application/json''
+      --data ''{"tasks":[{"name":"A","duration":5,"predecessors":[]},{"name":"B","duration":3,"predecessors":["A"]},{"name":"C","duration":4,"predecessors":["A"]}]}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: critical_path
+      arguments:
+        tasks:
+        - name: A
+          duration: 5
+          predecessors: []
+        - name: B
+          duration: 3
+          predecessors:
+          - A
+        - name: C
+          duration: 4
+          predecessors:
+          - A
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.critical_path equals
+    [A,C] and total_duration equals 9.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 286
+    quote: '**`critical_path`** -- Critical Path Method with merge-bias adjustment for parallel tasks'
+  - file: src/entries/cli-tool-commands.ts
+    line: 138
+    quote: 'name: "critical-path",'
+- id: monte_carlo_schedule
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js monte-carlo-schedule --tasks '[{"name":"A","optimistic":2,"most_likely":4,"pessimistic":8}]'
+      --iterations 100
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/monte_carlo_schedule -H ''Content-Type:
+      application/json'' --data ''{"tasks":[{"name":"A","optimistic":2,"most_likely":4,"pessimistic":8}],"iterations":100}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: monte_carlo_schedule
+      arguments:
+        tasks:
+        - name: A
+          optimistic: 2
+          most_likely: 4
+          pessimistic: 8
+        iterations: 100
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Finite ordered p10 <= p50
+    <= p80 <= p95; do not run a large simulation on this host.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 304
+    quote: '**`monte_carlo_schedule`** -- Monte Carlo simulation with seeded PRNG for deterministic, reproducible
+      results'
+  - file: src/entries/cli-tool-commands.ts
+    line: 146
+    quote: 'name: "monte-carlo-schedule",'
+- id: reference_class_estimate
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js reference-class-estimate --task-type feature --complexity 3
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/reference_class_estimate -H ''Content-Type:
+      application/json'' --data ''{"task_type":"feature","complexity":3}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: reference_class_estimate
+      arguments:
+        task_type: feature
+        complexity: 3
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Positive raw/corrected
+    estimate; fresh-install insufficient-history caveat, not fabricated empirical confidence.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 331
+    quote: '**`reference_class_estimate`** -- Reference class forecasting with planning fallacy correction'
+  - file: src/entries/cli-tool-commands.ts
+    line: 155
+    quote: 'name: "reference-class-estimate",'
+- id: calibrate_estimates
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js calibrate-estimates --team-id qa-fixture
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/calibrate_estimates -H ''Content-Type:
+      application/json'' --data ''{"team_id":"qa-fixture"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: calibrate_estimates
+      arguments:
+        team_id: qa-fixture
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Calibration report includes
+    factor/provenance and honestly reports limited fresh-ledger history.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 387
+    quote: '**`calibrate_estimates`** -- Team-specific accuracy calibration from historical estimated vs actual
+      data'
+  - file: src/entries/cli-tool-commands.ts
+    line: 167
+    quote: 'name: "calibrate-estimates",'
+- id: wait_bound
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js wait-bound --clock-class fleet --cycle-seconds 40 --cycles-k 2 --from-timestamp 2026-11-01T12:00:00-08:00
+      --time-zone America/Los_Angeles
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/wait_bound -H ''Content-Type: application/json''
+      --data ''{"clock_class":"fleet","cycle_seconds":40,"cycles_k":2,"from_timestamp":"2026-11-01T12:00:00-08:00","time_zone":"America/Los_Angeles"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: wait_bound
+      arguments:
+        clock_class: fleet
+        cycle_seconds: 40
+        cycles_k: 2
+        from_timestamp: '2026-11-01T12:00:00-08:00'
+        time_zone: America/Los_Angeles
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Deadline is later than
+    the fixed start, derived from cycle + PERT math and rendered in America/Los_Angeles.
+  substitutions: None.
+  sources:
+  - file: docs/llms.txt
+    line: 151
+    quote: '#### wait_bound'
+  - file: src/entries/cli-tool-commands.ts
+    line: 176
+    quote: 'name: "wait-bound",'
+- id: token_time_bridge
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js token-time-bridge --tokens 50000 --model claude-sonnet-4-20250514
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/token_time_bridge -H ''Content-Type:
+      application/json'' --data ''{"tokens":50000,"model":"claude-sonnet-4-20250514"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: token_time_bridge
+      arguments:
+        tokens: 50000
+        model: claude-sonnet-4-20250514
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Positive estimatedSeconds/estimatedMinutes
+    with a breakdown; this is offline arithmetic, not selection of an execution lane.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 405
+    quote: '**`token_time_bridge`** -- Map LLM token budgets to wall-clock time for 16 model families'
+  - file: src/entries/cli-tool-commands.ts
+    line: 193
+    quote: 'name: "token-time-bridge",'
+- id: token_cost_estimate
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js token-cost-estimate --tokens 50000 --model claude-sonnet-5
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/token_cost_estimate -H ''Content-Type:
+      application/json'' --data ''{"tokens":50000,"model":"claude-sonnet-5"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: token_cost_estimate
+      arguments:
+        tokens: 50000
+        model: claude-sonnet-5
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Finite nonnegative estimatedCost
+    and input/output breakdown; no provider request or spend.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 429
+    quote: '**`token_cost_estimate`** -- Token cost estimation for LLM API calls'
+  - file: src/entries/cli-tool-commands.ts
+    line: 204
+    quote: 'name: "token-cost-estimate",'
+- id: compare_models
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js compare-models --tokens 50000 --sort-by cost
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/compare_models -H ''Content-Type: application/json''
+      --data ''{"tokens":50000,"sort_by":"cost"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: compare_models
+      arguments:
+        tokens: 50000
+        sort_by: cost
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. models list is sorted by
+    estimated cost ascending; no claims of current external model prices.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 447
+    quote: '**`compare_models`** -- Side-by-side cost and capability comparison across LLM models'
+  - file: src/entries/cli-tool-commands.ts
+    line: 215
+    quote: 'name: "compare-models",'
+- id: accuracy_trend
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js accuracy-trend
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/accuracy_trend -H ''Content-Type: application/json''
+      --data ''{}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: accuracy_trend
+      arguments: {}
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Trend fields honestly report
+    the isolated ledger population; no invented learned improvement.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 465
+    quote: '**`accuracy_trend`** -- Track estimation accuracy over time from recorded feedback data'
+  - file: src/entries/cli-tool-commands.ts
+    line: 226
+    quote: 'name: "accuracy-trend",'
+- id: schedule_risk
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js schedule-risk --estimated-hours 40
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/schedule_risk -H ''Content-Type: application/json''
+      --data ''{"estimated_hours":40}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: schedule_risk
+      arguments:
+        estimated_hours: 40
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.estimatedHours equals
+    40; risk level and ordered confidence intervals are present.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 479
+    quote: '**`schedule_risk`** -- Schedule risk scoring for project timelines'
+  - file: src/entries/cli-tool-commands.ts
+    line: 235
+    quote: 'name: "schedule-risk",'
+- id: cocomo_validate
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js cocomo-validate
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/cocomo_validate -H ''Content-Type: application/json''
+      --data ''{}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: cocomo_validate
+      arguments: {}
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. projectsEvaluated positive;
+    per-type errors and provenance returned; do not pin stale README counts.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 496
+    quote: '**`cocomo_validate`** -- Validate COCOMO II estimates against reference data'
+  - file: src/entries/cli-tool-commands.ts
+    line: 245
+    quote: 'name: "cocomo-validate",'
+- id: record_actual
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js record-actual --estimate-id "$ESTIMATE_ID" --actual-hours 5
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/record_actual -H ''Content-Type: application/json''
+      --data "$(python3 -c ''import json,os; print(json.dumps({"estimate_id":os.environ["ESTIMATE_ID"],"actual_hours":5}))'')"'
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: record_actual
+      arguments:
+        estimate_id: $ESTIMATE_ID
+        actual_hours: 5
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. recorded=true for a fresh
+    real feedbackRef; subsequent duplicate is refused.
+  substitutions: Set/export this transport's fresh ESTIMATE_ID/BATCH_ESTIMATE_ID through the fixture protocol. HTTP
+    shell command expands it safely as JSON. Resolve the variable in the MCP request before sending.
+  sources:
+  - file: docs/llms.txt
+    line: 204
+    quote: '#### record_actual'
+  - file: src/entries/cli-tool-commands.ts
+    line: 253
+    quote: 'name: "record-actual",'
+- id: get_pending_estimates
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js get-pending-estimates --limit 5
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/get_pending_estimates -H ''Content-Type:
+      application/json'' --data ''{"limit":5}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: get_pending_estimates
+      arguments:
+        limit: 5
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. count and estimates respect
+    the bound; recorded estimate no longer pending.
+  substitutions: None.
+  sources:
+  - file: docs/llms.txt
+    line: 210
+    quote: '#### get_pending_estimates'
+  - file: src/entries/cli-tool-commands.ts
+    line: 263
+    quote: 'name: "get-pending-estimates",'
+- id: batch_record_actuals
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js batch-record-actuals --entries "$(python3 -c 'import json,os; print(json.dumps([{"estimate_id":os.environ["BATCH_ESTIMATE_ID"],"actual_hours":5}]))')"
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/batch_record_actuals -H ''Content-Type:
+      application/json'' --data "$(python3 -c ''import json,os; print(json.dumps({"entries":[{"estimate_id":os.environ["BATCH_ESTIMATE_ID"],"actual_hours":5}]}))'')"'
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: batch_record_actuals
+      arguments:
+        entries:
+        - estimate_id: $BATCH_ESTIMATE_ID
+          actual_hours: 5
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. One fresh estimate records
+    successfully; reuse is refused; invalid entry behavior is tested separately from partial REST semantics.
+  substitutions: Set/export this transport's fresh ESTIMATE_ID/BATCH_ESTIMATE_ID through the fixture protocol. HTTP
+    shell command expands it safely as JSON. Resolve the variable in the MCP request before sending.
+  sources:
+  - file: docs/llms.txt
+    line: 214
+    quote: '#### batch_record_actuals'
+  - file: src/entries/cli-tool-commands.ts
+    line: 271
+    quote: 'name: "batch-record-actuals",'
+- id: feedback_health
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js feedback-health
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/feedback_health -H ''Content-Type: application/json''
+      --data ''{}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: feedback_health
+      arguments: {}
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Feedback-health report
+    includes population/match/per-tool metrics and intervalCoverage; fresh fixture data only.
+  substitutions: None.
+  sources:
+  - file: docs/llms.txt
+    line: 218
+    quote: '#### feedback_health'
+  - file: src/entries/cli-tool-commands.ts
+    line: 279
+    quote: 'name: "feedback-health",'
+- id: cocomo_ground_truth
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js cocomo-ground-truth
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/cocomo_ground_truth -H ''Content-Type:
+      application/json'' --data ''{}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: cocomo_ground_truth
+      arguments: {}
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. Multiple model results
+    and per-dataset/type breakdowns from bundled reference data; finite metrics.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 513
+    quote: '**`cocomo_ground_truth`** -- Benchmark all COCOMO variants (Basic, COCOMO II nominal, AI 12x speedup,
+      AI + developer-profile gradients) against the same real historical projects, with per-dataset and per-type
+      breakdowns'
+  - file: src/entries/cli-tool-commands.ts
+    line: 286
+    quote: 'name: "cocomo-ground-truth",'
+- id: estimate_from_context
+  surfaces:
+  - cli
+  - mcp
+  - http
+  commands:
+    cli: node dist/index.js estimate-from-context --context 'Add OAuth2 login support to an API'
+    mcp_launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+    http: 'curl --fail-with-body -sS -X POST http://127.0.0.1:3099/v1/tools/estimate_from_context -H ''Content-Type:
+      application/json'' --data ''{"context":"Add OAuth2 login support to an API"}'''
+  mcp_request:
+    jsonrpc: '2.0'
+    id: 3
+    method: tools/call
+    params:
+      name: estimate_from_context
+      arguments:
+        context: Add OAuth2 login support to an API
+  expected: CLI exits 0 / HTTP 200 / MCP isError is not true; structured result ok=true. data.classification and
+    an estimate are returned; no external LLM call.
+  substitutions: None.
+  sources:
+  - file: README.md
+    line: 358
+    quote: '**`estimate_from_context`** -- Classify a free-text task description and delegate to reference class
+      estimation'
+  - file: src/entries/cli-tool-commands.ts
+    line: 294
+    quote: 'name: "estimate-from-context",'
+- id: brand-render
+  surface: asset
+  command: python3 ~/fleet/ops/qa-brand-render/render_gate.py assets/epoch-wordmark.svg
+  expected: Exit 0; ink_pixels > 0 and the measured ink bbox inside the 1443x400 canvas. A sha256
+    match to the Design manifest alone does not satisfy this path.
+  sources:
+  - file: assets/epoch-wordmark.svg
+    line: 1
+    quote: '<svg xmlns="http://www.w3.org/2000/svg" width="1443" height="400" viewBox="0 0 1443 400" role="img" aria-labelledby="t">'
+mcp_session:
+  launch: EPOCH_DATA_DIR="$QA_WORK/data-mcp" EPOCH_TELEMETRY=0 node dist/index.js
+  requests:
+  - jsonrpc: '2.0'
+    id: 1
+    method: initialize
+    params:
+      protocolVersion: '2024-11-05'
+      capabilities: {}
+      clientInfo:
+        name: qa-fixture
+        version: '1'
+  - jsonrpc: '2.0'
+    method: notifications/initialized
+  - jsonrpc: '2.0'
+    id: 2
+    method: tools/list
+    params: {}
+  expected: Successful handshake, exactly the 26 canonical names with input schemas; invoke every semantic path
+    through tools/call.
+  sources:
+  - file: README.md
+    line: 624
+    quote: 'Default behavior: running `epoch` with no arguments starts the MCP stdio server.'
+  - file: README.md
+    line: 616
+    quote: 'Epoch exposes the same 26 tools through three interfaces:'
+cli_maintenance:
+- id: version
+  surface: cli
+  command: node dist/index.js --version
+  expected: Version matches the merged package metadata.
+  sources:
+  - file: README.md
+    line: 654
+    quote: node dist/index.js --version
+- id: list-tools
+  surface: cli
+  command: node dist/index.js list-tools
+  expected: 26 canonical tool names; compare to source list, do not trust stale contract JSON.
+  sources:
+  - file: README.md
+    line: 645
+    quote: epoch list-tools
+- id: data-where
+  surface: cli
+  command: node dist/index.js data where
+  expected: Every path is inside the isolated EPOCH_DATA_DIR; no production home.
+  sources:
+  - file: README.md
+    line: 603
+    quote: '- **Inspect your data:** `epoch data where` and `epoch data status` show what''s stored locally.'
+- id: data-status
+  surface: cli
+  command: node dist/index.js data status
+  expected: Counts/health/config match only the fresh fixture ledger.
+  sources:
+  - file: README.md
+    line: 589
+    quote: '`reference_class_estimate`''s correction factors are the same learned mechanism applied to a different
+      tool. Track its current calibration with `epoch data status` or `feedback_health` (per-tool MAPE/MdAPE, bias,
+      and trend), or generate a full calibration decision-surface report with `node scripts/build-calibration-dashboard.mjs`
+      -- also strictly read-only against your ledger.'
+- id: auto-actuals
+  surface: cli
+  command: node dist/index.js auto-actuals --session qa-fixture --dry-run
+  expected: Empty unmatched session writes no actuals and reports the empty candidate set honestly.
+  sources:
+  - file: README.md
+    line: 567
+    quote: '**The loop can close itself.** Recording actuals is the step everyone forgets, so Epoch can do it for
+      you: `epoch auto-actuals --session <id>` records wall-clock-derived actuals for a session''s unfinished estimates
+      (agent hosts can wire it into a session-end hook). Auto-recorded actuals are sanity-bounded (0.05–12h, <10x
+      the estimate), provenance-labeled `auto_wallclock`, never overwrite a real actual, and `feedback_health` reports
+      them separately (`byProvenance`) so automated data can''t silently skew your calibration.'
+- id: mine-git
+  surface: cli
+  command: node dist/index.js mine-git --repo "$QA_WORK/checkout" --since 2026-11-01 --dry-run
+  expected: Offline read of the test clone; no fetch or repository mutation; reports both cycle windows separately
+    where anchors exist.
+  sources:
+  - file: README.md
+    line: 571
+    quote: '**Your git history is another actuals source.** `epoch mine-git --repo <path> --since <date>` walks
+      a local git repository — offline and read-only by construction — and joins pending estimates to closed work
+      (merged PRs and plain merges) via the identity keys planning flows already stamp: `task_label`, `branch`,
+      or `issue_ref`. Two cycle-time windows are derived per unit and reported separately, never blended: first-commit→merge
+      (provenance `git_derived`) and open→merge (provenance `git_derived_review_inclusive`, computed wherever a
+      branch-creation anchor survives locally — plain clones have none, and the window is never fabricated). Pick
+      the recorded window with `--window dev|review-inclusive`; the other rides along in the actual''s notes. Mined
+      actuals are sanity-bounded ([0.05h, 720h] — calendar windows legitimately span nights and weekends — and <10x
+      the estimate), never overwrite a real actual, and `feedback_health` segments them in its own `byProvenance`
+      bucket (`gitDerived`) so calendar-window noise cannot silently skew calibration.'
+- id: telemetry-status
+  surface: cli
+  command: node dist/index.js telemetry status
+  expected: Reports disabled and only fixture state.
+  sources:
+  - file: README.md
+    line: 770
+    quote: 'epoch telemetry status     # Show current settings'
+- id: telemetry-preview
+  surface: cli
+  command: node dist/index.js telemetry preview
+  expected: Anonymized local payload or nothing-to-send; no transmission; no notes/source/team identifiers.
+  sources:
+  - file: docs/TELEMETRY.md
+    line: 148
+    quote: Shows exactly what anonymized data would be sent if telemetry were enabled. This command does **not**
+      transmit any data. Use it to verify what will be shared before opting in.
+- id: telemetry-export
+  surface: cli
+  command: node dist/index.js telemetry export
+  expected: Exports only isolated anonymized records; inspect artifact for forbidden free text.
+  sources:
+  - file: README.md
+    line: 774
+    quote: 'epoch telemetry export     # Export all local data as anonymized JSON'
+- id: telemetry-disable
+  surface: cli
+  command: node dist/index.js telemetry disable
+  expected: Telemetry remains disabled in isolated config.
+  sources:
+  - file: README.md
+    line: 773
+    quote: 'epoch telemetry disable    # Opt out'
+- id: share-data
+  surface: cli
+  command: node dist/index.js share-data --validate --description "QA synthetic fixture export" --output "$QA_WORK/artifacts/community.json"
+  expected: Local export validates schema and strips identifiers; no PR or external submission.
+  sources:
+  - file: README.md
+    line: 797
+    quote: epoch share-data --description "Anonymized Epoch usage export" --validate
+cli_inventory:
+- name: get-current-time
+  command: node dist/index.js get-current-time --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: convert-timezone
+  command: node dist/index.js convert-timezone --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: parse-duration
+  command: node dist/index.js parse-duration --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: time-math
+  command: node dist/index.js time-math --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: add-business-days
+  command: node dist/index.js add-business-days --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: count-business-days
+  command: node dist/index.js count-business-days --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: pert-estimate
+  command: node dist/index.js pert-estimate --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: cocomo-estimate
+  command: node dist/index.js cocomo-estimate --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: sprint-forecast
+  command: node dist/index.js sprint-forecast --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: critical-path
+  command: node dist/index.js critical-path --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: monte-carlo-schedule
+  command: node dist/index.js monte-carlo-schedule --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: reference-class-estimate
+  command: node dist/index.js reference-class-estimate --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: calibrate-estimates
+  command: node dist/index.js calibrate-estimates --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: token-time-bridge
+  command: node dist/index.js token-time-bridge --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: token-cost-estimate
+  command: node dist/index.js token-cost-estimate --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: compare-models
+  command: node dist/index.js compare-models --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: accuracy-trend
+  command: node dist/index.js accuracy-trend --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: schedule-risk
+  command: node dist/index.js schedule-risk --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: cocomo-validate
+  command: node dist/index.js cocomo-validate --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: record-actual
+  command: node dist/index.js record-actual --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: get-pending-estimates
+  command: node dist/index.js get-pending-estimates --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: batch-record-actuals
+  command: node dist/index.js batch-record-actuals --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: feedback-health
+  command: node dist/index.js feedback-health --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: cocomo-ground-truth
+  command: node dist/index.js cocomo-ground-truth --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: estimate-from-context
+  command: node dist/index.js estimate-from-context --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: auto-actuals
+  command: node dist/index.js auto-actuals --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: self-improve
+  command: node dist/index.js self-improve --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry
+  command: node dist/index.js telemetry --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry status
+  command: node dist/index.js telemetry status --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry preview
+  command: node dist/index.js telemetry preview --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry export
+  command: node dist/index.js telemetry export --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry enable
+  command: node dist/index.js telemetry enable --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry set-endpoint
+  command: node dist/index.js telemetry set-endpoint --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry submit
+  command: node dist/index.js telemetry submit --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry disable
+  command: node dist/index.js telemetry disable --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: telemetry delete-data
+  command: node dist/index.js telemetry delete-data --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: share-data
+  command: node dist/index.js share-data --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: data
+  command: node dist/index.js data --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: data where
+  command: node dist/index.js data where --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: data status
+  command: node dist/index.js data status --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: serve
+  command: node dist/index.js serve --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: list-tools
+  command: node dist/index.js list-tools --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: wait-bound
+  command: node dist/index.js wait-bound --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+- name: mine-git
+  command: node dist/index.js mine-git --help
+  check_kind: discovery_only
+  expected: Help identifies options and exits successfully; real operator execution remains required.
+  sources:
+  - file: README.md
+    line: 651
+    quote: 'From a source checkout, after `pnpm install` and `pnpm run build`, the same CLI is `dist/index.js`.
+      CI runs this block on every change, and each `# expect:` line must appear in the output, so these examples
+      cannot drift from the code:'
+  e2e_status: See semantic/maintenance paths; otherwise BLOCKED pending isolated fixture or consent.
+restricted_paths:
+- id: telemetry-enable
+  surface: cli
+  command: node dist/index.js telemetry enable
+  expected: In an unattended run without consent, refuse rather than opt in. A positive consent path needs a human-owned
+    isolated fixture decision.
+  sources:
+  - file: README.md
+    line: 765
+    quote: '**Agent-operator consent model:** there is deliberately no MCP tool that enables telemetry -- an agent
+      must not be able to self-consent on a human''s behalf. Humans opt in interactively with `epoch telemetry enable`.
+      Agent/headless operators opt in out-of-band by setting `EPOCH_TELEMETRY=1` in the server''s environment before
+      the agent starts (see [Agent-First](#agent-first)). Either way, consent belongs to the person who configures
+      the deployment.'
+  status: BLOCKED_consent_for_positive_path
+- id: telemetry-local-endpoint
+  surface: cli
+  command: node dist/index.js telemetry set-endpoint --endpoint http://127.0.0.1:3099/v1/telemetry
+  expected: Isolated endpoint changes without enabling telemetry; never point a QA fixture at production.
+  sources:
+  - file: docs/TELEMETRY.md
+    line: 169
+    quote: Endpoints must use HTTPS, except localhost receivers used for local development.
+- id: telemetry-submit
+  surface: cli
+  command: node dist/index.js telemetry submit
+  expected: With telemetry disabled, no submission. Positive synthetic local-receiver admission needs an explicit
+    isolated consent fixture first.
+  sources:
+  - file: docs/TELEMETRY.md
+    line: 173
+    quote: 'Submits the queued anonymized records to the configured endpoint:'
+  status: BLOCKED_positive_consent_fixture_required
+- id: delete-data
+  surface: cli
+  command: node dist/index.js telemetry delete-data --help
+  expected: Help only; no deletion. Source implements deletion instructions rather than a delete operation; do not
+    execute printed shell commands.
+  sources:
+  - file: src/entries/cli.ts
+    line: 702
+    quote: .command("delete-data")
+  status: discovery_only
+- id: self-improve
+  surface: cli
+  command: node dist/index.js self-improve --help
+  expected: Help only; positive learned-factor execution needs a curated chronological estimate/actual fixture,
+    with before/after assertions rather than a fabricated improvement.
+  sources:
+  - file: src/entries/cli.ts
+    line: 362
+    quote: .command("self-improve")
+  status: BLOCKED_calibration_population_fixture_required
+http_routes:
+- id: http-health
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/health
+  expected: HTTP 200; status=ok, version matches merge, tools=26, numeric uptime.
+  sources:
+  - file: README.md
+    line: 712
+    quote: '| `GET /health` | Service health and version |'
+- id: http-v1-tools
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/v1/tools
+  expected: HTTP 200; ok=true; 26 canonical schemas.
+  sources:
+  - file: src/entries/http.ts
+    line: 741
+    quote: app.get("/v1/tools", (c) => {
+- id: http-.well-known-ai-plugin.json
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/.well-known/ai-plugin.json
+  expected: HTTP 200; Manifest points at the test deployment schema/API.
+  sources:
+  - file: README.md
+    line: 709
+    quote: '| `GET /.well-known/ai-plugin.json` | OpenAI plugin manifest |'
+- id: http-llms.txt
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/llms.txt
+  expected: HTTP 200; Nonempty Epoch documentation with the current surface.
+  sources:
+  - file: README.md
+    line: 710
+    quote: '| `GET /llms.txt` | LLM-consumable documentation |'
+- id: http-openapi.json
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/openapi.json
+  expected: HTTP 200; Parseable OpenAPI 3.1 spec with expected tool/feedback routes.
+  sources:
+  - file: README.md
+    line: 711
+    quote: '| `GET /openapi.json` | OpenAPI 3.1 specification |'
+- id: http-v1-feedback-pending?limit=5
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/v1/feedback/pending?limit=5
+  expected: HTTP 200; Every returned pending estimate respects limit; compare against the isolated ledger.
+  sources:
+  - file: src/entries/http.ts
+    line: 933
+    quote: app.get("/v1/feedback/pending", (c) => {
+- id: http-v1-feedback-health
+  surface: http
+  command: curl --fail-with-body -sS http://127.0.0.1:3099/v1/feedback/health
+  expected: HTTP 200; Health population matches the fixture and is distinguished from tool intervalCoverage semantics.
+  sources:
+  - file: README.md
+    line: 693
+    quote: '| `GET /v1/feedback/health` | The feedback health report. | `feedback_health`: the same report **plus
+      `intervalCoverage`** (P80 prediction-interval calibration). |'
+- id: http-record-actual
+  surface: http
+  command: 'curl --fail-with-body -sS http://127.0.0.1:3099/v1/feedback/record-actual -H ''Content-Type: application/json''
+    --data "$(python3 -c ''import json,os; print(json.dumps({"estimate_id":os.environ["ESTIMATE_ID"],"actual_hours":5}))'')"'
+  expected: 'Fresh feedbackRef: 200 with camelCase estimateId/actualHours/recorded. Duplicate: 409; invalid input:
+    400. Use a fresh HTTP estimate so the tool case has not already recorded it.'
+  sources:
+  - file: README.md
+    line: 690
+    quote: '| `POST /v1/feedback/record-actual` | `{estimate_id, actual_hours, notes?}`. Success is `{estimateId,
+      actualHours, recorded, flagged?, flagHint?}` (camelCase). Status: 400 for bad input or a caller-fixable rejection
+      (`below_threshold`, `synthetic_id`, `unknown_tool`, a failed auto or git sanity gate); **409** for a duplicate;
+      500 for a storage failure. | `record_actual`: success is `{recorded, estimate_id, actual_hours, message, flagged?,
+      flagHint?}` (snake_case). Every failure is a 422 whose message names the reason. |'
+- id: http-batch
+  surface: http
+  command: 'curl --fail-with-body -sS http://127.0.0.1:3099/v1/feedback/batch-record-actuals -H ''Content-Type:
+    application/json'' --data "$(python3 -c ''import json,os; print(json.dumps({"entries":[{"estimate_id":os.environ["BATCH_ESTIMATE_ID"],"actual_hours":5},{"estimate_id":"qa-invalid","actual_hours":-1}]}))'')"'
+  expected: Fresh real entry succeeds and invalid entry is reported by index; partial success is distinguished from
+    tools batch validation. Body is the source-verified {entries:[...]} object, not a top-level array.
+  sources:
+  - file: README.md
+    line: 692
+    quote: '| `POST /v1/feedback/batch-record-actuals` | 1–500 entries. **Partial success:** valid entries are recorded,
+      and each invalid one is reported in `errors` by index. If none succeed, 422, or 500 when the cause is storage.
+      | `batch_record_actuals`: Zod validates every entry first, so **one invalid entry rejects the whole batch**
+      (422) before anything is recorded. |'
+  - file: src/entries/http.ts
+    line: 968
+    quote: const entries = (body as Record<string, unknown>)["entries"];
+- id: http-telemetry-admission
+  surface: http
+  command: 'curl -sS -o "$QA_WORK/artifacts/telemetry-reject.json" -w ''%{http_code}\n'' http://127.0.0.1:3099/v1/telemetry
+    -H ''Content-Type: application/json'' --data ''{}'''
+  expected: Malformed unsigned empty payload is rejected; no admitted/production record. Positive signed synthetic
+    admission/quarantine remains BLOCKED until the test fixture is specified.
+  sources:
+  - file: src/entries/http.ts
+    line: 828
+    quote: app.post("/v1/telemetry", async (c) => {
+  status: BLOCKED_positive_signed_payload_fixture_required
+negative_cases:
+- id: cli-invalid-number
+  surface: cli
+  command: node dist/index.js pert-estimate --optimistic nonsense --most-likely 4 --pessimistic 12
+  expected: Exit nonzero with numeric-argument diagnostic; no estimate appended.
+  sources:
+  - file: src/entries/cli-tool-commands.ts
+    line: 107
+    quote: '{ flags: "--optimistic <n>", description: "Best-case duration", key: "optimistic", required: true, parse:
+      "float", include: "always" },'
+- id: http-unknown-tool
+  surface: http
+  command: 'curl -sS -o "$QA_WORK/artifacts/unknown.json" -w ''%{http_code}\n'' http://127.0.0.1:3099/v1/tools/qa_no_such_tool
+    -H ''Content-Type: application/json'' --data ''{}'''
+  expected: Non-success HTTP status with unknown-tool error; no state mutation.
+  sources:
+  - file: src/entries/http.ts
+    line: 768
+    quote: if (!TOOL_NAMES.has(toolName)) {
+- id: http-invalid-json
+  surface: http
+  command: 'curl -sS -o "$QA_WORK/artifacts/invalid-json.json" -w ''%{http_code}\n'' http://127.0.0.1:3099/v1/tools/pert_estimate
+    -H ''Content-Type: application/json'' --data ''{'''
+  expected: HTTP 400 with Invalid JSON body; no estimate appended.
+  sources:
+  - file: src/entries/http.ts
+    line: 760
+    quote: 'message: "Invalid JSON body.",'
+web_ui:
+- id: site-navigation
+  surface: browser
+  command: python3 -m http.server 3101 --bind 127.0.0.1 --directory site
+  expected: In a clean browser open http://127.0.0.1:3101/; follow Why, Demo, Features and Quick Start anchors and
+    keyboard skip-to-content. Each target exists and content becomes visible; no JS errors. Capture desktop/mobile
+    and reduced-motion screenshots. This is static marketing navigation, not a live estimator UI.
+  sources:
+  - file: site/index.html
+    line: 602
+    quote: <a href="#quickstart" class="nav-link text-muted">Quick Start</a>
+  browser_actions:
+  - new_tab("http://127.0.0.1:3101/")
+  - wait_for_load()
+  - js("document.querySelector('a[href=\"#quickstart\"]').click()")
+  - capture_screenshot()
+  sources_extra:
+  - file: site/index.html
+    line: 545
+    quote: '@media (prefers-reduced-motion: reduce) {'
+open_questions:
+- Provide isolated curated fixtures for self-improvement, nonempty auto-actuals/window fallback, git-history joins
+  and signed telemetry admission; the discovery/empty paths do not cover their positive flows.
+- Confirm consent for a synthetic loopback-only telemetry enable/submit test; no production consent or human values
+  will be fabricated.
+- The checked-in epoch-public-surface.json is stale (25 tools; misses wait_bound and mine-git). Inventory is reconciled
+  with the 26 current TOOL_COMMANDS entries; do not edit the product contract in this draft-only brief.
+coverage:
+  semantic_tools: 26
+  semantic_transports_per_tool: 3
+  cli_command_paths: 44
+  http_route_shapes: 11
+  static_browser_flow: 1
+  complete_e2e_catalog: false
+  executions_performed: 0
+clone_and_pin:
+  command: 'set -euo pipefail
+
+    : "${QA_WORK:?new disposable test directory}" "${REPOSITORY_URL:?contract repository}" "${MERGE_SHA:?Security
+    merge SHA}" "${DEFAULT_BRANCH:?verify with repository metadata}"
+
+    mkdir -p "$QA_WORK"
+
+    git clone --no-local "$REPOSITORY_URL" "$QA_WORK/checkout"
+
+    git -C "$QA_WORK/checkout" merge-base --is-ancestor "$MERGE_SHA" "origin/$DEFAULT_BRANCH"
+
+    git -C "$QA_WORK/checkout" checkout --detach "$MERGE_SHA"
+
+    test "$(git -C "$QA_WORK/checkout" rev-parse HEAD)" = "$MERGE_SHA"
+
+    cd "$QA_WORK/checkout"'
+  expected: New clone at exactly the merged default-branch commit; fail before install if identity, ancestry or
+    branch cannot be verified. Verify PR merged state and Security merge receipt separately.
+  source:
+    file: README.md
+    line: 717
+    quote: git clone https://github.com/KyaniteLabs/Epoch.git

@@ -10,8 +10,16 @@
 // CLI's immediate-exit handlers step aside for the HTTP entry's own graceful
 // shutdown (exit 0, not 143).
 //
-// Mirrors the spawn pattern of mcp-stdio-guard.integration.test.ts
-// (repo tsx binary).
+// The entry is spawned as `node --import tsx src/index.ts` rather than
+// through the node_modules/.bin/tsx CLI shim: the shim is a relay that
+// spawns the real entry as its child and, on a repeated signal, SIGKILLs
+// that child after ~30 ms. Sending the two test signals to the shim
+// therefore kills the telemetry writer before its own shutdown path can
+// finish, which reproduces as ENOENT (or an empty) telemetry.jsonl even
+// when the entry logic is correct (measured 3/300 on main). `--import tsx`
+// loads the TypeScript entry in the target process itself, so the signals
+// land on the entry exactly as `node dist/index.js` receives them in
+// production while staying a real process.
 // ---------------------------------------------------------------------------
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -22,8 +30,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const TSX_BIN = join(REPO_ROOT, "node_modules", ".bin", "tsx");
-const hasTsx = existsSync(TSX_BIN);
+const TSX_PACKAGE = join(REPO_ROOT, "node_modules", "tsx", "package.json");
+const hasTsx = existsSync(TSX_PACKAGE);
 
 interface Line {
 	jsonrpc: string;
@@ -48,11 +56,15 @@ class StdioSession {
 	private readonly stdin: NodeJS.WritableStream;
 
 	constructor(args: string[], env: NodeJS.ProcessEnv) {
-		const child = spawn(TSX_BIN, [join(REPO_ROOT, "src", "index.ts"), ...args], {
-			cwd: REPO_ROOT,
-			env: { ...process.env, NO_COLOR: "1", ...env },
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		const child = spawn(
+			process.execPath,
+			["--import", "tsx", join(REPO_ROOT, "src", "index.ts"), ...args],
+			{
+				cwd: REPO_ROOT,
+				env: { ...process.env, NO_COLOR: "1", ...env },
+				stdio: ["pipe", "pipe", "pipe"],
+			},
+		);
 		this.child = child;
 		this.stdin = child.stdin;
 		child.stdout.setEncoding("utf8");

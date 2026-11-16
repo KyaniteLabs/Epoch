@@ -464,7 +464,7 @@ export function monteCarloSim(
   if (tasks.length === 0) {
     return {
       p10: "0", p50: "0", p80: "0", p90: "0", p95: "0",
-      estimatedHours: 0, estimatedCost: 0, converged: false,
+      estimatedHours: 0, estimatedTokens: 0, estimatedCost: 0, converged: false,
       criticalPathProbability: null,
       riskEvents: [{ description: "Task list must not be empty.", probability: 1, impactDays: 0 }],
       humanReadable: "Error: Provide at least one task for Monte Carlo simulation.",
@@ -473,7 +473,7 @@ export function monteCarloSim(
   if (iterations <= 0) {
     return {
       p10: "0", p50: "0", p80: "0", p90: "0", p95: "0",
-      estimatedHours: 0, estimatedCost: 0, converged: false,
+      estimatedHours: 0, estimatedTokens: 0, estimatedCost: 0, converged: false,
       criticalPathProbability: null,
       riskEvents: [{ description: "Iterations must be >= 1.", probability: 1, impactDays: 0 }],
       humanReadable: "Error: Iterations must be a positive number.",
@@ -482,7 +482,7 @@ export function monteCarloSim(
   if (targetHours !== undefined && !(Number.isFinite(targetHours) && targetHours > 0)) {
     return {
       p10: "0", p50: "0", p80: "0", p90: "0", p95: "0",
-      estimatedHours: 0, estimatedCost: 0, converged: false,
+      estimatedHours: 0, estimatedTokens: 0, estimatedCost: 0, converged: false,
       criticalPathProbability: null,
       riskEvents: [{
         description: `target_hours (${String(targetHours)}) must be a positive, finite number of hours (task durations are in 8-hour days).`,
@@ -496,7 +496,7 @@ export function monteCarloSim(
     if (!(task.optimistic <= task.mostLikely && task.mostLikely <= task.pessimistic)) {
       return {
         p10: "0", p50: "0", p80: "0", p90: "0", p95: "0",
-        estimatedHours: 0, estimatedCost: 0, converged: false,
+        estimatedHours: 0, estimatedTokens: 0, estimatedCost: 0, converged: false,
         criticalPathProbability: null,
         riskEvents: [{
           description: `Invalid estimates for task "${task.name}": optimistic (${task.optimistic}) must be <= mostLikely (${task.mostLikely}) <= pessimistic (${task.pessimistic}).`,
@@ -590,6 +590,7 @@ export function monteCarloSim(
     p90: String(Math.round(p(0.9) * 100) / 100),
     p95: String(Math.round(p(0.95) * 100) / 100),
     estimatedHours: Math.round(p50Val * 8 * 100) / 100,
+    estimatedTokens: Math.round(p50Val * 8 * 50000),
     estimatedCost: Math.round(p50Val * 8 * 50000 * 100) / 100,
     criticalPathProbability,
     ...(targetHours !== undefined && { targetHours }),

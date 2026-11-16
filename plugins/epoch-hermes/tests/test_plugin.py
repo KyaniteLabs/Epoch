@@ -118,7 +118,9 @@ def test_f2_concurrent_recorders_record_once(plugin, board, make_ctx, tmp_path):
           for _ in range(2)]
     [t.start() for t in ts]
     [t.join() for t in ts]
-    assert sorted(out) == ["duplicate", "recorded"]
+    # The lock is now polled (E3), so the loser may arrive after the winner finished and see
+    # "already_recorded" instead of Epoch's "duplicate". Either way exactly one actual lands.
+    assert sorted(out)[1] == "recorded" and sorted(out)[0] in ("duplicate", "already_recorded")
     assert sum("[epoch:actual" in b for b in board.bodies(tid)) == 1
 
 
@@ -174,8 +176,247 @@ def test_f3_malformed_hint_fails_visibly(plugin, make_ctx, tmp_path, hint):
     assert out["hint_error"]
 
 
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 30/45/90 min", (0.5, 0.75, 1.5)),
+    ("epoch: 30/45/90m", (0.5, 0.75, 1.5)),
+    ("estimate: 1-2-3 weeks", (40.0, 80.0, 120.0)),
+    ("epoch: 1/2/3 days", (8.0, 16.0, 24.0)),
+    ("epoch: 2/4/10h", (2.0, 4.0, 10.0)),
+])
+def test_hint_units_convert_to_hours(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint", ["epoch: 1/2/3 sprints", "epoch: 1/2/3 months", "estimate: 5/8/13 points",
+                                  "epoch: 10/20/30 secs", "epoch: 1/2/3 fortnights",
+                                  "epoch: 1/2/3 business days", "epoch: 1/2/3 person-days",
+                                  "epoch: 1/2/3 ms", "epoch: 1/2/3 M",
+                                  "epoch: 1/2/3 story-points",
+                                  "epoch: 2/4/10 business days, roughly",
+                                  "epoch: 2/4/10 business days for the migration",
+                                  "epoch: 3/5/8 story points (rough)",
+                                  "epoch: 1/2/4 fortnights, maybe more",
+                                  "epoch: 2/4/10 dev days - owner",
+                                  "epoch: 2/4/10 for the API",
+                                  "epoch: 2/4/10 días",
+                                  "estimate: 1/2/26 ship date, tbc",
+                                  "epoch: 1/2/3 fortnights to finish this task",
+                                  "epoch: 1/2/3 ms per operation",
+                                  "epoch: 2/4/10, sprints", "epoch: 2/4/10 (sprints)",
+                                  "epoch: 2/4/10; months",
+                                  "epoch: 2/4/10 - weeks of work", "epoch: 2/4/10 ~sprints"])
+def test_hint_with_unknown_unit_is_refused_not_read_as_hours(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None and ("unit" in problem or "text after the estimate" in problem)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 roughly", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 approx", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 maybe", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 days, roughly", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 (rough)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10!", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10h for the API", (2.0, 4.0, 10.0)),
+])
+def test_hint_allows_units_and_unitless_qualifiers(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 (hours)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 (h)", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10 *days*", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 _days_", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 `d`", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10. Then prose", (2.0, 4.0, 10.0)),
+    ("epoch: 2/4/10. Then the API", (2.0, 4.0, 10.0)),
+])
+def test_hint_structural_unit_wrappers_and_sentence_end(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 roughly days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 maybe weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10 (approx) weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10 approx. weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10 roughly, days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10?? days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 ... days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10! weeks", (80.0, 160.0, 400.0)),
+    ("epoch: 2/4/10. days", (16.0, 32.0, 80.0)),
+])
+def test_hint_finds_unit_after_qualifier_or_punctuation(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("epoch: 2/4/10 roughly working days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 ish business days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 approx. working days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 roughly in days", (16.0, 32.0, 80.0)),
+    ("epoch: 2/4/10 roughly calendar weeks", (80.0, 160.0, 400.0)),
+])
+def test_hint_finds_unit_after_qualifier_and_one_modifier(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 roughly months", "epoch: 2/4/10 roughly fortnights",
+    "epoch: 2/4/10 roughly sprints", "epoch: 2/4/10 roughly M",
+    "epoch: 2/4/10 roughly months for the work",
+    "epoch: 2/4/10 roughly fortnights to finish",
+    "epoch: 2/4/10 roughly day(s) to finish",
+    "epoch: 2/4/10 roughly years of work",
+    "epoch: 2/4/10 roughly person-days total",
+])
+def test_hint_rejects_unknown_unit_after_qualifier(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert problem and ("unit" in problem or "text after the estimate" in problem)
+
+
+def test_hint_does_not_scan_an_unrelated_sentence_for_a_unit(plugin):
+    hint_out, problem = plugin.find_hint("", "epoch: 2/4/10. There are days when APIs fail")
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10. Minutes from the sync are attached.",
+    "epoch: 2/4/10. Weeks of prep are already done.",
+    "epoch: 2/4/10. Days matter here, ship Friday.",
+    "epoch: 2/4/10 approx. Next week QA starts.",
+    "epoch: 2/4/10! Min viable version only.",
+])
+def test_hint_does_not_use_a_unit_followed_by_next_sentence_prose(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 roughly blocked",
+    "epoch: 2/4/10 ish, tentative",
+])
+def test_hint_allows_one_word_of_commentary_after_qualifier(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 ish, 20 min standup after",
+    "epoch: 2/4/10, h/t Ada",
+    "epoch: 2/4/10. Plan B w/ Ada",
+    "epoch: 2/4/10 roughly, blocked 2 days on review",
+    "epoch: 2/4/10. Deploy soaks for 2 days after merge",
+    "epoch: 2/4/10. Then wait 3 weeks for the vendor",
+    "epoch: 2/4/10. Retest in 30 m",
+    "epoch: 2/4/10. Ping Ted M. if it slips",
+    "epoch: 2/4/10. Due in 2 weeks",
+    "epoch: 2/4/10. Deploy takes 3 days of soak.",
+    "epoch: 2/4/10 roughly the same as last week",
+    "epoch: 2/4/10. Needs 5 min review from Ada.",
+    "epoch: 2/4/10 maybe 12 M tokens",
+    "epoch: 2/4/10. M",
+    "epoch: 2/4/10. Plan B needs w approval",
+])
+def test_hint_does_not_mine_prose_for_a_unit(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "Fix login (epoch: 2/4/10)",
+    "[epoch: 2/4/10]",
+    "**epoch: 2/4/10**",
+    "`epoch: 2/4/10`",
+])
+def test_hint_allows_wrapped_trailing_punctuation(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ("**epoch: 2/4/10** days", (16.0, 32.0, 80.0)),
+    ("**epoch: 2/4/10** (days)", (16.0, 32.0, 80.0)),
+    ("`epoch: 2/4/10` days", (16.0, 32.0, 80.0)),
+])
+def test_hint_finds_unit_after_closing_markdown(plugin, hint, expected):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("hint", [
+    "| est | epoch: 2/4/10 |",
+    '"epoch: 2/4/10"',
+    "'epoch: 2/4/10'",
+    "~~epoch: 2/4/10~~",
+    "<epoch: 2/4/10>",
+    "{epoch: 2/4/10}",
+    "epoch: 2/4/10</p>",
+    "epoch: 2/4/10”",
+    "_epoch: 2/4/10_",
+])
+def test_hint_accepts_common_wrappers(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert problem is None
+    assert tuple(hint_out.values()) == pytest.approx((2.0, 4.0, 10.0))
+
+
+@pytest.mark.parametrize("hint", [
+    "epoch: 2/4/10 hopefully", "epoch: 2/4/10 worst", "epoch: 2/4/10 with",
+    "epoch: 2/4/10 more", "epoch: 2/4/10 max", "epoch: 2/4/10 working",
+])
+def test_hint_does_not_treat_words_starting_with_unit_letters_as_units(plugin, hint):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert "malformed unit" not in problem
+
+
+@pytest.mark.parametrize("hint,expects_text", [
+    ("epoch: 2/4/10 day(s)", False),
+    ("epoch: 2/4/10 week's work", False),
+    ("epoch: 2/4/10 h/day", False),
+    ("epoch: 2/4/10 for the API", True),
+    ("epoch: 2/4/10 — owner", True),
+])
+def test_hint_rejects_invalid_first_token_without_claiming_a_unit(plugin, hint, expects_text):
+    hint_out, problem = plugin.find_hint("", hint)
+    assert hint_out is None
+    assert problem
+    if expects_text:
+        assert "text after the estimate" in problem
+    else:
+        assert "malformed unit" in problem
+
+
 def test_f3_prose_without_numbers_is_not_a_hint(plugin):
     assert plugin.find_hint("Estimate: TBD", "epoch: later") == (None, None)
+
+
+def test_slash_error_redacts_home_path(plugin, make_ctx, monkeypatch):
+    make_ctx({"default": {}})
+    monkeypatch.setattr(plugin, "run_epoch", lambda *_args, **_kwargs: {
+        "ok": False, "error": f"cannot read {Path.home()}/private/data"})
+    result = plugin._slash("pert-estimate --optimistic 1 --most-likely 2 --pessimistic 3")
+    assert str(Path.home()) not in result
+    assert "~/private/data" in result
 
 
 # ---------------------------------------------------------------- finding 4: cross-profile
@@ -362,7 +603,9 @@ def test_epoch_data_dir_setting_pins_the_ledger(plugin, make_ctx, tmp_path):
 
 def test_plugin_imports_no_private_hermes_modules():
     src = (PLUGIN_DIR / "__init__.py").read_text()
-    assert not re.search(r"^\s*(from|import)\s+hermes_cli", src, re.M)
+    # The optional, public Desktop bridge is the sole Hermes import.
+    imports = re.findall(r"^\s*(?:from|import)\s+(hermes_cli[\w.]*)", src, re.M)
+    assert imports == ["hermes_cli.plugin_events"]
     assert "kanban_db" not in src
 
 
@@ -384,7 +627,9 @@ def test_child_env_is_scrubbed_and_telemetry_forced_off(plugin, make_ctx, tmp_pa
     assert call["telemetry"] == "0"
     assert set(call["env_keys"]) <= set(plugin._ENV_ALLOW) | {
         "EPOCH_DATA_DIR", "EPOCH_TELEMETRY", "NO_COLOR", "NO_UPDATE_NOTIFIER",
-        "npm_config_update_notifier", "npm_config_fund", "LC_CTYPE"}
+        "npm_config_update_notifier", "npm_config_fund", "LC_CTYPE",
+        # macOS adds this to every process at exec, even under `env -i`; the plugin never passes it.
+        "__CF_USER_TEXT_ENCODING"}
 
 
 def test_scrubbed_env_keeps_path_and_pins_data_dir(plugin, make_ctx, tmp_path, monkeypatch):
@@ -412,6 +657,7 @@ def test_default_ledger_is_hermes_plugin_data(plugin, make_ctx, tmp_path, monkey
 @pytest.mark.parametrize("raw,blocked", [
     ("serve", True), ("self-improve --apply", True), ("telemetry enable", True),
     ("telemetry share-data", True), ("--format table telemetry submit", True), ("data delete-data", True),
+    ("share-data --output /tmp/x", True), ("share-data", True), ("telemetry export --output=/tmp/x", True),
     ("telemetry status", False), ("data where", False),
     ("pert-estimate --optimistic 1 --most-likely 2 --pessimistic 4", False),
 ])
@@ -420,6 +666,17 @@ def test_slash_refuses_unsafe_subcommands(plugin, make_ctx, tmp_path, raw, block
                           "epoch_data_dir": str(tmp_path)}})
     plugin._slash(raw)
     assert (calls(tmp_path) == []) is blocked
+
+
+def test_share_data_cannot_overwrite_files_from_gateway(plugin, make_ctx, tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_PLATFORM", "telegram")
+    victim = tmp_path / "notes.txt"
+    victim.write_text("keep me")
+    make_ctx({"default": {"epoch_command": f"{sys.executable} {Path(__file__).parent / 'fake_epoch.py'}",
+                          "epoch_data_dir": str(tmp_path)}})
+    out = plugin._slash(f"share-data --output {victim}")
+    assert "not available" in out and calls(tmp_path) == []
+    assert victim.read_text() == "keep me"
 
 
 def test_slash_ledger_writes_refused_on_gateway_unless_opted_in(plugin, make_ctx, tmp_path, monkeypatch):
@@ -444,3 +701,13 @@ def test_manifest_matches_catalog_gates():
     assert re.search(r"^  allow_write_slash_on_gateway:$", text, re.M)
     desc = re.search(r'^description: "(.*)"$', text, re.M).group(1)
     assert "plugin-data/epoch" in desc and "scrubbed" in desc
+
+
+def test_nonzero_exit_with_ok_envelope_is_a_failure(plugin, tmp_path):
+    """A child that prints ``ok: true`` but exits non-zero must not read as success."""
+    script = tmp_path / "liar.py"
+    script.write_text('import json, sys\nprint(json.dumps({"ok": True, "data": {"feedbackRef": "f"}}))\nsys.exit(17)\n')
+    res = plugin.run_epoch(["feedback"], {"epoch_command": f"{sys.executable} {script}",
+                                          "epoch_data_dir": str(tmp_path)})
+    assert res["ok"] is False and "exited 17" in res["error"]
+    assert res["data"] == {"feedbackRef": "f"}  # structured payload kept for diagnosis

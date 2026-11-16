@@ -34,7 +34,7 @@ vi.mock("../lib/self-improve.js", () => ({
   updateReferenceDatabase: vi.fn(() => Promise.resolve()),
 }));
 
-import { registerAllMcpTools } from "./mcp-adapter.js";
+import { registerAllMcpTools, resolveToolProfile, CORE_MCP_TOOLS } from "./mcp-adapter.js";
 import { TOOL_REGISTRY } from "./tool-registry.js";
 import { defined } from "../test-support.js";
 
@@ -96,5 +96,44 @@ describe("registerAllMcpTools", () => {
       expect(t.shape).toBeDefined();
       expect(t.shape).not.toBeNull();
     }
+  });
+});
+
+describe("EPOCH_TOOLS tool profile (F16)", () => {
+  beforeEach(() => {
+    registeredTools.length = 0;
+    vi.mocked(mockServer.tool).mockClear();
+  });
+
+  it("defaults to the core profile when EPOCH_TOOLS is unset or empty", () => {
+    expect(resolveToolProfile({})).toBe("core");
+    expect(resolveToolProfile({ EPOCH_TOOLS: "" })).toBe("core");
+    expect(resolveToolProfile({ EPOCH_TOOLS: "core" })).toBe("core");
+  });
+
+  it("restores every tool with EPOCH_TOOLS=all (case-insensitive)", () => {
+    expect(resolveToolProfile({ EPOCH_TOOLS: "all" })).toBe("all");
+    expect(resolveToolProfile({ EPOCH_TOOLS: " ALL " })).toBe("all");
+  });
+
+  it("falls back to core for an unknown value", () => {
+    expect(resolveToolProfile({ EPOCH_TOOLS: "everything" })).toBe("core");
+  });
+
+  it("the core set is exactly the six named tools, all of which exist", () => {
+    expect([...CORE_MCP_TOOLS].sort()).toEqual([
+      "get_current_time", "monte_carlo_schedule", "parse_duration",
+      "pert_estimate", "record_actual", "time_math",
+    ]);
+    for (const name of CORE_MCP_TOOLS) expect(TOOL_REGISTRY.has(name)).toBe(true);
+  });
+
+  it("core registers only the core tools; all registers every tool", () => {
+    registerAllMcpTools(mockServer, "core");
+    expect(registeredTools.map((t) => t.name).sort()).toEqual([...CORE_MCP_TOOLS].sort());
+    registeredTools.length = 0;
+    registerAllMcpTools(mockServer, "all");
+    expect(registeredTools).toHaveLength(TOOL_REGISTRY.size);
+    expect(TOOL_REGISTRY.size).toBe(26);
   });
 });

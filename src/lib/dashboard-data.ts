@@ -50,6 +50,7 @@ import {
   type ActualRecord,
 } from "./ledger.js";
 import { isExcluded, BACKFILL_SIGNATURE_DATE } from "./exclusion.js";
+import { estimateStage } from "./estimate-lifecycle.js";
 import { TASKTYPE_FILE } from "./migrations/normalize-task-types.js";
 import type { AccuracyTrend } from "../types/index.js";
 
@@ -431,20 +432,14 @@ function computeIntegrity(): IntegritySection {
   let labeledCount = 0;
   let archivedCount = 0;
   let expiredPendingCount = 0;
+  const now = Date.now();
   for (const rec of merged) {
     if (rec.flags.quarantined) quarantinedCount++;
     if (rec.flags.taskLabel) labeledCount++;
     if (rec.archived) archivedCount++;
-    if (!rec.actual) {
-      const verdict = isExcluded({
-        id: rec.id,
-        tool: rec.tool,
-        estimatedAt: rec.estimatedAt,
-        flags: { quarantined: rec.flags.quarantined, orphan: rec.flags.orphan },
-        ...(rec.expiresAt && { expiresAt: rec.expiresAt }),
-      });
-      if (verdict.excluded && verdict.reason === "ttl_expired") expiredPendingCount++;
-    }
+    // Derived lifecycle stage, not isExcluded()'s first reason: a quarantined /
+    // orphan-flagged / synthetic-id estimate whose TTL elapsed is still expired.
+    if (estimateStage(rec, rec.actual !== undefined, now) === "expired") expiredPendingCount++;
   }
 
   const taskTypeOverlayCount = readLines(TASKTYPE_FILE).length;

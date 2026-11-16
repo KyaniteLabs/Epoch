@@ -119,6 +119,40 @@ def test_e2e_completion_before_estimate(tmp_path):
     assert sum("[epoch:actual" in b for b in bodies) == 1
 
 
+def test_e2e_idle_dispatch_tick_reconciles_missed_completion(tmp_path):
+    """A real v0.23 dispatch tick retries a completion missed by another process."""
+    dependency = subprocess.run([HERMES_PY, "-c", "import pm"], capture_output=True, text=True)
+    if dependency.returncode:
+        pytest.skip("real Hermes runtime dependencies are not installed in HERMES_PYTHON")
+    env = Env(tmp_path)
+    tid = env.run("A", "create", "Idle completion", "epoch: 1/2/3h")["task_id"]
+    rid = env.run("A", "claim", tid)["run_id"]
+    signal = tmp_path / "tick.signal"
+    watcher = env.popen("A", "watch-tick", signal)
+    ready = Path(str(signal) + ".ready")
+    deadline = time.time() + 30
+    while not ready.exists() and time.time() < deadline:
+        time.sleep(0.02)
+    assert ready.exists(), "real Hermes watcher did not finish initial reconcile"
+
+    # A profile with no plugins completes the run, so no epoch hook can see the completion.
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    done = subprocess.run([HERMES_PY, str(DRIVER), "complete-no-plugin", tid, str(rid)],
+                          env=dict(env.env("B"), HERMES_HOME=str(bare)),
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    # Nothing recorded the completion yet: only A's dispatch tick can pick it up.
+    assert len(_records(env)) == 0
+    assert sum("[epoch:actual" in body for body in env.comments(tid)) == 0
+    signal.touch()
+    stdout, stderr = watcher.communicate(timeout=45)
+    assert watcher.returncode == 0, stderr[-2000:]
+    assert json.loads(Path(str(signal) + ".done").read_text()) == {"recorded": True}
+    assert len(_records(env)) == 1
+    assert sum("[epoch:actual" in body for body in env.comments(tid)) == 1
+
+
 def test_e2e_hard_exit_job_replays_on_next_load(tmp_path):
     """F6: a one-shot process that os._exit()s mid-estimate loses nothing; the next load replays."""
     env = Env(tmp_path, {"A": {"FAKE_EPOCH_SLEEP": "1.5"}})

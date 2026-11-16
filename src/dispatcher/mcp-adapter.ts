@@ -49,8 +49,29 @@ function unwrapToObjectSchema(schema: z.ZodTypeAny): z.ZodObject<z.ZodRawShape> 
   return current as z.ZodObject<z.ZodRawShape>;
 }
 
-export function registerAllMcpTools(server: McpServer): void {
+/** Tools an agent needs for everyday estimating; the default MCP surface (EPOCH_TOOLS=core). */
+export const CORE_MCP_TOOLS: ReadonlySet<string> = new Set([
+  "pert_estimate",
+  "monte_carlo_schedule",
+  "parse_duration",
+  "time_math",
+  "get_current_time",
+  "record_actual",
+]);
+
+export type ToolProfile = "core" | "all";
+
+/**
+ * EPOCH_TOOLS=core (default) exposes the six core tools; EPOCH_TOOLS=all exposes every tool.
+ * Anything else falls back to core. Every tool stays available through the CLI and HTTP.
+ */
+export function resolveToolProfile(env: Record<string, string | undefined>): ToolProfile {
+  return (env["EPOCH_TOOLS"] ?? "").trim().toLowerCase() === "all" ? "all" : "core";
+}
+
+export function registerAllMcpTools(server: McpServer, profile: ToolProfile = "all"): void {
   for (const [name, def] of TOOL_REGISTRY) {
+    if (profile === "core" && !CORE_MCP_TOOLS.has(name)) continue;
     const annotations = WRITE_TOOLS.has(name) ? WRITE_ANNOTATIONS : READ_ONLY_ANNOTATIONS;
 
     // Extract ZodRawShape — unwrap wrapper types to reach the inner ZodObject

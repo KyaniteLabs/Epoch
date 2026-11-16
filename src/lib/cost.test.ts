@@ -316,3 +316,17 @@ describe("Phase 5 catalog — Claude 5 family pricing", () => {
     expect(result.models.length).toBeGreaterThanOrEqual(16); // 12 pre-existing + 4 new
   });
 });
+
+describe("tokenCostEstimate pricing source", () => {
+  it("flags fallback pricing for a model missing from the table", () => {
+    const r = tokenCostEstimate({ tokens: 1_000_000, model: "definitely-not-a-model", toolCalls: 0, reasoningDepth: "moderate" });
+    expect(r.pricingSource).toBe("fallback");
+    expect(r.humanReadable).toContain("WARNING");
+    expect(r.humanReadable).toContain("not in the pricing table");
+  });
+  it("marks table-priced models as table with no warning", () => {
+    const r = tokenCostEstimate({ tokens: 1_000_000, model: "claude-sonnet-5", toolCalls: 0, reasoningDepth: "moderate" });
+    expect(r.pricingSource).toBe("table");
+    expect(r.humanReadable).not.toContain("WARNING");
+  });
+});

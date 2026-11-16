@@ -1,8 +1,7 @@
-import { realpathSync } from "node:fs";
-import { pathToFileURL } from "node:url";
 import { startMcpServer } from "./entries/mcp.js";
 import { startHttpServer } from "./entries/http.js";
 import { runCli } from "./entries/cli.js";
+import { isCurrentFileEntrypoint } from "./lib/entrypoint.js";
 
 export {
   cocomoEstimate,
@@ -90,21 +89,7 @@ function main(): void {
   });
 }
 
-function isCurrentFileEntrypoint(): boolean {
-  const entrypoint = process.argv[1];
-
-  if (!entrypoint) {
-    return false;
-  }
-
-  try {
-    return import.meta.url === pathToFileURL(realpathSync(entrypoint)).href;
-  } catch {
-    return import.meta.url === pathToFileURL(entrypoint).href;
-  }
-}
-
-const isEntrypoint = isCurrentFileEntrypoint();
+const isEntrypoint = isCurrentFileEntrypoint(process.argv[1], import.meta.url);
 
 if (isEntrypoint) {
   main();

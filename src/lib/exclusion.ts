@@ -14,6 +14,8 @@
 // §3 Phase 1 Task 4 ("shared exclusion predicate") and Pre-mortem Scenario 1
 // (over-matching the 2026-05-05 backfill) / Scenario 6 (skipped-join guard).
 
+import { isPastExpiry } from "./estimate-lifecycle.js";
+
 /** Reasons isExcluded() can report. Exactly one is returned per verdict. */
 export type ExclusionReason =
   | "quarantine_flag"
@@ -299,7 +301,7 @@ export function isExcluded(record: ExclusionRecord, now: Date = new Date()): Exc
 
   // No actual recorded yet (pending estimate) — only TTL expiry can exclude it.
   if (!record.actual) {
-    if (record.expiresAt && Date.parse(record.expiresAt) < now.getTime()) {
+    if (isPastExpiry(record.expiresAt, now)) {
       return { excluded: true, reason: "ttl_expired" };
     }
     return { excluded: false };

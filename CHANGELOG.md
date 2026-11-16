@@ -8,6 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Hermes plugin demo: `python plugins/epoch-hermes/scripts/demo.py` posts a P50/P90 Kanban comment through the claim and complete hooks and finishes in under 90 seconds, without a Hermes gateway or `npx`. Catalog PR text for Simon is in `docs/catalog-pr.md`.
+### fix: the agent-lifecycle hook survives a moved checkout and fails loudly
+
+- `scripts/epoch-lifecycle-hook.mjs` is the supported estimate→actual hook: on `UserPromptSubmit` it records a PERT estimate, on `Stop` it records the elapsed wall-clock actual. It resolves the CLI from `EPOCH_BIN`, then the checkout that ships the hook, then the same checkout candidates `scripts/configure-mac-mini-telemetry.sh` probes (`~/workspaces/kyanite-labs/Epoch`, `~/workspaces/Epoch`, `~/Epoch`), then npm-global installs. When nothing resolves it prints one loud stderr line and appends a `hook_failed` line naming every path tried — the 2026-05 stall (a moved checkout made every call fail `Cannot find module`, logged only as `estimate_failed`, while the submitter and receiver looked healthy) now surfaces immediately. `--check` proves the resolved CLI answers `--version`.
+- `scripts/configure-mac-mini-telemetry.sh` verifies both failure modes at configure time: it runs the CLI through a bin-style symlink and fails if `epoch --version` prints nothing (the entry-check regression that made npm-installed `epoch` a silent no-op), and it fails if the hook cannot resolve a working CLI.
+- The realpath-tolerant entry check is unit-tested (`src/lib/entrypoint.ts`, symlink and literal-fallback cases) alongside the existing dist-safe `epoch_version` wire test, so neither regression can come back without a red test.
+
+### feat: agent-driven Epoch Desktop page (epoch-hermes 0.9.0)
+
+- Successful tool estimates, slash commands and Kanban estimate/actual writes refresh the page and card badges via local Desktop events with no task text in their payloads.
+- `epoch_show` opens the enabled page, switches between Distribution, Chance done by and 50 dots, and optionally focuses a card; late REST responses cannot override newer events.
+- The plugin skill and `/epoch status` explain the one human setup step in Capabilities -> Plugins; Hermes builds without the event bridge still support estimation.
+### feat: MCP exposes six core tools by default
+
+- The stdio MCP server now registers only `pert_estimate`, `monte_carlo_schedule`, `parse_duration`, `time_math`, `get_current_time` and `record_actual` unless `EPOCH_TOOLS=all` is set, which restores all 26. The CLI and HTTP surfaces are unchanged. Hosts that relied on the other tools over MCP must set `EPOCH_TOOLS=all` in the server's `env`.
+
+### fix: epoch-hermes 0.9.0 carries the `share-data` refusal it was documented to have
+
+- The 0.8.0 tag does not refuse `/epoch share-data` or `--output` / `-o`; the code that does landed after it. Plugin version is 0.9.0 (there is no 0.8.1 release), and the README says 0.7.0 and 0.8.0 lack the refusal. The `@kyanitelabs/epoch` npm runtime pin stays 0.8.0 (no CLI change).
+- `/epoch` on gateway platforms now allows only pure calculators. Commands that read the ledger (task text from every profile) need the new `allow_ledger_read_on_gateway` setting (default false). Local use is unchanged.
+- A timed-out Epoch call kills the whole process group, not only `npx`, so no node child is left running.
+- `NODE_OPTIONS` is no longer passed to the Epoch child. The manifest and README list exactly which variables reach it.
+
+### fix: epoch-hermes records actuals a missed completion hook left behind
+
+- When the profile that finished a run does not enable the plugin, its completion hook never fires here, so the actual was never recorded and nothing said so. The plugin now checks up to 25 unrecorded runs at load and on new claims (at most every 10 minutes), logs a WARNING for each completed one and records it. Runs that ended another way are marked and skipped.
+- The docs now say the wall-clock gate is two-sided: a run more than 10× faster than its estimate is rejected as well as one more than 10× slower.
+### fix: epoch-hermes small fixes (roast E3, E5, E7, E9)
+
+- Sub-hour estimates read in minutes ("P50 15m") instead of "P50 0.0h". Desktop badges read both forms.
+- The Desktop forecast shows risk impact again. The CLI names the field `impactDays`; the page read `impact`.
+- Error text posted to Kanban cards replaces the home directory with `~`.
+- Unfinished outbox jobs are retried when a run completes (at most every 10 minutes), not only when the plugin loads.
+
+### fix: explicit estimate lifecycle and run-binding state machines
+
+- Estimate lifecycle (pending → expired / recorded) is now named in one place (`src/lib/estimate-lifecycle.ts`). Every reader uses the same expiry check, and both actual-recording paths use the same duplicate guard.
+- `get_pending_estimates` no longer lists an expired estimate whose id is synthetic (`seed-`, `test-`, ...).
+- The dashboard's "Expired pending" count now includes expired estimates that are also quarantined, orphan-flagged or synthetic.
+- An estimate is expired from the exact instant `expiresAt` passes. Exclusion and dedup reuse used to disagree at that instant.
+- epoch-hermes: run-binding ledger outcome and comment delivery are explicit state machines. Unknown outcomes and overwriting one final outcome with a different one are refused. The on-disk bindings format is unchanged.
 
 ## [0.8.0] - 2026-11-09
 
@@ -20,6 +60,18 @@ The Monte Carlo chart release: see the spread of a schedule in the terminal, or 
 - MCP tool results now also carry `structuredContent`, so agents read the parsed object directly. The JSON text block is unchanged.
 - CLI `monte-carlo-schedule` exposes `--seed` and `--target-hours`.
 
+### feat: Hermes Desktop pane (epoch-hermes 0.8.0)
+
+- Hermes Desktop gets an **Epoch** page: pick an open Kanban card with an `epoch: o/m/p` hint and see its Monte Carlo spread as a histogram, a "chance done by" curve or 50 equally likely outcomes, with P10–P95, the P50–P90 likely range, the risks that could push it out and estimate-vs-actual from the ledger. Cards with an estimate show a `P50 · P90` badge on the board.
+- Viewing never writes the ledger: each forecast runs in a throwaway data dir with a fixed seed.
+- The card list includes every open card, not just the first rows of a board crowded with done cards.
+- The card picker is readable in dark themes (Hermes's input colour stays light there).
+- Every plugin bundle and install snippet pins `@kyanitelabs/epoch@0.8.0`.
+
+### deprecated
+
+- `monte_carlo_schedule`'s `estimatedCost` is a token count (50k tokens per hour at P50), not money; every other `estimatedCost` in Epoch is USD. Read the new `estimatedTokens` instead. `estimatedCost` keeps the same value until it is removed in 0.9.
+
 ### fix
 
 - Iteration counts like `12abc`, `0x10` or `1.5` are rejected instead of silently truncated.
@@ -28,6 +80,8 @@ The Monte Carlo chart release: see the spread of a schedule in the terminal, or 
 - `record_actual` flags actuals recorded against an unknown estimate id.
 - A second SIGTERM during shutdown no longer drops the last telemetry record.
 - Site: the Tailwind theme applies, content shows without JavaScript, and the tool table scrolls on phones.
+- Site: the hero badge shows the released version (now stamped from `package.json` with the other release surfaces), the headline uses the Chakra Petch identity face, and link previews get the social card.
+- The hourglass artwork in the social card, README hero and GitHub preview no longer sits on a faint lighter box.
 
 ### perf
 

@@ -70,7 +70,7 @@ MCP (Model Context Protocol) is how AI assistants like Claude connect to externa
 **30-second setup -- works in Claude Code, Cursor, VS Code, and Windsurf:**
 
 ```bash
-claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.7.0
+claude mcp add epoch -- npx -y @kyanitelabs/epoch@0.8.0
 ```
 
 That's it. Your AI assistant now has 26 time estimation tools.
@@ -82,7 +82,7 @@ Or add it to your project's `.mcp.json`:
   "mcpServers": {
     "epoch": {
       "command": "npx",
-      "args": ["-y", "@kyanitelabs/epoch@0.7.0"]
+      "args": ["-y", "@kyanitelabs/epoch@0.8.0"]
     }
   }
 }
@@ -580,7 +580,7 @@ If you record your actuals, Epoch personalizes further:
 Your estimates + your actuals -> Your correction factors -> Better estimates -> Repeat
 ```
 
-**The loop can close itself.** Recording actuals is the step everyone forgets, so Epoch can do it for you: `epoch auto-actuals --session <id>` records wall-clock-derived actuals for a session's unfinished estimates (agent hosts can wire it into a session-end hook). Auto-recorded actuals are sanity-bounded (0.05–12h, <10x the estimate), provenance-labeled `auto_wallclock`, never overwrite a real actual, and `feedback_health` reports them separately (`byProvenance`) so automated data can't silently skew your calibration.
+**The loop can close itself.** Recording actuals is the step everyone forgets, so Epoch can do it for you: `epoch auto-actuals --session <id>` records wall-clock-derived actuals for a session's unfinished estimates (agent hosts can wire it into a session-end hook). Auto-recorded actuals are sanity-bounded (0.05–12h, and within 10x of the estimate in either direction, so a run far faster than its estimate is rejected too), provenance-labeled `auto_wallclock`, never overwrite a real actual, and `feedback_health` reports them separately (`byProvenance`) so automated data can't silently skew your calibration.
 
 If the estimate writer cannot stamp `inputs.session_id`, pass the session's real time span explicitly: `epoch auto-actuals --session <id> --window-start <ts> --window-end <ts>`. Each `<ts>` may be epoch milliseconds or an ISO timestamp, and both flags must be supplied together with the end no earlier than the start. Epoch uses this window only when the durable ledger contains no estimate with the exact session ID, including a finalized or expired estimate, and only for pending estimates with no session stamp; estimates stamped to another session are never selected. Window-selected candidates still pass the same sanity and duplicate guards as exact session matches.
 
@@ -756,7 +756,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 - **CLI**: Commander.js
 - **Date Handling**: `date-fns` 4.x + `date-fns-tz` 3.x
 - **Build**: `tsup` (ESM output)
-- **Testing**: `vitest` 4.x with v8 coverage (97% statements, 88% branches)
+- **Testing**: `vitest` 4.x with v8 coverage (91% statements, 83% branches)
 
 ## Configuration
 
@@ -765,6 +765,7 @@ pnpm run inspector # Open MCP Inspector for interactive testing
 | `EPOCH_TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `EPOCH_PORT` | `3000` | HTTP server port |
 | `EPOCH_HOST` | `127.0.0.1` | HTTP server bind address |
+| `EPOCH_TOOLS` | `core` | MCP tools to expose: `core` (pert_estimate, monte_carlo_schedule, parse_duration, time_math, get_current_time, record_actual) or `all` (all 26). The CLI and HTTP server always expose everything. Not in the published 0.8.0 runtime: it ignores this variable and serves all 26. |
 | `EPOCH_DATA_DIR` | `~/.epoch/` | Data directory for feedback and self-improvement |
 | `EPOCH_COMMUNITY_DIR` | `data/community/` | Community data directory |
 | `EPOCH_RATE_LIMIT` | `100` | Max requests per minute per client (HTTP only). `0` disables limiting; invalid or negative values fall back to `100` with a warning. 429 responses carry a `Retry-After` header. |

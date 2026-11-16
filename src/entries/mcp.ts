@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { registerAllMcpTools } from "../dispatcher/mcp-adapter.js";
+import { registerAllMcpTools, resolveToolProfile } from "../dispatcher/mcp-adapter.js";
 import { getVersion } from "../version.js";
 import { setMcpClientInfo, setTransport } from "../lib/telemetry-context.js";
 import { createStdioGuardTransform } from "../lib/jsonrpc-stdio-guard.js";
@@ -19,7 +19,7 @@ export function startMcpServer(): Promise<void> {
     version: getVersion(),
   });
 
-  registerAllMcpTools(server);
+  registerAllMcpTools(server, resolveToolProfile(process.env));
 
   setTransport("mcp-stdio");
   // Capture the connecting client's identity (e.g. "claude-code") for
