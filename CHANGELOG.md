@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Hermes plugin demo: `python plugins/epoch-hermes/scripts/demo.py` posts a P50/P90 Kanban comment through the claim and complete hooks and finishes in under 90 seconds, without a Hermes gateway or `npx`. Catalog PR text for Simon is in `docs/catalog-pr.md`.
 ### fix: the agent-lifecycle hook survives a moved checkout and fails loudly
 
 - `scripts/epoch-lifecycle-hook.mjs` is the supported estimate→actual hook: on `UserPromptSubmit` it records a PERT estimate, on `Stop` it records the elapsed wall-clock actual. It resolves the CLI from `EPOCH_BIN`, then the checkout that ships the hook, then the same checkout candidates `scripts/configure-mac-mini-telemetry.sh` probes (`~/workspaces/kyanite-labs/Epoch`, `~/workspaces/Epoch`, `~/Epoch`), then npm-global installs. When nothing resolves it prints one loud stderr line and appends a `hook_failed` line naming every path tried — the 2026-05 stall (a moved checkout made every call fail `Cannot find module`, logged only as `estimate_failed`, while the submitter and receiver looked healthy) now surfaces immediately. `--check` proves the resolved CLI answers `--version`.
