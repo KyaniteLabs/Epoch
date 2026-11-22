@@ -113,7 +113,7 @@ Each file must include a `_schema` field identifying the data type, a human-read
 }
 ```
 
-**Model Calibration example:**
+**Model Calibration example** (fields must match `data/schemas/model-calibration.schema.json` — the validated schema, not ad-hoc names):
 
 ```json
 {
@@ -123,15 +123,19 @@ Each file must include a `_schema` field identifying the data type, a human-read
     {
       "model": "gpt-4o",
       "tokens_per_second": 85,
-      "latency_p50_ms": 320,
-      "latency_p95_ms": 1200,
-      "input_price_per_1m": 2.50,
-      "output_price_per_1m": 10.00,
-      "timestamp": "2025-02-10T14:30:00Z"
+      "time_to_first_token_ms": 320,
+      "avg_api_latency_ms": 1200,
+      "cost_input_per_million": 2.5,
+      "cost_output_per_million": 10.0,
+      "benchmark_source": "self-hosted benchmark harness",
+      "measured_at": "2025-02-10",
+      "contributor_id": "anondev"
     }
   ]
 }
 ```
+
+Cost fields are USD per 1M tokens — the same unit the bundled pricing table uses. Records like these also work locally without contributing them back: point `EPOCH_COMMUNITY_DIR` at a folder of your own and any model not in the bundled table is priced (and time-calibrated, if you measured throughput) from your row.
 
 **COCOMO Project example:**
 

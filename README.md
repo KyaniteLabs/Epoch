@@ -627,6 +627,10 @@ epoch share-data --validate --description "My anonymized estimation data"
 
 This is completely optional. Epoch works great without it.
 
+### Registering model rows without a release
+
+The bundled pricing table (`data/supplementary-database.json`'s `modelCalibration`) carries verified public list prices, but it lags new model launches and never fabricates throughput numbers. You don't have to wait for a release to price a new model or to replace placeholder throughput with your own measurements: drop a `model-calibration` record into your community data directory (`data/community/` in the repo, or any folder pointed at by `EPOCH_COMMUNITY_DIR`) and Epoch picks it up — price (`cost_input_per_million` / `cost_output_per_million`, USD per 1M tokens) plus measured `tokens_per_second` / latency, all in one row. See [CONTRIBUTING-data.md](./CONTRIBUTING-data.md) for the exact format; rows for models missing from the bundled table apply to `token_cost_estimate` and `compare_models` immediately, and locally measured telemetry keeps outranking every table at resolve time.
+
 ## Surfaces
 
 Epoch exposes the same 26 tools through three interfaces:

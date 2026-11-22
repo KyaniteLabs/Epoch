@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -284,7 +284,7 @@ describe("Phase 5 catalog — Claude 5 family pricing", () => {
     expect(defined(byModel.get("claude-haiku-4-5")).qualityTier).toBe("fast");
   });
 
-  it("pins verified $/1M-token pricing: opus-4-8 $5/$25, sonnet-5 $3/$15, haiku-4-5 $1/$5, fable-5 $10/$50", () => {
+  it("pins verified $/1M-token pricing: opus-4-8 $5/$25, sonnet-5 $2/$10, haiku-4-5 $1/$5, fable-5 $10/$50", () => {
     // 1M tokens at reasoningDepth "shallow" keeps toolCallOverhead at 0 and
     // isolates input+output cost; use a large enough token count that
     // rounding doesn't dominate.
@@ -297,7 +297,9 @@ describe("Phase 5 catalog — Claude 5 family pricing", () => {
     };
 
     expectPerMillionCost("claude-opus-4-8", 5.0, 25.0);
-    expectPerMillionCost("claude-sonnet-5", 3.0, 15.0);
+    // $2/$10 since the 2026-11-22 refresh (GitHub #295): Anthropic's
+    // first-party listing kept the introductory rate as the standing price.
+    expectPerMillionCost("claude-sonnet-5", 2.0, 10.0);
     expectPerMillionCost("claude-haiku-4-5", 1.0, 5.0);
     expectPerMillionCost("claude-fable-5", 10.0, 50.0);
   });
@@ -314,6 +316,124 @@ describe("Phase 5 catalog — Claude 5 family pricing", () => {
       expect(models.has(model), model).toBe(true);
     }
     expect(result.models.length).toBeGreaterThanOrEqual(16); // 12 pre-existing + 4 new
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-22 list-price refresh (GitHub #294): price-only rows
+// ---------------------------------------------------------------------------
+
+describe("2026-11-22 model list-price refresh (#294)", () => {
+  let previousDataDir: string | undefined;
+  let previousCommunityDir: string | undefined;
+  let tempDataDir: string;
+
+  beforeEach(() => {
+    previousDataDir = process.env["EPOCH_DATA_DIR"];
+    previousCommunityDir = process.env["EPOCH_COMMUNITY_DIR"];
+    tempDataDir = mkdtempSync(join(tmpdir(), "epoch-cost-refresh-test-"));
+    process.env["EPOCH_DATA_DIR"] = tempDataDir;
+    resetSupplementaryCache();
+  });
+
+  afterEach(() => {
+    if (previousDataDir === undefined) {
+      delete process.env["EPOCH_DATA_DIR"];
+    } else {
+      process.env["EPOCH_DATA_DIR"] = previousDataDir;
+    }
+    if (previousCommunityDir === undefined) {
+      delete process.env["EPOCH_COMMUNITY_DIR"];
+    } else {
+      process.env["EPOCH_COMMUNITY_DIR"] = previousCommunityDir;
+    }
+    rmSync(tempDataDir, { recursive: true, force: true });
+    resetSupplementaryCache();
+  });
+
+  it("compare_models ranks the price-only lineup with real prices and generic-fallback time", () => {
+    const result = compareModels({ tokens: 10000, toolCalls: 0, reasoningDepth: "shallow" });
+    const byModel = new Map(result.models.map((m) => [m.model, m]));
+
+    for (const model of [
+      "claude-sonnet-5-5",
+      "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-terra",
+      "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4.1-flash",
+      "glm-5.3", "kimi-k3", "kimi-k3.1-pro",
+      "minimax-m3", "grok-4.7", "mimo-v2.6-flash", "mimo-v2.6-pro",
+    ]) {
+      const entry = defined(byModel.get(model));
+      expect(entry.costAvailable, model).toBe(true);
+      expect(entry.estimatedCost, model).toBeGreaterThan(0);
+      // No fabricated throughput: unmeasured models use the documented
+      // generic fallback (75 tps), never a copied placeholder figure.
+      expect(entry.tokensPerSecond, model).toBe(75);
+    }
+  });
+
+  it("pins the verified list prices for the refresh wave ($/1M in/out)", () => {
+    const tokens = 1_000_000;
+    const expectPerMillionCost = (model: string, costInput: number, costOutput: number) => {
+      const result = tokenCostEstimate({ tokens, model, toolCalls: 0, reasoningDepth: "shallow" });
+      expect(result.pricingSource, model).toBe("table");
+      const { promptTokens, completionTokens } = result.timeBreakdown;
+      const expectedCost = Math.round(((promptTokens * costInput + completionTokens * costOutput) / 1_000_000) * 10_000) / 10_000;
+      expect(result.estimatedCost, model).toBeCloseTo(expectedCost, 2);
+    };
+
+    expectPerMillionCost("claude-sonnet-5-5", 2.0, 10.0);
+    expectPerMillionCost("gpt-6-luna", 0.1, 0.5);
+    expectPerMillionCost("gpt-6.1-sol", 2.0, 10.0);
+    expectPerMillionCost("gpt-6.1-terra", 1.0, 5.0);
+    expectPerMillionCost("deepseek-v4-flash", 0.15, 0.6);
+    expectPerMillionCost("deepseek-v4-pro", 0.66, 1.98);
+    expectPerMillionCost("deepseek-v4.1-flash", 0.15, 0.6);
+    expectPerMillionCost("glm-5.3", 1.19516, 4.18306);
+    expectPerMillionCost("kimi-k3", 3.0, 15.0);
+    expectPerMillionCost("kimi-k3.1-pro", 2.0, 10.0);
+    expectPerMillionCost("minimax-m3", 0.3, 1.2);
+    expectPerMillionCost("grok-4.7", 2.0, 6.0);
+    expectPerMillionCost("mimo-v2.6-flash", 0.14, 0.28);
+    expectPerMillionCost("mimo-v2.6-pro", 0.435, 0.87);
+  });
+
+  it("registering a model-calibration community row prices token_cost_estimate without a release", () => {
+    const communityDir = join(tempDataDir, "community");
+    mkdirSync(communityDir, { recursive: true });
+    writeFileSync(
+      join(communityDir, "test-model-calibration.json"),
+      JSON.stringify({
+        _schema: "model-calibration",
+        description: "operator-measured row used by the #294 registration test",
+        records: [
+          {
+            model: "operator-measured-model",
+            tokens_per_second: 120,
+            time_to_first_token_ms: 200,
+            avg_api_latency_ms: 900,
+            cost_input_per_million: 2,
+            cost_output_per_million: 8,
+            measured_at: "2026-11-22",
+          },
+        ],
+      }),
+    );
+    // getCommunityDir() prefers $EPOCH_COMMUNITY_DIR; point it at the temp dir.
+    process.env["EPOCH_COMMUNITY_DIR"] = communityDir;
+    resetSupplementaryCache();
+
+    const result = tokenCostEstimate({
+      tokens: 1_000_000,
+      model: "operator-measured-model",
+      toolCalls: 0,
+      reasoningDepth: "shallow",
+    });
+    expect(result.pricingSource).toBe("table");
+    const { promptTokens, completionTokens } = result.timeBreakdown;
+    // cost_*_per_million is USD per 1M tokens — the same unit as the bundled
+    // table. A 1M-token call must cost ~$2 in + ~$8 out, not ~$0.00001.
+    expect(result.estimatedCost).toBeCloseTo((promptTokens * 2 + completionTokens * 8) / 1_000_000, 2);
+    expect(result.estimatedCost).toBeGreaterThan(1);
   });
 });
 
