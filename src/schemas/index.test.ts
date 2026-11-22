@@ -637,7 +637,7 @@ describe("batchRecordActualsSchema — per-entry unit + calibration_provenance (
 
 // ---- estimateFromContextSchema ---------------------------------------------
 
-describe("estimateFromContextSchema (Phase 3 registration; logic lands Phase 5)", () => {
+describe("estimateFromContextSchema (local classifier; hints override inferred classification)", () => {
   it("accepts a minimal valid input (context only)", () => {
     expect(estimateFromContextSchema.safeParse({ context: "Fix the login bug." }).success).toBe(true);
   });

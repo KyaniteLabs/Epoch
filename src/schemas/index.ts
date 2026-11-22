@@ -625,12 +625,13 @@ export const recordActualSchema = z.object({
 
 export type RecordActualInput = z.infer<typeof recordActualSchema>;
 
-// ---- Tool: estimateFromContext (Phase 3 registration; logic lands Phase 5) -
+// ---- Tool: estimateFromContext ---------------------------------------------
 //
-// Registered now so its contract is stable ahead of the Phase 5 handler
-// landing; the handler currently returns a structured "not implemented yet"
-// response. See .omc/plans/2026-07-09-epoch-remediation-enhancement-plan.md
-// §3 Phase 3 Task 4 and Phase 5.
+// The classifier has shipped: the handler classifies context with the local
+// deterministic heuristic in src/lib/context-estimate.ts and delegates to the
+// reference-class path (see the estimate_from_context handler in
+// src/dispatcher/tool-registry.ts). The descriptions below state what is
+// actually inferred and what the caller hints override (GitHub #296).
 
 export const estimateFromContextSchema = z.object({
   context: z
@@ -638,16 +639,16 @@ export const estimateFromContextSchema = z.object({
     .min(1)
     .max(CONTEXT_LENGTH_LIMIT, { error: `context must be at most ${CONTEXT_LENGTH_LIMIT} characters. Summarize the task or attach only the relevant excerpt.` })
     .describe(
-      "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Will be used to classify task_type and complexity and delegate to reference_class_estimate / PERT correction once classification logic ships (Phase 5)."
+      "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type and complexity by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction (which determines scope and calibration). The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
     ),
   task_type: taskTypeEnum
-    .describe("Optional pre-classified task type hint; used once classification logic ships.")
+    .describe("Optional pre-classified task type; overrides the task_type inferred from the context.")
     .optional(),
   complexity: complexityScale
-    .describe("Optional pre-assessed complexity hint (1-5); used once classification logic ships.")
+    .describe("Optional pre-assessed complexity (1-5); overrides the complexity inferred from the context.")
     .optional(),
   team_id: brandedString("Team")
-    .describe("Optional team identifier to scope historical data once classification logic ships.")
+    .describe("Optional team identifier used to scope the historical calibration data.")
     .optional(),
 });
 

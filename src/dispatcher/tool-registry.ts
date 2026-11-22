@@ -1399,7 +1399,7 @@ and self-improvement readiness (which types have enough data for auto-calibratio
     },
   ),
 
-  // -- Context-driven estimation (registered Phase 3; logic lands Phase 5) --
+  // -- Context-driven estimation (local classifier; hints override it) --
 
   tool(
     "estimate_from_context",
