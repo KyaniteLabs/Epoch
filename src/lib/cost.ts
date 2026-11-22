@@ -126,7 +126,13 @@ export function compareModels(params: {
 
   const entries: ModelComparisonEntry[] = [];
 
-  for (const model of Object.keys(MODEL_CALIBRATIONS)) {
+  // Rank every model we have ANY data for: the calibrated table (measured or
+  // placeholder throughput) union the pricing table (price-only rows — e.g.
+  // the 2026-11 list-price refresh). Price-only models get honest time
+  // estimates from tokenTimeBridge's generic fallback (75 tps, "pessimistic"
+  // confidence) instead of being invisible to the comparison (GitHub #294).
+  const models = [...new Set([...Object.keys(MODEL_CALIBRATIONS), ...Object.keys(allPricing)])];
+  for (const model of models) {
     const timeMapping = tokenTimeBridge({
       tokens: params.tokens,
       model,

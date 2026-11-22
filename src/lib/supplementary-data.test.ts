@@ -491,8 +491,12 @@ describe("getAllModelPricing with community", () => {
     expect(all["claude-sonnet-4"]).toBeDefined();
     expect(all["community-model-x"]).toBeDefined();
     expect(defined(all["community-model-x"]).tokensPerSecond).toBe(80);
-    expect(defined(all["community-model-x"]).costInput).toBe(5000 / 1_000_000);
-    expect(defined(all["community-model-x"]).costOutput).toBe(15000 / 1_000_000);
+    // cost_*_per_million is USD per 1M tokens (model-calibration.schema.json)
+    // — the same unit ModelPricing.costInput/costOutput use, so it passes
+    // through unscaled. The old /1_000_000 scaling was a unit bug: it made
+    // community-registered models a million times cheaper than submitted.
+    expect(defined(all["community-model-x"]).costInput).toBe(5000);
+    expect(defined(all["community-model-x"]).costOutput).toBe(15000);
   });
 });
 
