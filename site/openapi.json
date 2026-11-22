@@ -5,12 +5,6 @@
     "version": "0.8.0",
     "description": "Structured time estimation for LLMs and AI agents. 26 tools across 6 layers."
   },
-  "servers": [
-    {
-      "url": "http://localhost:3000",
-      "description": "Local development"
-    }
-  ],
   "paths": {
     "/v1/tools/get_current_time": {
       "post": {

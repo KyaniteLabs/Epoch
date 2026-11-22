@@ -28,6 +28,21 @@ if (!res.ok) {
   process.exit(1);
 }
 const spec = await res.json();
+// The in-process HTTP server advertises http://localhost:3000 for local dev.
+// Omit loopback/localhost server entries from the published static site spec
+// so public clients are not directed at their own machine.
+if (Array.isArray(spec.servers)) {
+  const publicServers = spec.servers.filter(
+    (entry) =>
+      typeof entry?.url === "string" &&
+      !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/|$)/i.test(entry.url),
+  );
+  if (publicServers.length > 0) {
+    spec.servers = publicServers;
+  } else {
+    delete spec.servers;
+  }
+}
 const out = join(siteDir, "openapi.json");
 writeFileSync(out, JSON.stringify(spec, null, 2) + "\n");
 console.log(
