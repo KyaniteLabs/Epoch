@@ -3999,7 +3999,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 50000,
-                    "description": "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Will be used to classify task_type and complexity and delegate to reference_class_estimate / PERT correction once classification logic ships (Phase 5)."
+                    "description": "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type, complexity and scope by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction. The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
                   },
                   "task_type": {
                     "type": "string",
@@ -4013,17 +4013,17 @@
                       "testing",
                       "design"
                     ],
-                    "description": "Optional pre-classified task type hint; used once classification logic ships."
+                    "description": "Optional pre-classified task type; overrides the task_type inferred from the context."
                   },
                   "complexity": {
                     "type": "number",
                     "minimum": 1,
                     "maximum": 5,
-                    "description": "Optional pre-assessed complexity hint (1-5); used once classification logic ships."
+                    "description": "Optional pre-assessed complexity (1-5); overrides the complexity inferred from the context."
                   },
                   "team_id": {
                     "type": "string",
-                    "description": "Optional team identifier to scope historical data once classification logic ships."
+                    "description": "Optional team identifier used to scope the historical calibration data."
                   }
                 },
                 "required": [
