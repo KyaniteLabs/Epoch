@@ -639,7 +639,7 @@ export const estimateFromContextSchema = z.object({
     .min(1)
     .max(CONTEXT_LENGTH_LIMIT, { error: `context must be at most ${CONTEXT_LENGTH_LIMIT} characters. Summarize the task or attach only the relevant excerpt.` })
     .describe(
-      "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type, complexity and scope by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction. The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
+      "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type and complexity by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction (which determines scope and calibration). The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
     ),
   task_type: taskTypeEnum
     .describe("Optional pre-classified task type; overrides the task_type inferred from the context.")

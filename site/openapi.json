@@ -3993,7 +3993,7 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 50000,
-                    "description": "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type, complexity and scope by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction. The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
+                    "description": "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type and complexity by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction (which determines scope and calibration). The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
                   },
                   "task_type": {
                     "type": "string",
