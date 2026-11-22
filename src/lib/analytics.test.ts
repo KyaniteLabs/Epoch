@@ -868,10 +868,13 @@ describe("compare_models telemetry read amortization", () => {
     const spy = vi.spyOn(store as unknown as StoreWithPrivates, "computeModelStats");
     try {
       compareModels({ tokens: 10_000, toolCalls: 0, reasoningDepth: "shallow" });
-      expect(spy).toHaveBeenCalledTimes(16); // one per catalog model
+      // One per compared model: compare_models ranks the calibrated table
+      // union the pricing table (16 calibrated + 14 price-only rows after
+      // the 2026-11-22 list-price refresh, GitHub #294).
+      expect(spy).toHaveBeenCalledTimes(30);
 
       compareModels({ tokens: 10_000, toolCalls: 0, reasoningDepth: "shallow" });
-      expect(spy).toHaveBeenCalledTimes(16); // fully served from the TTL cache
+      expect(spy).toHaveBeenCalledTimes(30); // fully served from the TTL cache
     } finally {
       spy.mockRestore();
     }

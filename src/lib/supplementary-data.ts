@@ -6,9 +6,14 @@ import { fileURLToPath } from "node:url";
 // ---- Types ----------------------------------------------------------------
 
 export interface ModelPricing {
-  readonly tokensPerSecond: number;
-  readonly timeToFirstTokenMs: number;
-  readonly avgApiLatencyMs: number;
+  // Throughput/latency fields are optional: rows refreshed from public list
+  // prices (see supplementary-database.json's `sources`) carry pricing only —
+  // no placeholder tokensPerSecond/latency is fabricated for them, so time
+  // estimation for those models uses the documented generic fallback until a
+  // measured community row lands (CONTRIBUTING-data.md).
+  readonly tokensPerSecond?: number;
+  readonly timeToFirstTokenMs?: number;
+  readonly avgApiLatencyMs?: number;
   readonly costInput: number;
   readonly costOutput: number;
 }
@@ -170,8 +175,10 @@ export function loadCocomoData(): CocomoCalibrationData | null {
 // ---- Convenience Accessors ------------------------------------------------
 
 export function getModelPricing(model: string): ModelPricing | null {
-  const db = loadSupplementaryData();
-  return db?.modelCalibration?.[model] ?? null;
+  // Resolves through getAllModelPricing() so operator-registered community
+  // rows (data/community, EPOCH_COMMUNITY_DIR) price token_cost_estimate the
+  // same way they price compare_models — not just the bundled table.
+  return getAllModelPricing()[model] ?? null;
 }
 
 // getAllModelPricing is defined below with community data support
@@ -367,8 +374,10 @@ export function getAllModelPricing(): Record<string, ModelPricing> {
         tokensPerSecond: cal.tokens_per_second,
         timeToFirstTokenMs: cal.time_to_first_token_ms,
         avgApiLatencyMs: cal.avg_api_latency_ms,
-        costInput: cal.cost_input_per_million / 1_000_000,
-        costOutput: cal.cost_output_per_million / 1_000_000,
+        // cost_*_per_million is USD per 1M tokens (model-calibration.schema.json),
+        // the same unit ModelPricing.costInput/costOutput use — no scaling.
+        costInput: cal.cost_input_per_million,
+        costOutput: cal.cost_output_per_million,
       };
     }
   }

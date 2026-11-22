@@ -7,7 +7,8 @@
         "llmBenchmarks": "Artificial Analysis, BenchLM.ai, LLMversus, SaltTechno, official provider pricing pages",
         "agileBaselines": "Calibration data for Epoch sprint_forecast tool",
         "claudeCodeUsage": "Local session data (anonymized)",
-        "claudeModelPricingPhase5": "Anthropic Claude API pricing for claude-fable-5 ($10/$50 per MTok input/output), claude-opus-4-8 ($5/$25), claude-sonnet-5 ($3/$15 standard rate; $2/$10 introductory through 2026-08-31, not used here), and claude-haiku-4-5 ($1/$5) — sourced from the `claude-api` skill's curated Anthropic model/pricing reference (cached 2026-06-24), retrieved and cross-checked 2026-07-09. costInput/costOutput below are $ per 1M tokens (verified); tokensPerSecond/timeToFirstTokenMs/avgApiLatencyMs for these 4 entries are unverified placeholders reused from the nearest existing same-tier Claude entry (see src/lib/analytics.ts's MODEL_CALIBRATIONS comment for the same disclosure)."
+        "claudeModelPricingPhase5": "Anthropic Claude API pricing for claude-fable-5 ($10/$50 per MTok input/output), claude-opus-4-8 ($5/$25), claude-sonnet-5, and claude-haiku-4-5 ($1/$5) — sourced from the `claude-api` skill's curated Anthropic model/pricing reference (cached 2026-06-24), retrieved and cross-checked 2026-07-09. claude-sonnet-5 corrected to $2/$10 on 2026-11-22 (GitHub #295): the June reference recorded a $3/$15 standard rate to take effect after the $2/$10 introductory rate ended 2026-08-31, but Anthropic's first-party listing (confirmed 2026-11-22, see modelPricingRefresh20261122) still shows $2/$10, as do Azure, Vertex, Bedrock and GitHub Copilot. costInput/costOutput below are $ per 1M tokens (verified); tokensPerSecond/timeToFirstTokenMs/avgApiLatencyMs for these 4 entries are unverified placeholders reused from the nearest existing same-tier Claude entry (see src/lib/analytics.ts's MODEL_CALIBRATIONS comment for the same disclosure).",
+        "modelPricingRefresh20261122": "Price-only rows added 2026-11-22 (GitHub #294) from first-party public list prices, USD per 1M input/output tokens, verified against each provider's own catalog listing as indexed by models.dev on 2026-11-22: Anthropic claude-sonnet-5-5 ($2/$10); OpenAI gpt-6-luna ($0.10/$0.50), gpt-6.1-sol ($2/$10), gpt-6.1-terra ($1/$5); DeepSeek deepseek-v4-flash ($0.15/$0.60), deepseek-v4-pro ($0.66/$1.98), deepseek-v4.1-flash ($0.15/$0.60, listed by DeepSeek as `deepseek-flash`, \"DeepSeek V4.1 Flash 1017\"); Zhipu AI glm-5.3 ($1.19516/$4.18306); Moonshot AI kimi-k3 ($3/$15), kimi-k3.1-pro ($2/$10); MiniMax MiniMax-M3 ($0.30/$1.20); xAI grok-4.7 ($2/$6); Xiaomi mimo-v2.6-flash ($0.14/$0.28), mimo-v2.6-pro ($0.435/$0.87). These 14 rows deliberately carry NO tokensPerSecond/timeToFirstTokenMs/avgApiLatencyMs — no placeholder throughput is copied (GitHub #294); time estimation falls back to GENERIC_MODEL_CALIBRATION (75 tps, \"pessimistic\" confidence) until a measured row is registered via a data/community model-calibration record (CONTRIBUTING-data.md)."
     },
     "humanDeveloperBaselines": {
         "commitsPerDayPerDeveloper": {
@@ -581,8 +582,8 @@
             "tokensPerSecond": 72,
             "timeToFirstTokenMs": 410,
             "avgApiLatencyMs": 4000,
-            "costInput": 3.0,
-            "costOutput": 15.0
+            "costInput": 2.0,
+            "costOutput": 10.0
         },
         "claude-haiku-4-5": {
             "tokensPerSecond": 100,
@@ -632,6 +633,62 @@
             "avgApiLatencyMs": 5000,
             "costInput": 0.28,
             "costOutput": 0.42
+        },
+        "claude-sonnet-5-5": {
+            "costInput": 2.0,
+            "costOutput": 10.0
+        },
+        "gpt-6-luna": {
+            "costInput": 0.1,
+            "costOutput": 0.5
+        },
+        "gpt-6.1-sol": {
+            "costInput": 2.0,
+            "costOutput": 10.0
+        },
+        "gpt-6.1-terra": {
+            "costInput": 1.0,
+            "costOutput": 5.0
+        },
+        "deepseek-v4-flash": {
+            "costInput": 0.15,
+            "costOutput": 0.6
+        },
+        "deepseek-v4-pro": {
+            "costInput": 0.66,
+            "costOutput": 1.98
+        },
+        "deepseek-v4.1-flash": {
+            "costInput": 0.15,
+            "costOutput": 0.6
+        },
+        "glm-5.3": {
+            "costInput": 1.19516,
+            "costOutput": 4.18306
+        },
+        "kimi-k3": {
+            "costInput": 3.0,
+            "costOutput": 15.0
+        },
+        "kimi-k3.1-pro": {
+            "costInput": 2.0,
+            "costOutput": 10.0
+        },
+        "minimax-m3": {
+            "costInput": 0.3,
+            "costOutput": 1.2
+        },
+        "grok-4.7": {
+            "costInput": 2.0,
+            "costOutput": 6.0
+        },
+        "mimo-v2.6-flash": {
+            "costInput": 0.14,
+            "costOutput": 0.28
+        },
+        "mimo-v2.6-pro": {
+            "costInput": 0.435,
+            "costOutput": 0.87
         }
     },
     "toolCallOverheadMs": 200,
