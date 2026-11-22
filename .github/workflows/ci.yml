@@ -83,6 +83,14 @@ jobs:
       - name: Check llms-full contract (holidaySupport + two-letter country note)
         run: pnpm run contract:llms-full
 
+      - name: Check site openapi.json freshness (ai-plugin.json points here)
+        # site/.well-known/ai-plugin.json sends agents to site/openapi.json;
+        # regenerate from createApiApp() and fail if the committed copy is
+        # stale (Forgejo #114 — the static spec must not drift from the API).
+        run: |
+          pnpm run site:openapi
+          git diff --exit-code site/openapi.json
+
   secret-scan:
     name: Secret scanning
     runs-on: blacksmith-2vcpu-ubuntu-2404

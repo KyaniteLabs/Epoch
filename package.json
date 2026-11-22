@@ -43,7 +43,8 @@
     "dataset:build": "tsx scripts/export-public-benchmark.mjs",
     "dataset:verify": "tsx scripts/validate-public-benchmark.mjs",
     "contract:inventory": "tsx src/contract/export-public-surface.ts",
-    "contract:llms-full": "node scripts/check-llms-full-contract.mjs"
+    "contract:llms-full": "node scripts/check-llms-full-contract.mjs",
+    "site:openapi": "tsx scripts/export-site-openapi.mjs"
   },
   "keywords": [
     "mcp",
