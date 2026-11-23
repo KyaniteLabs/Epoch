@@ -17,15 +17,19 @@ jobs:
     # pushes); the profile's required job declares contents: read.
     permissions:
       contents: write
-    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@acc41fc663d5b1ef623a406fddff912823b29f93
+    uses: KyaniteLabs/.github/.forgejo/workflows/ci-profile.yml@c897272be925447cca1f42f06291d320f326960f
     with:
       publish_evidence: true
       image: node:24-bookworm@sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a
   # Engines floor (>=22): build, tests with coverage thresholds, and the
   # Node-dependent data/contract scripts must also pass on Node 22.
+  # A push to main re-tests a tree its PR already passed here: main keeps the Node 24
+  # profile (merge skew, publish evidence) and the newest Hermes; the floors run on PRs.
   node-22-floor:
     name: node-22-floor
+    if: ${{ github.event_name != 'push' }}
     runs-on: docker
+    timeout-minutes: 20
     container:
       image: node:22-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384
     steps:
@@ -85,6 +89,7 @@ jobs:
   # requires_hermes is ">=0.21.6": the same tests under the oldest supported release.
   epoch-hermes-plugin-floor:
     name: epoch-hermes-plugin-floor
+    if: ${{ github.event_name != 'push' }}
     runs-on: docker
     timeout-minutes: 20
     container:
