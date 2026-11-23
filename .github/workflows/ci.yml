@@ -17,10 +17,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # What runs where. Pull requests run everything: the four required checks (Node 22,
-# Node 24, Secret scanning, Fleet IP hygiene gate) plus the Hermes plugin job. A push to
-# main re-tests a tree its PR already passed, so it runs only Node 24 (the publish
-# runtime, to catch merge skew) and the two scans (a direct push would skip the PR's).
-# Forgejo CI covers the Node 22 floor and both Hermes releases on every PR and on main.
+# Node 24, Secret scanning, Fleet IP hygiene gate) plus the Hermes plugin job under the
+# newest Hermes and the v0.21.6 floor. A push to main re-tests a tree its PR already
+# passed, so it runs only Node 24 (the publish runtime, to catch merge skew) and the two
+# scans (a direct push would skip the PR's). GitHub is the only CI for this public repo
+# (fleet GIT-CI-STRATEGY-20261123): the Forgejo copy is a mirror and runs nothing.
 # Skip with job-level `if:` or the matrix only: a workflow-level paths/branches filter
 # would leave the required checks pending forever.
 
@@ -131,9 +132,8 @@ jobs:
   epoch-hermes-plugin:
     # The Hermes plugin under the Hermes release it is tested against: desktop API and
     # real-Hermes multi-process e2e tests, which the Node job above skips.
-    # Not a required check. PRs only, newest release only: requires_hermes is ">=0.21.6",
-    # and Forgejo CI runs both v0.23.0 and the v0.21.6 floor (818c13be) on every PR and on
-    # main, including the sync PRs that carry GitHub-merged changes back to Forgejo.
+    # Not a required check. PRs only. requires_hermes is ">=0.21.6", so it runs under the
+    # newest tested release and the v0.21.6 floor (moved here from Forgejo CI).
     name: Hermes plugin under Hermes ${{ matrix.hermes }}
     if: github.event_name == 'pull_request'
     strategy:
@@ -142,6 +142,8 @@ jobs:
         include:
           - hermes: v0.23.0
             ref: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
+          - hermes: v0.21.6
+            ref: 818c13be1dc4fd28987e1e881a9408224afd4535
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
