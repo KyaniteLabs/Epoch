@@ -1,0 +1,72 @@
+name: Site
+
+# Deploys the /Epoch/ product site: the contents of site/ become the gh-pages
+# branch, which GitHub Pages serves. Moved from Forgejo (fleet
+# GIT-CI-STRATEGY-20261123): GitHub is this repo's trunk, so the site deploys
+# from here and needs no cross-forge token.
+#
+# Each deploy is a new commit on top of the current gh-pages head, pushed
+# without --force, so gh-pages history is never rewritten. An unchanged tree
+# pushes nothing.
+#
+# Triggers: push to main (site/ stays converged between releases), v* tags
+# (release-time deploy, versions stamped from package.json), manual heal.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy gh-pages from site/
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Stamp release surfaces from package.json
+        run: node scripts/stamp-release-versions.mjs
+      - name: Commit site/ onto gh-pages (fast-forward only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "site-deploy-bot"
+          git config user.email "site-deploy-bot@kyanitelabs.tech"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/site.index"
+          git read-tree --empty
+          (cd site && git --git-dir="$GITHUB_WORKSPACE/.git" --work-tree=. add -A .)
+          NEW_TREE=$(git write-tree)
+          if git fetch --quiet origin gh-pages; then
+            GH_HEAD=$(git rev-parse --verify 'FETCH_HEAD^{commit}')
+          else
+            GH_HEAD=""
+          fi
+          echo "new tree: $NEW_TREE"
+          if [ -n "$GH_HEAD" ]; then
+            if [ "$(git rev-parse "$GH_HEAD^{tree}")" = "$NEW_TREE" ]; then
+              echo "gh-pages already carries this tree; nothing to deploy."
+              exit 0
+            fi
+            NEW_COMMIT=$(git commit-tree "$NEW_TREE" -p "$GH_HEAD" -m "site: deploy from $GITHUB_SHA (auto, Site workflow)")
+          else
+            NEW_COMMIT=$(git commit-tree "$NEW_TREE" -m "site: deploy from $GITHUB_SHA (auto, Site workflow)")
+          fi
+          git push origin "${NEW_COMMIT}:refs/heads/gh-pages"
+          echo "Deployed gh-pages $NEW_COMMIT from $GITHUB_SHA (no force)."
