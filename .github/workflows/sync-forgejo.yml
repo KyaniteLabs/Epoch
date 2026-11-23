@@ -22,7 +22,7 @@ concurrency:
 jobs:
   sync:
     if: vars.FORGEJO_SYNC_ACTIVE == 'true' && github.event.workflow_run.conclusion == 'success'
-    uses: KyaniteLabs/.github/.github/workflows/sync-forgejo.yml@main
+    uses: KyaniteLabs/.github/.github/workflows/sync-forgejo.yml@a9070204d393afce800230b4eefc809569b45a4a # main 2026-11-23
     with:
       trunk: main
       trigger-workflow-id: 269455823
@@ -33,4 +33,5 @@ jobs:
       forgejo-repository: KyaniteLabs/Epoch
       downstream-workflow: none
       dry-run: true
+      toolkit-ref: a9070204d393afce800230b4eefc809569b45a4a
     secrets: inherit
