@@ -1,0 +1,4425 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Epoch Time Estimation API",
+    "version": "0.8.0",
+    "description": "Structured time estimation for LLMs and AI agents. 26 tools across 6 layers."
+  },
+  "paths": {
+    "/v1/tools/get_current_time": {
+      "post": {
+        "operationId": "get_current_time",
+        "summary": "Returns the current date and time in the specified IANA timezone. Useful for grounding the LLM in the user's local time. Example timezones: 'UTC', 'America/New_York', 'Europe/London', 'Asia/Tokyo'.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "timezone": {
+                    "default": "UTC",
+                    "type": "string",
+                    "description": "IANA timezone identifier. Defaults to \"UTC\"."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "iso": {
+                              "type": "string",
+                              "description": "ISO-8601 timestamp"
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable date/time"
+                            },
+                            "timezone": {
+                              "type": "string",
+                              "description": "IANA timezone identifier"
+                            },
+                            "utcOffset": {
+                              "type": "string",
+                              "description": "UTC offset string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/convert_timezone": {
+      "post": {
+        "operationId": "convert_timezone",
+        "summary": "Converts an ISO-8601 timestamp to a target IANA timezone. The input timestamp must include timezone information or be in UTC. Returns the localised time, UTC offset, and human-readable format. Use when you need to display or compare a moment in another region's local time.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "string",
+                    "description": "ISO-8601 timestamp to convert."
+                  },
+                  "target_tz": {
+                    "type": "string",
+                    "description": "Target IANA timezone identifier."
+                  }
+                },
+                "required": [
+                  "timestamp",
+                  "target_tz"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "iso": {
+                              "type": "string",
+                              "description": "ISO-8601 timestamp"
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable date/time"
+                            },
+                            "timezone": {
+                              "type": "string",
+                              "description": "IANA timezone identifier"
+                            },
+                            "utcOffset": {
+                              "type": "string",
+                              "description": "UTC offset string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/parse_duration": {
+      "post": {
+        "operationId": "parse_duration",
+        "summary": "Parses a human-readable duration string into structured seconds. Supports combinations of y (years), mo (months), w (weeks), d (days), h (hours), m (minutes), s (seconds). Examples: '2h30m', '1d6h', '1w3d', '45m'. Returns the total seconds for the duration. Use when normalising a free-text duration for arithmetic or comparison.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "duration_string": {
+                    "type": "string",
+                    "description": "Duration string like \"2h30m\", \"1d6h\", \"45m\"."
+                  }
+                },
+                "required": [
+                  "duration_string"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "input": {
+                              "type": "string"
+                            },
+                            "totalSeconds": {
+                              "type": "number"
+                            },
+                            "humanReadable": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/wait_bound": {
+      "post": {
+        "operationId": "wait_bound",
+        "summary": "Derives a deadline from the mechanism a wait actually rides (three-clock law v1.1 A2): fleet = k x cycle_seconds + PERT(turn) + 1 sd; world = PERT(turn) with a REQUIRED named external anchor; ceo = the named ladder rung (machine time never consumes a CEO rung). Returns the bound in seconds, the deadline in UTC and local (PT by default), and an envelope-ready TTL integer. Round human hours are unexamined slack.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clock_class": {
+                    "type": "string",
+                    "enum": [
+                      "fleet",
+                      "world",
+                      "ceo"
+                    ],
+                    "description": "Which of the three clocks this wait rides: fleet = agent-only (mechanism cycle math), world = external 1:1 (requires external_anchor), ceo = the named ladder (requires ceo_rung). Three-clock law v1.1 A2."
+                  },
+                  "cycle_seconds": {
+                    "description": "Fleet only: the mechanism cycle in seconds the wait rides (org bus sweep = 40). Default 40.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "cycles_k": {
+                    "description": "Fleet only: cycle multiplier, 1..5 by law (more cycles = broken mechanism, not generous deadline). Default 2.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  },
+                  "turn_optimistic_minutes": {
+                    "description": "Turn-time PERT optimistic in minutes. Default 15.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "turn_most_likely_minutes": {
+                    "description": "Turn-time PERT most-likely in minutes. Default 45.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "turn_pessimistic_minutes": {
+                    "description": "Turn-time PERT pessimistic in minutes (busy/turn-driven seats). Default 120.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "external_anchor": {
+                    "description": "World only REQUIRED: the named external event this wait is bound to (1:1, no dilation).",
+                    "type": "string"
+                  },
+                  "ceo_rung": {
+                    "description": "CEO only REQUIRED: ladder rung (pass=15m, burst=1h, sleep=1d, cycle=1wk, season=1mo). The rung IS the bound.",
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "burst",
+                      "sleep",
+                      "cycle",
+                      "season"
+                    ]
+                  },
+                  "from_timestamp": {
+                    "description": "ISO 8601 start instant; omit for now.",
+                    "type": "string"
+                  },
+                  "time_zone": {
+                    "description": "IANA timezone for the rendered deadline. Default America/Los_Angeles (PT display law).",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "clock_class"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "description": "Derived wait bound: clock class, bound seconds, PERT turn stats, deadline (UTC + local), envelope-ready TTL hours, and the law note.",
+                          "properties": {
+                            "clockClass": {
+                              "type": "string"
+                            },
+                            "boundSeconds": {
+                              "type": "number"
+                            },
+                            "derivedDeadlineUtc": {
+                              "type": "string"
+                            },
+                            "derivedDeadlineLocal": {
+                              "type": "string"
+                            },
+                            "timeZone": {
+                              "type": "string"
+                            },
+                            "ttlHours": {
+                              "type": "number"
+                            },
+                            "lawNote": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/time_math": {
+      "post": {
+        "operationId": "time_math",
+        "summary": "Performs compound time-math operations. Dispatches to the appropriate sub-operation based on the 'operation' parameter. Operations: add_days, add_business_days, diff, convert_tz, parse_nl, format_duration. Use this for multi-step or dynamic time operations; for single-purpose calls use get_current_time, convert_timezone, parse_duration, add_business_days, or count_business_days.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "add_days",
+                      "add_business_days",
+                      "diff",
+                      "convert_tz",
+                      "parse_nl",
+                      "format_duration"
+                    ],
+                    "description": "The time arithmetic operation to perform. Each operation expects specific operands."
+                  },
+                  "operands": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {},
+                    "description": "Key-value pairs matching the chosen operation's expected fields. See operation documentation for required keys."
+                  }
+                },
+                "required": [
+                  "operation",
+                  "operands"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "description": "Varies by operation. Returns temporal, duration, or date diff data."
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/add_business_days": {
+      "post": {
+        "operationId": "add_business_days",
+        "summary": "Adds N business (working) days to a start date, skipping weekends and country-specific public holidays. Supports US, UK, FR, DE, and JP holidays. Returns the resulting date. Use when computing a deadline that excludes non-working days.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "start_date": {
+                    "type": "string",
+                    "description": "ISO date string for the start date."
+                  },
+                  "days": {
+                    "type": "integer",
+                    "minimum": -100000,
+                    "maximum": 100000,
+                    "description": "Number of business days to add (negative to subtract). Integer between -100000 and 100000."
+                  },
+                  "country": {
+                    "default": "US",
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO-3166-1-alpha-2 country code for holiday calendar. Supported holiday sets: US, UK, FR, DE, JP; other valid 2-letter codes fall back to weekend-only counting and say so in holidaySupport."
+                  }
+                },
+                "required": [
+                  "start_date",
+                  "days"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "startDate": {
+                              "type": "string",
+                              "description": "Start date (ISO)"
+                            },
+                            "endDate": {
+                              "type": "string",
+                              "description": "End date (ISO)"
+                            },
+                            "businessDays": {
+                              "type": "number",
+                              "description": "Number of business days"
+                            },
+                            "countryCode": {
+                              "type": "string",
+                              "description": "ISO-3166 country code"
+                            },
+                            "calendarVersion": {
+                              "type": "string",
+                              "description": "Holiday-table version stamp (CALENDAR_VERSION) used for the computation"
+                            },
+                            "holidaySupport": {
+                              "type": "string",
+                              "enum": [
+                                "holiday_calendar",
+                                "weekends_only"
+                              ],
+                              "description": "\"weekends_only\" when the country code is valid 2-letter ISO but has no bundled holiday set (US/UK/FR/DE/JP do) — the count then excludes weekends only. Never silent: the fallback is named in the output."
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/count_business_days": {
+      "post": {
+        "operationId": "count_business_days",
+        "summary": "Counts the number of business (working) days between two dates, excluding weekends and country-specific public holidays. The count is exclusive of the start date and inclusive of the end date. Returns the integer day count. Use when measuring working-time span between two dates.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "start_date": {
+                    "type": "string",
+                    "description": "ISO date string for the start date."
+                  },
+                  "end_date": {
+                    "type": "string",
+                    "description": "ISO date string for the end date."
+                  },
+                  "country": {
+                    "default": "US",
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO-3166-1-alpha-2 country code for holiday calendar. Supported holiday sets: US, UK, FR, DE, JP; other valid 2-letter codes fall back to weekend-only counting and say so in holidaySupport."
+                  }
+                },
+                "required": [
+                  "start_date",
+                  "end_date"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "startDate": {
+                              "type": "string",
+                              "description": "Start date (ISO)"
+                            },
+                            "endDate": {
+                              "type": "string",
+                              "description": "End date (ISO)"
+                            },
+                            "businessDays": {
+                              "type": "number",
+                              "description": "Number of business days"
+                            },
+                            "countryCode": {
+                              "type": "string",
+                              "description": "ISO-3166 country code"
+                            },
+                            "calendarVersion": {
+                              "type": "string",
+                              "description": "Holiday-table version stamp (CALENDAR_VERSION) used for the computation"
+                            },
+                            "holidaySupport": {
+                              "type": "string",
+                              "enum": [
+                                "holiday_calendar",
+                                "weekends_only"
+                              ],
+                              "description": "\"weekends_only\" when the country code is valid 2-letter ISO but has no bundled holiday set (US/UK/FR/DE/JP do) — the count then excludes weekends only. Never silent: the fallback is named in the output."
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/pert_estimate": {
+      "post": {
+        "operationId": "pert_estimate",
+        "summary": "Calculate PERT expected duration from three-point estimates using Beta distribution.\n\nFormula: E = (O + 4M + P) / 6. Returns expected value, variance, standard deviation,\nand 95%/99% confidence bounds with urgency categorization.\nUse when estimating task duration with uncertain outcomes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "optimistic": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Best-case duration. Do NOT use your initial optimistic guess — this should be the absolute minimum if everything goes perfectly."
+                  },
+                  "most_likely": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Mode of the distribution — the single most probable outcome."
+                  },
+                  "pessimistic": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Worst-case duration accounting for known risks and unknown unknowns."
+                  },
+                  "unit": {
+                    "default": "hours",
+                    "description": "Time unit for all three PERT estimates.",
+                    "type": "string",
+                    "enum": [
+                      "hours",
+                      "days",
+                      "weeks",
+                      "months"
+                    ]
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching. Enables per-task-type accuracy tracking."
+                  },
+                  "ai_native": {
+                    "description": "Degree of AI assistance: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Accepts boolean for backward compatibility (true=1.0, false=0.0).",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ]
+                  },
+                  "complexity": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Optional complexity hint from 1 (trivial) to 5 (extreme). Reserved for future per-complexity correction-factor conditioning; not yet applied to the headline estimate."
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "optimistic",
+                  "most_likely",
+                  "pessimistic"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "optimistic": {
+                              "type": "number"
+                            },
+                            "mostLikely": {
+                              "type": "number"
+                            },
+                            "pessimistic": {
+                              "type": "number"
+                            },
+                            "expected": {
+                              "type": "number",
+                              "description": "PERT expected value"
+                            },
+                            "variance": {
+                              "type": "number"
+                            },
+                            "stdDeviation": {
+                              "type": "number"
+                            },
+                            "confidence95": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              },
+                              "description": "95% confidence interval [lower, upper]"
+                            },
+                            "confidence99": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              },
+                              "description": "99% confidence interval [lower, upper]"
+                            },
+                            "unit": {
+                              "type": "string",
+                              "enum": [
+                                "hours",
+                                "days",
+                                "weeks",
+                                "months"
+                              ]
+                            },
+                            "urgencyCategory": {
+                              "type": "string",
+                              "enum": [
+                                "short",
+                                "medium",
+                                "long"
+                              ]
+                            },
+                            "riskLevel": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high"
+                              ],
+                              "description": "Estimation risk based on spread between optimistic and pessimistic"
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary. Leads with the calibrated P80 interval when one could be computed, followed by the point estimate."
+                            },
+                            "adjustedEstimate": {
+                              "type": "number",
+                              "description": "Labeled dual field (one minor version): the developerProfile/learned-corrected headline. NOT the recorded basis — intervals and calibration use `expected`; see `basisNote`."
+                            },
+                            "basisNote": {
+                              "type": "string",
+                              "description": "Names which fields carry the recorded basis (`expected`) versus the adjusted dual (`adjustedEstimate`) and which basis the intervals are scaled on."
+                            },
+                            "intervalPopulation": {
+                              "type": "string",
+                              "description": "Which ratio population the empirical interval used: the v2 (basis-unified) (pert_estimate, task_type) cell, or the v1 fallback computed on the v1 recorded basis."
+                            },
+                            "interval": {
+                              "type": "object",
+                              "description": "P50/P80/P90 calibrated prediction intervals around the RECORDED basis (raw PERT `expected` × unit factor — never adjustedEstimate). `source` is \"empirical_ratio_quantile\" when >=5 exclusion-filtered historical (pert_estimate, task_type) pairs are available, else \"pert_variance\" (derived from this estimate's own optimistic/most_likely/pessimistic spread) — see `intervalNote` when the fallback is used.",
+                              "properties": {
+                                "p50": {
+                                  "type": "object",
+                                  "properties": {
+                                    "lower": {
+                                      "type": "number"
+                                    },
+                                    "upper": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "p80": {
+                                  "type": "object",
+                                  "properties": {
+                                    "lower": {
+                                      "type": "number"
+                                    },
+                                    "upper": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "p90": {
+                                  "type": "object",
+                                  "properties": {
+                                    "lower": {
+                                      "type": "number"
+                                    },
+                                    "upper": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pert_variance",
+                                    "empirical_ratio_quantile"
+                                  ]
+                                }
+                              }
+                            },
+                            "intervalNote": {
+                              "type": "string",
+                              "description": "Present only when the empirical per-task-type interval was unavailable (n<5) and the PERT-variance fallback was used instead."
+                            },
+                            "referenceClassCrossCheck": {
+                              "type": "object",
+                              "description": "Reference class estimate for comparison (AI-native only)",
+                              "properties": {
+                                "estimate": {
+                                  "type": "number"
+                                },
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "baselineSource": {
+                                  "type": "string"
+                                },
+                                "sampleSize": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "recommendation": {
+                              "type": "string",
+                              "description": "When reference class disagrees significantly with PERT, explains which to trust"
+                            },
+                            "rawEstimate": {
+                              "type": "number",
+                              "description": "Pre-correction expected-based headline (same value as `expected`), exposed for provenance parity with reference_class_estimate."
+                            },
+                            "correctionFactor": {
+                              "type": "number",
+                              "description": "Learned (pert_estimate, task_type) correction factor from computeToolTaskCorrectionFactors, independent of the ai_native developerProfile factor. 1.0 when EPOCH_PERT_LEARNED_CORRECTION is off or the cell has fewer than MIN_RECORDS_PER_FACTOR matched pairs."
+                            },
+                            "n": {
+                              "type": "number",
+                              "description": "Matched-pair sample size for the (pert_estimate, task_type) correction cell. 0 when the learned-correction flag is off or no task_type was supplied."
+                            },
+                            "calibrationCounts": {
+                              "type": "object",
+                              "description": "How many of YOUR historical tasks calibrated this output, split by trust class — git-derived (mined cycle-time actuals) and verified (explicitly recorded actuals) are separate numbers, never blended; autoWallclock is the third class. Mirrors feedback_health.byProvenance's segmentation. Also rendered into humanReadable as the 'Calibrated on YOUR N historical tasks (...)' sentence.",
+                              "properties": {
+                                "total": {
+                                  "type": "number",
+                                  "description": "gitDerived + verified + autoWallclock (the population that calibrated the output)."
+                                },
+                                "gitDerived": {
+                                  "type": "number",
+                                  "description": "git_derived / git_derived_review_inclusive actuals (epoch mine-git), including bootstrap-minted baseline pairs."
+                                },
+                                "verified": {
+                                  "type": "number",
+                                  "description": "Every non-auto, non-git provenance — actuals a human/agent explicitly recorded."
+                                },
+                                "autoWallclock": {
+                                  "type": "number",
+                                  "description": "auto_wallclock session actuals."
+                                }
+                              }
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/cocomo_estimate": {
+      "post": {
+        "operationId": "cocomo_estimate",
+        "summary": "LLM-adapted COCOMO II parametric effort estimation.\n\nReplaces traditional 17 human-labor cost drivers with 5 LLM-specific factors:\nreasoning complexity, context completeness, transformation impact, iterative cycles,\nand human oversight. Returns both nominal and LLM-adjusted person-months. Use when estimating effort for a codebase you can size in KLOC.\niterative_cycles: values <= 2.0 are literal multipliers (0.5 = one-shot,\n1.0 = typical debug loop, 2.0 = heavy back-and-forth); values above 2.0 are\nliteral cycle counts, each additional cycle adding 0.1 of multiplier anchored\nat 2.0 (2.0 -> 2.0x, 3 -> 2.1x, 10 -> 2.8x) — monotonic with no cliff at 2.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kloc": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Estimated thousands of lines of code. Count actual code, not comments/blank lines."
+                  },
+                  "reasoning_complexity": {
+                    "default": 1,
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 2,
+                    "description": "Multiplier for reasoning complexity of the codebase. 0.5 = trivial CRUD, 1.0 = average, 2.0 = novel algorithm/R&D."
+                  },
+                  "context_completeness": {
+                    "default": 1,
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 2,
+                    "description": "How complete is the context provided to the LLM? 0.5 = exhaustive specs, 1.0 = typical, 2.0 = vague requirements."
+                  },
+                  "transformation_impact": {
+                    "default": 1,
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 2,
+                    "description": "Scale of transformation relative to existing code. 0.5 = small patch, 1.0 = new module, 2.0 = architectural rewrite."
+                  },
+                  "iterative_cycles": {
+                    "default": 1,
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 10,
+                    "description": "Iteration overhead multiplier or literal cycle count. Multiplier scale: 0.5 = one-shot, 1.0 = typical debug loop, 2.0 = heavy back-and-forth. Values above 2.0 are accepted as literal cycle counts and normalized internally."
+                  },
+                  "human_oversight": {
+                    "default": 1,
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 2,
+                    "description": "Human review overhead multiplier. 0.5 = auto-merged, 1.0 = standard PR review, 2.0 = compliance/security review."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching."
+                  },
+                  "ai_native": {
+                    "description": "Degree of AI assistance: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Accepts boolean for backward compatibility (true=1.0, false=0.0).",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ]
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "kloc"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "kloc": {
+                              "type": "number"
+                            },
+                            "personMonthsNominal": {
+                              "type": "number"
+                            },
+                            "personMonthsLlmAdjusted": {
+                              "type": "number"
+                            },
+                            "effortMultipliers": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            },
+                            "assumptions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "aiSpeedup": {
+                              "type": "number",
+                              "description": "AI speedup factor (nominal / LLM-adjusted)"
+                            },
+                            "speedupCategory": {
+                              "type": "string",
+                              "enum": [
+                                "moderate",
+                                "significant",
+                                "extreme"
+                              ],
+                              "description": "Qualitative speedup category"
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/sprint_forecast": {
+      "post": {
+        "operationId": "sprint_forecast",
+        "summary": "Forecast sprint completion date from backlog size and historical velocity.\n\nComputes average velocity from sprint history, converts story points to hours,\nand returns required sprints with pessimistic estimate based on velocity variance. Use when planning a sprint completion date from backlog size and velocity history.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "backlog_points": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Total story points or effort units remaining in the backlog."
+                  },
+                  "velocity_history": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Velocity in points for a single sprint (must be > 0)."
+                    },
+                    "description": "Historical velocities from completed sprints. Minimum 1 data point; 3+ recommended for meaningful forecasts."
+                  },
+                  "sprint_length_days": {
+                    "default": 14,
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Calendar days in a single sprint cycle."
+                  },
+                  "hours_per_sprint": {
+                    "default": 300,
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Total productive engineering hours available per sprint (accounts for meetings, overhead)."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching."
+                  },
+                  "ai_native": {
+                    "description": "Degree of AI assistance: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Accepts boolean for backward compatibility (true=1.0, false=0.0).",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ]
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "backlog_points",
+                  "velocity_history"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "backlogPoints": {
+                              "type": "number"
+                            },
+                            "averageVelocity": {
+                              "type": "number"
+                            },
+                            "requiredSprints": {
+                              "type": "number"
+                            },
+                            "optimisticSprints": {
+                              "type": "number"
+                            },
+                            "pessimisticSprints": {
+                              "type": "number"
+                            },
+                            "hoursPerPoint": {
+                              "type": "number"
+                            },
+                            "totalHours": {
+                              "type": "number"
+                            },
+                            "completionDays": {
+                              "type": "number"
+                            },
+                            "sprintLengthDays": {
+                              "type": "number"
+                            },
+                            "confidence": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            },
+                            "velocityCv": {
+                              "type": "number"
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number",
+                              "description": "Estimated AI token cost (50k tokens/hour × totalHours)"
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/critical_path": {
+      "post": {
+        "operationId": "critical_path",
+        "summary": "Compute critical path with merge-bias adjustment for project schedules.\n\nPerforms forward/backward pass to identify critical tasks and slack.\nApplies merge bias: tasks with >2 predecessors get 5% duration increase per extra predecessor. Returns the critical path, task slack, and project duration. Use when sequencing dependent tasks to find the longest path and available slack.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tasks": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Unique task identifier used in predecessor references."
+                        },
+                        "duration": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Estimated task duration in days."
+                        },
+                        "predecessors": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "description": "Name of a preceding task that must finish first."
+                          },
+                          "description": "List of task names this task depends on. Use an empty array for start nodes."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "duration",
+                        "predecessors"
+                      ]
+                    },
+                    "description": "All tasks in the project graph. Each task must have a unique name."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching."
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "tasks"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "critical_path": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "slack_per_task": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            },
+                            "total_duration": {
+                              "type": "number"
+                            },
+                            "merge_bias_adjustment": {
+                              "type": "number"
+                            },
+                            "estimatedHours": {
+                              "type": "number",
+                              "description": "Total duration in hours (total_duration × 8)"
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number",
+                              "description": "Estimated token cost (50k tokens/hour × estimatedHours)"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/monte_carlo_schedule": {
+      "post": {
+        "operationId": "monte_carlo_schedule",
+        "summary": "Run Monte Carlo simulation for probabilistic schedule risk analysis.\n\nSamples task durations from triangular distributions and returns P10/P50/P80/P95\ncompletion estimates with identified risk events. Use seed for reproducible results.\nSupply target_hours (working hours; durations are 8-hour days) to get\ncriticalPathProbability = P(total <= target_hours); without it that field is null.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tasks": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Task name / identifier."
+                        },
+                        "optimistic": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Best-case duration in days."
+                        },
+                        "most_likely": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Most probable duration in days."
+                        },
+                        "pessimistic": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Worst-case duration in days."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "optimistic",
+                        "most_likely",
+                        "pessimistic"
+                      ]
+                    },
+                    "description": "Task list with PERT-style three-point estimates and dependency edges."
+                  },
+                  "iterations": {
+                    "default": 10000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000,
+                    "description": "Number of Monte Carlo simulation iterations (1–100,000). Higher = more stable percentiles."
+                  },
+                  "seed": {
+                    "description": "Optional seed for reproducible results.",
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "distribution": {
+                    "description": "When true, also return the simulated distribution (20 bin edges and counts in days, plus the P50/P90 bins) so a client can draw the chart.",
+                    "type": "boolean"
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching. Enables per-task-type accuracy tracking."
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  },
+                  "target_hours": {
+                    "description": "Optional deadline in working hours (task durations are in 8-hour days). When supplied, criticalPathProbability reports P(total <= target_hours); when omitted it is null instead of a fabricated value.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "tasks"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "p10": {
+                              "type": "string",
+                              "description": "10th percentile (optimistic)"
+                            },
+                            "p50": {
+                              "type": "string",
+                              "description": "50th percentile (median)"
+                            },
+                            "p80": {
+                              "type": "string",
+                              "description": "80th percentile"
+                            },
+                            "p90": {
+                              "type": "string",
+                              "description": "90th percentile"
+                            },
+                            "p95": {
+                              "type": "string",
+                              "description": "95th percentile (conservative)"
+                            },
+                            "criticalPathProbability": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "description": "P(total <= target_hours) when a target_hours deadline was supplied; null otherwise (never a fabricated probability)"
+                            },
+                            "targetHours": {
+                              "type": "number",
+                              "description": "The caller-supplied deadline in hours the probability was computed against, when supplied"
+                            },
+                            "converged": {
+                              "type": "boolean",
+                              "description": "Whether p50 converged between iteration halves"
+                            },
+                            "riskEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "probability": {
+                                    "type": "number"
+                                  },
+                                  "impactDays": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary"
+                            },
+                            "estimatedHours": {
+                              "type": "number",
+                              "description": "Median estimate in hours (p50 × 8)"
+                            },
+                            "estimatedTokens": {
+                              "type": "number",
+                              "description": "Rough AI token budget at p50 (50k tokens/hour × estimatedHours). A token count, not money."
+                            },
+                            "estimatedCost": {
+                              "type": "number",
+                              "deprecated": true,
+                              "description": "Deprecated, removed in 0.9: same value as estimatedTokens. A token count despite the name, not USD. Use estimatedTokens."
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            },
+                            "distribution": {
+                              "type": "object",
+                              "description": "Only when distribution: true was requested. The histogram behind the terminal chart: 21 ascending bin edges and 20 counts (days), with the bins holding P50 and P90.",
+                              "properties": {
+                                "unit": {
+                                  "type": "string",
+                                  "enum": [
+                                    "days"
+                                  ]
+                                },
+                                "iterations": {
+                                  "type": "number"
+                                },
+                                "seed": {
+                                  "type": "number"
+                                },
+                                "edges": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "number"
+                                  }
+                                },
+                                "counts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "number"
+                                  }
+                                },
+                                "min": {
+                                  "type": "number"
+                                },
+                                "max": {
+                                  "type": "number"
+                                },
+                                "p50Bin": {
+                                  "type": "number"
+                                },
+                                "p90Bin": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/reference_class_estimate": {
+      "post": {
+        "operationId": "reference_class_estimate",
+        "summary": "Data-driven estimate using reference class forecasting.\n\nApplies historical correction factors based on actual-vs-estimated ratios.\nWhen no historical data exists, uses industry averages (1.3-2.2x for software tasks).\nPrioritize this over algorithmic models when historical data is available.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Category of work being estimated for reference-class lookup."
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "small",
+                      "medium",
+                      "large",
+                      "xl"
+                    ],
+                    "description": "Rough size of the task: small=tiny fix/tweak, medium=typical task, large=significant effort, xl=epic-scale. When omitted, inferred from complexity (1-2=small, 3=medium, 4=large, 5=xl)."
+                  },
+                  "complexity": {
+                    "default": 3,
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Fine-tuning complexity from 1 (trivial) to 5 (extreme). Adjusts within the scope band: low complexity shortens, high complexity lengthens the estimate."
+                  },
+                  "team_id": {
+                    "type": "string",
+                    "description": "Optional team identifier to scope historical data to a specific team."
+                  },
+                  "ai_native": {
+                    "description": "Degree of AI assistance: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Accepts boolean for backward compatibility (true=1.0, false=0.0).",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ]
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "task_type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "rawEstimate": {
+                              "type": "number"
+                            },
+                            "correctedEstimate": {
+                              "type": "number"
+                            },
+                            "correctionFactor": {
+                              "type": "number"
+                            },
+                            "sampleSize": {
+                              "type": "number"
+                            },
+                            "confidence": {
+                              "type": "string",
+                              "enum": [
+                                "likely",
+                                "optimistic",
+                                "pessimistic"
+                              ]
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number",
+                              "description": "Estimated AI token cost (50k tokens/hour × correctedEstimate)"
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary. Leads with the calibrated P80 interval when >=5 exclusion-filtered historical (reference_class_estimate, task_type) pairs are available; otherwise states plainly that there wasn't enough data for a confidence interval."
+                            },
+                            "adjustedEstimate": {
+                              "type": "number",
+                              "description": "Labeled dual field (one minor version): developerProfile-adjusted headline. NOT the recorded basis — intervals and calibration use `correctedEstimate`; see `basisNote`."
+                            },
+                            "basisNote": {
+                              "type": "string",
+                              "description": "Names which fields carry the recorded basis (`correctedEstimate`) versus the adjusted dual (`adjustedEstimate`) and which basis the intervals are scaled on."
+                            },
+                            "intervalPopulation": {
+                              "type": "string",
+                              "description": "Which ratio population the empirical interval used: the v2 (basis-unified) (reference_class_estimate, task_type) cell, or the v1 fallback computed on the v1 recorded basis."
+                            },
+                            "interval": {
+                              "type": "object",
+                              "description": "P50/P80/P90 empirical prediction intervals around the RECORDED basis (`correctedEstimate` — never adjustedEstimate), from per-task-type actual/estimate ratio quantiles. Present only when >=5 matched pairs were available for this task_type — see `intervalNote` otherwise.",
+                              "properties": {
+                                "p50": {
+                                  "type": "object",
+                                  "properties": {
+                                    "lower": {
+                                      "type": "number"
+                                    },
+                                    "upper": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "p80": {
+                                  "type": "object",
+                                  "properties": {
+                                    "lower": {
+                                      "type": "number"
+                                    },
+                                    "upper": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "p90": {
+                                  "type": "object",
+                                  "properties": {
+                                    "lower": {
+                                      "type": "number"
+                                    },
+                                    "upper": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "empirical_ratio_quantile"
+                                  ]
+                                }
+                              }
+                            },
+                            "intervalNote": {
+                              "type": "string",
+                              "description": "Present only when there wasn't enough per-task-type data (n<5) to compute an empirical interval."
+                            },
+                            "calibrationCounts": {
+                              "type": "object",
+                              "description": "How many of YOUR historical tasks calibrated this output, split by trust class — git-derived (mined cycle-time actuals) and verified (explicitly recorded actuals) are separate numbers, never blended; autoWallclock is the third class. Mirrors feedback_health.byProvenance's segmentation. Also rendered into humanReadable as the 'Calibrated on YOUR N historical tasks (...)' sentence.",
+                              "properties": {
+                                "total": {
+                                  "type": "number",
+                                  "description": "gitDerived + verified + autoWallclock (the population that calibrated the output)."
+                                },
+                                "gitDerived": {
+                                  "type": "number",
+                                  "description": "git_derived / git_derived_review_inclusive actuals (epoch mine-git), including bootstrap-minted baseline pairs."
+                                },
+                                "verified": {
+                                  "type": "number",
+                                  "description": "Every non-auto, non-git provenance — actuals a human/agent explicitly recorded."
+                                },
+                                "autoWallclock": {
+                                  "type": "number",
+                                  "description": "auto_wallclock session actuals."
+                                }
+                              }
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/calibrate_estimates": {
+      "post": {
+        "operationId": "calibrate_estimates",
+        "summary": "Recalculate team-specific correction factors from historical estimation data.\n\nCompares estimated vs actual hours to compute a correction multiplier.\nRequires PM system integration for best results. Returns recommendations\nfor improving estimation accuracy. Use when you have accumulated actuals and want to refresh team calibration factors.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "team_id": {
+                    "type": "string",
+                    "description": "Team identifier whose historical accuracy data should be analysed."
+                  },
+                  "period_days": {
+                    "default": 90,
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Lookback window in calendar days for calibration data."
+                  },
+                  "minimum_samples": {
+                    "default": 10,
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Minimum number of completed tasks required before producing a calibration factor."
+                  }
+                },
+                "required": [
+                  "team_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "mape": {
+                              "type": "number",
+                              "description": "Mean Absolute Percentage Error"
+                            },
+                            "bias": {
+                              "type": "number",
+                              "description": "Mean bias (positive = underestimation)"
+                            },
+                            "variance": {
+                              "type": "number"
+                            },
+                            "sample_size": {
+                              "type": "number"
+                            },
+                            "trend": {
+                              "type": "string",
+                              "enum": [
+                                "improving",
+                                "degrading",
+                                "stable"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/token_time_bridge": {
+      "post": {
+        "operationId": "token_time_bridge",
+        "summary": "Map LLM token budgets to estimated wall-clock time.\n\nUses model-specific calibration data (tokens/second, reasoning overhead,\ntool-call latency) to estimate how long a task will actually take.\nBridges the gap between token-space (how agents reason) and time-space (what humans need).\nUse token_cost_estimate instead when dollar cost matters too.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Total number of tokens in the LLM request (prompt + completion)."
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "LLM model identifier. Unknown models fall back to generic estimates."
+                  },
+                  "tool_calls": {
+                    "default": 0,
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Number of tool calls expected in the agentic loop. Each adds overhead latency."
+                  },
+                  "reasoning_depth": {
+                    "default": "moderate",
+                    "type": "string",
+                    "enum": [
+                      "shallow",
+                      "moderate",
+                      "deep"
+                    ],
+                    "description": "Expected depth of chain-of-thought reasoning. Deep reasoning adds significant per-token latency."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching."
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "tokens",
+                  "model"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "tokens": {
+                              "type": "number"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "estimatedSeconds": {
+                              "type": "number"
+                            },
+                            "estimatedMinutes": {
+                              "type": "number"
+                            },
+                            "confidence": {
+                              "type": "string",
+                              "enum": [
+                                "likely",
+                                "optimistic",
+                                "pessimistic"
+                              ]
+                            },
+                            "urgency": {
+                              "type": "string",
+                              "enum": [
+                                "short",
+                                "medium",
+                                "long"
+                              ]
+                            },
+                            "breakdown": {
+                              "type": "object",
+                              "properties": {
+                                "promptTokens": {
+                                  "type": "number"
+                                },
+                                "completionTokens": {
+                                  "type": "number"
+                                },
+                                "toolOverheadSeconds": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary"
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number",
+                              "description": "Estimated AI token cost (50k tokens/hour × estimatedHours)"
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/token_cost_estimate": {
+      "post": {
+        "operationId": "token_cost_estimate",
+        "summary": "Estimate wall-clock time AND dollar cost for LLM token usage.\n\nCombines token-to-time mapping with model-specific pricing data.\nReturns cost breakdown (input/output/overhead) alongside the time estimate.\nUse token_time_bridge when you only need wall-clock time and not dollar cost.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Total number of tokens in the LLM request (prompt + completion)."
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "LLM model identifier. Unknown models fall back to generic estimates."
+                  },
+                  "tool_calls": {
+                    "default": 0,
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Number of tool calls expected in the agentic loop."
+                  },
+                  "reasoning_depth": {
+                    "default": "moderate",
+                    "type": "string",
+                    "enum": [
+                      "shallow",
+                      "moderate",
+                      "deep"
+                    ],
+                    "description": "Expected depth of chain-of-thought reasoning."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type for feedback matching."
+                  }
+                },
+                "required": [
+                  "tokens",
+                  "model"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "tokens": {
+                              "type": "number"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "estimatedSeconds": {
+                              "type": "number"
+                            },
+                            "estimatedMinutes": {
+                              "type": "number"
+                            },
+                            "confidence": {
+                              "type": "string",
+                              "enum": [
+                                "likely",
+                                "optimistic",
+                                "pessimistic"
+                              ]
+                            },
+                            "urgency": {
+                              "type": "string",
+                              "enum": [
+                                "short",
+                                "medium",
+                                "long"
+                              ]
+                            },
+                            "breakdown": {
+                              "type": "object",
+                              "properties": {
+                                "promptTokens": {
+                                  "type": "number"
+                                },
+                                "completionTokens": {
+                                  "type": "number"
+                                },
+                                "toolOverheadSeconds": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "humanReadable": {
+                              "type": "string",
+                              "description": "Human-readable summary"
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number",
+                              "description": "Estimated AI token cost (50k tokens/hour × estimatedHours)"
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/compare_models": {
+      "post": {
+        "operationId": "compare_models",
+        "summary": "Compare all LLM models side-by-side for a given token budget.\n\nRanks models by estimated cost or time. Shows quality tier for each model.\nUse when choosing which model to use for a task.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Total number of tokens to estimate across all models."
+                  },
+                  "tool_calls": {
+                    "default": 0,
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Number of tool calls expected."
+                  },
+                  "reasoning_depth": {
+                    "default": "moderate",
+                    "type": "string",
+                    "enum": [
+                      "shallow",
+                      "moderate",
+                      "deep"
+                    ],
+                    "description": "Expected depth of chain-of-thought reasoning."
+                  },
+                  "sort_by": {
+                    "default": "cost",
+                    "type": "string",
+                    "enum": [
+                      "cost",
+                      "time"
+                    ],
+                    "description": "Sort models by cost (default) or estimated time."
+                  }
+                },
+                "required": [
+                  "tokens"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "tokens": {
+                              "type": "number"
+                            },
+                            "models": {
+                              "type": "array"
+                            },
+                            "humanReadable": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/accuracy_trend": {
+      "post": {
+        "operationId": "accuracy_trend",
+        "summary": "Track estimation accuracy improvement over time.\n\nComputes sliding-window MAPE and compares against industry baseline (25%).\nShows whether your estimates are improving, degrading, or stable.\nIndustry research shows estimation accuracy does NOT improve with experience (Cao 2022) — self-correcting systems like Epoch can buck this trend.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "team_id": {
+                    "type": "string",
+                    "description": "Optional team identifier to scope historical data."
+                  },
+                  "window_size": {
+                    "default": 50,
+                    "type": "number",
+                    "minimum": 5,
+                    "description": "Number of records per sliding window."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "windows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "period": {
+                                    "type": "string"
+                                  },
+                                  "mape": {
+                                    "type": "number"
+                                  },
+                                  "bias": {
+                                    "type": "number"
+                                  },
+                                  "sampleSize": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            },
+                            "overallTrend": {
+                              "type": "string",
+                              "enum": [
+                                "improving",
+                                "degrading",
+                                "stable"
+                              ]
+                            },
+                            "currentMape": {
+                              "type": "number"
+                            },
+                            "industryBaselineMape": {
+                              "type": "number"
+                            },
+                            "improvementVsIndustry": {
+                              "type": "number"
+                            },
+                            "totalEstimates": {
+                              "type": "number"
+                            },
+                            "totalWithActuals": {
+                              "type": "number"
+                            },
+                            "humanReadable": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/schedule_risk": {
+      "post": {
+        "operationId": "schedule_risk",
+        "summary": "Assess schedule risk for an estimate using historical accuracy data.\n\nComputes confidence intervals (p50/p80/p90/p95) based on your team's MAPE.\nReturns risk level and actionable recommendations.\nUses industry baseline (25% MAPE) when no historical data is available.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "estimated_hours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "The estimated effort in hours to assess risk for."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional task type to refine historical accuracy lookup."
+                  },
+                  "team_id": {
+                    "type": "string",
+                    "description": "Optional team identifier to scope historical data."
+                  },
+                  "complexity": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Task complexity from 1 (trivial) to 5 (extreme). Higher complexity widens confidence intervals."
+                  },
+                  "ai_native": {
+                    "description": "Degree of AI assistance: 0.0 = fully human, 1.0 = fully AI-native, 0.5 = hybrid. Accepts boolean for backward compatibility (true=1.0, false=0.0).",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    ]
+                  },
+                  "task_label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional free-text label identifying the task this estimate is for (e.g. an issue key or short title). Surfaced on get_pending_estimates output for triage."
+                  },
+                  "project": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional project/repo identifier this estimate belongs to, for cross-project analytics."
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional session identifier (minted by a calling agent/hook) used to deduplicate repeated estimate calls for the same task within a session."
+                  }
+                },
+                "required": [
+                  "estimated_hours"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "estimatedHours": {
+                              "type": "number"
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number",
+                              "description": "Estimated AI token cost (50k tokens/hour × estimatedHours)"
+                            },
+                            "riskLevel": {
+                              "type": "string"
+                            },
+                            "confidenceIntervals": {
+                              "type": "object"
+                            },
+                            "historicalAccuracy": {
+                              "type": "object",
+                              "properties": {
+                                "mape": {
+                                  "type": "number"
+                                },
+                                "mdape": {
+                                  "type": "number"
+                                },
+                                "sampleSize": {
+                                  "type": "number"
+                                }
+                              }
+                            },
+                            "taskTypeBreakdown": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                  "riskLevel": {
+                                    "type": "string"
+                                  },
+                                  "mdape": {
+                                    "type": "number"
+                                  },
+                                  "sampleSize": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              "description": "Risk breakdown by task type from historical data"
+                            },
+                            "recommendation": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/cocomo_validate": {
+      "post": {
+        "operationId": "cocomo_validate",
+        "summary": "Validate COCOMO estimation model against 195 real historical projects.\n\nRuns the COCOMO Basic formula against projects from NASA93, COCOMO81, Albrecht, and Kemerer datasets.\nReports overall MAPE, bias, per-type accuracy, and recommended coefficient adjustments.\nUse cocomo_ground_truth for the full multi-model benchmark across all COCOMO and AI-adjusted models.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dataset_filter": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "description": "Dataset name: COCOMO81, NASA93, Albrecht, or Kemerer."
+                    },
+                    "description": "Optional filter to validate against specific datasets only."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "projectsEvaluated": {
+                              "type": "number"
+                            },
+                            "mape": {
+                              "type": "number"
+                            },
+                            "bias": {
+                              "type": "number"
+                            },
+                            "humanReadable": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/cocomo_ground_truth": {
+      "post": {
+        "operationId": "cocomo_ground_truth",
+        "summary": "Validate all COCOMO estimation models against 240 real historical projects with known effort.\n\nRuns 6 models in parallel: COCOMO Basic, COCOMO II Nominal, COCOMO II + AI 12x speedup, and AI + developer profile at human/hybrid/ai_native gradients.\nReports MAPE, MMRE, PRED(25), PRED(50), bias per model, with breakdowns by dataset and project type.\nUse cocomo_validate for a quicker Basic COCOMO-only validation pass.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dataset_filter": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "description": "Dataset name: COCOMO81, NASA93, Albrecht, or Kemerer."
+                    },
+                    "description": "Optional filter to validate against specific datasets only."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "projectsEvaluated": {
+                              "type": "number"
+                            },
+                            "models": {
+                              "type": "array"
+                            },
+                            "winner": {
+                              "type": "string"
+                            },
+                            "conclusion": {
+                              "type": "string"
+                            },
+                            "humanReadable": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/record_actual": {
+      "post": {
+        "operationId": "record_actual",
+        "summary": "Submit actual hours for a previous estimate to improve future accuracy.\n\nPairs with any estimation tool. The estimate_id comes from the estimate response.\nActuals feed into the self-improvement loop — after enough samples, correction factors\nupdate automatically to reduce estimation bias.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "estimate_id": {
+                    "type": "string",
+                    "description": "ID of the estimate to update."
+                  },
+                  "actual_hours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Actual hours spent."
+                  },
+                  "notes": {
+                    "description": "Optional context.",
+                    "type": "string"
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "minutes",
+                      "hours",
+                      "days",
+                      "weeks"
+                    ],
+                    "description": "Unit actual_hours is expressed in. Normalized to hours at ingest (days=8h, weeks=40h workday convention, matching estimation.ts's toHours()). Defaults to hours when omitted."
+                  },
+                  "calibration_provenance": {
+                    "type": "string",
+                    "enum": [
+                      "prospective",
+                      "backfilled_real_session",
+                      "backfilled_calibration",
+                      "synthetic",
+                      "smoke",
+                      "unknown",
+                      "auto_wallclock",
+                      "git_derived",
+                      "git_derived_review_inclusive"
+                    ],
+                    "description": "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math). auto_wallclock marks a wall-clock-derived actual auto-recorded at session end (never focused-effort-verified) — included in correction training by default but subject to a dedicated sanity gate and segmented separately in feedback_health. git_derived marks a cycle-time actual mined from git history by `epoch mine-git` (first-commit→merge dev window); git_derived_review_inclusive marks the open→merge window — both are sanity-gated and segmented separately, never blended with verified actuals."
+                  }
+                },
+                "required": [
+                  "estimate_id",
+                  "actual_hours"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "recorded": {
+                              "type": "boolean"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "flagged": {
+                              "type": "string",
+                              "enum": [
+                                "unit_suspect"
+                              ],
+                              "description": "Present when the actual is >10x the estimate — suspected unit mismatch; verify hours vs days/weeks/person-months."
+                            },
+                            "flagHint": {
+                              "type": "string",
+                              "description": "Actionable hint accompanying a flagged record."
+                            },
+                            "estimateFound": {
+                              "type": "boolean",
+                              "description": "false when no estimate with this id exists in the ledger (orphan actual); absent when it was found."
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/get_pending_estimates": {
+      "post": {
+        "operationId": "get_pending_estimates",
+        "summary": "List recent estimates that have not yet received actual-hour feedback.\n\nReturns estimates awaiting actuals so you can submit feedback via record_actual.\nUse this to close the estimation feedback loop and improve accuracy over time.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "default": 20,
+                    "description": "Max estimates to return.",
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "count": {
+                              "type": "number"
+                            },
+                            "estimates": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "tool": {
+                                    "type": "string"
+                                  },
+                                  "inputs": {
+                                    "type": "object"
+                                  },
+                                  "estimatedAt": {
+                                    "type": "string"
+                                  },
+                                  "task_label": {
+                                    "type": "string",
+                                    "description": "Optional task_label carried on the estimate's inputs, if supplied at estimate time."
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/batch_record_actuals": {
+      "post": {
+        "operationId": "batch_record_actuals",
+        "summary": "Record actual hours for multiple estimates in a single call.\n\nEfficient for bulk feedback submission — accepts 1 to 500 entries at once.\nEach entry pairs an estimate ID with the actual hours spent. Returns total/succeeded/failed counts. Use when closing the feedback loop for many estimates at once; pass estimate_id values from get_pending_estimates.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entries": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "estimate_id": {
+                          "type": "string",
+                          "description": "ID of the estimate to update."
+                        },
+                        "actual_hours": {
+                          "type": "number",
+                          "exclusiveMinimum": 0,
+                          "description": "Actual hours spent."
+                        },
+                        "notes": {
+                          "description": "Optional context.",
+                          "type": "string"
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "minutes",
+                            "hours",
+                            "days",
+                            "weeks"
+                          ],
+                          "description": "Unit actual_hours is expressed in. Normalized to hours at ingest (days=8h, weeks=40h workday convention, matching estimation.ts's toHours()). Defaults to hours when omitted."
+                        },
+                        "calibration_provenance": {
+                          "type": "string",
+                          "enum": [
+                            "prospective",
+                            "backfilled_real_session",
+                            "backfilled_calibration",
+                            "synthetic",
+                            "smoke",
+                            "unknown",
+                            "auto_wallclock",
+                            "git_derived",
+                            "git_derived_review_inclusive"
+                          ],
+                          "description": "Optional explicit provenance classification for this actual, consumed by the shared exclusion predicate (synthetic/smoke are excluded from calibration math). auto_wallclock marks a wall-clock-derived actual auto-recorded at session end (never focused-effort-verified) — included in correction training by default but subject to a dedicated sanity gate and segmented separately in feedback_health. git_derived marks a cycle-time actual mined from git history by `epoch mine-git` (first-commit→merge dev window); git_derived_review_inclusive marks the open→merge window — both are sanity-gated and segmented separately, never blended with verified actuals."
+                        }
+                      },
+                      "required": [
+                        "estimate_id",
+                        "actual_hours"
+                      ]
+                    },
+                    "description": "Array of actual-hour records (1–500 entries)."
+                  }
+                },
+                "required": [
+                  "entries"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "number"
+                            },
+                            "succeeded": {
+                              "type": "number"
+                            },
+                            "failed": {
+                              "type": "number"
+                            },
+                            "errors": {
+                              "type": "array"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/feedback_health": {
+      "post": {
+        "operationId": "feedback_health",
+        "summary": "Get a health report on the estimation feedback loop.\n\nShows total estimates, actuals, match rate, MAPE by tool and task type,\nand self-improvement readiness (which types have enough data for auto-calibration). Use when checking whether you have enough recorded actuals for calibration to kick in.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "totalEstimates": {
+                              "type": "number"
+                            },
+                            "totalActuals": {
+                              "type": "number"
+                            },
+                            "matchedPairs": {
+                              "type": "number"
+                            },
+                            "seedRecordsFiltered": {
+                              "type": "number"
+                            },
+                            "matchRate": {
+                              "type": "number"
+                            },
+                            "byTool": {
+                              "type": "object"
+                            },
+                            "byTaskType": {
+                              "type": "object"
+                            },
+                            "selfImprovement": {
+                              "type": "object"
+                            },
+                            "dataQuality": {
+                              "type": "object"
+                            },
+                            "humanReadable": {
+                              "type": "string"
+                            },
+                            "intervalCoverage": {
+                              "type": "object",
+                              "description": "P80 prediction-interval coverage calibration (Phase 5, additive). See src/lib/coverage.ts.",
+                              "properties": {
+                                "n": {
+                                  "type": "number"
+                                },
+                                "p80CoverageRate": {
+                                  "type": "number"
+                                },
+                                "targetP80Coverage": {
+                                  "type": "number"
+                                },
+                                "byTaskType": {
+                                  "type": "object"
+                                },
+                                "note": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools/estimate_from_context": {
+      "post": {
+        "operationId": "estimate_from_context",
+        "summary": "Classify a free-text task description and delegate to reference-class estimation.\n\nClassifies task_type and complexity from free text (issue body, PR/diff\ndescription, or task summary) using a LOCAL, deterministic keyword/signal\nheuristic — no LLM call (see src/lib/context-estimate.ts). Caller-supplied\ntask_type/complexity hints always override the classification. Delegates the\nresolved inputs to the same reference-class-forecasting path used by\nreference_class_estimate, and returns classification provenance\n(classified_task_type, classified_complexity, confidence, signals) alongside\nthe estimate so callers can judge how much to trust it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "context": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50000,
+                    "description": "Free-text context describing the task to estimate — issue body, PR/diff description, or task summary. Classified here into task_type and complexity by a local deterministic keyword/signal heuristic (no LLM call), then delegated to reference_class_estimate / PERT correction (which determines scope and calibration). The classification provenance (classified task_type/complexity, confidence, signals) is returned alongside the estimate."
+                  },
+                  "task_type": {
+                    "type": "string",
+                    "enum": [
+                      "feature",
+                      "bugfix",
+                      "refactor",
+                      "migration",
+                      "infrastructure",
+                      "documentation",
+                      "testing",
+                      "design"
+                    ],
+                    "description": "Optional pre-classified task type; overrides the task_type inferred from the context."
+                  },
+                  "complexity": {
+                    "type": "number",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Optional pre-assessed complexity (1-5); overrides the complexity inferred from the context."
+                  },
+                  "team_id": {
+                    "type": "string",
+                    "description": "Optional team identifier used to scope the historical calibration data."
+                  }
+                },
+                "required": [
+                  "context"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "tool": {
+                              "type": "string"
+                            },
+                            "rawEstimate": {
+                              "type": "number"
+                            },
+                            "correctedEstimate": {
+                              "type": "number"
+                            },
+                            "correctionFactor": {
+                              "type": "number"
+                            },
+                            "sampleSize": {
+                              "type": "number"
+                            },
+                            "baselineSource": {
+                              "type": "string"
+                            },
+                            "scopeUsed": {
+                              "type": "string"
+                            },
+                            "scopeInferred": {
+                              "type": "boolean"
+                            },
+                            "confidence": {
+                              "type": "string",
+                              "enum": [
+                                "likely",
+                                "optimistic",
+                                "pessimistic"
+                              ]
+                            },
+                            "estimatedTokenCost": {
+                              "type": "number"
+                            },
+                            "classification": {
+                              "type": "object",
+                              "description": "Provenance of the local heuristic classification (src/lib/context-estimate.ts), before any caller-supplied hint override.",
+                              "properties": {
+                                "classified_task_type": {
+                                  "type": "string"
+                                },
+                                "classified_complexity": {
+                                  "type": "number"
+                                },
+                                "confidence": {
+                                  "type": "string",
+                                  "enum": [
+                                    "high",
+                                    "medium",
+                                    "low"
+                                  ]
+                                },
+                                "signals": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "task_type_from_hint": {
+                                  "type": "boolean"
+                                },
+                                "complexity_from_hint": {
+                                  "type": "boolean"
+                                }
+                              }
+                            },
+                            "lowConfidenceNote": {
+                              "type": "string"
+                            },
+                            "note": {
+                              "type": "string"
+                            },
+                            "feedbackRef": {
+                              "type": "string",
+                              "description": "Token for recording actual hours via record_actual"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "isError": {
+                              "type": "boolean"
+                            },
+                            "errorKind": {
+                              "type": "string",
+                              "enum": [
+                                "validation",
+                                "internal"
+                              ],
+                              "description": "Failure class: \"validation\" (caller-fixable, HTTP 422) or \"internal\" (server-side, HTTP 500)."
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "retryHint": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/telemetry": {
+      "post": {
+        "operationId": "receiveTelemetry",
+        "summary": "Receive signed anonymized Epoch telemetry payloads.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "schema_version",
+                  "installation_id",
+                  "epoch_version",
+                  "records",
+                  "generated_at"
+                ],
+                "properties": {
+                  "schema_version": {
+                    "type": "integer",
+                    "const": 1
+                  },
+                  "installation_id": {
+                    "type": "string"
+                  },
+                  "epoch_version": {
+                    "type": "string"
+                  },
+                  "generated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "records": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "task_type",
+                        "complexity",
+                        "tool",
+                        "estimated_hours",
+                        "actual_hours",
+                        "ratio",
+                        "date"
+                      ],
+                      "properties": {
+                        "task_type": {
+                          "type": "string"
+                        },
+                        "complexity": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tool": {
+                          "type": "string"
+                        },
+                        "estimated_hours": {
+                          "type": "number"
+                        },
+                        "actual_hours": {
+                          "type": "number"
+                        },
+                        "ratio": {
+                          "type": "number"
+                        },
+                        "date": {
+                          "type": "string",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                        },
+                        "calibration_provenance": {
+                          "type": "string",
+                          "enum": [
+                            "prospective",
+                            "backfilled_real_session",
+                            "backfilled_calibration",
+                            "synthetic",
+                            "smoke",
+                            "unknown"
+                          ],
+                          "description": "Non-identifying provenance class for calibration records. Optional for backward-compatible clients."
+                        },
+                        "calibration_usage": {
+                          "type": "string",
+                          "enum": [
+                            "correction",
+                            "baseline",
+                            "exclude"
+                          ],
+                          "description": "Whether the record may influence correction factors, is baseline-only, or should be excluded."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted telemetry counts."
+          },
+          "400": {
+            "description": "Invalid payload."
+          },
+          "401": {
+            "description": "Missing or invalid signature."
+          }
+        }
+      }
+    },
+    "/v1/feedback/record-actual": {
+      "post": {
+        "operationId": "recordActualFeedback",
+        "summary": "Record actual hours for a pending estimate.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "estimate_id",
+                  "actual_hours"
+                ],
+                "properties": {
+                  "estimate_id": {
+                    "type": "string"
+                  },
+                  "actual_hours": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Actual hours recorded."
+          },
+          "400": {
+            "description": "Invalid feedback payload."
+          },
+          "500": {
+            "description": "Estimate could not be updated."
+          }
+        }
+      }
+    },
+    "/v1/feedback/pending": {
+      "get": {
+        "operationId": "listPendingFeedback",
+        "summary": "List estimates waiting for actual-hours feedback.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending estimates."
+          }
+        }
+      }
+    },
+    "/v1/feedback/batch-record-actuals": {
+      "post": {
+        "operationId": "batchRecordActualFeedback",
+        "summary": "Record actual hours for multiple pending estimates.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "entries"
+                ],
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "description": "Array of actual-hour records (1–500 entries; over-limit batches are rejected with 400 naming the cap). Entries failing validation are reported per-entry in the response errors instead of being dropped.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "estimate_id",
+                        "actual_hours"
+                      ],
+                      "properties": {
+                        "estimate_id": {
+                          "type": "string"
+                        },
+                        "actual_hours": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "notes": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch feedback result with per-entry errors for any entries that failed validation or recording."
+          },
+          "400": {
+            "description": "Invalid batch payload, or more than 500 entries (the cap is named in the message)."
+          },
+          "422": {
+            "description": "Every entry failed — per-entry errors are attached to the error envelope."
+          }
+        }
+      }
+    },
+    "/v1/feedback/health": {
+      "get": {
+        "operationId": "getFeedbackHealth",
+        "summary": "Get feedback-loop health and calibration status.",
+        "responses": {
+          "200": {
+            "description": "Feedback health report."
+          }
+        }
+      }
+    }
+  }
+}
