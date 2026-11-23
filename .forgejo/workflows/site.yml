@@ -46,6 +46,7 @@ jobs:
   deploy:
     name: Deploy gh-pages from site/
     runs-on: docker
+    timeout-minutes: 10
     # Same digest-pinned image as ci.yml's node-22 floor: the deploy job runs
     # node (stamp-release-versions) and git, so pin the environment instead of
     # trusting whatever untagged image the runner resolves.

@@ -16,6 +16,7 @@ jobs:
     name: Build and publish
     if: startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -119,6 +120,7 @@ jobs:
     needs: publish
     if: startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write

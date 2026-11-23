@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     ignore:
       - dependency-name: zod
         versions: ["4.x"]
@@ -13,6 +13,10 @@ updates:
         versions: ["6.x"]
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+    # One PR per week for all minor/patch bumps instead of one PR (and one CI run) each.
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
     labels:
       - dependencies
     commit-message:
@@ -26,5 +30,9 @@ updates:
     labels:
       - dependencies
       - ci
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: "chore(ci-deps)"

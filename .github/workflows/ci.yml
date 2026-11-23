@@ -10,15 +10,31 @@ permissions:
   contents: read
   security-events: write
 
+# A new push to a PR cancels that PR's older run. Pushes to main each get their own
+# group (sha), so main always keeps a result for every commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# What runs where. Pull requests run everything: the four required checks (Node 22,
+# Node 24, Secret scanning, Fleet IP hygiene gate) plus the Hermes plugin job. A push to
+# main re-tests a tree its PR already passed, so it runs only Node 24 (the publish
+# runtime, to catch merge skew) and the two scans (a direct push would skip the PR's).
+# Forgejo CI covers the Node 22 floor and both Hermes releases on every PR and on main.
+# Skip with job-level `if:` or the matrix only: a workflow-level paths/branches filter
+# would leave the required checks pending forever.
+
 jobs:
   test:
     name: Typecheck, build, and test (Node ${{ matrix.node-version }})
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # Node floor is >= 22 (engines). 24 is the publish runtime.
-        node-version: ["22", "24"]
+        # Node floor is >= 22 (engines). 24 is the publish runtime. Both legs are
+        # required checks on PRs; a push to main runs only 24 (see the header).
+        node-version: ${{ fromJSON(github.event_name == 'pull_request' && '["22", "24"]' || '["24"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -68,11 +84,16 @@ jobs:
         # Native regression tests for plugins/epoch-hermes: fake-Epoch unit tests plus the
         # auto_wallclock gate against the dist/ CLI built above. The real-Hermes multi-process
         # e2e and desktop tests run in the epoch-hermes-plugin job below, under real Hermes.
+        # test_real_epoch.py (the real-CLI test) runs on no other host or job, and it skips
+        # itself when dist/ is missing, so a skip of it here fails the job.
+        shell: bash
         run: |
+          set -o pipefail
           python3 -m venv /tmp/epoch-hermes-venv
           /tmp/epoch-hermes-venv/bin/pip install --quiet "pytest==8.4.2" "hypothesis==6.135.0" "ruff==0.15.12"
           /tmp/epoch-hermes-venv/bin/ruff check --select F --exclude plugins/epoch-hermes/tests plugins/epoch-hermes
-          /tmp/epoch-hermes-venv/bin/python -m pytest plugins/epoch-hermes/tests -q
+          /tmp/epoch-hermes-venv/bin/python -m pytest plugins/epoch-hermes/tests -q -rs | tee /tmp/epoch-hermes-pytest.out
+          if grep '^SKIPPED' /tmp/epoch-hermes-pytest.out | grep 'test_real_epoch.py'; then echo "real-CLI test skipped"; exit 1; fi
 
       - name: Validate community data
         run: node scripts/validate-community-data.mjs
@@ -94,6 +115,7 @@ jobs:
   secret-scan:
     name: Secret scanning
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -109,14 +131,15 @@ jobs:
   epoch-hermes-plugin:
     # The Hermes plugin under the Hermes release it is tested against: desktop API and
     # real-Hermes multi-process e2e tests, which the Node job above skips.
+    # Not a required check. PRs only, newest release only: requires_hermes is ">=0.21.6",
+    # and Forgejo CI runs both v0.23.0 and the v0.21.6 floor (818c13be) on every PR and on
+    # main, including the sync PRs that carry GitHub-merged changes back to Forgejo.
     name: Hermes plugin under Hermes ${{ matrix.hermes }}
+    if: github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
-        # requires_hermes is ">=0.21.6": test the floor as well as the newest release.
         include:
-          - hermes: v0.21.6
-            ref: 818c13be1dc4fd28987e1e881a9408224afd4535
           - hermes: v0.23.0
             ref: 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -161,6 +184,7 @@ jobs:
   fleet-ip-gate:
     name: Fleet IP hygiene gate
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
