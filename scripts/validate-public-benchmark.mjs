@@ -58,6 +58,8 @@ try {
 }
 
 let errors = 0;
+// Set once unique_contributors is proven covered by records naming a contributor.
+let contributorsVerified = false;
 
 // Schema version
 if (data.schema_version !== 1) {
@@ -132,6 +134,33 @@ if (typeof data._quality !== "object" || data._quality === null) {
     pass(`_quality block present: ${q.local_pairs_included} local pairs included, ${q.local_pairs_excluded_by_isExcluded} excluded by isExcluded(), ${q.contaminated_pairs_filtered} contaminated pair(s) filtered`);
   }
 
+  // Contributor coverage. unique_contributors counts distinct contributor
+  // ids, so it can never exceed the records that carry one. An export built
+  // before this field cannot prove its count was anything but the exporter's
+  // old record-count fallback, so it is reported as unverified, not failed.
+  if ("pairs_with_contributor_id" in q) {
+    const named = q.pairs_with_contributor_id;
+    if (typeof named !== "number" || !Number.isInteger(named) || named < 0) {
+      fail(`_quality.pairs_with_contributor_id must be a non-negative integer, got ${named}`);
+      errors++;
+    } else if (named > data.total_records) {
+      fail(`_quality.pairs_with_contributor_id (${named}) exceeds total_records (${data.total_records})`);
+      errors++;
+    } else if (data.unique_contributors > named) {
+      fail(
+        `unique_contributors (${data.unique_contributors}) exceeds the ${named} records that name a contributor — a record without a contributor_id is an unknown identity, not a distinct contributor; re-run \`pnpm run dataset:build\``,
+      );
+      errors++;
+    } else {
+      pass(`unique_contributors covered: ${data.unique_contributors} distinct id(s) among ${named} records that name one`);
+      contributorsVerified = true;
+    }
+  } else {
+    console.log(
+      `NOTE  unique_contributors=${data.unique_contributors} is unverified: this export predates _quality.pairs_with_contributor_id and may be a record-count fallback — re-run \`pnpm run dataset:build\`.`,
+    );
+  }
+
   // Re-verify LIVE, not just trust the export-time report: re-run the same
   // exclusion-filtered loader against the current ledger state and confirm
   // the number of currently-includable local pairs never exceeds what the
@@ -164,7 +193,10 @@ if (errors === 0) {
 console.log("");
 console.log("-".repeat(50));
 if (errors === 0) {
-  console.log(`VALID  data/public-benchmark.json (${data.total_records} records, ${data.unique_contributors} contributors)`);
+  const contributorsSummary = contributorsVerified
+    ? `${data.unique_contributors} contributors`
+    : `unique_contributors=${data.unique_contributors} unverified`;
+  console.log(`VALID  data/public-benchmark.json (${data.total_records} records, ${contributorsSummary})`);
 } else {
   console.log(`INVALID  ${errors} error(s) found`);
 }

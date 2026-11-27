@@ -33,7 +33,13 @@ const OUTPUT_FILE = join(PROJECT_ROOT, "data", "public-benchmark.json");
 
 // Collect all estimate/actual pairs
 const pairs = [];
-const contributors = new Set();
+
+// Contributor identity. Only a record's own explicit contributor_id names a
+// contributor; cocomo projects and the local ledger carry none. An unknown
+// identity is never promoted to a headcount, so these stay at 0 when no
+// record names anyone.
+const contributorIds = new Set();
+let pairsWithContributorId = 0;
 
 // ---- 1. Read community data -------------------------------------------------
 
@@ -56,7 +62,10 @@ if (existsSync(COMMUNITY_DIR)) {
               ratio: Math.round((rec.actual_hours / rec.estimated_hours) * 10000) / 10000,
               ...(typeof rec.timestamp === "string" && { date: rec.timestamp.slice(0, 10) }),
             });
-            if (rec.contributor_id) contributors.add(rec.contributor_id);
+            if (rec.contributor_id) {
+              contributorIds.add(rec.contributor_id);
+              pairsWithContributorId += 1;
+            }
           }
         }
       }
@@ -186,7 +195,10 @@ const benchmark = {
   generated_at: new Date().toISOString(),
   source: "community + cocomo calibration + local ledger",
   total_records: pairs.length,
-  unique_contributors: contributors.size || pairs.length,
+  // Distinct contributor ids among the pairs — 0 when none is recorded.
+  // Never a fallback to the record count: an unknown identity is not a
+  // distinct contributor, so N anonymous records are still 0, not N.
+  unique_contributors: contributorIds.size,
   by_task_type: byTaskType,
   by_tool: byTool,
   // Pre-mortem Scenario 5 guard evidence — reconciled by
@@ -196,12 +208,19 @@ const benchmark = {
     local_pairs_excluded_by_isExcluded: localResult.excludedCount,
     contaminated_pairs_filtered: contaminatedPairs.length,
     pre_filter_total_pairs: preFilterCount,
+    // Pairs that carry a contributor_id. unique_contributors can never
+    // exceed this (validate-public-benchmark.mjs rejects it).
+    pairs_with_contributor_id: pairsWithContributorId,
   },
 };
 
 writeFileSync(OUTPUT_FILE, JSON.stringify(benchmark, null, 2), "utf-8");
 
-console.log(`\nBenchmark exported: ${pairs.length} records, ${contributors.size} contributors`);
+const contributorsSummary =
+  contributorIds.size > 0
+    ? `${contributorIds.size} contributors (${pairsWithContributorId} records name one)`
+    : `contributor count unknown (0 of ${pairs.length} records name a contributor_id)`;
+console.log(`\nBenchmark exported: ${pairs.length} records, ${contributorsSummary}`);
 console.log(`  -> ${OUTPUT_FILE}`);
 
 // Summary
