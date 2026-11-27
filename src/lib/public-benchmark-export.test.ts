@@ -37,6 +37,8 @@ interface FixtureRecord {
   actual_hours: number;
   task_type?: string;
   contributor_id?: string;
+  /** ISO timestamp; a 2026-05-05 exact-ratio pair matches the backfill signature. */
+  timestamp?: string;
 }
 
 interface FixtureProject {
@@ -237,5 +239,84 @@ describe("validate-public-benchmark.mjs: contributor coverage", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("VALID");
     expect(run.stdout).toContain("unverified");
+  });
+});
+
+describe("export-public-benchmark.mjs: contributor coverage after the contamination filter", () => {
+  // A pair removed by the backfill-signature filter is not exported, so the
+  // contributor id it carries must not be counted either: both counters are
+  // derived from the post-filter pairs — the same population total_records
+  // reports. (Security review F1, card t_27fb6868.)
+
+  it("ignores a contributor named only by a filtered record", { timeout: RUN_TIMEOUT_MS }, () => {
+    const project = makeProject([
+      {
+        estimated_hours: 4,
+        actual_hours: 4,
+        task_type: "feature",
+        contributor_id: "fixture-contributor-filtered",
+        timestamp: "2026-05-05T12:00:00Z",
+      },
+      { estimated_hours: 4, actual_hours: 6, task_type: "bugfix" },
+    ]);
+
+    const benchmark = exportBenchmark(project);
+
+    expect(benchmark._quality["contaminated_pairs_filtered"]).toBe(1);
+    expect(benchmark.total_records).toBe(1);
+    expect(benchmark.unique_contributors).toBe(0);
+    expect(benchmark._quality["pairs_with_contributor_id"]).toBe(0);
+
+    const run = project.run("validate-public-benchmark.mjs");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("VALID");
+  });
+
+  it("does not publish a contributor over an empty export", { timeout: RUN_TIMEOUT_MS }, () => {
+    // The only record is a filtered backfill-signature pair naming a
+    // contributor: 0 exported records and 0 named contributors must agree.
+    const project = makeProject([
+      {
+        estimated_hours: 4,
+        actual_hours: 4,
+        task_type: "feature",
+        contributor_id: "fixture-contributor-filtered",
+        timestamp: "2026-05-05T12:00:00Z",
+      },
+    ]);
+
+    const benchmark = exportBenchmark(project);
+
+    expect(benchmark.total_records).toBe(0);
+    expect(benchmark.unique_contributors).toBe(0);
+    expect(benchmark._quality["pairs_with_contributor_id"]).toBe(0);
+
+    const run = project.run("validate-public-benchmark.mjs");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("VALID");
+  });
+
+  it("still counts a contributor whose surviving record names the id", { timeout: RUN_TIMEOUT_MS }, () => {
+    // Rules out a "clear the counters whenever something was filtered" fix:
+    // id A is named by one filtered and one surviving record, id B only by a
+    // surviving one.
+    const project = makeProject([
+      {
+        estimated_hours: 4,
+        actual_hours: 4,
+        task_type: "feature",
+        contributor_id: "fixture-contributor-a",
+        timestamp: "2026-05-05T12:00:00Z",
+      },
+      { estimated_hours: 4, actual_hours: 6, task_type: "bugfix", contributor_id: "fixture-contributor-a" },
+      { estimated_hours: 8, actual_hours: 5, task_type: "feature", contributor_id: "fixture-contributor-b" },
+    ]);
+
+    const benchmark = exportBenchmark(project);
+
+    expect(benchmark._quality["contaminated_pairs_filtered"]).toBe(1);
+    expect(benchmark.total_records).toBe(2);
+    expect(benchmark.unique_contributors).toBe(2);
+    expect(benchmark._quality["pairs_with_contributor_id"]).toBe(2);
   });
 });

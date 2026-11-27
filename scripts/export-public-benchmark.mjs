@@ -37,9 +37,9 @@ const pairs = [];
 // Contributor identity. Only a record's own explicit contributor_id names a
 // contributor; cocomo projects and the local ledger carry none. An unknown
 // identity is never promoted to a headcount, so these stay at 0 when no
-// record names anyone.
-const contributorIds = new Set();
-let pairsWithContributorId = 0;
+// record names anyone. Both counters are derived from the post-filter pairs
+// (section 3c): a pair the contamination filter drops is not exported, so a
+// contributor_id it carries must not be counted either.
 
 // ---- 1. Read community data -------------------------------------------------
 
@@ -61,11 +61,10 @@ if (existsSync(COMMUNITY_DIR)) {
               actual_hours: rec.actual_hours,
               ratio: Math.round((rec.actual_hours / rec.estimated_hours) * 10000) / 10000,
               ...(typeof rec.timestamp === "string" && { date: rec.timestamp.slice(0, 10) }),
+              // Internal only — consumed by the post-filter contributor
+              // counters (3c); never written to the output.
+              ...(rec.contributor_id && { contributor_id: rec.contributor_id }),
             });
-            if (rec.contributor_id) {
-              contributorIds.add(rec.contributor_id);
-              pairsWithContributorId += 1;
-            }
           }
         }
       }
@@ -132,6 +131,21 @@ pairs.length = 0;
 pairs.push(...cleanPairs);
 if (contaminatedPairs.length > 0) {
   console.log(`  FILTERED ${contaminatedPairs.length} pair(s) matching the known 2026-05-05 backfill-signature contamination`);
+}
+
+// ---- 3c. Contributor coverage of the exported pairs ------------------------
+//
+// Counted AFTER the contamination filter, over the same pairs `total_records`
+// reports. A pair removed by 3b is not exported; its contributor_id must not
+// become a published distinct-contributor count.
+
+const contributorIds = new Set();
+let pairsWithContributorId = 0;
+for (const p of pairs) {
+  if (p.contributor_id) {
+    contributorIds.add(p.contributor_id);
+    pairsWithContributorId += 1;
+  }
 }
 
 // ---- 4. Aggregate statistics ------------------------------------------------
@@ -208,8 +222,8 @@ const benchmark = {
     local_pairs_excluded_by_isExcluded: localResult.excludedCount,
     contaminated_pairs_filtered: contaminatedPairs.length,
     pre_filter_total_pairs: preFilterCount,
-    // Pairs that carry a contributor_id. unique_contributors can never
-    // exceed this (validate-public-benchmark.mjs rejects it).
+    // Exported pairs that carry a contributor_id. unique_contributors can
+    // never exceed this (validate-public-benchmark.mjs rejects it).
     pairs_with_contributor_id: pairsWithContributorId,
   },
 };
