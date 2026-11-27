@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Hermes plugin demo: `python plugins/epoch-hermes/scripts/demo.py` posts a P50/P90 Kanban comment through the claim and complete hooks and finishes in under 90 seconds, without a Hermes gateway or `npx`. Catalog PR text for Simon is in `docs/catalog-pr.md`.
+### fix: the public benchmark no longer reports unknown contributors as a headcount
+
+- `pnpm run dataset:build` writes `unique_contributors` as the number of distinct `contributor_id` values on the exported records. When no record names a contributor it writes 0 and prints that the count is unknown. It used to substitute the record count, so two anonymous records were published as 2 unique contributors. A shared explicit id still counts once.
+- The export also records `_quality.pairs_with_contributor_id`, and `pnpm run dataset:verify` now fails when `unique_contributors` exceeds it. An export built before this field still passes, marked as unverified. The committed `data/public-benchmark.json` is one of those and keeps its old value until it is rebuilt with `pnpm run dataset:build`.
+
 ### fix: the agent-lifecycle hook survives a moved checkout and fails loudly
 
 - `scripts/epoch-lifecycle-hook.mjs` is the supported estimate→actual hook: on `UserPromptSubmit` it records a PERT estimate, on `Stop` it records the elapsed wall-clock actual. It resolves the CLI from `EPOCH_BIN`, then the checkout that ships the hook, then the same checkout candidates `scripts/configure-mac-mini-telemetry.sh` probes (`~/workspaces/kyanite-labs/Epoch`, `~/workspaces/Epoch`, `~/Epoch`), then npm-global installs. When nothing resolves it prints one loud stderr line and appends a `hook_failed` line naming every path tried — the 2026-05 stall (a moved checkout made every call fail `Cannot find module`, logged only as `estimate_failed`, while the submitter and receiver looked healthy) now surfaces immediately. `--check` proves the resolved CLI answers `--version`.

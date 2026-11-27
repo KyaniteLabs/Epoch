@@ -27,7 +27,7 @@
     "unique_contributors": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of distinct anonymized contributors"
+      "description": "Number of distinct contributor_id values on the exported records. Records without a contributor_id (every cocomo and local-ledger pair) are not counted, so 0 means no contributor identity was recorded — it is not a headcount of the people behind total_records"
     },
     "by_task_type": {
       "type": "object",
