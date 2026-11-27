@@ -16,7 +16,8 @@ is not changed here because that release is not on npm yet.
 ## Install
 
 ```
-/plugin install epoch-agent --marketplace KyaniteLabs/Epoch
+/plugin marketplace add KyaniteLabs/Epoch
+/plugin install epoch-agent@kyanitelabs-epoch
 ```
 
 ## What it adds
