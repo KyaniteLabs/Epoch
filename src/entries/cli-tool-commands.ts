@@ -296,7 +296,7 @@ export const TOOL_COMMANDS: readonly ToolCommandSpec[] = [
 	{
 		name: "estimate-from-context",
 		tool: "estimate_from_context",
-		description: "Classify a free-text task description and delegate to the estimation engine (registered stub \u2014 not yet implemented).",
+		description: "Classify a free-text task description and delegate to reference-class estimation, returning the estimate with classification provenance (task type, complexity, confidence, signals).",
 		options: [
 			{ flags: "--context <text>", description: "Free-text task description (issue body, diff, or PR description)", key: "context", required: true, include: "always" },
 			{ flags: "--task-type <type>", description: "Optional pre-classified task type hint", key: "task_type" },
